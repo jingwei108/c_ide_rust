@@ -1,5 +1,6 @@
 use crate::compiler::ast::{SourceLoc, Type};
 use crate::vm::instruction::Instruction;
+use crate::vm::vm::CideVM;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -149,15 +150,20 @@ pub struct MemoryState {
     pub alloc_counter: i32,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct CideVM {
-    // Phase 0 stub
-}
-
-#[derive(Debug, Clone, Default)]
 pub struct Session {
     pub compile: CompileState,
     pub runtime: RuntimeState,
     pub memory: MemoryState,
-    pub vm: CideVM,
+    pub vm: Option<CideVM>,
+}
+
+impl Default for Session {
+    fn default() -> Self {
+        Self {
+            compile: CompileState::default(),
+            runtime: RuntimeState::default(),
+            memory: MemoryState::default(),
+            vm: Some(CideVM::default()),
+        }
+    }
 }

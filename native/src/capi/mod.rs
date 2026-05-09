@@ -1,4 +1,5 @@
 use crate::session::*;
+use crate::vm::vm::{CideVM, FuncMeta, VMSymbol};
 use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 use std::slice;
@@ -132,24 +133,180 @@ pub unsafe extern "C" fn cide_get_compile_errors_buf(
     copy_len as c_int
 }
 
+unsafe fn setup_vm(vm: &mut CideVM, session: &Session) {
+    vm.reset();
+    vm.load_program(session.compile.bytecode.clone());
+    vm.set_globals(&session.compile.globals_init);
+    vm.set_max_steps(10_000_000);
+
+    for (name, meta) in &session.compile.func_table {
+        if let Some(&idx) = session.compile.func_index.get(name) {
+            vm.register_function(idx as u32, FuncMeta {
+                ip: meta.ip,
+                arg_count: meta.arg_count,
+                local_count: meta.local_count,
+            });
+            vm.register_function_name(idx as u32, name.clone());
+        }
+    }
+
+    let symbols: Vec<VMSymbol> = session.compile.symbols.iter().map(|s| VMSymbol {
+        name: s.name.clone(),
+        addr: s.addr,
+        is_local: s.is_local,
+        ty: s.ty.clone(),
+        scope_depth: s.scope_depth,
+    }).collect();
+    vm.set_symbols(symbols);
+
+    let mut vis_lines = Vec::new();
+    for m in &session.compile.algorithm_matches {
+        for &(line, ty, _) in &m.vis_events {
+            vis_lines.push((line, ty));
+        }
+    }
+    vm.set_vis_event_lines(vis_lines);
+
+    let heap_offset = session.memory.heap_offset;
+    vm.set_heap_limit_callback(move || heap_offset);
+
+    let mem = vm.get_memory();
+    let mem_size = vm.get_memory_size() as usize;
+    for &(addr, ref str) in &session.compile.string_data {
+        let a = addr as usize;
+        let bytes = str.as_bytes();
+        if a + bytes.len() + 1 <= mem_size {
+            let dst = slice::from_raw_parts_mut(mem.add(a), bytes.len() + 1);
+            dst[..bytes.len()].copy_from_slice(bytes);
+            dst[bytes.len()] = 0;
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
-    if s.is_null() {
+    if s.is_null() || !(*s).compile.compiled {
+        if !s.is_null() {
+            (*s).runtime.error = "程序尚未编译。请先编译代码。".to_string();
+        }
         return -1;
     }
     let session = &mut *s;
-    session.runtime.error = "Rust migration stub: VM not implemented yet".to_string();
-    -1
+    session.runtime.output_lines.clear();
+    session.runtime.error.clear();
+    session.runtime.trace.clear();
+    session.memory.regions.clear();
+    session.memory.free_list.clear();
+    session.memory.heap_offset = 0x5000;
+    session.memory.alloc_counter = 0;
+    session.runtime.running = true;
+    session.runtime.step_mode = false;
+
+    let mut vm = session.vm.take().unwrap();
+    setup_vm(&mut vm, session);
+
+    let ret = vm.run(session);
+
+    let result = if vm.has_error() {
+        session.runtime.error = vm.get_error().to_string();
+        session.runtime.running = false;
+        -1
+    } else {
+        session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
+        session.runtime.running = false;
+        0
+    };
+    session.vm = Some(vm);
+    result
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
-    if s.is_null() {
+    if s.is_null() || !(*s).compile.compiled {
+        if !s.is_null() {
+            (*s).runtime.error = "程序尚未编译。".to_string();
+        }
         return -1;
     }
     let session = &mut *s;
-    session.runtime.error = "Rust migration stub: VM not implemented yet".to_string();
-    -1
+
+    let mut vm = session.vm.take().unwrap();
+    let result = if !session.runtime.running {
+        session.runtime.output_lines.clear();
+        session.runtime.error.clear();
+        session.runtime.trace.clear();
+        session.memory.regions.clear();
+        session.memory.free_list.clear();
+        session.memory.heap_offset = 0x5000;
+        session.memory.alloc_counter = 0;
+        session.runtime.step_count = 0;
+        session.runtime.step_mode = true;
+        session.runtime.running = true;
+
+        setup_vm(&mut vm, session);
+        vm.pause();
+
+        let mut ret = 0;
+        loop {
+            match vm.step(session) {
+                crate::vm::vm::StepResult::Paused => {
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = 0;
+                    break;
+                }
+                crate::vm::vm::StepResult::Finished => {
+                    session.runtime.running = false;
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = -1;
+                    break;
+                }
+                crate::vm::vm::StepResult::Trap => {
+                    session.runtime.error = vm.get_error().to_string();
+                    session.runtime.running = false;
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = -1;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        ret
+    } else {
+        vm.resume();
+        let mut ret = 0;
+        loop {
+            match vm.step(session) {
+                crate::vm::vm::StepResult::Paused => {
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = 0;
+                    break;
+                }
+                _ if vm.was_step_event_hit() => {
+                    vm.pause();
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = 0;
+                    break;
+                }
+                crate::vm::vm::StepResult::Finished => {
+                    session.runtime.running = false;
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = -1;
+                    break;
+                }
+                crate::vm::vm::StepResult::Trap => {
+                    session.runtime.error = vm.get_error().to_string();
+                    session.runtime.running = false;
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = -1;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        ret
+    };
+    session.vm = Some(vm);
+    result
 }
 
 #[no_mangle]
@@ -165,33 +322,80 @@ pub unsafe extern "C" fn cide_callstack_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
     }
-    0
+    if let Some(ref vm) = (*s).vm {
+        vm.get_call_stack().len() as c_int
+    } else {
+        0
+    }
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn cide_callstack_get(
-    _s: *mut Session,
-    _index: c_int,
+    s: *mut Session,
+    index: c_int,
     name: *mut c_char,
     name_size: c_int,
     line: *mut c_int,
 ) {
-    if !name.is_null() && name_size > 0 {
-        *name = 0;
+    let stack_len = if s.is_null() {
+        0
+    } else if let Some(ref vm) = (*s).vm {
+        vm.get_call_stack().len() as c_int
+    } else {
+        0
+    };
+    if s.is_null() || index < 0 || index >= stack_len {
+        if !name.is_null() && name_size > 0 { *name = 0; }
+        if !line.is_null() { *line = 0; }
+        return;
     }
-    if !line.is_null() {
-        *line = 0;
+    let session = &*s;
+    let frame = &session.vm.as_ref().unwrap().get_call_stack()[index as usize];
+    write_str(name, name_size, &frame.func_name);
+
+    let mut best_line = 0;
+    if !session.compile.source_map.is_empty() && frame.return_ip > 0 {
+        let ret_ip = frame.return_ip as u32;
+        let map = &session.compile.source_map;
+        let mut best = None;
+        for &(ip, ref loc) in map {
+            if ip <= ret_ip {
+                best = Some(loc.line);
+            } else {
+                break;
+            }
+        }
+        if let Some(l) = best { best_line = l; }
+    }
+    if !line.is_null() { *line = best_line; }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cide_breakpoint_add(s: *mut Session, line: c_int) {
+    if !s.is_null() && line > 0 {
+        if let Some(ref mut vm) = (*s).vm {
+            vm.add_breakpoint(line);
+        }
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_breakpoint_add(_s: *mut Session, _line: c_int) {}
+pub unsafe extern "C" fn cide_breakpoint_remove(s: *mut Session, line: c_int) {
+    if !s.is_null() && line > 0 {
+        if let Some(ref mut vm) = (*s).vm {
+            vm.remove_breakpoint(line);
+        }
+    }
+}
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_breakpoint_remove(_s: *mut Session, _line: c_int) {}
-
-#[no_mangle]
-pub unsafe extern "C" fn cide_breakpoint_clear(_s: *mut Session) {}
+pub unsafe extern "C" fn cide_breakpoint_clear(s: *mut Session) {
+    if !s.is_null() {
+        if let Some(ref mut vm) = (*s).vm {
+            vm.clear_breakpoints();
+        }
+    }
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_char {
