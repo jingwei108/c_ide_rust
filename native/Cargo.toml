@@ -1,0 +1,17 @@
+[package]
+name = "cide_native"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+
+[profile.release]
+debug = true
+lto = "thin"
+strip = false
+
+[profile.dev]
+opt-level = 1

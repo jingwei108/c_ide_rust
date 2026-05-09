@@ -1,0 +1,59 @@
+# Build outputs
+/build
+/out
+/.vs
+
+# Native build directories
+/native/build
+/native/build-android*
+
+# .NET build artifacts (all platforms)
+**/bin/
+**/obj/
+
+# Distribution / publish outputs
+/dist
+
+# Temporary build artifacts that should never be in the repo root
+/*.exe
+/*.o
+/*.obj
+/*.wasm
+/*.wat
+/*.ilk
+/*.pdb
+/*.lib
+/*.dll
+/*.tmp
+*.log
+
+# IDE / editor
+*.user
+*.suo
+**/.vs/
+.vscode/settings.json
+.idea/
+**/Properties/launchSettings.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test & coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# Build logs & artifacts
+*.binlog
+artifacts/
+
+# Package manager
+*.nupkg
+packages/
+.tmp-monaco/
+node_modules/
+
+# Blazor / static web assets generated from NuGet packages
+**/wwwroot/_content/

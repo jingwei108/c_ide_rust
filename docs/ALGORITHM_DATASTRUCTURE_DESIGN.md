@@ -1,0 +1,853 @@
+# 算法修复、子集扩展与数据结构支持设计
+
+> 核心问题：
+> 1. 算法层面的错误如何修复？
+> 2. 如何逐步扩展 C 子集？
+> 3. 如何支持数据结构教学？
+
+---
+
+## 1. 算法层面的修复
+
+### 1.1 算法错误的本质
+
+算法层面的错误与语法/语义错误的根本区别：
+
+| 错误层级 | 示例 | 编译器能否发现？ | 运行时能否崩溃？ |
+|:---|:---|:---|:---|
+| 语法错误 | `inta = 5`（缺空格） | ✅ 能 | ❌ 不运行 |
+| 语义错误 | `arr[10]`（数组越界） | ⚠️ 部分能 | ✅ 运行时 trap |
+| **算法错误** | **冒泡排序边界 `i < n` 应为 `i < n-1`** | **❌ 不能** | **❌ 不崩溃，但结果错误** |
+| **算法错误** | **快排分区逻辑写错** | **❌ 不能** | **❌ 不崩溃，但结果错误** |
+| **算法错误** | **递归缺少终止条件** | **⚠️ 部分能** | **✅ 栈溢出** |
+
+**核心洞察**：算法错误 = **语法正确 + 意图可识别 + 实现有偏差**
+
+### 1.2 三级算法修复策略
+
+```
+学生代码
+  ↓
+┌─────────────────────────────────────────────┐
+│ Level 1: 算法模式识别（AST 层）              │
+│ • 将学生代码与已知算法模板进行结构匹配        │
+│ • 识别"这是冒泡排序"、"这是二分查找"         │
+│ • 对比边界条件、循环变量的差异               │
+└─────────────────────────────────────────────┘
+  ↓
+┌─────────────────────────────────────────────┐
+│ Level 2: 运行时验证（Property-based Testing）│
+│ • 自动生成测试用例                           │
+│ • 调用学生代码 + 验证结果属性                │
+│ • 如果不通过，定位可疑代码区域               │
+└─────────────────────────────────────────────┘
+  ↓
+┌─────────────────────────────────────────────┐
+│ Level 3: 执行轨迹分析（Trace Analysis）      │
+│ • 记录 wasm3 执行轨迹（比较/交换/递归调用）  │
+│ • 与标准轨迹对比                             │
+│ • 发现"少比较了一次"、"少交换了一次"等      │
+└─────────────────────────────────────────────┘
+```
+
+### 1.3 Level 1: 算法模式识别
+
+#### 1.3.1 算法模板库
+
+```cpp
+// 算法模板定义
+struct AlgorithmTemplate {
+    std::string name;           // "bubble_sort"
+    std::string displayName;    // "冒泡排序"
+    ASTPattern astPattern;      // AST 结构模式
+    std::vector<Constraint> constraints;  // 约束条件
+    std::vector<CommonMistake> commonMistakes;  // 常见错误
+};
+
+// 冒泡排序模板
+AlgorithmTemplate BubbleSortTemplate = {
+    .name = "bubble_sort",
+    .displayName = "冒泡排序",
+    .astPattern = {
+        .type = "function",
+        .parameters = {"int[]", "int"},  // arr[], n
+        .body = {
+            // 外层 for: for (int i = 0; i < n - 1; i++)
+            {.type = "for", .init = "i=0", .cond = "i < n - 1", .step = "i++"},
+            // 内层 for: for (int j = 0; j < n - i - 1; j++)
+            {.type = "for", .init = "j=0", .cond = "j < n - i - 1", .step = "j++"},
+            // if: if (arr[j] > arr[j + 1])
+            {.type = "if", .cond = "arr[j] > arr[j+1]"},
+            // swap
+            {.type = "swap", .vars = {"arr[j]", "arr[j+1]"}}
+        }
+    },
+    .constraints = {
+        // 约束：必须是相邻元素比较
+        {.type = "adjacent_compare", .message = "冒泡排序应比较相邻元素 arr[j] 和 arr[j+1]"},
+        // 约束：必须交换相邻元素
+        {.type = "adjacent_swap", .message = "冒泡排序应交换相邻元素"}
+    },
+    .commonMistakes = {
+        {
+            .name = "outer_boundary_wrong",
+            .pattern = "i < n",           // 学生写的
+            .correct = "i < n - 1",       // 应该是
+            .message = "外层循环只需执行 n-1 趟。最后一趟只剩一个元素，已经有序。",
+            .fixSuggestion = "将 i < n 改为 i < n - 1"
+        },
+        {
+            .name = "inner_boundary_wrong",
+            .pattern = "j < n",
+            .correct = "j < n - i - 1",
+            .message = "内层循环范围应随趟数减少。第 i 趟后，最后 i 个元素已有序。",
+            .fixSuggestion = "将 j < n 改为 j < n - i - 1"
+        },
+        {
+            .name = "comparison_direction_wrong",
+            .pattern = "arr[j] < arr[j+1]",
+            .correct = "arr[j] > arr[j+1]",
+            .message = "当前是降序比较，若要升序排序应将 > 改为 <（或反过来）。",
+            .fixSuggestion = "确认排序方向"
+        }
+    }
+};
+```
+
+#### 1.3.2 AST 结构匹配算法
+
+```cpp
+class AlgorithmMatcher {
+public:
+    MatchResult Match(const FuncDecl& studentFunc) {
+        for (const auto& tmpl : templates) {
+            auto similarity = CalculateSimilarity(studentFunc, tmpl.astPattern);
+            if (similarity > 0.7f) {  // 相似度阈值
+                return {
+                    .matched = true,
+                    .algorithm = tmpl.name,
+                    .similarity = similarity,
+                    .deviations = FindDeviations(studentFunc, tmpl)
+                };
+            }
+        }
+        return {.matched = false};
+    }
+    
+private:
+    float CalculateSimilarity(const FuncDecl& func, const ASTPattern& pattern) {
+        // 1. 函数签名匹配（参数类型和数量）
+        float signatureScore = MatchSignature(func, pattern);
+        
+        // 2. 嵌套结构匹配（是否有双重循环）
+        float structureScore = MatchStructure(func.body, pattern.body);
+        
+        // 3. 关键操作匹配（是否有比较、交换）
+        float operationScore = MatchOperations(func.body, pattern.body);
+        
+        return signatureScore * 0.3f + structureScore * 0.4f + operationScore * 0.3f;
+    }
+    
+    std::vector<Deviation> FindDeviations(const FuncDecl& func, const AlgorithmTemplate& tmpl) {
+        std::vector<Deviation> result;
+        
+        // 检查每个常见错误模式
+        for (const auto& mistake : tmpl.commonMistakes) {
+            if (FindPattern(func.body, mistake.pattern)) {
+                result.push_back({
+                    .type = mistake.name,
+                    .message = mistake.message,
+                    .fixSuggestion = mistake.fixSuggestion,
+                    .studentCode = ExtractCode(func.body, mistake.pattern),
+                    .correctCode = mistake.correct
+                });
+            }
+        }
+        
+        return result;
+    }
+};
+```
+
+#### 1.3.3 算法修复的用户界面
+
+```
+┌──────────────────────────────────────────────┐
+│ 🤔 算法诊断                               [×]  │
+├──────────────────────────────────────────────┤
+│                                              │
+│ 我识别出你在实现「冒泡排序」。                 │
+│                                              │
+│ 你的代码（第 3~8 行）：                        │
+│ ┌──────────────────────────────────────────┐ │
+│ │ 3  │ for (int i = 0; i < n; i++) {       │ │
+│ │    │            ^^^^^^^                  │ │
+│ │    │            │                        │ │
+│ │    │            📝 这里可能有问题         │ │
+│ │ 4  │     for (int j = 0; j < n; j++) {   │ │
+│ │    │                    ^^^^^            │ │
+│ │    │                    │                │ │
+│ │    │                    📝 这里可能有问题 │ │
+│ │ 5  │         if (arr[j] > arr[j+1]) {    │ │
+│ │ 6  │             // 交换...              │ │
+│ │ 7  │         }                           │ │
+│ │ 8  │     }                               │ │
+│ │ 9  │ }                                   │ │
+│ └──────────────────────────────────────────┘ │
+│                                              │
+│ 📊 运行时验证结果：                            │
+│   测试用例 [5, 3, 8, 1, 2] → 你的结果 [1, 2, 3, 5] │
+│   ❌ 元素 8 丢失了！                           │
+│                                              │
+│ 🔍 问题分析：                                  │
+│ ┌──────────────────────────────────────────┐ │
+│ │ 问题 1：外层循环边界过大                     │ │
+│ │                                        │ │
+│ │ 你的写法：for (int i = 0; i < n; i++)   │ │
+│ │ 标准写法：for (int i = 0; i < n - 1; i++)│ │
+│ │                                        │ │
+│ │ 原因：冒泡排序只需 n-1 趟。因为每趟将一   │ │
+│ │      个最大元素"冒泡"到正确位置，n-1 趟   │ │
+│ │      后只剩最后一个元素，必然有序。        │ │
+│ │                                        │ │
+│ │ 💡 记忆口诀：外层 n-1，内层 n-i-1         │ │
+│ └──────────────────────────────────────────┘ │
+│ ┌──────────────────────────────────────────┐ │
+│ │ 问题 2：内层循环边界过大，导致越界访问      │ │
+│ │                                        │ │
+│ │ 你的写法：j < n                         │ │
+│ │ 标准写法：j < n - i - 1                 │ │
+│ │                                        │ │
+│ │ 原因：当 j = n-1 时，arr[j+1] = arr[n]   │ │
+│ │      越界了！而且第 i 趟后最后 i 个元素   │ │
+│ │      已有序，不需要再比较。                │ │
+│ └──────────────────────────────────────────┘ │
+│                                              │
+│ [📖 查看标准模板]  [🔧 应用修复]              │
+│                                              │
+│ ⚠️ 注意：算法修复只是建议，建议你理解原因      │
+│    后再决定是否应用。                         │
+└──────────────────────────────────────────────┘
+```
+
+### 1.4 Level 2: 运行时验证（✅ 已实现）
+
+#### 1.4.1 Property-based Testing 实现
+
+**实现位置**：`Cide.Client.Shared/Core/AlgorithmValidator.cs`
+
+```csharp
+public static class AlgorithmValidator
+{
+    public static AlgorithmValidationResult Validate(string sourceCode, AlgorithmMatch match)
+    {
+        // 1. 根据算法名称生成测试用例
+        var testCases = GenerateTestCases(match.Name);
+        
+        // 2. 对每个用例：构建测试桩 → 编译 → VM 执行 → 验证输出
+        foreach (var tc in testCases)
+        {
+            var result = RunSingleTest(sourceCode, match.FuncName, match.Name, tc);
+            if (!result.Passed) return result;  // 快速失败
+        }
+        
+        return new AlgorithmValidationResult(true,
+            $"✅ {match.DisplayName} 通过了 {testCases.Count} 组测试用例！");
+    }
+}
+```
+
+**测试桩生成**（替换学生的 `main()`）：
+```csharp
+// 原学生代码中的 main 被重命名为 __cide_original_main
+string modifiedSource = Regex.Replace(sourceCode, @"(?<!\w)int\s+main\s*\(", "int __cide_original_main(");
+
+// 生成新 main：准备数组 → 调用学生函数 → 打印结果
+int main() {
+    int arr[] = {5, 3, 8, 1, 2};  // 测试输入
+    int n = 5;
+    bubbleSort(arr, n);            // 调用学生函数（通过 FuncName 定位）
+    for (int i = 0; i < n; i = i + 1) {
+        printf("%d ", arr[i]);     // 输出供验证
+    }
+    return 0;
+}
+```
+
+**支持的验证属性**：
+
+| 算法类型 | 属性 1 | 属性 2 | 属性 3 |
+|:---|:---|:---|:---|
+| **排序**（冒泡/选择/插入/快排/归并） | 输出长度 = 输入长度 | 非递减：`arr[i] <= arr[i+1]` | 元素守恒：排序后是输入的排列 |
+| **二分查找** | 返回值为整数 | 目标存在时返回正确索引 | 目标不存在时返回 -1 |
+
+**测试用例覆盖**：
+
+```csharp
+// 排序算法：7 组用例
+new("随机数组", new[] { 5, 3, 8, 1, 2 }),
+new("已有序",   new[] { 1, 2, 3, 4, 5 }),
+new("逆序",     new[] { 5, 4, 3, 2, 1 }),
+new("单元素",   new[] { 42 }),
+new("全部相同", new[] { 2, 2, 2, 2 }),
+new("空数组",   Array.Empty<int>()),
+new("包含负数", new[] { -3, 5, -1, 0, 2 }),
+
+// 二分查找：8 组用例
+new("找到目标",     new[] { 1, 3, 5, 7, 9 }, 5),
+new("找到首个",     new[] { 1, 3, 5, 7, 9 }, 1),
+new("找到末尾",     new[] { 1, 3, 5, 7, 9 }, 9),
+new("未找到（偏小）", new[] { 1, 3, 5, 7, 9 }, 0),
+new("未找到（偏大）", new[] { 1, 3, 5, 7, 9 }, 10),
+new("单元素找到",   new[] { 5 }, 5),
+new("单元素未找到", new[] { 5 }, 3),
+new("空数组",       Array.Empty<int>(), 1),
+```
+
+#### 1.4.2 前端集成
+
+**Desktop** (`MainView.axaml`)：
+- 算法 Tab 中每个检测到的算法卡片显示 "🔍 验证算法" 按钮
+- 点击后通过 `ValidateAlgorithmCommand` 调用 `AlgorithmValidator.Validate()`
+- 结果输出到控制台面板
+
+**Maui** (`Home.razor`)：
+- 算法 Tab 中每个检测到的算法卡片显示验证按钮
+- 验证结果面板：绿色（通过）/ 红色（失败）样式
+- 失败时显示具体用例描述、输入数组、实际输出
+
+#### 1.4.3 关键依赖：`funcName` 字段
+
+为使验证能正确定位学生代码中的目标函数，`AlgorithmMatch` 新增了 `FuncName` 字段：
+
+```cpp
+// C++ 后端
+struct AlgorithmMatch {
+    std::string algorithmName;
+    std::string funcName;  // 检测到的函数名，如 "bubbleSort"
+    // ...
+};
+
+// C API
+cide_algorithm_match_get(s, index, ..., funcName, sizeof(funcName));
+
+// C# 前端
+public record AlgorithmMatch {
+    public string FuncName { get; init; } = "";
+    // ...
+}
+```
+
+每个模式检测器在匹配成功时设置 `match.funcName = func.name`，确保测试桩能调用正确的函数。
+
+### 1.5 Level 3: 执行轨迹分析
+
+```cpp
+class TraceAnalyzer {
+public:
+    // 记录每次 __cide_step 时的状态
+    struct TraceEntry {
+        int step;
+        int line;
+        std::map<std::string, int> variables;  // 变量当前值
+        std::vector<int> arrayState;           // 数组当前状态
+        std::string operation;                 // "compare", "swap", "recurse"
+    };
+    
+    std::vector<TraceEntry> trace;
+    
+    void Analyze(const std::vector<TraceEntry>& trace, 
+                 const AlgorithmTemplate& tmpl) {
+        // 分析 1：比较次数是否正确？
+        int compareCount = CountOperations(trace, "compare");
+        int expectedCompareCount = tmpl.expectedCompareCount(trace[0].arrayState.size());
+        if (compareCount != expectedCompareCount) {
+            Report("比较次数异常：实际 %d 次，期望 %d 次", 
+                   compareCount, expectedCompareCount);
+        }
+        
+        // 分析 2：是否有未比较的相邻元素？
+        auto unCompared = FindUncomparedPairs(trace);
+        if (!unCompared.empty()) {
+            Report("以下相邻元素未被比较：%s", FormatPairs(unCompared));
+        }
+        
+        // 分析 3：递归深度是否合理？
+        int maxDepth = MaxRecursionDepth(trace);
+        if (maxDepth > trace[0].arrayState.size()) {
+            Report("递归深度 %d 超过数组大小 %d，可能存在无限递归", 
+                   maxDepth, trace[0].arrayState.size());
+        }
+    }
+};
+```
+
+### 1.6 算法修复的分级与原则
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     算法修复分级                             │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  L1 语法/语义修复（全自动）                                  │
+│  ├── 数组越界、空指针、类型不匹配                            │
+│  └── 编译器直接发现，自动修复                                │
+│                                                             │
+│  L2 算法模式修复（建议 + 模板对比）                          │
+│  ├── 识别算法类型 → 对比标准模板 → 发现边界/逻辑偏差         │
+│  └── 展示「你的代码」vs「标准模板」，由学生决定是否修改      │
+│                                                             │
+│  L3 运行时验证修复（诊断 + 测试用例）                        │
+│  ├── 自动生成测试 → 发现结果错误 → 定位可疑区域              │
+│  └── 提供测试失败信息和执行轨迹，引导学生自查                │
+│                                                             │
+│  L4 逻辑漏洞修复（仅提示，不修复）                           │
+│  ├── 递归缺少终止条件、算法逻辑根本性错误                    │
+│  └── 仅提供教学提示，不自动修改代码（保护思考过程）          │
+│                                                             │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**核心原则**：算法修复的目的是**教懂学生**，不是**代写代码**。L2/L3/L4 级别永远不自动应用，只提供分析和引导。
+
+---
+
+## 2. C 子集扩展路线图
+
+### 2.1 四级扩展策略
+
+```
+Phase 1: 核心子集（教学入门）
+├── 数据类型：int, int*, int[], struct
+├── 控制流：if/else, while, for
+├── 函数：定义/调用/递归
+├── 内存：malloc/free（简化版）
+└── 内置：print_int, print_array
+
+Phase 2: 数据结构基础（解锁条件：完成链表练习）
+├── + break/continue
+├── + sizeof（简化版，固定返回 4）
+├── + 字符串字面量（"hello"，仅用于输出）
+└── + vis_* 可视化内置函数
+
+Phase 3: 进阶语法（解锁条件：完成树/图练习）
+├── + 多维数组（int arr[3][4]）
+├── + typedef（struct 别名）
+├── + 枚举 enum
+└── + 函数指针（简化版，用于 qsort）
+
+Phase 4: 实用编程（解锁条件：完成综合项目）
+├── + 字符串操作（strlen, strcpy, strcmp 简化版）
+├── + 数学函数（abs, min, max）
+├── + 文件 I/O（沙盒内虚拟文件系统）
+└── + 标准库子集
+```
+
+### 2.2 渐进式解锁机制
+
+```csharp
+// 用户学习进度追踪
+public class LearningProgress {
+    public int Level { get; set; } = 1;
+    
+    public HashSet<string> CompletedExercises { get; set; } = new();
+    public HashSet<string> UnlockedFeatures { get; set; } = new();
+    
+    // 检查特性是否可用
+    public bool CanUse(string feature) => feature switch {
+        "break" => Level >= 2,
+        "multi_array" => Level >= 3,
+        "string_ops" => Level >= 4,
+        "file_io" => Level >= 4,
+        _ => true  // Phase 1 特性默认可用
+    };
+    
+    // 完成练习后解锁新特性
+    public void CompleteExercise(string exerciseId) {
+        CompletedExercises.Add(exerciseId);
+        
+        // 完成链表练习 → 解锁 break/continue
+        if (exerciseId == "linked_list_basics" && !UnlockedFeatures.Contains("break")) {
+            UnlockedFeatures.Add("break");
+            UnlockedFeatures.Add("continue");
+            NotifyUser("🎉 解锁新语法：break / continue！");
+        }
+        
+        // 完成树练习 → 解锁多维数组
+        if (exerciseId == "binary_tree_traversal" && !UnlockedFeatures.Contains("multi_array")) {
+            UnlockedFeatures.Add("multi_array");
+            NotifyUser("🎉 解锁新语法：多维数组！");
+        }
+    }
+}
+
+// 编译器根据用户等级决定是否支持语法
+public class ProgressiveCompiler {
+    public CompileResult Compile(string source, LearningProgress progress) {
+        var lexer = new Lexer(source, progress);  // 传入进度
+        var tokens = lexer.Tokenize();
+        
+        // 如果用户还没解锁 break，遇到 break 时报特殊错误
+        if (!progress.CanUse("break") && tokens.Any(t => t.Type == TokenType.BREAK)) {
+            return CompileResult.Error(
+                "break 语句将在「数据结构篇」解锁。\n" +
+                "当前请使用 return 或调整循环条件。\n\n" +
+                "💡 完成「链表基础」练习后即可解锁！"
+            );
+        }
+        
+        // ... 正常编译
+    }
+}
+```
+
+### 2.3 向后兼容性保证
+
+```
+Phase 1 代码
+  ↓
+Phase 2 编译器（完全兼容）
+  ↓
+Phase 3 编译器（完全兼容）
+  ↓
+Phase 4 编译器（完全兼容）
+
+所有旧代码在新版本中都能正常运行。
+只增加语法，不修改已有语法语义。
+```
+
+---
+
+## 3. 数据结构教学支持
+
+### 3.1 当前子集支持的数据结构
+
+| 数据结构 | 实现方式 | 可视化支持 | 诊断支持 |
+|:---|:---|:---|:---|
+| **数组** | 原生 `int[]` | `vis_array()` | 越界检测 |
+| **动态数组** | `malloc` + 指针 | `vis_array()` + 内存视图 | 泄漏检测 |
+| **单链表** | `struct Node { int val; Node* next; }` | `vis_list()` | 断链检测、泄漏检测 |
+| **双链表** | `struct DNode { int val; DNode* prev; DNode* next; }` | `vis_list()` | 断链检测 |
+| **栈（数组）** | `int[]` + `top` 索引 | `vis_stack()` | 上溢/下溢检测 |
+| **栈（链表）** | 链表 | `vis_stack()` | 断链检测 |
+| **队列（数组）** | 循环数组 | `vis_queue()` | 上溢/下溢检测 |
+| **队列（链表）** | 链表 + head/tail | `vis_queue()` | 断链检测 |
+| **二叉树** | `struct TreeNode { int val; TreeNode* left; TreeNode* right; }` | `vis_tree()` | 递归深度检测 |
+| **图（邻接矩阵）** | 二维数组（Phase 3） | `vis_graph()` | - |
+| **图（邻接表）** | 数组 + 链表混合 | `vis_graph()` | - |
+
+### 3.2 数据结构专用内置函数
+
+```c
+// ===== 数组可视化 =====
+void vis_array(const char* name, int arr[], int n);
+void vis_array_highlight(const char* name, int index, const char* color);
+    // color: "compare"(橙), "swap"(粉), "sorted"(绿), "active"(蓝)
+void vis_array_range(const char* name, int begin, int end, const char* color);
+    // 高亮一个区间，如 vis_array_range("arr", 2, 5, "range");
+
+// ===== 链表可视化 =====
+void vis_list_node(int id, int value, int nextId);
+void vis_list_highlight(int id, const char* color);
+void vis_list_edge(int fromId, int toId);
+void vis_list_pointer(const char* name, int nodeId);
+    // 显示头指针/尾指针指向
+
+// ===== 树可视化 =====
+void vis_tree_node(int id, int value, int leftId, int rightId);
+void vis_tree_highlight(int id, const char* color);
+void vis_tree_edge(int fromId, int toId);
+
+// ===== 栈/队列可视化 =====
+void vis_stack_push(const char* name, int value);
+void vis_stack_pop(const char* name);
+void vis_stack_highlight(const char* name, int index, const char* color);
+
+void vis_queue_enqueue(const char* name, int value);
+void vis_queue_dequeue(const char* name);
+
+// ===== 图可视化（Phase 3）=====
+void vis_graph_node(int id, int value);
+void vis_graph_edge(int fromId, int toId, int weight);
+void vis_graph_highlight_node(int id, const char* color);
+void vis_graph_highlight_edge(int fromId, int toId, const char* color);
+
+// ===== 通用调试 =====
+void vis_step(int line);                    // 高亮当前执行行
+void vis_variable(const char* name, int value);
+void vis_pointer(const char* name, void* ptr);
+void vis_message(const char* text);         // 显示文字消息
+```
+
+### 3.3 数据结构专用的诊断和修复
+
+#### 3.3.1 链表断链检测
+
+```c
+// 学生代码：危险的链表操作
+void deleteNode(struct ListNode* head, int val) {
+    struct ListNode* p = head;
+    while (p != NULL) {
+        if (p->val == val) {
+            p = p->next;        // ❌ 直接移动，丢失被删除节点的前驱
+            free(p);             // ❌ 先移动再 free，free 的是下一个节点！
+        }
+        p = p->next;
+    }
+}
+```
+
+运行时诊断：
+```
+⚠️ 链表操作警告（第 6~7 行）
+
+你的操作顺序可能导致链表断裂或错误释放内存。
+
+执行轨迹：
+  step 5: p 指向 node1(val=3)
+  step 6: p = p->next  → p 现在指向 node2
+  step 7: free(p)      → 释放了 node2！但 node1->next 还指向 node2！
+
+🔴 问题：
+  1. 你先移动了 p，再 free(p)，结果 free 的是下一个节点
+  2. node1->next 变成了悬垂指针
+
+✅ 正确顺序：
+  struct ListNode* temp = p->next;  // 先保存下一个节点
+  p->next = temp->next;              // 跳过要删除的节点
+  free(temp);                        // 再释放
+
+📚 [链表删除操作详解]
+```
+
+#### 3.3.2 内存泄漏检测（链表）
+
+```c
+// 学生代码：忘记释放链表
+struct ListNode* createList(int n) {
+    struct ListNode* head = NULL;
+    for (int i = 0; i < n; i++) {
+        struct ListNode* node = malloc(sizeof(struct ListNode));
+        node->val = i;
+        node->next = head;
+        head = node;
+    }
+    return head;  // ❌ 函数结束时没有释放链表
+}
+```
+
+程序结束时的内存诊断：
+```
+⚠️ 内存泄漏检测
+
+程序结束时，以下内存未被释放：
+
+地址        大小    分配位置              类型
+0x1000      8 字节  createList 第 5 行    struct ListNode
+0x1008      8 字节  createList 第 5 行    struct ListNode
+0x1010      8 字节  createList 第 5 行    struct ListNode
+...（共 5 个节点）
+
+💡 建议：在程序结束前遍历链表，逐个 free：
+  while (head != NULL) {
+      struct ListNode* temp = head;
+      head = head->next;
+      free(temp);
+  }
+
+📚 [什么是内存泄漏？] [如何正确释放链表？]
+```
+
+#### 3.3.3 递归深度检测（树遍历）
+
+```c
+// 学生代码：缺少终止条件检查
+void preorder(struct TreeNode* root) {
+    // ❌ 忘记检查 root == NULL
+    vis_tree_highlight(root->id, "active");
+    printf("%d ", root->val);
+    preorder(root->left);
+    preorder(root->right);
+}
+```
+
+运行时检测：
+```
+😵 栈溢出（递归深度超过 1000）
+
+递归函数 preorder 在第 3 行被无限调用。
+
+执行轨迹：
+  call 1: root = node1
+  call 2: root = node1->left = NULL
+  call 3: root = NULL->left = ???   ← 崩溃！
+
+🔴 问题：你没有检查 root 是否为 NULL 就访问了 root->left。
+
+✅ 修复：
+  void preorder(struct TreeNode* root) {
+      if (root == NULL) return;   ← 添加终止条件
+      // ...
+  }
+
+💡 记忆口诀：递归函数第一行，先写终止条件！
+```
+
+### 3.4 数据结构 Starter Code 模板库
+
+为学生提供可以直接使用的基础模板：
+
+```c
+// ===== 链表节点 =====
+// 已内置，无需声明
+struct ListNode {
+    int val;
+    struct ListNode* next;
+};
+
+// ===== 树节点 =====
+// 已内置，无需声明
+struct TreeNode {
+    int val;
+    struct TreeNode* left;
+    struct TreeNode* right;
+};
+
+// ===== 图节点（Phase 3）=====
+// 已内置
+struct GraphNode {
+    int id;
+    int val;
+    struct GraphEdge* edges;
+};
+
+struct GraphEdge {
+    int to;
+    int weight;
+    struct GraphEdge* next;
+};
+
+// ===== 辅助函数（已内置）=====
+// 创建链表节点
+struct ListNode* newListNode(int val);
+
+// 创建树节点
+struct TreeNode* newTreeNode(int val);
+
+// 打印数组
+void printArray(int arr[], int n);
+
+// 交换两个整数
+void swap(int* a, int* b);
+```
+
+---
+
+## 4. 知识图谱：从语法到算法到数据结构
+
+```
+知识图谱
+│
+├─ 基础语法
+│   ├─ 变量与类型 → int, 内存中的表示
+│   ├─ 表达式 → 运算符优先级
+│   ├─ 控制流 → if/else, for, while
+│   └─ 函数 → 参数传递, 递归
+│
+├─ 内存与指针（解锁条件：掌握基础语法）
+│   ├─ 数组 → 连续内存, 索引计算
+│   ├─ 指针 → &取地址, *解引用, NULL
+│   ├─ 栈与堆 → 局部变量, malloc/free
+│   └─ 常见错误 → 越界, 空指针, 悬垂指针, 泄漏
+│
+├─ 数据结构基础（解锁条件：掌握指针）
+│   ├─ 链表 → 单链表, 双链表, 插入, 删除, 遍历
+│   ├─ 栈 → 数组实现, 链表实现, 应用
+│   ├─ 队列 → 循环数组, 链表实现, 应用
+│   └─ 树 → 二叉树, 遍历(前/中/后/层序), BST
+│
+├─ 算法基础（解锁条件：掌握数组和循环）
+│   ├─ 排序 → 冒泡, 选择, 插入, 快排, 归并
+│   ├─ 搜索 → 线性, 二分
+│   └─ 递归 → 阶乘, 斐波那契, 树遍历
+│
+└─ 进阶数据结构（解锁条件：掌握基础数据结构）
+    ├─ 图 → 邻接矩阵, 邻接表, BFS, DFS
+    ├─ 高级树 → AVL, 红黑树(概念)
+    └─ 哈希表 → 概念, 冲突处理
+```
+
+每个知识点关联：
+- 错误码（数组越界 → 数组知识卡片）
+- 练习题（完成练习解锁下一个知识点）
+- 可视化演示（数组排序动画、链表操作动画）
+
+---
+
+## 5. 实施优先级
+
+### Phase 1：核心子集 + 基础修复（✅ 已完成）
+- [x] C 子集编译器（int, 数组, 指针, struct, if/for/while, 函数, malloc/free）
+- [x] 基础修复（语法错误、数组越界、空指针、未初始化）
+- [x] 内存视图 + 指针视图
+- [x] 10 个最常见错误的中文消息
+- [x] 基础算法模板（冒泡排序、二分查找）
+
+### Phase 2：算法修复 + 数据结构基础（✅ 已完成）
+- [x] 算法模式识别系统（10 种算法模板：5 排序 + 1 搜索 + 4 链表）
+- [x] 运行时验证（Property-based Testing）
+- [ ] 执行轨迹分析
+- [x] 解锁 break/continue
+- [x] 链表、栈、队列的 starter code + 可视化（GraphCanvas 已支持）
+- [ ] 数据结构专用诊断（断链检测、泄漏检测）
+
+### Phase 3：进阶扩展（🔄 进行中）
+- [x] 更多算法模板（快排、归并）
+- [x] 图可视化（GraphCanvas 已支持链表/树）
+- [ ] 多维数组
+- [ ] Dijkstra 算法模板
+- [ ] 知识图谱系统
+- [ ] 用户学习进度追踪
+
+### Phase 4：完整生态（后续）
+- [ ] 字符串操作
+- [ ] 文件 I/O（沙盒内）
+- [ ] 更多标准库函数
+- [ ] 社区贡献的算法模板
+- [ ] OCR 照片导入
+
+---
+
+## 6. 总结
+
+### 算法层面的错误能修复吗？
+
+**不能直接"自动修复"，但可以"智能诊断 + 引导修复"**。
+
+| 层级 | 能力 | 方式 |
+|:---|:---|:---|
+| 语法/语义 | 自动修复 | 编译器直接发现和修复 |
+| 算法模式 | 模板对比 + 建议 | "你的冒泡排序边界应该是 n-1" |
+| 运行时验证 | 测试驱动诊断 | "排序结果不正确，元素 8 丢失了" |
+| 执行轨迹 | 轨迹分析 | "第 3 趟没有比较 arr[2] 和 arr[3]" |
+| 逻辑漏洞 | 仅提示 | "递归函数缺少终止条件检查" |
+
+**核心原则**：算法修复不是代写代码，而是帮助学生理解算法逻辑。
+
+### 如何支持数据结构？
+
+**当前子集（int + 指针 + struct + malloc）已经支持链表、树、栈、队列的全部基础操作**。
+
+需要补充：
+1. **内置可视化函数**（`vis_list`, `vis_tree`, `vis_stack`）
+2. **数据结构专用诊断**（断链检测、泄漏检测、递归深度）
+3. **Starter Code 模板**（ListNode, TreeNode, 辅助函数）
+4. **逐步解锁机制**（完成链表练习后解锁 break/continue 和树的相关内容）
+
+### 子集扩展的关键
+
+**不是一次性做大，而是按需渐进式扩展**：
+- Phase 1 足够支持排序、搜索、递归
+- Phase 2 解锁 break/continue 后支持更复杂的链表操作
+- Phase 3 解锁多维数组后支持图的邻接矩阵
+- 每个新特性都有明确的学习路径和解锁条件
