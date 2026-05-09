@@ -29,9 +29,14 @@
     <ProjectReference Include="..\Cide.Client\Cide.Client.csproj" />
   </ItemGroup>
 
-  <!-- Native C++ backend DLL -->
-  <ItemGroup>
-    <None Include="..\native\build\bin\cide_native.dll" Link="cide_native.dll">
+  <!-- Native Rust backend DLL -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <None Include="..\native\target\debug\cide_native.dll" Link="cide_native.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="'$(Configuration)' == 'Release'">
+    <None Include="..\native\target\release\cide_native.dll" Link="cide_native.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
