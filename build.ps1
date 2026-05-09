@@ -37,6 +37,7 @@ $androidDir = Join-Path $distDir "android"
 if ($Clean) {
     Write-Header "Cleaning build artifacts"
     $dirs = @(
+        "native/target",
         "native/build",
         "native/build-android-arm64-v8a",
         "native/build-android-armeabi-v7a",
@@ -56,66 +57,23 @@ if ($Clean) {
 }
 
 # ============================================================================
-# Native Backend (C++)
+# Native Backend (Rust)
 # ============================================================================
 if ($Target -eq "Desktop" -or $Target -eq "All") {
     Write-Header "Building Native Backend (Desktop)"
 
-    $buildDir = Join-Path $root "native/build"
-    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
-
-    Push-Location $buildDir
+    Push-Location (Join-Path $root "native")
     try {
-        $clangRoot = "C:/Clang/clang+llvm-22.1.4-x86_64-pc-windows-msvc"
-        $clangBin = "$clangRoot/bin"
-
-        $cmakeArgs = @("..")
-
-        # Generator selection
-        $hasNinja = Get-Command "ninja" -ErrorAction SilentlyContinue
-        $hasVS = $env:VisualStudioVersion -or (Get-Command "msbuild" -ErrorAction SilentlyContinue)
-
-        switch ($Compiler) {
-            "Clang" {
-                if (-not $hasNinja) {
-                    Write-Warning "Ninja not found. Falling back to MinGW Makefiles for Clang."
-                }
-                $cmakeArgs += @("-G", "Ninja")
-                $cmakeArgs += "-DCMAKE_C_COMPILER=$clangBin/clang.exe"
-                $cmakeArgs += "-DCMAKE_CXX_COMPILER=$clangBin/clang++.exe"
-                $cmakeArgs += "-DCMAKE_RC_COMPILER=$clangBin/llvm-rc.exe"
-            }
-            "ClangCL" {
-                if (-not $hasNinja) {
-                    Write-Warning "Ninja not found. Falling back to MinGW Makefiles for ClangCL."
-                }
-                $cmakeArgs += @("-G", "Ninja")
-                $cmakeArgs += "-DCMAKE_C_COMPILER=$clangBin/clang-cl.exe"
-                $cmakeArgs += "-DCMAKE_CXX_COMPILER=$clangBin/clang-cl.exe"
-            }
-            "MSVC" {
-                if (-not $hasVS) {
-                    throw "MSVC selected but Visual Studio / MSBuild not found."
-                }
-                # Let CMake auto-select Visual Studio generator
-            }
-            "MinGW" {
-                $cmakeArgs += @("-G", "MinGW Makefiles")
-            }
-            default {
-                if ($hasNinja) {
-                    $cmakeArgs += @("-G", "Ninja")
-                } elseif (-not $hasVS) {
-                    $cmakeArgs += @("-G", "MinGW Makefiles")
-                }
-            }
+        $cargoArgs = @("build", "--release")
+        if ($Configuration -eq "Debug") {
+            $cargoArgs = @("build")
         }
-
-        $cmakeArgs += "-DCMAKE_BUILD_TYPE=$Configuration"
-        & cmake @cmakeArgs
-        if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed" }
-        cmake --build . --config $Configuration --parallel
-        if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+        $oldEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & cargo @cargoArgs 2>$null
+        $cargoExit = $LASTEXITCODE
+        $ErrorActionPreference = $oldEAP
+        if ($cargoExit -ne 0) { throw "Cargo build failed (exit $cargoExit)" }
     }
     catch {
         Write-Error "Native backend build failed: $_"
@@ -124,26 +82,16 @@ if ($Target -eq "Desktop" -or $Target -eq "All") {
         Pop-Location
     }
 
-    # Copy native DLL to unified dist directory
-    # Try multiple possible output paths (MSVC multi-config vs MinGW single-config)
-    $dllCandidates = @(
-        (Join-Path $root "native/build/bin/$Configuration/cide_native.dll"),
-        (Join-Path $root "native/build/bin/cide_native.dll"),
-        (Join-Path $root "native/build/libcide_native.dll")
-    )
-    $dllSource = $null
-    foreach ($c in $dllCandidates) {
-        if (Test-Path $c) {
-            $dllSource = $c
-            break
-        }
+    $dllSource = Join-Path $root "native/target/release/cide_native.dll"
+    if ($Configuration -eq "Debug") {
+        $dllSource = Join-Path $root "native/target/debug/cide_native.dll"
     }
-    if ($dllSource) {
+    if (Test-Path $dllSource) {
         New-Item -ItemType Directory -Path $desktopDir -Force | Out-Null
         Copy-Item $dllSource (Join-Path $desktopDir "cide_native.dll") -Force
         Write-Host "Copied cide_native.dll -> dist/desktop/" -ForegroundColor Green
     } else {
-        Write-Warning "cide_native.dll not found in any expected location: $dllCandidates"
+        Write-Warning "cide_native.dll not found at $dllSource"
     }
 }
 
@@ -181,50 +129,49 @@ if ($Target -eq "Android" -or $Target -eq "All") {
         Write-Warning "Set it to your Android NDK path, e.g.: `$env:ANDROID_NDK_HOME = 'C:\Android\ndk\27.0.1'"
     }
     else {
-        $abis = @("arm64-v8a", "armeabi-v7a")
-        foreach ($abi in $abis) {
-            $buildDir = Join-Path $root "native/build-android-$abi"
-            New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
+        $abiMap = @{
+            "arm64-v8a"   = "aarch64-linux-android"
+            "armeabi-v7a" = "armv7-linux-androideabi"
+        }
+        foreach ($abi in $abiMap.Keys) {
+            $rustTarget = $abiMap[$abi]
+            Write-Header "Building Native Backend (Android $abi)"
 
-            Push-Location $buildDir
+            Push-Location (Join-Path $root "native")
             try {
-                $toolchain = Join-Path $ndkHome "build/cmake/android.toolchain.cmake"
-                if (-not (Test-Path $toolchain)) {
-                    throw "Android toolchain not found: $toolchain"
-                }
-
-                $cmakeArgs = @(
-                    "..",
-                    "-G", "Ninja",
-                    "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
-                    "-DANDROID_ABI=$abi",
-                    "-DANDROID_PLATFORM=android-21",
-                    "-DCMAKE_BUILD_TYPE=$Configuration",
-                    "-DCIDE_BUILD_TESTS=OFF"
+                $cargoArgs = @(
+                    "ndk",
+                    "--target", $rustTarget,
+                    "--platform", "21",
+                    "build"
                 )
-                & cmake @cmakeArgs
-                if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed for Android $abi" }
-
-                cmake --build . --config $Configuration --parallel
-                if ($LASTEXITCODE -ne 0) { throw "Build failed for Android $abi" }
-
-                # Copy .so into Android project for packaging
-                $soSource = Join-Path $buildDir "lib/libcide_native.so"
-                if (Test-Path $soSource) {
-                    $soDestDir = Join-Path $root "Cide.Client.Maui/lib/$abi"
-                    New-Item -ItemType Directory -Path $soDestDir -Force | Out-Null
-                    Copy-Item $soSource (Join-Path $soDestDir "libcide_native.so") -Force
-                    Write-Host "Copied libcide_native.so ($abi) -> Cide.Client.Maui/lib/$abi/" -ForegroundColor Green
+                if ($Configuration -eq "Release") {
+                    $cargoArgs += "--release"
                 }
-                else {
-                    Write-Warning "libcide_native.so not found for $abi at $soSource"
-                }
+                $oldEAP = $ErrorActionPreference
+                $ErrorActionPreference = "Continue"
+                & cargo @cargoArgs 2>$null
+                $cargoExit = $LASTEXITCODE
+                $ErrorActionPreference = $oldEAP
+                if ($cargoExit -ne 0) { throw "Cargo NDK build failed for $abi (exit $cargoExit)" }
             }
             catch {
                 Write-Error "Native Android build ($abi) failed: $_"
             }
             finally {
                 Pop-Location
+            }
+
+            $soDir = if ($Configuration -eq "Release") { "release" } else { "debug" }
+            $soSource = Join-Path $root "native/target/$rustTarget/$soDir/libcide_native.so"
+            if (Test-Path $soSource) {
+                $soDestDir = Join-Path $root "Cide.Client.Maui/lib/$abi"
+                New-Item -ItemType Directory -Path $soDestDir -Force | Out-Null
+                Copy-Item $soSource (Join-Path $soDestDir "libcide_native.so") -Force
+                Write-Host "Copied libcide_native.so ($abi) -> Cide.Client.Maui/lib/$abi/" -ForegroundColor Green
+            }
+            else {
+                Write-Warning "libcide_native.so not found for $abi at $soSource"
             }
         }
     }
