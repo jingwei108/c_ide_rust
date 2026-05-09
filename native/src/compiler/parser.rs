@@ -1,0 +1,917 @@
+use crate::compiler::ast::*;
+use crate::compiler::lexer::{Token, TokenType};
+use crate::diagnostics::error_codes::ErrorCode;
+use std::collections::HashMap;
+
+#[derive(Debug, Clone)]
+pub struct ParseError {
+    pub message: String,
+    pub line: i32,
+    pub column: i32,
+    pub code: i32,
+}
+
+pub struct Parser {
+    tokens: Vec<Token>,
+    errors: Vec<ParseError>,
+    typedef_names: HashMap<String, Type>,
+    pos: usize,
+}
+
+impl Parser {
+    pub fn new(tokens: Vec<Token>) -> Self {
+        Self {
+            tokens,
+            errors: Vec::new(),
+            typedef_names: HashMap::new(),
+            pos: 0,
+        }
+    }
+
+    pub fn parse(mut self) -> (Option<ProgramNode>, Vec<ParseError>) {
+        let prog = self.parse_program();
+        (prog, self.errors)
+    }
+
+    // =========================================================================
+    // Token helpers
+    // =========================================================================
+
+    fn peek(&self, offset: usize) -> &Token {
+        if self.pos + offset >= self.tokens.len() {
+            static EOF: Token = Token { ty: TokenType::Eof, text: String::new(), line: -1, column: -1 };
+            return &EOF;
+        }
+        &self.tokens[self.pos + offset]
+    }
+
+    fn current(&self) -> &Token { self.peek(0) }
+    fn previous(&self) -> &Token {
+        if self.pos == 0 { return self.peek(0); }
+        &self.tokens[self.pos - 1]
+    }
+
+    fn check(&self, ty: TokenType) -> bool {
+        if self.is_at_end() { return false; }
+        self.current().ty == ty
+    }
+
+    fn is_at_end(&self) -> bool {
+        self.current().ty == TokenType::Eof
+    }
+
+    fn advance(&mut self) -> &Token {
+        if !self.is_at_end() { self.pos += 1; }
+        &self.tokens[self.pos - 1]
+    }
+
+    fn match_token(&mut self, ty: TokenType) -> bool {
+        if self.check(ty) {
+            self.advance();
+            true
+        } else {
+            false
+        }
+    }
+
+    fn consume(&mut self, ty: TokenType, msg: &str) -> &Token {
+        if self.check(ty) {
+            return self.advance();
+        }
+        let code = match ty {
+            TokenType::RBrace => ErrorCode::E2006_ExpectedClosingBrace,
+            TokenType::RParen => ErrorCode::E2007_ExpectedClosingParen,
+            TokenType::RBracket => ErrorCode::E2008_ExpectedClosingBracket,
+            _ => ErrorCode::E2005_ExpectedSemicolon,
+        };
+        self.errors.push(ParseError {
+            message: msg.to_string(),
+            line: self.current().line,
+            column: self.current().column,
+            code: code as i32,
+        });
+        self.peek(0)
+    }
+
+    fn synchronize(&mut self) {
+        while !self.is_at_end() {
+            if self.previous().ty == TokenType::Semicolon { return; }
+            match self.current().ty {
+                TokenType::Int | TokenType::Void | TokenType::Char |
+                TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
+                TokenType::Return | TokenType::Break | TokenType::Continue |
+                TokenType::Struct | TokenType::Switch | TokenType::Case |
+                TokenType::Default | TokenType::Typedef | TokenType::Enum |
+                TokenType::Unsigned | TokenType::RBrace => return,
+                _ => { self.advance(); }
+            }
+        }
+    }
+
+    fn is_type_token(&self) -> bool {
+        if self.check(TokenType::Int) || self.check(TokenType::Void) ||
+           self.check(TokenType::Char) || self.check(TokenType::Struct) ||
+           self.check(TokenType::Unsigned) {
+            return true;
+        }
+        if self.check(TokenType::Identifier) {
+            return self.typedef_names.contains_key(&self.current().text);
+        }
+        false
+    }
+
+    // =========================================================================
+    // Program
+    // =========================================================================
+
+    fn parse_program(&mut self) -> Option<ProgramNode> {
+        let mut program = ProgramNode::default();
+
+        while !self.is_at_end() {
+            if self.check(TokenType::Typedef) {
+                self.parse_typedef();
+            } else if self.check(TokenType::Enum) {
+                self.parse_enum_decl(&mut program);
+            } else if self.check(TokenType::Struct) {
+                let checkpoint = self.pos;
+                self.advance();
+                self.consume(TokenType::Identifier, "预期结构体名称");
+                let is_struct_decl = self.check(TokenType::LBrace);
+                self.pos = checkpoint;
+                if is_struct_decl {
+                    program.structs.push(self.parse_struct_decl());
+                } else {
+                    let (ty, _name) = self.parse_type_and_name();
+                    let name_tok = self.previous().clone();
+                    if self.check(TokenType::LParen) {
+                        self.pos = checkpoint;
+                        program.funcs.push(self.parse_func_decl());
+                    } else {
+                        let init = if self.match_token(TokenType::Assign) {
+                            if self.check(TokenType::LBrace) {
+                                Some(self.parse_init_list())
+                            } else {
+                                Some(self.parse_expression())
+                            }
+                        } else { None };
+                        self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
+                        program.globals.push(GlobalDecl {
+                            loc: SourceLoc { line: name_tok.line, column: name_tok.column },
+                            ty, name: name_tok.text, init,
+                        });
+                    }
+                }
+            } else if self.is_type_token() {
+                let checkpoint = self.pos;
+                let (ty, _name) = self.parse_type_and_name();
+                let name_tok = self.previous().clone();
+                if self.check(TokenType::LParen) {
+                    self.pos = checkpoint;
+                    program.funcs.push(self.parse_func_decl());
+                } else {
+                    let init = if self.match_token(TokenType::Assign) {
+                        if self.check(TokenType::LBrace) {
+                            Some(self.parse_init_list())
+                        } else {
+                            Some(self.parse_expression())
+                        }
+                    } else { None };
+                    program.globals.push(GlobalDecl {
+                        loc: SourceLoc { line: name_tok.line, column: name_tok.column },
+                        ty: ty.clone(), name: name_tok.text, init,
+                    });
+                    while self.match_token(TokenType::Comma) {
+                        let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+                        let extra_init = if self.match_token(TokenType::Assign) {
+                            if self.check(TokenType::LBrace) {
+                                Some(self.parse_init_list())
+                            } else {
+                                Some(self.parse_expression())
+                            }
+                        } else { None };
+                        program.globals.push(GlobalDecl {
+                            loc: SourceLoc { line: extra_name_tok.line, column: extra_name_tok.column },
+                            ty: ty.clone(), name: extra_name_tok.text, init: extra_init,
+                        });
+                    }
+                    self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
+                }
+            } else {
+                self.errors.push(ParseError {
+                    message: format!("预期 struct、函数或全局变量声明，找到: {}", self.current().text),
+                    line: self.current().line,
+                    column: self.current().column,
+                    code: ErrorCode::E2005_ExpectedSemicolon as i32,
+                });
+                self.advance();
+            }
+        }
+
+        Some(program)
+    }
+
+    fn parse_struct_decl(&mut self) -> StructDecl {
+        self.consume(TokenType::Struct, "预期 'struct'");
+        let name_tok = self.consume(TokenType::Identifier, "预期结构体名称").clone();
+        self.consume(TokenType::LBrace, "预期 '{'");
+
+        let mut fields = Vec::new();
+        while !self.check(TokenType::RBrace) && !self.is_at_end() {
+            let field_checkpoint = self.pos;
+            let (fty, fname) = self.parse_type_and_name();
+            if self.pos == field_checkpoint {
+                self.advance();
+                break;
+            }
+            self.consume(TokenType::Semicolon, "预期 ';'");
+            fields.push(StructField { ty: fty, name: fname });
+        }
+
+        self.consume(TokenType::RBrace, "预期 '}'");
+        self.consume(TokenType::Semicolon, "结构体声明后预期 ';'");
+        StructDecl {
+            loc: SourceLoc { line: name_tok.line, column: name_tok.column },
+            name: name_tok.text,
+            fields,
+        }
+    }
+
+    fn parse_func_decl(&mut self) -> FuncDecl {
+        let base_type = self.parse_base_type();
+
+        let mut ret_type = base_type.clone();
+        if self.match_token(TokenType::Star) {
+            ret_type = Type { kind: TypeKind::Pointer, name: base_type.name, base_kind: base_type.kind, ..Type::default() };
+        }
+
+        let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
+        self.consume(TokenType::LParen, "预期 '('");
+
+        let params = self.parse_param_list();
+        self.consume(TokenType::RParen, "预期 ')'");
+        let body = self.parse_block();
+
+        FuncDecl {
+            loc: SourceLoc { line: name_tok.line, column: name_tok.column },
+            return_type: ret_type,
+            name: name_tok.text,
+            params,
+            body,
+        }
+    }
+
+    // =========================================================================
+    // Type parsing
+    // =========================================================================
+
+    fn parse_base_type(&mut self) -> Type {
+        if self.match_token(TokenType::Int) { return Type::int(); }
+        if self.match_token(TokenType::Unsigned) {
+            self.match_token(TokenType::Int);
+            return Type::int();
+        }
+        if self.match_token(TokenType::Void) { return Type::void(); }
+        if self.match_token(TokenType::Char) { return Type::char(); }
+        if self.match_token(TokenType::Struct) {
+            let name_tok = self.consume(TokenType::Identifier, "预期结构体名称").clone();
+            return Type::struct_type(name_tok.text);
+        }
+        if self.check(TokenType::Identifier) {
+            if let Some(ty) = self.typedef_names.get(&self.current().text).cloned() {
+                self.advance();
+                return ty;
+            }
+        }
+        self.errors.push(ParseError {
+            message: "预期类型名称 (int, char, void, struct)".to_string(),
+            line: self.current().line,
+            column: self.current().column,
+            code: ErrorCode::E2001_ExpectedType as i32,
+        });
+        Type::void()
+    }
+
+    fn parse_type_and_name(&mut self) -> (Type, String) {
+        let base_type = self.parse_base_type();
+
+        if self.match_token(TokenType::Star) {
+            let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+            return (Type { kind: TypeKind::Pointer, name: base_type.name, base_kind: base_type.kind, ..Type::default() }, name_tok.text);
+        }
+
+        let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+
+        let mut dims = Vec::new();
+        while self.match_token(TokenType::LBracket) {
+            if self.check(TokenType::Number) {
+                let size_tok = self.advance().clone();
+                let size: i32 = size_tok.text.parse().unwrap_or(0);
+                dims.push(size);
+            } else if self.check(TokenType::RBracket) {
+                dims.push(-1);
+            } else {
+                self.errors.push(ParseError {
+                    message: "预期数组大小或 ']'".to_string(),
+                    line: self.current().line,
+                    column: self.current().column,
+                    code: ErrorCode::E2002_ExpectedArraySize as i32,
+                });
+            }
+            self.consume(TokenType::RBracket, "预期 ']'");
+        }
+
+        if !dims.is_empty() {
+            let total = dims.iter().map(|&d| if d > 0 { d } else { 1 }).product();
+            return (Type { kind: TypeKind::Array, name: base_type.name, array_size: total, base_kind: base_type.kind, dims }, name_tok.text);
+        }
+
+        (base_type, name_tok.text)
+    }
+
+    fn parse_param_list(&mut self) -> Vec<Param> {
+        let mut params = Vec::new();
+        if self.check(TokenType::RParen) { return params; }
+        if self.check(TokenType::Void) && self.peek(1).ty == TokenType::RParen {
+            self.advance();
+            return params;
+        }
+        loop {
+            let (pty, pname) = self.parse_type_and_name();
+            params.push(Param { ty: pty, name: pname, loc: SourceLoc { line: self.current().line, column: self.current().column } });
+            if !self.match_token(TokenType::Comma) { break; }
+        }
+        params
+    }
+
+    // =========================================================================
+    // Statements
+    // =========================================================================
+
+    fn parse_statement(&mut self) -> Stmt {
+        match self.current().ty {
+            TokenType::LBrace => self.parse_block(),
+            TokenType::If => self.parse_if_stmt(),
+            TokenType::While => self.parse_while_stmt(),
+            TokenType::Do => self.parse_do_while_stmt(),
+            TokenType::For => self.parse_for_stmt(),
+            TokenType::Return => self.parse_return_stmt(),
+            TokenType::Break => self.parse_break_stmt(),
+            TokenType::Continue => self.parse_continue_stmt(),
+            TokenType::Switch => self.parse_switch_stmt(),
+            TokenType::Case | TokenType::Default => self.parse_case_stmt(),
+            _ if self.is_type_token() => self.parse_var_decl_stmt(),
+            _ => self.parse_expr_stmt(),
+        }
+    }
+
+    fn parse_block(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::LBrace, "预期 '{'");
+        let mut stmts = Vec::new();
+        while !self.check(TokenType::RBrace) && !self.is_at_end() {
+            let stmt_checkpoint = self.pos;
+            stmts.push(self.parse_statement());
+            if self.pos == stmt_checkpoint {
+                self.advance();
+            }
+        }
+        self.consume(TokenType::RBrace, "预期 '}'");
+        Stmt::Block { stmts, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_var_decl_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        let (var_type, name) = self.parse_type_and_name();
+        let init = if self.match_token(TokenType::Assign) {
+            if self.check(TokenType::LBrace) {
+                Some(self.parse_init_list())
+            } else {
+                Some(self.parse_expression())
+            }
+        } else { None };
+
+        let mut extra_vars = Vec::new();
+        while self.match_token(TokenType::Comma) {
+            let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+            let extra_init = if self.match_token(TokenType::Assign) {
+                if self.check(TokenType::LBrace) {
+                    Some(self.parse_init_list())
+                } else {
+                    Some(self.parse_expression())
+                }
+            } else { None };
+            extra_vars.push((extra_name_tok.text, extra_init));
+        }
+
+        self.consume(TokenType::Semicolon, "变量声明后预期 ';'");
+        Stmt::VarDecl { var_type, name, init, extra_vars, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_if_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::If, "预期 'if'");
+        self.consume(TokenType::LParen, "预期 '('");
+        let cond = self.parse_expression();
+        self.consume(TokenType::RParen, "预期 ')'");
+        let then_stmt = Box::new(self.parse_statement());
+        let else_stmt = if self.match_token(TokenType::Else) {
+            Some(Box::new(self.parse_statement()))
+        } else { None };
+        Stmt::If { cond, then_stmt, else_stmt, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_while_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::While, "预期 'while'");
+        self.consume(TokenType::LParen, "预期 '('");
+        let cond = self.parse_expression();
+        self.consume(TokenType::RParen, "预期 ')'");
+        let body = Box::new(self.parse_statement());
+        Stmt::While { cond, body, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_do_while_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::Do, "预期 'do'");
+        let body = Box::new(self.parse_statement());
+        self.consume(TokenType::While, "预期 'while'");
+        self.consume(TokenType::LParen, "预期 '('");
+        let cond = self.parse_expression();
+        self.consume(TokenType::RParen, "预期 ')'");
+        self.consume(TokenType::Semicolon, "do...while 后预期 ';'");
+        Stmt::DoWhile { body, cond, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_break_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::Break, "预期 'break'");
+        self.consume(TokenType::Semicolon, "break 后预期 ';'");
+        Stmt::Break { loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_continue_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::Continue, "预期 'continue'");
+        self.consume(TokenType::Semicolon, "continue 后预期 ';'");
+        Stmt::Continue { loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_for_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::For, "预期 'for'");
+        self.consume(TokenType::LParen, "预期 '('");
+
+        let init: Option<Box<Stmt>> = if self.is_type_token() {
+            let var_loc = self.current().clone();
+            let (var_type, name) = self.parse_type_and_name();
+            let init_expr = if self.match_token(TokenType::Assign) {
+                if self.check(TokenType::LBrace) {
+                    Some(self.parse_init_list())
+                } else {
+                    Some(self.parse_expression())
+                }
+            } else { None };
+            let mut extra_vars = Vec::new();
+            while self.match_token(TokenType::Comma) {
+                let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+                let extra_init = if self.match_token(TokenType::Assign) {
+                    if self.check(TokenType::LBrace) {
+                        Some(self.parse_init_list())
+                    } else {
+                        Some(self.parse_expression())
+                    }
+                } else { None };
+                extra_vars.push((extra_name_tok.text, extra_init));
+            }
+            Some(Box::new(Stmt::VarDecl {
+                var_type, name, init: init_expr, extra_vars,
+                loc: SourceLoc { line: var_loc.line, column: var_loc.column },
+            }))
+        } else if !self.check(TokenType::Semicolon) {
+            let es_loc = self.current().clone();
+            let expr = self.parse_expression();
+            Some(Box::new(Stmt::Expr { expr, loc: SourceLoc { line: es_loc.line, column: es_loc.column } }))
+        } else {
+            None
+        };
+        self.consume(TokenType::Semicolon, "预期 ';'");
+
+        let cond = if !self.check(TokenType::Semicolon) {
+            Some(self.parse_expression())
+        } else { None };
+        self.consume(TokenType::Semicolon, "预期 ';'");
+
+        let step = if !self.check(TokenType::RParen) {
+            Some(self.parse_expression())
+        } else { None };
+        self.consume(TokenType::RParen, "预期 ')'");
+
+        let body = Box::new(self.parse_statement());
+        Stmt::For { init, cond, step, body, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_return_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::Return, "预期 'return'");
+        let value = if !self.check(TokenType::Semicolon) {
+            Some(self.parse_expression())
+        } else { None };
+        self.consume(TokenType::Semicolon, "return 后预期 ';'");
+        Stmt::Return { value, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_expr_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        let expr = self.parse_expression();
+        self.consume(TokenType::Semicolon, "预期 ';'");
+        Stmt::Expr { expr, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    // =========================================================================
+    // Expressions (precedence climbing)
+    // =========================================================================
+
+    fn parse_expression(&mut self) -> Expr {
+        self.parse_assign()
+    }
+
+    fn parse_assign(&mut self) -> Expr {
+        let left = self.parse_or();
+        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+
+        if self.match_token(TokenType::Assign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::Assign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::PlusAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::AddAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::MinusAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::SubAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::StarAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::MulAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::SlashAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::DivAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::PercentAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::ModAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+
+        left
+    }
+
+    fn parse_or(&mut self) -> Expr {
+        let mut left = self.parse_and();
+        while self.match_token(TokenType::OrOr) {
+            let right = self.parse_and();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            left = Expr::Binary { op: BinaryOp::Or, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        left
+    }
+
+    fn parse_and(&mut self) -> Expr {
+        let mut left = self.parse_equality();
+        while self.match_token(TokenType::AndAnd) {
+            let right = self.parse_equality();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            left = Expr::Binary { op: BinaryOp::And, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        left
+    }
+
+    fn parse_equality(&mut self) -> Expr {
+        let mut left = self.parse_relational();
+        loop {
+            if self.match_token(TokenType::Eq) {
+                let right = self.parse_relational();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Eq, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Ne) {
+                let right = self.parse_relational();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Ne, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else { break; }
+        }
+        left
+    }
+
+    fn parse_relational(&mut self) -> Expr {
+        let mut left = self.parse_additive();
+        loop {
+            if self.match_token(TokenType::Lt) {
+                let right = self.parse_additive();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Lt, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Le) {
+                let right = self.parse_additive();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Le, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Gt) {
+                let right = self.parse_additive();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Gt, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Ge) {
+                let right = self.parse_additive();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Ge, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else { break; }
+        }
+        left
+    }
+
+    fn parse_additive(&mut self) -> Expr {
+        let mut left = self.parse_multiplicative();
+        loop {
+            if self.match_token(TokenType::Plus) {
+                let right = self.parse_multiplicative();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Add, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Minus) {
+                let right = self.parse_multiplicative();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Sub, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else { break; }
+        }
+        left
+    }
+
+    fn parse_multiplicative(&mut self) -> Expr {
+        let mut left = self.parse_unary();
+        loop {
+            if self.match_token(TokenType::Star) {
+                let right = self.parse_unary();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Mul, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Slash) {
+                let right = self.parse_unary();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Div, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Percent) {
+                let right = self.parse_unary();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Mod, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else { break; }
+        }
+        left
+    }
+
+    fn parse_unary(&mut self) -> Expr {
+        if self.match_token(TokenType::Sizeof) {
+            return self.parse_sizeof();
+        }
+        if self.match_token(TokenType::Minus) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::Neg, operand: Box::new(operand), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::Not) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::Not, operand: Box::new(operand), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::Ampersand) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::Addr, operand: Box::new(operand), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::Star) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::Deref, operand: Box::new(operand), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::Increment) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::PreInc, operand: Box::new(operand), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::Decrement) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::PreDec, operand: Box::new(operand), loc, ty: Type::default() };
+        }
+        self.parse_postfix()
+    }
+
+    fn parse_sizeof(&mut self) -> Expr {
+        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+        if self.match_token(TokenType::LParen) {
+            let checkpoint = self.pos;
+            let mut is_type = false;
+            let mut t = Type::default();
+            if self.check(TokenType::Int) || self.check(TokenType::Void) ||
+               self.check(TokenType::Char) || self.check(TokenType::Struct) {
+                t = self.parse_base_type();
+                if self.match_token(TokenType::Star) {
+                    t = Type { kind: TypeKind::Pointer, name: t.name, ..Type::default() };
+                }
+                if self.check(TokenType::RParen) {
+                    is_type = true;
+                }
+            }
+            if is_type {
+                self.consume(TokenType::RParen, "sizeof(type) 后预期 ')'");
+                return Expr::Sizeof { target_type: Some(t), operand: None, loc, ty: Type::int() };
+            }
+            self.pos = checkpoint;
+            let expr = self.parse_expression();
+            self.consume(TokenType::RParen, "sizeof(expr) 后预期 ')'");
+            return Expr::Sizeof { target_type: None, operand: Some(Box::new(expr)), loc, ty: Type::int() };
+        }
+        let expr = self.parse_unary();
+        Expr::Sizeof { target_type: None, operand: Some(Box::new(expr)), loc, ty: Type::int() }
+    }
+
+    fn parse_type_only(&mut self) -> Type {
+        let base = self.parse_base_type();
+        if self.match_token(TokenType::Star) {
+            return Type { kind: TypeKind::Pointer, name: base.name, base_kind: base.kind, ..Type::default() };
+        }
+        base
+    }
+
+    fn parse_postfix(&mut self) -> Expr {
+        let mut expr = self.parse_primary();
+        loop {
+            if self.match_token(TokenType::LBracket) {
+                let index = self.parse_expression();
+                self.consume(TokenType::RBracket, "预期 ']'");
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                expr = Expr::Index { array: Box::new(expr), index: Box::new(index), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Dot) || self.match_token(TokenType::Arrow) {
+                let member_tok = self.consume(TokenType::Identifier, "预期成员名称").clone();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                expr = Expr::Member { object: Box::new(expr), member: member_tok.text, loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Increment) {
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                expr = Expr::Unary { op: UnaryOp::PostInc, operand: Box::new(expr), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Decrement) {
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                expr = Expr::Unary { op: UnaryOp::PostDec, operand: Box::new(expr), loc, ty: Type::default() };
+            } else {
+                break;
+            }
+        }
+        expr
+    }
+
+    fn parse_init_list(&mut self) -> Expr {
+        let loc = self.current().clone();
+        self.consume(TokenType::LBrace, "初始化列表预期 '{'");
+        let mut elements = Vec::new();
+        if !self.check(TokenType::RBrace) {
+            loop {
+                if self.check(TokenType::LBrace) {
+                    elements.push(self.parse_init_list());
+                } else {
+                    elements.push(self.parse_expression());
+                }
+                if !self.match_token(TokenType::Comma) { break; }
+            }
+        }
+        self.consume(TokenType::RBrace, "初始化列表预期 '}'");
+        Expr::InitList { elements, loc: SourceLoc { line: loc.line, column: loc.column }, ty: Type::default() }
+    }
+
+    fn parse_primary(&mut self) -> Expr {
+        if self.match_token(TokenType::Number) {
+            let value: i32 = self.previous().text.parse().unwrap_or(0);
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Literal { value, loc, ty: Type::int() };
+        }
+        if self.match_token(TokenType::String) {
+            let value = self.previous().text.clone();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::StringLiteral { value, loc, ty: Type::pointer(TypeKind::Char, "char") };
+        }
+        if self.check(TokenType::Identifier) {
+            let name_tok = self.advance().clone();
+            if self.check(TokenType::LParen) {
+                return self.parse_call_expr(name_tok.text);
+            }
+            let loc = SourceLoc { line: name_tok.line, column: name_tok.column };
+            return Expr::Identifier { name: name_tok.text, loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::LParen) {
+            let expr = self.parse_expression();
+            self.consume(TokenType::RParen, "预期 ')'");
+            return expr;
+        }
+        self.errors.push(ParseError {
+            message: "预期表达式".to_string(),
+            line: self.current().line,
+            column: self.current().column,
+            code: ErrorCode::E2003_ExpectedExpr as i32,
+        });
+        let loc = SourceLoc { line: self.current().line, column: self.current().column };
+        Expr::Literal { value: 0, loc, ty: Type::int() }
+    }
+
+    fn parse_call_expr(&mut self, name: String) -> Expr {
+        self.consume(TokenType::LParen, "预期 '('");
+        let args = self.parse_arg_list();
+        self.consume(TokenType::RParen, "预期 ')'");
+        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+        Expr::Call { name, args, loc, ty: Type::default() }
+    }
+
+    fn parse_arg_list(&mut self) -> Vec<Expr> {
+        let mut args = Vec::new();
+        if self.check(TokenType::RParen) { return args; }
+        loop {
+            args.push(self.parse_expression());
+            if !self.match_token(TokenType::Comma) { break; }
+        }
+        args
+    }
+
+    fn parse_switch_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.advance();
+        self.consume(TokenType::LParen, "switch 后预期 '('");
+        let cond = self.parse_expression();
+        self.consume(TokenType::RParen, "switch 条件后预期 ')'");
+        let body = Box::new(self.parse_statement());
+        Stmt::Switch { cond, body, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_case_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        let label = if self.match_token(TokenType::Case) {
+            Some(self.parse_expression())
+        } else if self.match_token(TokenType::Default) {
+            None
+        } else {
+            self.errors.push(ParseError {
+                message: "预期 'case' 或 'default'".to_string(),
+                line: self.current().line,
+                column: self.current().column,
+                code: ErrorCode::E2004_ExpectedCaseOrDefault as i32,
+            });
+            return Stmt::Block { stmts: Vec::new(), loc: SourceLoc { line: loc.line, column: loc.column } };
+        };
+        self.consume(TokenType::Colon, "case/default 后预期 ':'");
+        let mut stmts = Vec::new();
+        while !self.check(TokenType::Case) && !self.check(TokenType::Default) &&
+              !self.check(TokenType::RBrace) && !self.is_at_end() {
+            stmts.push(self.parse_statement());
+        }
+        let stmt = if stmts.is_empty() {
+            Stmt::Block { stmts: Vec::new(), loc: SourceLoc { line: loc.line, column: loc.column } }
+        } else if stmts.len() == 1 {
+            stmts.into_iter().next().unwrap()
+        } else {
+            Stmt::Block { stmts, loc: SourceLoc { line: loc.line, column: loc.column } }
+        };
+        Stmt::Case { label, stmt: Box::new(stmt), loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_typedef(&mut self) {
+        self.advance();
+        let ty = self.parse_type_only();
+        let name_tok = self.consume(TokenType::Identifier, "typedef 后预期标识符名称").clone();
+        self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
+        self.typedef_names.insert(name_tok.text, ty);
+    }
+
+    fn parse_enum_decl(&mut self, program: &mut ProgramNode) {
+        let loc = self.current().clone();
+        self.advance();
+        let mut enum_name = String::new();
+        if self.check(TokenType::Identifier) {
+            enum_name = self.current().text.clone();
+            self.advance();
+        }
+        self.consume(TokenType::LBrace, "enum 后预期 '{'");
+        let mut next_value = 0;
+        while !self.check(TokenType::RBrace) && !self.is_at_end() {
+            let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
+            if self.match_token(TokenType::Assign) {
+                let val_expr = self.parse_expression();
+                if let Expr::Literal { value, .. } = val_expr {
+                    next_value = value;
+                }
+            }
+            program.globals.push(GlobalDecl {
+                loc: SourceLoc { line: loc.line, column: loc.column },
+                ty: Type::int(),
+                name: member_tok.text,
+                init: Some(Expr::Literal { value: next_value, loc: SourceLoc { line: member_tok.line, column: member_tok.column }, ty: Type::int() }),
+            });
+            next_value += 1;
+            if !self.match_token(TokenType::Comma) { break; }
+        }
+        self.consume(TokenType::RBrace, "enum 成员后预期 '}'");
+        self.consume(TokenType::Semicolon, "enum 声明后预期 ';'");
+        if !enum_name.is_empty() {
+            self.typedef_names.insert(enum_name, Type::int());
+        }
+    }
+}
