@@ -6,6 +6,7 @@ pub enum ErrorCode {
     E1002_UnterminatedString = 1002,
     E1003_StringCrossLine = 1003,
     E1004_UnsupportedOp = 1004,
+    E1005_InvalidDefine = 1005,
     E2001_ExpectedType = 2001,
     E2002_ExpectedArraySize = 2002,
     E2003_ExpectedExpr = 2003,
