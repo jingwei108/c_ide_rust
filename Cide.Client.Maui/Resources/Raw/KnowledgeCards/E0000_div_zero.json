@@ -1,0 +1,12 @@
+{
+  "errorCode": 0,
+  "messageContains": "除零",
+  "emoji": "😵",
+  "title": "除零错误原理",
+  "plainExplanation": "除法的意义是'平均分'。把 10 个苹果平均分给 0 个人，这个问题本身就没有意义。数学上，除以零是没有定义的，所以程序会直接崩溃。",
+  "wrongCode": "int c = a / b;  // 如果 b 是 0，程序崩溃",
+  "correctCode": "if (b != 0) {\n    int c = a / b;\n} else {\n    // 处理 b 为 0 的情况\n}",
+  "memoryAnimationDescription": "想象除法是一个分蛋糕的机器。你告诉机器'分成 0 份'，机器傻眼了——它不知道该怎么切。于是它举起红旗：除零错误！",
+  "exercise": "练习题：写一段代码，计算 100 / n，但要确保 n 为 0 时不崩溃。",
+  "difficulty": 1
+}

@@ -1,0 +1,117 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<CodeMirror6Wrapper
+    Doc="@_internalCode"
+    DocChanged="OnDocChanged"
+    Theme="_theme"
+    Language="CodeMirrorLanguage.Cpp"
+    Placeholder="// 在此输入 C 代码"
+    LineNumbers="true"
+    LineWrapping="false"
+    TabSize="4"
+    Setup="_setup"
+    Editable="true"
+    ReadOnly="false"
+    HighlightActiveLine="true"
+    HighlightActiveLineGutter="true"
+    DrawSelection="true"
+    style="width: 100%; height: 100%;" />
+
+@code {
+    private string _internalCode = "";
+    private ThemeMirrorTheme _theme = ThemeMirrorTheme.OneDark;
+    private bool _isInternalChange;
+
+    [Parameter] public string Code { get; set; } = "";
+    [Parameter] public EventCallback<string> CodeChanged { get; set; }
+    [Parameter] public EventCallback<int> BreakpointToggled { get; set; }
+    [Parameter] public EventCallback<string> EditorInitFailed { get; set; }
+    [Parameter] public bool IsDarkTheme { get; set; } = true;
+
+    private readonly CodeMirrorSetup _setup = new()
+    {
+        Id = "cide-editor",
+        SyntaxHighlighting = true,
+        BracketMatching = true,
+        CloseBrackets = true,
+        FoldGutter = true,
+        HighlightSelectionMatches = true,
+        History = true,
+        IndentOnInput = true,
+        AllowMultipleSelections = true,
+        BindMode = DocumentBindMode.OnDelayedInput,
+        IndentWithTab = false,
+    };
+
+    protected override void OnParametersSet()
+    {
+        // Only accept external code changes, not self-triggered re-renders
+        if (!_isInternalChange && !string.Equals(_internalCode, Code))
+        {
+            _internalCode = Code;
+        }
+        _isInternalChange = false;
+
+        var newTheme = IsDarkTheme ? ThemeMirrorTheme.OneDark : ThemeMirrorTheme.GithubLight;
+        if (_theme != newTheme)
+        {
+            _theme = newTheme;
+        }
+    }
+
+    private async Task OnDocChanged(string? newCode)
+    {
+        if (newCode != null && !string.Equals(newCode, _internalCode))
+        {
+            _isInternalChange = true;
+            _internalCode = newCode;
+            await CodeChanged.InvokeAsync(newCode);
+        }
+    }
+
+    public async Task UpdateCode(string code)
+    {
+        if (_internalCode != code)
+        {
+            _internalCode = code;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    public async Task SetTheme(bool dark)
+    {
+        _theme = dark ? ThemeMirrorTheme.OneDark : ThemeMirrorTheme.GithubLight;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public async Task SetBreakpoints(List<int> lines)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.setBreakpoints", "cide-editor", lines);
+    }
+
+    public async Task SetErrorLines(List<int> lines)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.setErrorLines", "cide-editor", lines);
+    }
+
+    public async Task SetHighlightLine(int line)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.setHighlightLine", "cide-editor", line);
+    }
+
+    public async Task InsertTemplate(string text)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.insertTemplate", "cide-editor", text);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.destroy", "cide-editor");
+    }
+}

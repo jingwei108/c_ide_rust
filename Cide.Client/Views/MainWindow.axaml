@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:Cide.Client.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="720"
+        x:Class="Cide.Client.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Title="C IDE" Width="1280" Height="720">
+
+  <Design.DataContext>
+    <vm:MainViewModel />
+  </Design.DataContext>
+
+  <Panel>
+    <!-- 手机布局：底部导航 + 全屏页面切换 -->
+    <Panel IsVisible="{Binding Responsive.IsPhone}">
+      <Grid RowDefinitions="*, Auto">
+        <ContentControl Grid.Row="0" Content="{Binding}" />
+        <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTabIndex}">
+          <TabItem Header="✏️ 代码" />
+          <TabItem Header="▶️ 运行" />
+          <TabItem Header="📊 内存" />
+          <TabItem Header="⚠️ 错误" />
+        </TabControl>
+      </Grid>
+    </Panel>
+
+    <!-- 平板布局：侧边栏 + 双栏 -->
+    <Panel IsVisible="{Binding Responsive.IsTablet}">
+      <SplitView IsPaneOpen="True" DisplayMode="CompactOverlay"
+                 CompactPaneLength="56" OpenPaneLength="240">
+        <SplitView.Pane>
+          <StackPanel>
+            <Button Content="☰" Width="56" Height="56" />
+            <TextBlock Text="文件" Margin="16,8" FontWeight="Bold" />
+            <TextBlock Text="main.c" Margin="16,4" />
+          </StackPanel>
+        </SplitView.Pane>
+        <SplitView.Content>
+          <ContentControl Content="{Binding}" />
+        </SplitView.Content>
+      </SplitView>
+    </Panel>
+
+    <!-- 桌面布局：双栏固定（文件树 + MainView） -->
+    <Panel IsVisible="{Binding Responsive.IsDesktop}">
+      <Grid ColumnDefinitions="280, *">
+        <!-- 左栏：文件/导航 -->
+        <Border Grid.Column="0" Background="#F5F5F5" BorderBrush="#DDDDDD" BorderThickness="0,0,1,0">
+          <StackPanel Margin="12">
+            <TextBlock Text="📁 文件" FontSize="16" FontWeight="Bold" Margin="0,0,0,8" />
+            <TextBlock Text="main.c" Margin="8,4" />
+            <TextBlock Text="📚 模板" FontSize="16" FontWeight="Bold" Margin="0,16,0,8" />
+            <TextBlock Text="冒泡排序" Margin="8,4" />
+            <TextBlock Text="二分查找" Margin="8,4" />
+            <TextBlock Text="链表操作" Margin="8,4" />
+          </StackPanel>
+        </Border>
+
+        <!-- 中栏：MainView（含工具栏+编辑器+输出+调试面板） -->
+        <ContentControl Grid.Column="1" Content="{Binding}" />
+      </Grid>
+    </Panel>
+  </Panel>
+</Window>
