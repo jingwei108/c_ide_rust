@@ -133,6 +133,13 @@ impl BytecodeGen {
                             self.globals_init.push(0);
                         }
                     }
+                    Expr::FloatLiteral { value, .. } => {
+                        let bits = (*value as f32).to_bits() as i32;
+                        self.globals_init.push(bits);
+                        for _ in 1..elem_count {
+                            self.globals_init.push(0);
+                        }
+                    }
                     _ => {
                         for _ in 0..elem_count {
                             self.globals_init.push(0);
@@ -340,6 +347,7 @@ impl BytecodeGen {
             TypeKind::Void => 0,
             TypeKind::Int => 4,
             TypeKind::Char => 1,
+            TypeKind::Float => 4,
             TypeKind::Pointer => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
@@ -347,6 +355,7 @@ impl BytecodeGen {
                     TypeKind::Void => 4,
                     TypeKind::Int => 4,
                     TypeKind::Char => 1,
+                    TypeKind::Float => 4,
                     TypeKind::Pointer => 4,
                     TypeKind::Array => 4,
                     TypeKind::Struct => {
@@ -437,6 +446,9 @@ impl BytecodeGen {
                             }
                         } else {
                             self.gen_expr(e);
+                            if var_type.kind == TypeKind::Float && e.ty().kind != TypeKind::Float {
+                                self.emit(OpCode::CastI2F, 0, loc);
+                            }
                             self.emit(OpCode::StoreLocal, local_idx, loc);
                         }
                     } else {
@@ -549,6 +561,12 @@ impl BytecodeGen {
             Stmt::Return { value, loc } => {
                 if let Some(ref mut v) = value {
                     self.gen_expr(v);
+                    let ret_is_float = self.func_table.get(&self.current_func).map(|m| m.return_type.kind == TypeKind::Float).unwrap_or(false);
+                    if ret_is_float && v.ty().kind != TypeKind::Float {
+                        self.emit(OpCode::CastI2F, 0, loc);
+                    } else if !ret_is_float && v.ty().kind == TypeKind::Float {
+                        self.emit(OpCode::CastF2I, 0, loc);
+                    }
                     self.emit(OpCode::Ret, 0, loc);
                 } else {
                     self.emit(OpCode::RetVoid, 0, loc);
@@ -647,6 +665,10 @@ impl BytecodeGen {
             Expr::Literal { value, .. } => {
                 self.emit(OpCode::PushConst, *value, &loc);
             }
+            Expr::FloatLiteral { value, .. } => {
+                let bits = (*value as f32).to_bits() as i32;
+                self.emit(OpCode::PushConstF, bits, &loc);
+            }
             Expr::StringLiteral { value, .. } => {
                 let addr = self.string_mem_offset;
                 let new_offset = addr + value.len() as u32 + 1;
@@ -696,11 +718,21 @@ impl BytecodeGen {
                     }
                 }
             }
-            Expr::Binary { op, left, right, .. } => {
+            Expr::Binary { op, left, right, ty, .. } => {
                 let left_is_ptr = left.ty().is_pointer() || left.ty().is_array();
                 let right_is_ptr = right.ty().is_pointer() || right.ty().is_array();
+                let any_float = left.ty().kind == TypeKind::Float || right.ty().kind == TypeKind::Float;
+                let result_is_float = ty.kind == TypeKind::Float;
+
                 self.gen_expr(left);
+                if any_float && !left_is_ptr && left.ty().kind != TypeKind::Float {
+                    self.emit(OpCode::CastI2F, 0, &loc);
+                }
                 self.gen_expr(right);
+                if any_float && !right_is_ptr && right.ty().kind != TypeKind::Float {
+                    self.emit(OpCode::CastI2F, 0, &loc);
+                }
+
                 match op {
                     BinaryOp::Add => {
                         if left_is_ptr && !right_is_ptr {
@@ -715,6 +747,8 @@ impl BytecodeGen {
                             self.emit(OpCode::Mul, 0, &loc);
                             self.emit(OpCode::Swap, 0, &loc);
                             self.emit(OpCode::Add, 0, &loc);
+                        } else if result_is_float {
+                            self.emit(OpCode::AddF, 0, &loc);
                         } else {
                             self.emit(OpCode::Add, 0, &loc);
                         }
@@ -730,19 +764,45 @@ impl BytecodeGen {
                             self.emit(OpCode::PushConst, step, &loc);
                             self.emit(OpCode::Mul, 0, &loc);
                             self.emit(OpCode::Sub, 0, &loc);
+                        } else if result_is_float {
+                            self.emit(OpCode::SubF, 0, &loc);
                         } else {
                             self.emit(OpCode::Sub, 0, &loc);
                         }
                     }
-                    BinaryOp::Mul => self.emit(OpCode::Mul, 0, &loc),
-                    BinaryOp::Div => self.emit(OpCode::Div, 0, &loc),
+                    BinaryOp::Mul => {
+                        if result_is_float { self.emit(OpCode::MulF, 0, &loc); }
+                        else { self.emit(OpCode::Mul, 0, &loc); }
+                    }
+                    BinaryOp::Div => {
+                        if result_is_float { self.emit(OpCode::DivF, 0, &loc); }
+                        else { self.emit(OpCode::Div, 0, &loc); }
+                    }
                     BinaryOp::Mod => self.emit(OpCode::Mod, 0, &loc),
-                    BinaryOp::Eq => self.emit(OpCode::Eq, 0, &loc),
-                    BinaryOp::Ne => self.emit(OpCode::Ne, 0, &loc),
-                    BinaryOp::Lt => self.emit(OpCode::Lt, 0, &loc),
-                    BinaryOp::Le => self.emit(OpCode::Le, 0, &loc),
-                    BinaryOp::Gt => self.emit(OpCode::Gt, 0, &loc),
-                    BinaryOp::Ge => self.emit(OpCode::Ge, 0, &loc),
+                    BinaryOp::Eq => {
+                        if any_float { self.emit(OpCode::EqF, 0, &loc); }
+                        else { self.emit(OpCode::Eq, 0, &loc); }
+                    }
+                    BinaryOp::Ne => {
+                        if any_float { self.emit(OpCode::NeF, 0, &loc); }
+                        else { self.emit(OpCode::Ne, 0, &loc); }
+                    }
+                    BinaryOp::Lt => {
+                        if any_float { self.emit(OpCode::LtF, 0, &loc); }
+                        else { self.emit(OpCode::Lt, 0, &loc); }
+                    }
+                    BinaryOp::Le => {
+                        if any_float { self.emit(OpCode::LeF, 0, &loc); }
+                        else { self.emit(OpCode::Le, 0, &loc); }
+                    }
+                    BinaryOp::Gt => {
+                        if any_float { self.emit(OpCode::GtF, 0, &loc); }
+                        else { self.emit(OpCode::Gt, 0, &loc); }
+                    }
+                    BinaryOp::Ge => {
+                        if any_float { self.emit(OpCode::GeF, 0, &loc); }
+                        else { self.emit(OpCode::Ge, 0, &loc); }
+                    }
                     BinaryOp::And => self.emit(OpCode::And, 0, &loc),
                     BinaryOp::Or => self.emit(OpCode::Or, 0, &loc),
                     BinaryOp::BitAnd => self.emit(OpCode::BitAnd, 0, &loc),
@@ -756,7 +816,11 @@ impl BytecodeGen {
                 match op {
                     UnaryOp::Neg => {
                         self.gen_expr(operand);
-                        self.emit(OpCode::Neg, 0, &loc);
+                        if operand.ty().kind == TypeKind::Float {
+                            self.emit(OpCode::NegF, 0, &loc);
+                        } else {
+                            self.emit(OpCode::Neg, 0, &loc);
+                        }
                     }
                     UnaryOp::Not => {
                         self.gen_expr(operand);
@@ -964,8 +1028,13 @@ impl BytecodeGen {
                 };
                 self.emit(OpCode::PushConst, size, &loc);
             }
-            Expr::Cast { expr, .. } => {
+            Expr::Cast { expr, target_type, .. } => {
                 self.gen_expr(expr);
+                if target_type.kind == TypeKind::Float && expr.ty().kind != TypeKind::Float {
+                    self.emit(OpCode::CastI2F, 0, &loc);
+                } else if target_type.kind != TypeKind::Float && expr.ty().kind == TypeKind::Float {
+                    self.emit(OpCode::CastF2I, 0, &loc);
+                }
             }
             Expr::InitList { .. } => {
                 self.report_error("初始化列表只能在变量声明中使用", &loc);
@@ -1057,13 +1126,23 @@ impl BytecodeGen {
         }
     }
 
+    fn gen_expr_with_cast(&mut self, expr: &mut Expr, target_is_float: bool, loc: &SourceLoc) {
+        self.gen_expr(expr);
+        if target_is_float && expr.ty().kind != TypeKind::Float {
+            self.emit(OpCode::CastI2F, 0, loc);
+        } else if !target_is_float && expr.ty().kind == TypeKind::Float {
+            self.emit(OpCode::CastF2I, 0, loc);
+        }
+    }
+
     fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
+        let left_is_float = left.ty().kind == TypeKind::Float;
         let emit_compound = |this: &mut Self, loc: &SourceLoc| {
             match op {
-                AssignOp::AddAssign => this.emit(OpCode::Add, 0, loc),
-                AssignOp::SubAssign => this.emit(OpCode::Sub, 0, loc),
-                AssignOp::MulAssign => this.emit(OpCode::Mul, 0, loc),
-                AssignOp::DivAssign => this.emit(OpCode::Div, 0, loc),
+                AssignOp::AddAssign => this.emit(if left_is_float { OpCode::AddF } else { OpCode::Add }, 0, loc),
+                AssignOp::SubAssign => this.emit(if left_is_float { OpCode::SubF } else { OpCode::Sub }, 0, loc),
+                AssignOp::MulAssign => this.emit(if left_is_float { OpCode::MulF } else { OpCode::Mul }, 0, loc),
+                AssignOp::DivAssign => this.emit(if left_is_float { OpCode::DivF } else { OpCode::Div }, 0, loc),
                 AssignOp::ModAssign => this.emit(OpCode::Mod, 0, loc),
                 _ => {}
             }
@@ -1074,10 +1153,10 @@ impl BytecodeGen {
             if local_idx >= 0 {
                 if *op != AssignOp::Assign {
                     self.emit(OpCode::LoadLocal, local_idx, loc);
-                    self.gen_expr(right);
+                    self.gen_expr_with_cast(right, left_is_float, loc);
                     emit_compound(self, loc);
                 } else {
-                    self.gen_expr(right);
+                    self.gen_expr_with_cast(right, left_is_float, loc);
                 }
                 self.emit(OpCode::StoreLocal, local_idx, loc);
                 self.emit(OpCode::LoadLocal, local_idx, loc);
@@ -1087,10 +1166,10 @@ impl BytecodeGen {
             if global_idx >= 0 {
                 if *op != AssignOp::Assign {
                     self.emit(OpCode::LoadGlobal, global_idx, loc);
-                    self.gen_expr(right);
+                    self.gen_expr_with_cast(right, left_is_float, loc);
                     emit_compound(self, loc);
                 } else {
-                    self.gen_expr(right);
+                    self.gen_expr_with_cast(right, left_is_float, loc);
                 }
                 self.emit(OpCode::StoreGlobal, global_idx, loc);
                 self.emit(OpCode::LoadGlobal, global_idx, loc);
@@ -1102,10 +1181,10 @@ impl BytecodeGen {
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
                 self.emit(OpCode::LoadMem, 0, loc);
-                self.gen_expr(right);
+                self.gen_expr_with_cast(right, left_is_float, loc);
                 emit_compound(self, loc);
             } else {
-                self.gen_expr(right);
+                self.gen_expr_with_cast(right, left_is_float, loc);
             }
             let val_temp = self.get_temp_slot(0);
             self.emit(OpCode::StoreLocal, val_temp, loc);
@@ -1122,10 +1201,10 @@ impl BytecodeGen {
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
                 self.emit(OpCode::LoadMem, 0, loc);
-                self.gen_expr(right);
+                self.gen_expr_with_cast(right, left_is_float, loc);
                 emit_compound(self, loc);
             } else {
-                self.gen_expr(right);
+                self.gen_expr_with_cast(right, left_is_float, loc);
             }
             let val_temp = self.get_temp_slot(0);
             self.emit(OpCode::StoreLocal, val_temp, loc);
@@ -1142,10 +1221,10 @@ impl BytecodeGen {
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
                 self.emit(OpCode::LoadMem, 0, loc);
-                self.gen_expr(right);
+                self.gen_expr_with_cast(right, left_is_float, loc);
                 emit_compound(self, loc);
             } else {
-                self.gen_expr(right);
+                self.gen_expr_with_cast(right, left_is_float, loc);
             }
             let val_temp = self.get_temp_slot(0);
             self.emit(OpCode::StoreLocal, val_temp, loc);
@@ -1160,7 +1239,7 @@ impl BytecodeGen {
         }
 
         self.report_error("赋值目标不支持", loc);
-        self.gen_expr(right);
+        self.gen_expr_with_cast(right, left_is_float, loc);
         self.emit(OpCode::Pop, 0, loc);
         self.emit(OpCode::PushConst, 0, loc);
     }
@@ -1188,6 +1267,7 @@ fn flatten_init_list(elements: &[Expr]) -> Vec<i32> {
     for elem in elements {
         match elem {
             Expr::Literal { value, .. } => result.push(*value),
+            Expr::FloatLiteral { value, .. } => result.push((*value as f32).to_bits() as i32),
             Expr::InitList { elements: sub, .. } => result.extend(flatten_init_list(sub)),
             _ => result.push(0),
         }

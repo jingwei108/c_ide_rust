@@ -48,6 +48,7 @@ docs/                   设计文档、事故报告
 | Phase 5 | 清理遗留 C++ / CMake 文件 | ✅ 完成 |
 | Phase 6 | 全面审查：编译警告清理 + 安全加固 + 测试覆盖拓展 | ✅ 完成 |
 | Phase 7 | Desktop 内存泄漏修复 + Maui scanf 输入 + sizeof/scanf 子集拓展 | ✅ 完成 |
+| Phase 8 | `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ 诊断系统拓展 | ✅ 完成 |
 
 ## 编码约定
 
@@ -71,7 +72,8 @@ docs/                   设计文档、事故报告
 - **`realloc`** — 仅有 `malloc`/`free`
 - **`qsort`** — 未实现
 - **`stderr` / `fprintf(stderr, ...)`** — 仅有 `printf`/`scanf`
-- **`exit`** — 未实现
+- **`double`** — 未实现（仅支持 `float`）
+- **函数调用参数的隐式转换提示** — 当前对 `printf` 格式字符串 `%f` 的参数不做类型检查，传入 int 不会自动转换（已知限制）
 
 ### 已支持的关键特性
 - **逗号分隔的多变量声明** — `int a = 1, b = 2;`
@@ -87,7 +89,7 @@ docs/                   设计文档、事故报告
 - **指针算术** — `p++` / `p--` / `p + i` / `p - i` / `p - q`，自动按 pointee 类型大小缩放（`int*` 步长 4，`char*` 步长 1，`struct*` 步长为结构体大小）
 - **函数前向声明** — `int foo(int);` 原型声明，函数定义可放在调用者之后
 - **字符串库函数** — `strlen(s)`、`strcpy(dest, src)`、`strcmp(a, b)`（宿主导入函数）
-- **显式类型转换（Cast）** — `(int*)p`、`(char*)arr` 等标量/指针间转换
+- **显式类型转换（Cast）** — `(int*)p`、`(char*)arr`、`(float)a`、`(int)b` 等标量/指针间转换
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护
@@ -101,6 +103,8 @@ docs/                   设计文档、事故报告
 - **C# 前端单元测试（2026-05-10）**：新建 `Cide.Client.Tests` xUnit 项目，覆盖 Session 创建/编译成功/编译失败路径 → 4 测试通过
 - **Maui VM 释放（2026-05-10）**：`MainViewModel.Dispose()` 添加 `_disposed` 幂等保护；`Home.razor` 页面销毁时调用 `VM.Dispose()`
 - **unsigned 类型提示（2026-05-10）**：Parser 保留 `is_unsigned` 标记；TypeChecker 遇到 `unsigned int x;` 时报告 `W3056` 提示"被映射为 int，暂不支持无符号语义"
+- **`float` 类型支持** — `float x = 3.14;`、`float a = 5;`（隐式 int→float 转换）、算术/比较/复合赋值、强制转换 `(float)`/`(int)`、`printf("%f")` / `scanf("%f")`
+- **函数调用参数隐式转换** — `void foo(float x) {} foo(5);` 自动插入 `(float)` cast；`bar(3.7f)` 传入 int 形参自动截断为 int，并发出 `W3053` 精度丢失警告
 - **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
 - **C 子集 P1 拓展（2026-05-10）**：复合赋值扩展到数组索引/指针解引用/结构体成员（`a[i]+=1`、`*p+=1`、`s.mem+=1`）、取地址扩展到复杂左值（`&a[i]`、`&s.mem`）、全局结构体变量成员访问、自增/自减扩展到复杂左值（`a[i]++`、`*p++`、`s.mem++`）→ BytecodeGen 全部支持，新增 7 个 E2E 测试
 - **C 子集 P2 拓展（2026-05-10）**：位运算符 `& | ^ ~ << >>` 全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM），新增 2 个 E2E 测试；三目运算符 `? :` 全管线支持，新增 1 个 E2E 测试

@@ -166,6 +166,7 @@ fn host_printf_1(vm: &mut CideVM, session: &mut Session) {
             if let Some(&next) = chars.peek() {
                 match next {
                     'd' => { out.push_str(&arg.to_string()); chars.next(); used = true; }
+                    'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); chars.next(); used = true; }
                     's' => {
                         let s = read_cstring(vm, arg as u32);
                         out.push_str(&s);
@@ -199,6 +200,7 @@ fn host_printf_2(vm: &mut CideVM, session: &mut Session) {
                 let arg = if used == 0 { arg1 } else { arg2 };
                 match next {
                     'd' => { out.push_str(&arg.to_string()); chars.next(); used += 1; }
+                    'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); chars.next(); used += 1; }
                     's' => {
                         let s = read_cstring(vm, arg as u32);
                         out.push_str(&s);
@@ -253,6 +255,7 @@ fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
                     let arg = args[used];
                     match next {
                         'd' => out.push_str(&arg.to_string()),
+                        'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
                         's' => {
                             let s = read_cstring(vm, arg as u32);
                             out.push_str(&s);
@@ -313,6 +316,10 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
             'd' => {
                 let value: i32 = tokens[i].parse().unwrap_or(0);
                 vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
+            }
+            'f' => {
+                let value: f32 = tokens[i].parse().unwrap_or(0.0);
+                vm.store_i32(ptr, value.to_bits() as i32, &super::instruction::SourceLoc::default());
             }
             'c' => {
                 let ch = tokens[i].chars().next().unwrap_or('\0');
