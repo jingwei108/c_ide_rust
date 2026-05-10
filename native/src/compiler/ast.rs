@@ -3,6 +3,7 @@ pub enum TypeKind {
     Void,
     Int,
     Char,
+    Float,
     Pointer,
     Array,
     Struct,
@@ -16,6 +17,7 @@ pub struct Type {
     pub base_kind: TypeKind,
     pub dims: Vec<i32>,
     pub is_unsigned: bool,
+    pub is_const: bool,
 }
 
 impl Default for Type {
@@ -27,6 +29,7 @@ impl Default for Type {
             base_kind: TypeKind::Void,
             dims: Vec::new(),
             is_unsigned: false,
+            is_const: false,
         }
     }
 }
@@ -40,6 +43,9 @@ impl Type {
     }
     pub fn char() -> Self {
         Self { kind: TypeKind::Char, ..Self::default() }
+    }
+    pub fn float() -> Self {
+        Self { kind: TypeKind::Float, ..Self::default() }
     }
     pub fn void() -> Self {
         Self { kind: TypeKind::Void, ..Self::default() }

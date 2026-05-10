@@ -1,0 +1,12 @@
+{
+  "errorCode": 3035,
+  "messageContains": "",
+  "emoji": "⌨️",
+  "title": "scanf 参数类型错误",
+  "plainExplanation": "scanf 的参数必须是变量的地址（加 & 符号）。例如 scanf(\"%d\", &a);。如果参数已经是指针，则不需要 &。",
+  "wrongCode": "scanf(\"%d\", a);",
+  "correctCode": "scanf(\"%d\", &a);",
+  "memoryAnimationDescription": "",
+  "exercise": "下面代码错在哪里？\nint x;\nscanf(\"%d\", x);",
+  "difficulty": 1
+}

@@ -106,6 +106,8 @@ pub struct RuntimeState {
     pub step_count: i32,
     pub variable_snapshot: Vec<VariableSnapshot>,
     pub vis_event_cache: Vec<VisEvent>,
+    pub rand_seed: u32,
+    pub input_char_offset: usize,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

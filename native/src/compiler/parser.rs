@@ -142,6 +142,22 @@ impl Parser {
 
         while !self.is_at_end() {
             if self.check(TokenType::Typedef) {
+                let checkpoint = self.pos;
+                self.advance();
+                if self.check(TokenType::Struct) {
+                    let s_checkpoint = self.pos;
+                    self.advance();
+                    if self.check(TokenType::Identifier) {
+                        self.advance();
+                    }
+                    if self.check(TokenType::LBrace) {
+                        self.pos = checkpoint;
+                        self.parse_typedef_struct_decl(&mut program);
+                        continue;
+                    }
+                    self.pos = s_checkpoint;
+                }
+                self.pos = checkpoint;
                 self.parse_typedef();
             } else if self.check(TokenType::Enum) {
                 let checkpoint = self.pos;
@@ -157,12 +173,20 @@ impl Parser {
             } else if self.check(TokenType::Struct) {
                 let checkpoint = self.pos;
                 self.advance();
-                self.consume(TokenType::Identifier, "预期结构体名称");
-                let is_struct_decl = self.check(TokenType::LBrace);
-                self.pos = checkpoint;
-                if is_struct_decl {
+                if self.check(TokenType::LBrace) {
+                    self.pos = checkpoint;
                     program.structs.push(self.parse_struct_decl());
+                } else if self.check(TokenType::Identifier) {
+                    self.advance();
+                    if self.check(TokenType::LBrace) {
+                        self.pos = checkpoint;
+                        program.structs.push(self.parse_struct_decl());
+                    } else {
+                        self.pos = checkpoint;
+                        self.parse_global_var_or_func(&mut program);
+                    }
                 } else {
+                    self.pos = checkpoint;
                     self.parse_global_var_or_func(&mut program);
                 }
             } else if self.is_type_token() {
@@ -218,11 +242,8 @@ impl Parser {
         }
     }
 
-    fn parse_struct_decl(&mut self) -> StructDecl {
-        self.consume(TokenType::Struct, "预期 'struct'");
-        let name_tok = self.consume(TokenType::Identifier, "预期结构体名称").clone();
+    fn parse_struct_body(&mut self, name: String, loc: SourceLoc) -> StructDecl {
         self.consume(TokenType::LBrace, "预期 '{'");
-
         let mut fields = Vec::new();
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             let field_checkpoint = self.pos;
@@ -234,14 +255,42 @@ impl Parser {
             self.consume(TokenType::Semicolon, "预期 ';'");
             fields.push(StructField { ty: fty, name: fname });
         }
-
         self.consume(TokenType::RBrace, "预期 '}'");
+        StructDecl { loc, name, fields }
+    }
+
+    fn parse_struct_decl(&mut self) -> StructDecl {
+        self.consume(TokenType::Struct, "预期 'struct'");
+        let name_tok = if self.check(TokenType::Identifier) {
+            self.advance().clone()
+        } else {
+            Token {
+                ty: TokenType::Identifier,
+                text: format!("__anon_struct_{}", self.pos),
+                line: self.current().line,
+                column: self.current().column,
+            }
+        };
+        let decl = self.parse_struct_body(name_tok.text.clone(), SourceLoc { line: name_tok.line, column: name_tok.column });
         self.consume(TokenType::Semicolon, "结构体声明后预期 ';'");
-        StructDecl {
-            loc: SourceLoc { line: name_tok.line, column: name_tok.column },
-            name: name_tok.text,
-            fields,
-        }
+        decl
+    }
+
+    fn parse_typedef_struct_decl(&mut self, program: &mut ProgramNode) {
+        let loc = self.current().clone();
+        self.advance(); // typedef
+        self.advance(); // struct
+        let name = if self.check(TokenType::Identifier) {
+            let t = self.advance().clone();
+            t.text
+        } else {
+            format!("__anon_struct_{}", self.pos)
+        };
+        let decl = self.parse_struct_body(name.clone(), SourceLoc { line: loc.line, column: loc.column });
+        let alias_tok = self.consume(TokenType::Identifier, "typedef 后预期标识符名称").clone();
+        self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
+        program.structs.push(decl);
+        self.typedef_names.insert(alias_tok.text, Type::struct_type(name));
     }
 
     fn parse_func_decl(&mut self) -> FuncDecl {
@@ -280,44 +329,52 @@ impl Parser {
     fn parse_base_type(&mut self) -> Type {
         // Collect type qualifiers/modifiers (const, signed, unsigned, long, short)
         let mut is_unsigned = false;
+        let mut is_const = false;
         loop {
-            if self.match_token(TokenType::Const) { continue; }
+            if self.match_token(TokenType::Const) { is_const = true; continue; }
             if self.match_token(TokenType::Signed) { continue; }
             if self.match_token(TokenType::Unsigned) { is_unsigned = true; continue; }
             if self.match_token(TokenType::Long) { continue; }
             if self.match_token(TokenType::Short) { continue; }
             break;
         }
-        if self.match_token(TokenType::Int) {
-            return if is_unsigned { Type::unsigned_int() } else { Type::int() };
-        }
-        if self.match_token(TokenType::Void) { return Type::void(); }
-        if self.match_token(TokenType::Char) {
-            return if is_unsigned { Type::unsigned_int() } else { Type::char() };
-        }
-        if self.match_token(TokenType::Struct) {
-            let name_tok = self.consume(TokenType::Identifier, "预期结构体名称").clone();
-            return Type::struct_type(name_tok.text);
-        }
-        if self.match_token(TokenType::Enum) {
+        let mut t = if self.match_token(TokenType::Int) {
+            if is_unsigned { Type::unsigned_int() } else { Type::int() }
+        } else if self.match_token(TokenType::Void) {
+            Type::void()
+        } else if self.match_token(TokenType::Char) {
+            if is_unsigned { Type::unsigned_int() } else { Type::char() }
+        } else if self.match_token(TokenType::Struct) {
+            if self.check(TokenType::Identifier) {
+                let name_tok = self.advance().clone();
+                Type::struct_type(name_tok.text)
+            } else {
+                self.errors.push(ParseError {
+                    message: "匿名结构体变量声明暂不支持，请使用 typedef struct { ... } Name; 先定义类型别名".to_string(),
+                    line: self.current().line,
+                    column: self.current().column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                Type::int()
+            }
+        } else if self.match_token(TokenType::Enum) {
             if self.check(TokenType::Identifier) {
                 let name_tok = self.advance().clone();
                 self.typedef_names.insert(name_tok.text.clone(), Type::int());
             }
-            return Type::int();
-        }
-        if self.check(TokenType::Identifier) {
+            Type::int()
+        } else if self.check(TokenType::Identifier) {
             if let Some(ty) = self.typedef_names.get(&self.current().text).cloned() {
                 self.advance();
-                return ty;
+                ty
+            } else {
+                if is_unsigned { Type::unsigned_int() } else { Type::int() }
             }
-        }
-        // If modifiers like long/short/signed/const were present but no explicit base type,
-        // default to int (e.g. "long b", "short x", "signed y")
-        if is_unsigned {
-            return Type::unsigned_int();
-        }
-        Type::int()
+        } else {
+            if is_unsigned { Type::unsigned_int() } else { Type::int() }
+        };
+        t.is_const = is_const;
+        t
     }
 
     fn parse_type_and_name(&mut self) -> (Type, String) {
@@ -352,7 +409,7 @@ impl Parser {
         if !dims.is_empty() {
             let has_unknown = dims.iter().any(|&d| d <= 0);
             let total = if has_unknown { 0 } else { dims.iter().product() };
-            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind, dims, is_unsigned: base_type.is_unsigned }, name_tok.text);
+            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind, dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
         }
 
         (base_type, name_tok.text)
@@ -913,6 +970,10 @@ impl Parser {
             let value = self.previous().text.clone();
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             return Expr::StringLiteral { value, loc, ty: Type::pointer(TypeKind::Char, "char") };
+        }
+        if self.match_token(TokenType::Null) {
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Literal { value: 0, loc, ty: Type::pointer(TypeKind::Void, "") };
         }
         if self.check(TokenType::Identifier) {
             let name_tok = self.advance().clone();

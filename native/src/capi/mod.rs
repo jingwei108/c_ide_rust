@@ -202,32 +202,27 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
         let source_lines: Vec<&str> = source.lines().collect();
         let mut err_str = String::new();
         for e in errors {
-            // Auto-generate fix suggestion for common errors
-            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) = match e.code() {
-                2005 => {
-                    // Missing semicolon: insert at end of line
-                    let line_idx = (e.line() as usize).saturating_sub(1);
-                    let line_text = source_lines.get(line_idx).unwrap_or(&"");
-                    let trimmed_len = line_text.trim_end().len() as i32;
-                    ("语句末尾缺少分号，建议添加 ';'".to_string(), 1, e.line(), trimmed_len, e.line(), trimmed_len, ";".to_string())
-                }
-                3023 => {
-                    // Undeclared variable
-                    ("变量未声明，建议先声明变量再使用".to_string(), 4, 0, 0, 0, 0, String::new())
-                }
-                3015 => {
-                    // Invalid condition (e.g. assignment in if)
-                    ("条件表达式不合法，建议检查是否误用 '=' 代替 '=='".to_string(), 4, 0, 0, 0, 0, String::new())
-                }
-                _ => (String::new(), 0, 0, 0, 0, 0, String::new()),
+            let info = crate::diagnostics::error_catalog::lookup_error_info(e.code());
+            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
+                crate::diagnostics::error_catalog::generate_fix(e.code(), e.line(), e.column(), e.message(), &source_lines);
+
+            let enriched_msg = if let Some(ref i) = info {
+                format!("{} {} — 错误 E{} (第{}行, 第{}列): {}", i.emoji, i.title, e.code(), e.line(), e.column(), e.message())
+            } else {
+                format!("错误 E{} (第{}行, 第{}列): {}", e.code(), e.line(), e.column(), e.message())
             };
+
             session.compile.diagnostics.push(crate::session::Diagnostic {
                 line: e.line(),
                 column: e.column(),
                 error_code: e.code(),
                 severity: 0,
                 message: e.message().to_string(),
-                fix_suggestion,
+                fix_suggestion: if fix_suggestion.is_empty() {
+                    info.map(|i| i.explanation.to_string()).unwrap_or_default()
+                } else {
+                    fix_suggestion.clone()
+                },
                 fix_kind,
                 replace_start_line: rsl,
                 replace_start_column: rsc,
@@ -235,27 +230,37 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
                 replace_end_column: rec,
                 replacement_text: rt,
             });
-            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code(), e.line(), e.column(), e.message()));
+            err_str.push_str(&enriched_msg);
+            err_str.push('\n');
         }
         session.compile.errors = err_str.clone();
         session.compile.errors_buffer = err_str;
     }
 
-    fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], _source: &str) {
+    fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], source: &str) {
+        let source_lines: Vec<&str> = source.lines().collect();
         for w in warnings {
+            let info = crate::diagnostics::error_catalog::lookup_error_info(w.code());
+            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
+                crate::diagnostics::error_catalog::generate_fix(w.code(), w.line(), w.column(), w.message(), &source_lines);
+
             session.compile.diagnostics.push(crate::session::Diagnostic {
                 line: w.line(),
                 column: w.column(),
                 error_code: w.code(),
                 severity: 1,
                 message: w.message().to_string(),
-                fix_suggestion: String::new(),
-                fix_kind: 0,
-                replace_start_line: 0,
-                replace_start_column: 0,
-                replace_end_line: 0,
-                replace_end_column: 0,
-                replacement_text: String::new(),
+                fix_suggestion: if fix_suggestion.is_empty() {
+                    info.map(|i| i.explanation.to_string()).unwrap_or_default()
+                } else {
+                    fix_suggestion.clone()
+                },
+                fix_kind,
+                replace_start_line: rsl,
+                replace_start_column: rsc,
+                replace_end_line: rel,
+                replace_end_column: rec,
+                replacement_text: rt,
             });
         }
     }

@@ -1,0 +1,12 @@
+{
+  "errorCode": 2007,
+  "messageContains": "",
+  "emoji": "🗂️",
+  "title": "预期右圆括号",
+  "plainExplanation": "圆括号 ( ) 必须成对出现。常见于 if/while/for 的条件表达式或函数调用参数列表。请检查是否遗漏了右圆括号。",
+  "wrongCode": "if (x == 5 {",
+  "correctCode": "if (x == 5) {",
+  "memoryAnimationDescription": "",
+  "exercise": "修正下面代码的括号：\nwhile (i < 10 {",
+  "difficulty": 1
+}

@@ -20,7 +20,8 @@ public static class CodeFixService
             return new CodeFixResult(false, null, string.Empty);
 
         // 1. Try structured fix first (when backend provides it)
-        if (diagnostic.FixKind == FixKind.ReplaceText && diagnostic.ReplaceStartLine > 0)
+        if ((diagnostic.FixKind == FixKind.ReplaceText || diagnostic.FixKind == FixKind.InsertText)
+            && diagnostic.ReplaceStartLine > 0)
         {
             var structuredResult = ApplyStructuredReplace(sourceCode, diagnostic);
             if (structuredResult.Applied)
@@ -89,22 +90,58 @@ public static class CodeFixService
                 applied = true;
             }
         }
+        else if (fix.Contains("右花括号") || fix.Contains("'}'"))
+        {
+            string trimmed = lines[lineIndex].TrimEnd();
+            if (!trimmed.EndsWith("}"))
+            {
+                lines[lineIndex] = trimmed + "}";
+                applied = true;
+            }
+        }
+        else if (fix.Contains("右圆括号") || fix.Contains("')'"))
+        {
+            string trimmed = lines[lineIndex].TrimEnd();
+            if (!trimmed.EndsWith(")"))
+            {
+                lines[lineIndex] = trimmed + ")";
+                applied = true;
+            }
+        }
+        else if (fix.Contains("右方括号") || fix.Contains("']'"))
+        {
+            string trimmed = lines[lineIndex].TrimEnd();
+            if (!trimmed.EndsWith("]"))
+            {
+                lines[lineIndex] = trimmed + "]";
+                applied = true;
+            }
+        }
+        else if (fix.Contains("双引号") || fix.Contains("\"\"\""))
+        {
+            string trimmed = lines[lineIndex].TrimEnd();
+            if (!trimmed.EndsWith("\""))
+            {
+                lines[lineIndex] = trimmed + "\"";
+                applied = true;
+            }
+        }
         else if (fix.Contains("声明变量"))
         {
             return new CodeFixResult(false, null,
                 $"💡 修复提示（第{diagnostic.Line}行）：{fix}\n请手动修改代码。");
         }
-        else if (fix.Contains("检查函数名"))
+        else if (fix.Contains("检查函数名") || fix.Contains("函数原型"))
         {
             return new CodeFixResult(false, null,
                 $"💡 修复提示（第{diagnostic.Line}行）：{fix}\n请手动修改代码。");
         }
-        else if (fix.Contains("类型一致"))
+        else if (fix.Contains("类型一致") || fix.Contains("类型不匹配") || fix.Contains("强制类型转换"))
         {
             return new CodeFixResult(false, null,
                 $"💡 修复提示（第{diagnostic.Line}行）：{fix}\n请手动修改代码。");
         }
-        else if (fix.Contains("=' 改为 '=='"))
+        else if (fix.Contains("=' 改为 '=='") || fix.Contains("=="))
         {
             string line = lines[lineIndex];
             int parenStart = line.IndexOf('(');
@@ -137,13 +174,37 @@ public static class CodeFixService
                 }
             }
         }
-        else if (fix.Contains("'<=' 改为 '<'"))
+        else if (fix.Contains("'<=' 改为 '<'") || fix.Contains("<"))
         {
             string trimmed = lines[lineIndex];
             int idx = trimmed.IndexOf("<=");
             if (idx >= 0)
             {
                 lines[lineIndex] = trimmed.Substring(0, idx) + "<" + trimmed.Substring(idx + 2);
+                applied = true;
+            }
+        }
+        else if (fix.Contains("-> 改为 '.'"))
+        {
+            string trimmed = lines[lineIndex];
+            int idx = trimmed.IndexOf("->");
+            if (idx >= 0)
+            {
+                lines[lineIndex] = trimmed.Substring(0, idx) + "." + trimmed.Substring(idx + 2);
+                applied = true;
+            }
+        }
+        else if (fix.Contains("return 0;"))
+        {
+            string trimmed = lines[lineIndex].TrimEnd();
+            if (!trimmed.EndsWith(";"))
+            {
+                lines[lineIndex] = trimmed + ";";
+                applied = true;
+            }
+            else if (!trimmed.Contains("return"))
+            {
+                lines[lineIndex] = trimmed + " return 0;";
                 applied = true;
             }
         }

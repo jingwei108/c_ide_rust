@@ -1,0 +1,12 @@
+{
+  "errorCode": 3041,
+  "messageContains": "",
+  "emoji": "🏗️",
+  "title": "对非结构体使用成员访问",
+  "plainExplanation": ". 和 -> 只能用于结构体类型。如果变量是结构体变量，用 .（点）；如果是指向结构体的指针，用 ->（箭头）。",
+  "wrongCode": "struct Point p;\np->x = 10;",
+  "correctCode": "struct Point p;\np.x = 10;",
+  "memoryAnimationDescription": "",
+  "exercise": "下面该用 . 还是 -> ？\nstruct Point *p = malloc(sizeof(struct Point));\np___x = 10;",
+  "difficulty": 2
+}

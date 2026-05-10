@@ -892,6 +892,14 @@ impl BytecodeGen {
                         "strlen" => "strlen",
                         "strcpy" => "strcpy",
                         "strcmp" => "strcmp",
+                        "getchar" => "getchar",
+                        "putchar" => "putchar",
+                        "rand" => "rand",
+                        "srand" => "srand",
+                        "memset" => "memset",
+                        "exit" => "exit",
+                        "strcat" => "strcat",
+                        "atoi" => "atoi",
                         _ => name.as_str(),
                     };
                     let host_id = match host_name {
@@ -906,6 +914,14 @@ impl BytecodeGen {
                         "strlen" => 30,
                         "strcpy" => 31,
                         "strcmp" => 32,
+                        "getchar" => 33,
+                        "putchar" => 34,
+                        "rand" => 35,
+                        "srand" => 36,
+                        "memset" => 37,
+                        "exit" => 38,
+                        "strcat" => 39,
+                        "atoi" => 40,
                         _ => {
                             self.report_error(&format!("未定义的函数 '{}'", name), &loc);
                             self.emit(OpCode::PushConst, 0, &loc);

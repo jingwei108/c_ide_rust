@@ -68,6 +68,8 @@ pub struct CideVM {
     error: String,
     last_snapshot_step: i32,
     snapshot_vars: HashMap<String, i32>,
+    finished: bool,
+    exit_code: i32,
 }
 
 impl Default for CideVM {
@@ -101,6 +103,8 @@ impl CideVM {
             error: String::new(),
             last_snapshot_step: 0,
             snapshot_vars: HashMap::new(),
+            finished: false,
+            exit_code: 0,
         }
     }
 
@@ -125,6 +129,8 @@ impl CideVM {
         self.global_count = 0;
         self.last_snapshot_step = 0;
         self.snapshot_vars.clear();
+        self.finished = false;
+        self.exit_code = 0;
         self.memory.fill(0);
         self.mem_stack_top = STACK_START;
     }
@@ -215,6 +221,11 @@ impl CideVM {
 
     pub fn get_executed_steps(&self) -> i32 {
         self.step_count
+    }
+
+    pub fn set_finished(&mut self, code: i32) {
+        self.finished = true;
+        self.exit_code = code;
     }
 
     pub fn get_memory(&mut self) -> *mut u8 {
@@ -520,7 +531,7 @@ impl CideVM {
             let result = self.step(session);
             match result {
                 StepResult::Finished => {
-                    return self.stack.last().copied().unwrap_or(0);
+                    return if self.finished { self.exit_code } else { self.stack.last().copied().unwrap_or(0) };
                 }
                 StepResult::Trap => return 0,
                 StepResult::Paused => {
@@ -535,6 +546,9 @@ impl CideVM {
     // --- Step (execute one instruction) ---
 
     pub fn step(&mut self, session: &mut Session) -> StepResult {
+        if self.finished {
+            return StepResult::Finished;
+        }
         if !self.error.is_empty() {
             return StepResult::Trap;
         }
