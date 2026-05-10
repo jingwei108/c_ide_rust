@@ -31,6 +31,14 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         30 => host_strlen(vm, session),
         31 => host_strcpy(vm, session),
         32 => host_strcmp(vm, session),
+        33 => host_getchar(vm, session),
+        34 => host_putchar(vm, session),
+        35 => host_rand(vm, session),
+        36 => host_srand(vm, session),
+        37 => host_memset(vm, session),
+        38 => host_exit(vm, session),
+        39 => host_strcat(vm, session),
+        40 => host_atoi(vm, session),
         _ => {}
     }
 }
@@ -367,4 +375,91 @@ impl MemorySlice for CideVM {
     fn get_memory_slice(&self) -> &[u8] {
         self.memory_ref()
     }
+}
+
+
+fn host_getchar(vm: &mut CideVM, session: &mut Session) {
+    let mut result = -1i32;
+    while session.runtime.input_index < session.runtime.input_lines.len() {
+        let line = &session.runtime.input_lines[session.runtime.input_index];
+        if session.runtime.input_char_offset < line.len() {
+            let ch = line.as_bytes()[session.runtime.input_char_offset];
+            session.runtime.input_char_offset += 1;
+            result = ch as i32;
+            break;
+        } else {
+            session.runtime.input_index += 1;
+            session.runtime.input_char_offset = 0;
+        }
+    }
+    vm.push(result);
+}
+
+fn host_putchar(vm: &mut CideVM, session: &mut Session) {
+    let val = vm.pop();
+    session.runtime.output_lines.push((val as u8 as char).to_string());
+}
+
+fn host_rand(vm: &mut CideVM, session: &mut Session) {
+    let seed = session.runtime.rand_seed;
+    let next = seed.wrapping_mul(1103515245).wrapping_add(12345);
+    session.runtime.rand_seed = next;
+    vm.push((next & 0x7fff) as i32);
+}
+
+fn host_srand(vm: &mut CideVM, session: &mut Session) {
+    let seed = vm.pop();
+    session.runtime.rand_seed = seed as u32;
+}
+
+fn host_memset(vm: &mut CideVM, _session: &mut Session) {
+    let ptr = vm.pop() as u32;
+    let value = vm.pop();
+    let size = vm.pop();
+    let mem_size = vm.get_memory_slice().len();
+    if ptr as usize >= mem_size {
+        vm.push(ptr as i32);
+        return;
+    }
+    let max_write = mem_size - ptr as usize;
+    let write_len = (size as usize).min(max_write);
+    let byte_val = (value & 0xFF) as u8;
+    for i in 0..write_len {
+        vm.store_i8(ptr + i as u32, byte_val as i32, &super::instruction::SourceLoc::default());
+    }
+    vm.push(ptr as i32);
+}
+
+fn host_exit(vm: &mut CideVM, _session: &mut Session) {
+    let code = vm.pop();
+    vm.set_finished(code);
+}
+
+fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
+    let dest = vm.pop() as u32;
+    let src = vm.pop() as u32;
+    let mem_size = vm.get_memory_slice().len();
+    if dest as usize >= mem_size {
+        vm.push(dest as i32);
+        return;
+    }
+    let mut end = dest as usize;
+    while end < mem_size && vm.get_memory_slice()[end] != 0 {
+        end += 1;
+    }
+    let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
+    let src_str = read_cstring(vm, src);
+    let copy_len = src_str.len().min(max_copy);
+    for (i, ch) in src_str.bytes().enumerate().take(copy_len) {
+        vm.store_i8((end + i) as u32, ch as i32, &super::instruction::SourceLoc::default());
+    }
+    vm.store_i8((end + copy_len) as u32, 0, &super::instruction::SourceLoc::default());
+    vm.push(dest as i32);
+}
+
+fn host_atoi(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let s = read_cstring(vm, addr);
+    let val = s.trim_start().parse::<i32>().unwrap_or(0);
+    vm.push(val);
 }

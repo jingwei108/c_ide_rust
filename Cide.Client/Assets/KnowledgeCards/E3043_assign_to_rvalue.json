@@ -1,0 +1,12 @@
+{
+  "errorCode": 3043,
+  "messageContains": "",
+  "emoji": "🔒",
+  "title": "向右值赋值",
+  "plainExplanation": "赋值号 = 左边必须是可修改的变量（左值）。不能给常量、表达式结果或数组名赋值。",
+  "wrongCode": "a + b = 10;",
+  "correctCode": "int c = a + b;",
+  "memoryAnimationDescription": "",
+  "exercise": "为什么下面代码是错的？\n5 = x;",
+  "difficulty": 1
+}

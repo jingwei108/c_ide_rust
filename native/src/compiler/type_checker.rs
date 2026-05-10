@@ -592,6 +592,13 @@ impl TypeChecker {
                         if !self.is_int(&operand_type) && !operand_type.is_pointer() {
                             self.report_error("自增/自减要求 int 类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
                         }
+                        if let Expr::Identifier { name, .. } = operand.as_ref() {
+                            if let Some(sym) = self.lookup_var(name) {
+                                if sym.ty.is_const {
+                                    self.report_error(&format!("不能修改常量变量 '{}'", name), loc, ErrorCode::E3049_AssignToConst);
+                                }
+                            }
+                        }
                         if operand_type.is_pointer() {
                             operand_type.clone()
                         } else {
@@ -661,6 +668,13 @@ impl TypeChecker {
                     Expr::Unary { op: UnaryOp::Deref, .. });
                 if !is_lvalue {
                     self.report_error("赋值左边必须是可修改的左值", loc, ErrorCode::E3043_AssignToRValue);
+                }
+                if let Expr::Identifier { name, .. } = left.as_ref() {
+                    if let Some(sym) = self.lookup_var(name) {
+                        if sym.ty.is_const {
+                            self.report_error(&format!("不能给常量变量 '{}' 赋值", name), loc, ErrorCode::E3049_AssignToConst);
+                        }
+                    }
                 }
                 if !self.is_assignable(&left_type, &right_type, loc) {
                     self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
@@ -795,6 +809,92 @@ impl TypeChecker {
                         if !arg_type.is_pointer() && !arg_type.is_array() {
                             self.report_error(&format!("strcmp 的第 {} 个参数必须是指针或数组", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
                         }
+                    }
+                }
+                Type::int()
+            }
+            "getchar" => {
+                if !args.is_empty() {
+                    self.report_error("getchar 不需要参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                }
+                Type::int()
+            }
+            "putchar" => {
+                if args.len() != 1 {
+                    self.report_error("putchar 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let arg_type = self.resolve_expr_type(&mut args[0]);
+                    if !self.is_int(&arg_type) {
+                        self.report_error("putchar 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                }
+                Type::void()
+            }
+            "rand" => {
+                if !args.is_empty() {
+                    self.report_error("rand 不需要参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                }
+                Type::int()
+            }
+            "srand" => {
+                if args.len() != 1 {
+                    self.report_error("srand 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let arg_type = self.resolve_expr_type(&mut args[0]);
+                    if !self.is_int(&arg_type) {
+                        self.report_error("srand 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                }
+                Type::void()
+            }
+            "memset" => {
+                if args.len() != 3 {
+                    self.report_error("memset 需要三个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let ptr_type = self.resolve_expr_type(&mut args[0]);
+                    if !ptr_type.is_pointer() && !ptr_type.is_array() {
+                        self.report_error("memset 第一个参数必须是指针", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                    for i in 1..3 {
+                        let t = self.resolve_expr_type(&mut args[i]);
+                        if !self.is_int(&t) {
+                            self.report_error(&format!("memset 的第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                        }
+                    }
+                }
+                Type::pointer(TypeKind::Void, "")
+            }
+            "exit" => {
+                if args.len() != 1 {
+                    self.report_error("exit 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let arg_type = self.resolve_expr_type(&mut args[0]);
+                    if !self.is_int(&arg_type) {
+                        self.report_error("exit 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                }
+                Type::void()
+            }
+            "strcat" => {
+                if args.len() != 2 {
+                    self.report_error("strcat 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    for (i, arg) in args.iter_mut().enumerate() {
+                        let arg_type = self.resolve_expr_type(arg);
+                        if !arg_type.is_pointer() && !arg_type.is_array() {
+                            self.report_error(&format!("strcat 的第 {} 个参数必须是指针或数组", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                        }
+                    }
+                }
+                Type::pointer(TypeKind::Char, "char")
+            }
+            "atoi" => {
+                if args.len() != 1 {
+                    self.report_error("atoi 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let arg_type = self.resolve_expr_type(&mut args[0]);
+                    if !arg_type.is_pointer() && !arg_type.is_array() {
+                        self.report_error("atoi 参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
                     }
                 }
                 Type::int()

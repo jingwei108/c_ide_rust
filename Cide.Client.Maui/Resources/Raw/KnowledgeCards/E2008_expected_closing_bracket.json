@@ -1,0 +1,12 @@
+{
+  "errorCode": 2008,
+  "messageContains": "",
+  "emoji": "🗂️",
+  "title": "预期右方括号",
+  "plainExplanation": "方括号 [ ] 必须成对出现。常见于数组声明和数组索引访问。请检查是否遗漏了右方括号。",
+  "wrongCode": "int arr[5 = {1,2,3};",
+  "correctCode": "int arr[5] = {1,2,3};",
+  "memoryAnimationDescription": "",
+  "exercise": "修正下面代码：\narr[0 = 10;",
+  "difficulty": 1
+}

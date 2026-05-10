@@ -67,7 +67,11 @@ docs/                   设计文档、事故报告
 ## 已知限制
 
 ### 当前不支持
-（暂无）
+- **匿名结构体变量声明** — `struct { int x; } v;`（变量声明中的匿名 struct 暂不支持，但 `typedef struct { ... } Name;` 已支持）
+- **`realloc`** — 仅有 `malloc`/`free`
+- **`qsort`** — 未实现
+- **`stderr` / `fprintf(stderr, ...)`** — 仅有 `printf`/`scanf`
+- **`exit`** — 未实现
 
 ### 已支持的关键特性
 - **逗号分隔的多变量声明** — `int a = 1, b = 2;`
@@ -77,6 +81,7 @@ docs/                   设计文档、事故报告
 - **局部 `char` 数组字符串初始化** — `char s[6] = "hello"; printf("%s", s);`
 - **`enum` 局部/全局变量声明** — `enum Color c = GREEN;`（需先声明 enum 类型）
 - **`typedef`** — `typedef int Integer; Integer a = 42;`
+- **`typedef struct`** — `typedef struct { int x; } Point; Point p;`（匿名结构体 + typedef 别名）以及 `typedef struct Vec { int x; } VecAlias;`（命名结构体 + typedef 别名）
 - **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(arr)`、`sizeof(ptr)`
 - **`scanf` 多参数** — `scanf("%d %d %d", &a, &b, &c)`
 - **指针算术** — `p++` / `p--` / `p + i` / `p - i` / `p - q`，自动按 pointee 类型大小缩放（`int*` 步长 4，`char*` 步长 1，`struct*` 步长为结构体大小）
@@ -123,6 +128,19 @@ docs/                   设计文档、事故报告
 - **文档同步（2026-05-10）**：`DESIGN.md` / `ROADMAP.md` 仍描述 C++ 后端（CMake/Clang/WasmCodeGen）→ 全面更新为 Rust 后端（Cargo/自定义字节码）
 - **C 头文件同步（2026-05-10）**：`cide_capi.h` 缺失 `E2007`/`E2008`/`E3048`/`W3051`~`W3056` → 补全；注释"分号分隔"改为"换行分隔"
 - **CI/CD 初始化（2026-05-10）**：零 CI/CD → 新增 `.github/workflows/ci.yml`，覆盖 Rust 编译/测试/clippy + C# 编译/测试
+- **Parser 匿名 struct typedef 支持（2026-05-10）**：`typedef struct { ... } Name;` 和 `typedef struct Name { ... } Alias;` 原报"预期结构体名称"级联错误 → 全面支持，新增 `E1006_UnsupportedFeature` 错误码用于友好提示其他暂不支持语法
+- **诊断与修复系统全面拓展（2026-05-10）**：
+  - 新增 `native/src/diagnostics/error_catalog.rs`：为全部 56+ 个错误/警告码提供中文标题、emoji、通俗解释、常见原因
+  - `push_diagnostics`/`push_warnings` 统一调用 `error_catalog::generate_fix`，自动生成结构化修复坐标
+  - 新增可自动修复场景：缺少 `"`（E1002）、缺少 `}`/`)/`]`（E2006/E2007/E2008）、`|`→`||` / `&`→`&&`（E1004）、`<=`→`<`（W3051）、条件内 `=`→`==`（W3050）等
+  - 前端 `CodeFixService` 增加 `InsertText` 支持及更多 fallback 修复模式（`->`→`.`、补 `return 0;` 等）
+  - 新增 11 张知识卡片 JSON（Desktop + Maui 双端资源同步）：覆盖缺少分号/括号/引号、变量未声明、scanf 取地址、结构体成员访问、右值赋值、缺少返回值等高频错误
+- **C 子集 P0 拓展（2026-05-10）**：
+  - `NULL` 关键字：`int *p = NULL;` 现在编译通过，`NULL` 被解析为 `(void*)0`
+  - 新增 8 个宿主函数：`getchar`/`putchar`/`rand`/`srand`/`memset`/`exit`/`strcat`/`atoi`
+  - `const` 语义：`const int MAX = 100;` 现在会阻止后续赋值和自增/自减，新增错误码 `E3049_AssignToConst`
+  - VM 新增 `finished`/`exit_code` 机制，支持 `exit(code)` 提前终止并记录返回值
+  - 新增 10 个端到端测试覆盖上述全部特性
 
 ## 构建命令
 

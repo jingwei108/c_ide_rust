@@ -1045,3 +1045,241 @@ int main() {
 // statement on all paths, so this case compiles successfully.
 // #[test]
 // fn test_e2e_error_missing_return_non_void() { ... }
+
+#[test]
+fn test_e2e_typedef_anon_struct() {
+    let src = r#"
+#include <stdio.h>
+typedef struct {
+    int x;
+    int y;
+} Point;
+
+int main() {
+    Point p;
+    p.x = 3;
+    p.y = 4;
+    printf("%d %d", p.x, p.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3 4")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_typedef_named_struct() {
+    let src = r#"
+#include <stdio.h>
+typedef struct Vec2 {
+    int x;
+    int y;
+} Vec2Alias;
+
+int main() {
+    Vec2Alias v;
+    v.x = 10;
+    v.y = 20;
+    printf("%d %d", v.x, v.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("10 20")), "Outputs: {:?}", outputs);
+}
+
+
+// ============================================================================
+// P0 Subset Extensions
+// ============================================================================
+
+#[test]
+fn test_e2e_null_keyword() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int *p = NULL;
+    if (p == NULL) {
+        printf("null");
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("null")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_rand_srand() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    srand(12345);
+    int a = rand();
+    int b = rand();
+    printf("%d %d", a, b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    // Extract first two integers from the output line
+    let line = outputs.join("");
+    let nums: Vec<i32> = line.split(|c: char| !c.is_ascii_digit() && c != '-')
+        .filter(|s| !s.is_empty())
+        .map(|s| s.parse::<i32>().unwrap())
+        .collect();
+    assert!(nums.len() >= 2, "Expected at least 2 numbers in output: {}", line);
+    let a = nums[0];
+    let b = nums[1];
+    assert!(a >= 0 && a <= 32767, "rand out of range: {}", a);
+    assert!(b >= 0 && b <= 32767, "rand out of range: {}", b);
+    assert_ne!(a, b, "rand should produce different values");
+}
+
+#[test]
+fn test_e2e_memset() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[5];
+    memset(arr, 0, sizeof(arr));
+    printf("%d %d %d", arr[0], arr[2], arr[4]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("0 0 0")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_exit() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    printf("before");
+    exit(42);
+    printf("after");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_ret, outputs) = result.unwrap();
+    assert!(outputs.iter().any(|l| l.contains("before")), "Outputs: {:?}", outputs);
+    assert!(!outputs.iter().any(|l| l.contains("after")), "Outputs: {:?}", outputs);
+    assert!(outputs.iter().any(|l| l.contains("返回值：42")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_atoi() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char s[] = "12345";
+    int n = atoi(s);
+    printf("%d", n);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("12345")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_strcat() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char s[20] = "Hello";
+    strcat(s, " World");
+    printf("%s", s);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("Hello World")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_putchar() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    putchar('A');
+    putchar('B');
+    putchar('C');
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let joined = outputs.join("");
+    assert!(joined.contains("ABC"), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_const_var() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    const int MAX = 100;
+    printf("%d", MAX);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("100")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_const_assign_error() {
+    let src = r#"
+int main() {
+    const int x = 10;
+    x = 20;
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected compile error for assigning to const");
+}
+
+#[test]
+fn test_e2e_const_inc_error() {
+    let src = r#"
+int main() {
+    const int x = 10;
+    x++;
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected compile error for incrementing const");
+}

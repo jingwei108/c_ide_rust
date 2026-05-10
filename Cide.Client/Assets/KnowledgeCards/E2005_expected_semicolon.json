@@ -1,0 +1,12 @@
+{
+  "errorCode": 2005,
+  "messageContains": "",
+  "emoji": "⏹️",
+  "title": "预期分号",
+  "plainExplanation": "C 语言的每条语句末尾都需要分号 ; 作为结束标志。就像中文一句话末尾需要句号。忘记写分号是初学者最常见的错误之一。",
+  "wrongCode": "int a = 10",
+  "correctCode": "int a = 10;",
+  "memoryAnimationDescription": "",
+  "exercise": "找出下面代码中缺少的分号：\nint x = 5\nprintf(\"%d\", x)\nreturn 0",
+  "difficulty": 1
+}

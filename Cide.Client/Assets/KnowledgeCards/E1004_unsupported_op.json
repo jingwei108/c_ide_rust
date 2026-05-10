@@ -1,0 +1,12 @@
+{
+  "errorCode": 1004,
+  "messageContains": "",
+  "emoji": "🔧",
+  "title": "不支持的操作符",
+  "plainExplanation": "检测到可能是逻辑运算符的误写。在 C 语言中，逻辑或写为 ||，逻辑与写为 &&。单个 | 和 & 是位运算符，很少在条件里使用。",
+  "wrongCode": "if (a | b) { ... }",
+  "correctCode": "if (a || b) { ... }",
+  "memoryAnimationDescription": "",
+  "exercise": "把下面的位运算改成逻辑运算：\nif (x > 0 & y < 10)",
+  "difficulty": 2
+}
