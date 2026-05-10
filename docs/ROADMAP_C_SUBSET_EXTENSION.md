@@ -6,11 +6,11 @@
 
 | 层级 | 已支持 | 未支持/限制 |
 |:---|:---|:---|
-| **Lexer** | 48 种 token，整数/十六进制/字符/字符串字面量，`//` 和 `/* */` 注释，`#define` 常量宏 | 无浮点字面量，无八进制，无宽字符 |
+| **Lexer** | 48 种 token，整数/十六进制/浮点/字符/字符串字面量，`//` 和 `/* */` 注释，`#define` 常量宏 | 无八进制，无宽字符 |
 | **Parser** | 变量/数组/指针/struct/enum/typedef，if/while/do-while/for/switch，全部表达式优先级（含三元、cast、复合赋值、位运算） | 无 `union`，无 `goto`，无函数指针，无 VLA，无 `static`/`extern` |
-| **TypeChecker** | int/char/void/指针/数组/struct/enum，`const`/`unsigned`/`long` 等修饰符被解析但**映射为 int** | 无 `const` 语义，无 `unsigned` 语义，无浮点类型 |
-| **BytecodeGen** | 45 条指令，栈机模型，数组越界检查，指针步长缩放 | 无浮点指令 |
-| **VM** | 256KB 线性内存，NULL 陷阱区，malloc/free（first-fit），printf/scanf（可变参数），strlen/strcpy/strcmp | 无 `realloc`/`qsort`/`stderr`/`exit`，无文件 IO |
+| **TypeChecker** | int/char/float/void/指针/数组/struct/enum，`const` 语义（直接变量），`unsigned`/`long` 等修饰符被解析但**映射为 int** | 无 `unsigned` 语义 |
+| **BytecodeGen** | 63 条指令（含 float 算术/比较/转换），栈机模型，数组越界检查，指针步长缩放 | — |
+| **VM** | 256KB 线性内存，NULL 陷阱区，malloc/free（first-fit），printf/scanf（可变参数，含 `%f`），strlen/strcpy/strcmp | 无 `realloc`/`qsort`/`stderr`，无文件 IO |
 | **Diagnostics** | 56+ 错误码中文元数据，结构化自动修复（分号/括号/引号/`\|→\|\| `/`&→&&`/`<=→<`/`=→==`） | — |
 
 ---
@@ -50,7 +50,7 @@
 | # | 特性 | 教学价值 | 实现难度 | 需改模块 | 说明 |
 |:---|:---|:---|:---|:---|:---|:---|
 | 8 | **`const` 语义** | ⭐⭐⭐ | 🟡 中 | Parser + AST + TypeChecker | `const int MAX = 100;` 目前被忽略。需要：① Parser 保留 `is_const` 标记到 `VarDecl`；② TypeChecker 在符号表记录 `is_const`；③ 赋值检查时拒绝 `const` 左值。 |
-| 9 | **`float` / `double` 基础支持** | ⭐⭐⭐ | 🔴 高 | Lexer + AST + TypeChecker + BytecodeGen + VM | 学生写 `3.14` 是目前最大的挫败源之一。最小可行方案：① Lexer 识别浮点字面量；② 新增 `TypeKind::Float`（或复用现有类型系统）；③ BytecodeGen 新增 `PushConstF`、`AddF`、`SubF`、`MulF`、`DivF`、`LoadMemF`、`StoreMemF`、`CastF2I`、`CastI2F`；④ VM 值栈支持 `f32`（可用 `i32` 位模式存储，运算时 `f32::from_bits`）；⑤ printf `%f` 格式符。 |
+| 9 | **`float` / `double` 基础支持** | ⭐⭐⭐ | 🔴 高 | Lexer + AST + TypeChecker + BytecodeGen + VM | ✅ **已完成（P1）**。支持 `float` 类型（32 位，`double` 未支持），浮点字面量 `3.14`，算术/比较/隐式转换，`printf("%f")`/`scanf("%f")`，`(int)`/`(float)` 强制转换。 |
 | 10 | **`sprintf` / `snprintf`** | ⭐⭐⭐ | 🟡 中 | VM host_funcs + BytecodeGen + TypeChecker | 字符串格式化是教学高频需求。可复用 `host_printf_n` 的格式化逻辑，将结果写入目标缓冲区而非输出。`snprintf` 需额外长度限制。 |
 | 11 | **函数式宏 `#define MAX(a,b) ((a)>(b)?(a):(b))`** | ⭐⭐⭐ | 🟡 中高 | Lexer（预处理器） | 教学中极其常见。实现最小子集：① 宏定义带括号参数列表；② 调用时按位置文本替换；③ 不支持 `##`/`#`/可变参数。难点：替换时需要处理括号嵌套和优先级保护。 |
 | 12 | **`assert(cond)`** | ⭐⭐ | 🟡 中 | VM host_funcs 或 预处理器宏 | 如果条件为假，输出错误信息并终止。可当作内置函数实现，也可当作宏展开为 `if (!(cond)) { printf(...); exit(1); }`。 |

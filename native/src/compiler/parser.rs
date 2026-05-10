@@ -107,7 +107,7 @@ impl Parser {
         while !self.is_at_end() {
             if self.previous().ty == TokenType::Semicolon { return; }
             match self.current().ty {
-                TokenType::Int | TokenType::Void | TokenType::Char |
+                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float |
                 TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
                 TokenType::Return | TokenType::Break | TokenType::Continue |
                 TokenType::Struct | TokenType::Switch | TokenType::Case |
@@ -121,7 +121,7 @@ impl Parser {
 
     fn is_type_token(&self) -> bool {
         if self.check(TokenType::Int) || self.check(TokenType::Void) ||
-           self.check(TokenType::Char) || self.check(TokenType::Struct) ||
+           self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Struct) ||
            self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
            self.check(TokenType::Long) || self.check(TokenType::Short) ||
            self.check(TokenType::Signed) || self.check(TokenType::Const) {
@@ -342,6 +342,8 @@ impl Parser {
             if is_unsigned { Type::unsigned_int() } else { Type::int() }
         } else if self.match_token(TokenType::Void) {
             Type::void()
+        } else if self.match_token(TokenType::Float) {
+            Type::float()
         } else if self.match_token(TokenType::Char) {
             if is_unsigned { Type::unsigned_int() } else { Type::char() }
         } else if self.match_token(TokenType::Struct) {
@@ -418,7 +420,7 @@ impl Parser {
     fn parse_param_list(&mut self) -> Vec<Param> {
         let mut params = Vec::new();
         if self.check(TokenType::RParen) { return params; }
-        if self.check(TokenType::Void) && self.peek(1).ty == TokenType::RParen {
+        if (self.check(TokenType::Void) || self.check(TokenType::Float)) && self.peek(1).ty == TokenType::RParen {
             self.advance();
             return params;
         }
@@ -879,7 +881,7 @@ impl Parser {
             let mut is_type = false;
             let mut t = Type::default();
             if self.check(TokenType::Int) || self.check(TokenType::Void) ||
-               self.check(TokenType::Char) || self.check(TokenType::Struct) ||
+               self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Struct) ||
                self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
                self.check(TokenType::Short) || self.check(TokenType::Signed) ||
                self.check(TokenType::Const) {
@@ -960,6 +962,11 @@ impl Parser {
             let value: i32 = self.previous().text.parse().unwrap_or(0);
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             return Expr::Literal { value, loc, ty: Type::int() };
+        }
+        if self.match_token(TokenType::FloatLiteral) {
+            let value: f64 = self.previous().text.parse().unwrap_or(0.0);
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::FloatLiteral { value, loc, ty: Type::float() };
         }
         if self.match_token(TokenType::CharLiteral) {
             let value: i32 = self.previous().text.parse().unwrap_or(0);

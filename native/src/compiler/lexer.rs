@@ -4,9 +4,9 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
-    Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const,
+    Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Float,
     Null,
-    Identifier, Number, CharLiteral, String,
+    Identifier, Number, FloatLiteral, CharLiteral, String,
     Plus, Minus, Star, Slash, Percent,
     Eq, Ne, Lt, Le, Gt, Ge,
     AndAnd, OrOr, Not,
@@ -253,6 +253,15 @@ impl Lexer {
         }
         while self.pos < self.source.len() && self.peek(0).is_ascii_digit() {
             self.advance();
+        }
+        // check for float literal (e.g. 3.14)
+        if self.peek(0) == '.' && self.peek(1).is_ascii_digit() {
+            self.advance(); // '.'
+            while self.pos < self.source.len() && self.peek(0).is_ascii_digit() {
+                self.advance();
+            }
+            let text = &self.source[start..self.pos];
+            return self.make_token(TokenType::FloatLiteral, text);
         }
         let text = &self.source[start..self.pos];
         self.make_token(TokenType::Number, text)
@@ -594,6 +603,7 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         "short"    => Some(TokenType::Short),
         "signed"   => Some(TokenType::Signed),
         "const"    => Some(TokenType::Const),
+        "float"    => Some(TokenType::Float),
         "NULL"     => Some(TokenType::Null),
         "null"     => Some(TokenType::Null),
         _          => None,

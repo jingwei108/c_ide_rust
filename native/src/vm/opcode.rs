@@ -53,6 +53,12 @@ pub enum OpCode {
     NegF = 55,
     CastI2F = 56,
     CastF2I = 57,
+    EqF = 58,
+    NeF = 59,
+    LtF = 60,
+    LeF = 61,
+    GtF = 62,
+    GeF = 63,
 }
 
 impl OpCode {
@@ -101,6 +107,12 @@ impl OpCode {
             55 => Some(OpCode::NegF),
             56 => Some(OpCode::CastI2F),
             57 => Some(OpCode::CastF2I),
+            58 => Some(OpCode::EqF),
+            59 => Some(OpCode::NeF),
+            60 => Some(OpCode::LtF),
+            61 => Some(OpCode::LeF),
+            62 => Some(OpCode::GtF),
+            63 => Some(OpCode::GeF),
             29 => Some(OpCode::Jump),
             30 => Some(OpCode::JumpIfZero),
             31 => Some(OpCode::JumpIfNotZero),
