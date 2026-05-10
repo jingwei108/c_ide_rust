@@ -10,6 +10,7 @@ namespace Cide.Client.Maui.ViewModels;
 
 public partial class MainViewModel : ObservableObject, IDisposable
 {
+    private bool _disposed;
     public MainViewModel()
     {
         Console.WriteLine("[CIDE_VM] MainViewModel constructor START");
@@ -126,6 +127,9 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _newWatchExpression = "";
+
+    [ObservableProperty]
+    private string _inputText = "";
 
     [ObservableProperty]
     private int _executionSpeed = 0;
@@ -372,7 +376,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
                     Compiler.AddBreakpoint(bpLine);
                 }
 
-                Compiler.SetInput(string.Empty);
+                // Set program input for scanf
+                Compiler.SetInput(InputText);
 
                 if (ExecutionSpeed <= 0)
                 {
@@ -514,7 +519,8 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Compiler.AddBreakpoint(bpLine);
         }
 
-        Compiler.SetInput(string.Empty);
+        // Set program input for scanf
+        Compiler.SetInput(InputText);
 
         DoSingleStep();
     }
@@ -609,6 +615,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
+        if (_disposed) return;
         if (disposing)
         {
             StopExecution();
@@ -618,5 +625,6 @@ public partial class MainViewModel : ObservableObject, IDisposable
             _runCts?.Dispose();
             _runCts = null;
         }
+        _disposed = true;
     }
 }

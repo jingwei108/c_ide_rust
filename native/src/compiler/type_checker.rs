@@ -13,6 +13,7 @@ pub struct TypeError {
 #[derive(Debug, Clone)]
 struct VarSymbol {
     ty: Type,
+    #[allow(dead_code)]
     is_global: bool,
 }
 
@@ -36,6 +37,12 @@ pub struct TypeChecker {
     current_func_return: Type,
     loop_depth: i32,
     switch_depth: i32,
+}
+
+impl Default for TypeChecker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TypeChecker {
@@ -90,7 +97,7 @@ impl TypeChecker {
                 } else {
                     let init_type = self.resolve_expr_type(init);
                     if !self.is_assignable(&g.ty, &init_type, &g.loc) {
-                        self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type.to_string(), g.ty.to_string()), &g.loc, ErrorCode::E3004_TypeMismatch);
+                        self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, g.ty), &g.loc, ErrorCode::E3004_TypeMismatch);
                     }
                 }
             }
@@ -168,7 +175,7 @@ impl TypeChecker {
         if target == value { return true; }
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Array)
             && target.base_kind == value.base_kind && target.name == value.name {
-            self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3050_AssignInCondition);
+            self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
             return true;
         }
         if matches!(target.kind, TypeKind::Array) && matches!(value.kind, TypeKind::Array)
@@ -187,16 +194,16 @@ impl TypeChecker {
             if target.kind != value.kind {
                 let from = if matches!(value.kind, TypeKind::Char) { "char" } else { "int" };
                 let to = if matches!(target.kind, TypeKind::Char) { "char" } else { "int" };
-                self.report_warning(&format!("{} 被隐式转换为 {}。不同类型的标量之间赋值可能会丢失精度。", from, to), loc, ErrorCode::W3051_ArrayBoundOffByOne);
+                self.report_warning(&format!("{} 被隐式转换为 {}。不同类型的标量之间赋值可能会丢失精度。", from, to), loc, ErrorCode::W3053_ImplicitScalarConversion);
             }
             return true;
         }
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Int) {
-            self.report_warning("整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。", loc, ErrorCode::W3051_ArrayBoundOffByOne);
+            self.report_warning("整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。", loc, ErrorCode::W3054_IntToPointerCast);
             return true;
         }
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Pointer) && value.name.is_empty() {
-            self.report_warning("void* 指针被隐式转换为具体类型的指针。请确保内存布局正确。", loc, ErrorCode::W3051_ArrayBoundOffByOne);
+            self.report_warning("void* 指针被隐式转换为具体类型的指针。请确保内存布局正确。", loc, ErrorCode::W3055_VoidPointerCast);
             return true;
         }
         false
@@ -218,7 +225,7 @@ impl TypeChecker {
         if !matches!(init, Expr::InitList { .. }) {
             let init_type = self.resolve_expr_type(init);
             if !self.is_assignable(struct_type, &init_type, loc) {
-                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type.to_string(), struct_type.to_string()), loc, ErrorCode::E3004_TypeMismatch);
+                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, struct_type), loc, ErrorCode::E3004_TypeMismatch);
             }
             return;
         }
@@ -240,7 +247,7 @@ impl TypeChecker {
             if i >= fields.len() { break; }
             let e_type = self.resolve_expr_type(elem);
             if !self.is_assignable(&fields[i].0, &e_type, loc) {
-                self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", fields[i].1, fields[i].0.to_string(), e_type.to_string()), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", fields[i].1, fields[i].0, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
             }
         }
     }
@@ -254,7 +261,7 @@ impl TypeChecker {
             };
             let e_type = self.resolve_expr_type(init);
             if !self.is_assignable(&expected, &e_type, loc) {
-                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", expected.to_string(), e_type.to_string()), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", expected, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
                 return false;
             }
             return true;
@@ -295,7 +302,7 @@ impl TypeChecker {
                 self.validate_nested_init_list(&arr_type.dims, init, loc, &arr_type.base_kind, &arr_type.name);
             } else {
                 let init_type = self.resolve_expr_type(init);
-                self.report_error(&format!("多维数组初始化必须使用嵌套初始化列表，不能是 '{}'", init_type.to_string()), loc, ErrorCode::E3009_InvalidArrayInit);
+                self.report_error(&format!("多维数组初始化必须使用嵌套初始化列表，不能是 '{}'", init_type), loc, ErrorCode::E3009_InvalidArrayInit);
             }
             return;
         }
@@ -312,7 +319,7 @@ impl TypeChecker {
             for elem in elements.iter_mut() {
                 let e_type = self.resolve_expr_type(elem);
                 if !self.is_assignable(&elem_type, &e_type, loc) {
-                    self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type.to_string(), e_type.to_string()), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                    self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
                 }
             }
         } else if let Expr::StringLiteral { value, .. } = init {
@@ -328,7 +335,7 @@ impl TypeChecker {
             }
         } else {
             let init_type = self.resolve_expr_type(init);
-            self.report_error(&format!("数组初始化必须使用初始化列表或字符串字面量，不能是 '{}'", init_type.to_string()), loc, ErrorCode::E3009_InvalidArrayInit);
+            self.report_error(&format!("数组初始化必须使用初始化列表或字符串字面量，不能是 '{}'", init_type), loc, ErrorCode::E3009_InvalidArrayInit);
         }
     }
 
@@ -354,6 +361,9 @@ impl TypeChecker {
                 self.exit_scope();
             }
             Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
+                if var_type.is_unsigned {
+                    self.report_warning("unsigned 类型被映射为 int，暂不支持无符号语义", loc, ErrorCode::W3056_UnsignedToInt);
+                }
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         let mut ty = var_type.clone();
@@ -363,7 +373,7 @@ impl TypeChecker {
                     } else {
                         let init_type = self.resolve_expr_type(init_expr);
                         if !self.is_assignable(var_type, &init_type, loc) {
-                            self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type.to_string(), var_type.to_string()), loc, ErrorCode::E3004_TypeMismatch);
+                            self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
                         }
                     }
                 }
@@ -378,7 +388,7 @@ impl TypeChecker {
                         } else {
                             let init_type = self.resolve_expr_type(init_expr);
                             if !self.is_assignable(var_type, &init_type, loc) {
-                                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type.to_string(), var_type.to_string()), loc, ErrorCode::E3004_TypeMismatch);
+                                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
                             }
                         }
                     }
@@ -428,7 +438,7 @@ impl TypeChecker {
                         let val_type = self.resolve_expr_type(v);
                         let expected = self.current_func_return.clone();
                         if !self.is_assignable(&expected, &val_type, loc) {
-                            self.report_error(&format!("返回类型不匹配：期望 '{}'，实际 '{}'", self.current_func_return.to_string(), val_type.to_string()), loc, ErrorCode::E3014_ReturnTypeMismatch);
+                            self.report_error(&format!("返回类型不匹配：期望 '{}'，实际 '{}'", self.current_func_return, val_type), loc, ErrorCode::E3014_ReturnTypeMismatch);
                         }
                     } else {
                         self.report_error("非 void 函数必须返回一个值", loc, ErrorCode::E3013_MissingReturnValue);
@@ -598,9 +608,7 @@ impl TypeChecker {
             }
             Expr::Member { object, member, loc, ty } => {
                 let obj_type = self.resolve_expr_type(object);
-                let struct_name = if obj_type.is_struct() {
-                    obj_type.name.clone()
-                } else if obj_type.is_pointer() && !obj_type.name.is_empty() {
+                let struct_name = if obj_type.is_struct() || (obj_type.is_pointer() && !obj_type.name.is_empty()) {
                     obj_type.name.clone()
                 } else {
                     self.report_error("'.' 和 '->' 只能用于结构体类型", loc, ErrorCode::E3041_MemberNonStruct);
@@ -625,7 +633,7 @@ impl TypeChecker {
                     self.report_error("赋值左边必须是可修改的左值", loc, ErrorCode::E3043_AssignToRValue);
                 }
                 if !self.is_assignable(&left_type, &right_type, loc) {
-                    self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type.to_string(), left_type.to_string()), loc, ErrorCode::E3044_AssignTypeMismatch);
+                    self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
                 }
                 if *op != AssignOp::Assign && (!self.is_int(&left_type) || !self.is_int(&right_type)) {
                     self.report_error("复合赋值要求两边都是 int 类型", loc, ErrorCode::E3045_CompoundAssignType);

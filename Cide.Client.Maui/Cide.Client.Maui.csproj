@@ -79,10 +79,10 @@
         <ProjectReference Include="..\Cide.Client.Shared\Cide.Client.Shared.csproj" />
     </ItemGroup>
 
-    <!-- Android native libraries -->
+    <!-- Android native libraries (Rust build) -->
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
-        <AndroidNativeLibrary Include="..\native\build-android-arm64-v8a\lib\libcide_native.so" Abi="arm64-v8a" />
-        <AndroidNativeLibrary Include="..\native\build-android-armeabi-v7a\lib\libcide_native.so" Abi="armeabi-v7a" />
+        <AndroidNativeLibrary Include="..\native\target\android\arm64-v8a\libcide_native.so" Abi="arm64-v8a" />
+        <AndroidNativeLibrary Include="..\native\target\android\armeabi-v7a\libcide_native.so" Abi="armeabi-v7a" />
     </ItemGroup>
 
     <ItemGroup>

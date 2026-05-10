@@ -95,6 +95,18 @@ public class CompilerService : IDisposable
         return NativeMethods.cide_compile(_session, source) == 0;
     }
 
+    public bool CompileUnit(string filename, string source)
+    {
+        EnsureNotDisposed();
+        return NativeMethods.cide_compile_unit(_session, filename, source) == 0;
+    }
+
+    public bool CompileAll()
+    {
+        EnsureNotDisposed();
+        return NativeMethods.cide_compile_all(_session) == 0;
+    }
+
     public string? GetCompileErrors()
     {
         EnsureNotDisposed();

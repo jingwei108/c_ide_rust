@@ -3,4 +3,5 @@
   <Project Path="Cide.Client.Desktop/Cide.Client.Desktop.csproj" />
   <Project Path="Cide.Client/Cide.Client.csproj" />
   <Project Path="Cide.Client.Maui/Cide.Client.Maui.csproj" />
+  <Project Path="Cide.Client.Tests/Cide.Client.Tests.csproj" />
 </Solution>

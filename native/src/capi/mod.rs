@@ -1,5 +1,11 @@
+#![allow(clippy::missing_safety_doc)]
+
 use crate::session::*;
 use crate::vm::vm::{CideVM, FuncMeta, VMSymbol};
+use crate::compiler::lexer::Lexer;
+use crate::compiler::parser::Parser;
+use crate::compiler::type_checker::TypeChecker;
+use crate::compiler::bytecode_gen::BytecodeGen;
 use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 use std::slice;
@@ -92,9 +98,132 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
         return -1;
     }
     let session = &mut *s;
-    session.compile.errors = "Rust migration stub: compiler not implemented yet".to_string();
-    session.compile.errors_buffer = session.compile.errors.clone();
-    -1
+
+    // 清空之前的编译状态
+    session.compile.bytecode.clear();
+    session.compile.globals_init.clear();
+    session.compile.diagnostics.clear();
+    session.compile.source_map.clear();
+    session.compile.func_table.clear();
+    session.compile.func_index.clear();
+    session.compile.string_data.clear();
+    session.compile.symbols.clear();
+    session.compile.algorithm_matches.clear();
+    session.compile.struct_fields.clear();
+    session.compile.errors.clear();
+    session.compile.errors_buffer.clear();
+    session.compile.compiled = false;
+
+    // 拼接所有编译单元
+    let mut full_source = String::new();
+    for unit in &session.compile.compile_units {
+        full_source.push_str(&unit.source);
+        full_source.push('\n');
+    }
+
+    // 1. Lexer
+    let (tokens, lex_errors) = Lexer::new(full_source).tokenize();
+    if !lex_errors.is_empty() {
+        let mut err_str = String::new();
+        for e in &lex_errors {
+            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code, e.line, e.column, e.message));
+        }
+        session.compile.errors = err_str.clone();
+        session.compile.errors_buffer = err_str;
+        return -1;
+    }
+
+    // 2. Parser
+    let (maybe_program, parse_errors) = Parser::new(tokens).parse();
+    if !parse_errors.is_empty() {
+        let mut err_str = String::new();
+        for e in &parse_errors {
+            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code, e.line, e.column, e.message));
+        }
+        session.compile.errors = err_str.clone();
+        session.compile.errors_buffer = err_str;
+        return -1;
+    }
+
+    let mut program = match maybe_program {
+        Some(p) => p,
+        None => {
+            session.compile.errors = "解析失败：无法生成 AST".to_string();
+            session.compile.errors_buffer = session.compile.errors.clone();
+            return -1;
+        }
+    };
+
+    // 3. TypeChecker
+    let (type_errors, _type_warnings) = TypeChecker::new().check(&mut program);
+    if !type_errors.is_empty() {
+        let mut err_str = String::new();
+        for e in &type_errors {
+            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code, e.line, e.column, e.message));
+        }
+        session.compile.errors = err_str.clone();
+        session.compile.errors_buffer = err_str;
+        return -1;
+    }
+
+    // 4. BytecodeGen
+    let gen = BytecodeGen::new();
+    let output = match gen.generate(&mut program) {
+        Ok(o) => o,
+        Err(gen_errors) => {
+            let mut err_str = String::new();
+            for e in &gen_errors {
+                err_str.push_str(&format!("生成错误: {}\n", e));
+            }
+            session.compile.errors = err_str.clone();
+            session.compile.errors_buffer = err_str;
+            return -1;
+        }
+    };
+
+    // 填充编译结果
+    session.compile.bytecode = output.code;
+    session.compile.globals_init = output.globals_init;
+    session.compile.source_map = output.source_map.into_iter()
+        .map(|(ip, loc)| (ip, crate::compiler::ast::SourceLoc { line: loc.line, column: loc.column }))
+        .collect();
+    session.compile.func_index = output.func_index;
+
+    // func_table 转换：bytecode_gen::FuncMeta -> session::FuncMeta
+    for (name, meta) in output.func_table {
+        session.compile.func_table.insert(name, crate::session::FuncMeta {
+            ip: meta.ip,
+            arg_count: meta.arg_count,
+            local_count: meta.local_count,
+        });
+    }
+
+    session.compile.string_data = output.string_data;
+
+    // symbols 转换：VMSymbol -> Symbol
+    for sym in output.symbols {
+        session.compile.symbols.push(crate::session::Symbol {
+            name: sym.name,
+            addr: sym.addr,
+            is_local: sym.is_local,
+            ty: sym.ty,
+            scope_depth: sym.scope_depth,
+        });
+    }
+
+    // struct_fields 转换
+    for (name, fields) in output.struct_defs {
+        let converted: Vec<(String, i32)> = fields.into_iter()
+            .enumerate()
+            .map(|(i, f)| (f.name, i as i32 * 4))
+            .collect();
+        session.compile.struct_fields.insert(name, converted);
+    }
+
+    session.compile.compiled = true;
+    session.compile.errors.clear();
+    session.compile.errors_buffer.clear();
+    0
 }
 
 #[no_mangle]
@@ -175,7 +304,7 @@ unsafe fn setup_vm(vm: &mut CideVM, session: &Session) {
     for &(addr, ref str) in &session.compile.string_data {
         let a = addr as usize;
         let bytes = str.as_bytes();
-        if a + bytes.len() + 1 <= mem_size {
+        if a + bytes.len() < mem_size {
             let dst = slice::from_raw_parts_mut(mem.add(a), bytes.len() + 1);
             dst[..bytes.len()].copy_from_slice(bytes);
             dst[bytes.len()] = 0;
@@ -246,7 +375,7 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
         setup_vm(&mut vm, session);
         vm.pause();
 
-        let mut ret = 0;
+        let ret;
         loop {
             match vm.step(session) {
                 crate::vm::vm::StepResult::Paused => {
@@ -273,7 +402,7 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
         ret
     } else {
         vm.resume();
-        let mut ret = 0;
+        let ret;
         loop {
             match vm.step(session) {
                 crate::vm::vm::StepResult::Paused => {
@@ -518,25 +647,57 @@ pub unsafe extern "C" fn cide_memory_region_get(
 
 #[no_mangle]
 pub unsafe extern "C" fn cide_memory_get_value(
-    _s: *mut Session,
-    _addr: u32,
+    s: *mut Session,
+    addr: u32,
     out_val: *mut c_int,
 ) -> c_int {
-    if !out_val.is_null() {
-        *out_val = 0;
+    if s.is_null() || out_val.is_null() {
+        return -1;
     }
+    let session = &*s;
+    if let Some(ref vm) = session.vm {
+        let mem = vm.memory_ref();
+        if addr as u64 + 4 <= mem.len() as u64 {
+            let val = i32::from_le_bytes([
+                mem[addr as usize],
+                mem[addr as usize + 1],
+                mem[addr as usize + 2],
+                mem[addr as usize + 3],
+            ]);
+            *out_val = val;
+            return 0;
+        }
+    }
+    *out_val = 0;
     -1
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn cide_memory_get_pointer_target(
-    _s: *mut Session,
-    _addr: u32,
+    s: *mut Session,
+    addr: u32,
     out_target: *mut u32,
 ) -> c_int {
-    if !out_target.is_null() {
-        *out_target = 0;
+    if s.is_null() || out_target.is_null() {
+        return -1;
     }
+    let session = &*s;
+    if let Some(ref vm) = session.vm {
+        let mem = vm.memory_ref();
+        if addr as u64 + 4 <= mem.len() as u64 {
+            let target = i32::from_le_bytes([
+                mem[addr as usize],
+                mem[addr as usize + 1],
+                mem[addr as usize + 2],
+                mem[addr as usize + 3],
+            ]);
+            if target > 0 {
+                *out_target = target as u32;
+                return 0;
+            }
+        }
+    }
+    *out_target = 0;
     -1
 }
 

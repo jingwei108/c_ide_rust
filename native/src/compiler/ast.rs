@@ -15,6 +15,7 @@ pub struct Type {
     pub array_size: i32,
     pub base_kind: TypeKind,
     pub dims: Vec<i32>,
+    pub is_unsigned: bool,
 }
 
 impl Default for Type {
@@ -25,6 +26,7 @@ impl Default for Type {
             array_size: 0,
             base_kind: TypeKind::Void,
             dims: Vec::new(),
+            is_unsigned: false,
         }
     }
 }
@@ -32,6 +34,9 @@ impl Default for Type {
 impl Type {
     pub fn int() -> Self {
         Self { kind: TypeKind::Int, ..Self::default() }
+    }
+    pub fn unsigned_int() -> Self {
+        Self { kind: TypeKind::Int, is_unsigned: true, ..Self::default() }
     }
     pub fn char() -> Self {
         Self { kind: TypeKind::Char, ..Self::default() }
@@ -42,9 +47,12 @@ impl Type {
     pub fn pointer(base: TypeKind, name: impl Into<String>) -> Self {
         Self { kind: TypeKind::Pointer, base_kind: base, name: name.into(), ..Self::default() }
     }
+    pub fn unsigned_pointer(base: TypeKind, name: impl Into<String>) -> Self {
+        Self { kind: TypeKind::Pointer, base_kind: base, name: name.into(), is_unsigned: true, ..Self::default() }
+    }
     pub fn array(base: TypeKind, name: impl Into<String>, dims: Vec<i32>) -> Self {
         let array_size = if dims.is_empty() { 0 } else { dims.iter().map(|&d| if d > 0 { d } else { 1 }).product() };
-        Self { kind: TypeKind::Array, base_kind: base, name: name.into(), array_size, dims }
+        Self { kind: TypeKind::Array, base_kind: base, name: name.into(), array_size, dims, ..Self::default() }
     }
     pub fn struct_type(name: impl Into<String>) -> Self {
         Self { kind: TypeKind::Struct, name: name.into(), ..Self::default() }
@@ -88,7 +96,7 @@ impl Type {
         t
     }
 
-    pub fn to_string(&self) -> String {
+    fn format_string(&self) -> String {
         match self.kind {
             TypeKind::Void => "void".to_string(),
             TypeKind::Int => "int".to_string(),
@@ -123,7 +131,13 @@ impl Type {
     }
 }
 
-#[derive(Debug, Clone, Default)]
+impl std::fmt::Display for Type {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.format_string())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct SourceLoc {
     pub line: i32,
     pub column: i32,

@@ -25,6 +25,12 @@ public static class NativeMethods
     public static extern int cide_compile(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string source);
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int cide_compile_unit(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string filename, [MarshalAs(UnmanagedType.LPUTF8Str)] string source);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int cide_compile_all(IntPtr session);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     public static extern int cide_get_compile_errors_buf(IntPtr session, byte[] buf, int maxLen);
 
     // ========== 执行 ==========

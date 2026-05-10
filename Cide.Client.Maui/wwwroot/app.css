@@ -247,6 +247,56 @@ html, body {
     color: white;
 }
 
+/* Input Section */
+.input-section {
+    flex-shrink: 0;
+    padding: 6px 12px;
+    border-top: 1px solid #333;
+    border-bottom: 1px solid #333;
+    background: #252526;
+}
+
+.cide-app.light .input-section {
+    background: #f5f5f5;
+    border-top-color: #ddd;
+    border-bottom-color: #ddd;
+}
+
+.input-label {
+    font-size: 11px;
+    color: #888;
+    margin-bottom: 4px;
+}
+
+.cide-app.light .input-label {
+    color: #666;
+}
+
+.input-textarea {
+    width: 100%;
+    resize: none;
+    border: 1px solid #444;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-family: 'Consolas', 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.4;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.cide-app.light .input-textarea {
+    background: #ffffff;
+    color: #333333;
+    border-color: #ccc;
+}
+
+.input-textarea:focus {
+    border-color: #0A84FF;
+}
+
 /* Bottom Panel */
 .bottom-panel {
     height: 200px;

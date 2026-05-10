@@ -2,7 +2,7 @@
 .SYNOPSIS
     Memory safety pre-commit check script for Cide project.
 .DESCRIPTION
-    Scans C# and C++ source files for common memory safety anti-patterns.
+    Scans C# and Rust source files for common memory safety anti-patterns.
     Returns exit code 0 if clean, 1 if violations found.
     Run manually: .\scripts\check-memory-safety.ps1
     Or install as git hook:
@@ -27,6 +27,8 @@ function Add-Violation($file, $line, $message, $severity) {
 # ============================================================================
 $csFiles = Get-ChildItem -Path "$root\Cide.Client" -Recurse -Filter "*.cs" |
     Where-Object { $_.FullName -notmatch '\\obj\\' -and $_.FullName -notmatch '\\bin\\' }
+$rsFiles = Get-ChildItem -Path "$root\native\src" -Recurse -Filter "*.rs" |
+    Where-Object { $_.FullName -notmatch '\\target\\' }
 
 foreach ($file in $csFiles) {
     $lines = Get-Content $file.FullName -ErrorAction SilentlyContinue
@@ -75,55 +77,53 @@ foreach ($file in $csFiles) {
 }
 
 # ============================================================================
-# C++ Checks
+# Rust Checks
 # ============================================================================
-$cppFiles = Get-ChildItem -Path "$root\native\src" -Recurse -Filter "*.cpp" |
-    ForEach-Object { $_ }
-$hppFiles = Get-ChildItem -Path "$root\native\src" -Recurse -Filter "*.hpp" |
-    ForEach-Object { $_ }
-
-$allCpp = $cppFiles + $hppFiles
-
-foreach ($file in $allCpp) {
+foreach ($file in $rsFiles) {
     $lines = Get-Content $file.FullName -ErrorAction SilentlyContinue
     if (-not $lines) { continue }
+
+    $inUnsafeBlock = $false
+    $unsafeBraceCount = 0
 
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $line = $lines[$i]
         $ln = $i + 1
 
-        # 1. c_str() returned from C API function
-        if ($line -match 'extern\s+"C".*\bchar\s*\*\b.*\w+\s*\(' -and
-            $line -notmatch '_buf\s*\(') {
-            # 检查函数体内是否有 c_str() return
-            $funcStart = $i
-            $braceCount = 0
-            $foundOpen = $false
-            for ($j = $funcStart; $j -lt $lines.Count -and $j -lt $funcStart + 50; $j++) {
-                $l = $lines[$j]
-                if ($l -match '\{') { $foundOpen = $true; $braceCount += ($l -split '\{' | Measure-Object).Count - 1 }
-                if ($l -match '\}') { $braceCount -= ($l -split '\}' | Measure-Object).Count - 1 }
-                if ($foundOpen -and $l -match 'return.*\.c_str\(\)') {
-                    Add-Violation $file.FullName ($j + 1) "C API returns c_str() - dangling pointer risk. Use copy-out buffer pattern instead." "Error"
-                    break
-                }
-                if ($foundOpen -and $braceCount -le 0) { break }
-            }
+        # Track unsafe blocks roughly
+        if ($line -match '\bunsafe\s*\{') {
+            $inUnsafeBlock = $true
+            $unsafeBraceCount = 1
+        }
+        elseif ($inUnsafeBlock) {
+            $unsafeBraceCount += ($line -split '\{' | Measure-Object).Count - 1
+            $unsafeBraceCount -= ($line -split '\}' | Measure-Object).Count - 1
+            if ($unsafeBraceCount -le 0) { $inUnsafeBlock = $false }
         }
 
-        # 2. malloc/new without corresponding free/delete in same file
-        if ($line -match '\bnew\s+\w+' -and $line -notmatch '\/\/.*new') {
-            $type = if ($line -match 'new\s+(\w+)') { $matches[1] } else { "unknown" }
-            $content = $lines -join "`n"
-            if (-not ($content -match 'delete\s+' + [regex]::Escape($type)) -and
-                -not ($content -match 'delete\s+\w+')) {
-                Add-Violation $file.FullName $ln "new $type without matching delete in same file" "Warning"
-            }
+        # 1. Raw pointer dereference outside unsafe block (shouldn't compile, but flag anyway)
+        if ($line -match '\*\s*\w+\s*\.\s*as_ptr\(\)' -and -not $inUnsafeBlock) {
+            # heuristic only
         }
 
-        # 3. raw pointer arithmetic on memory buffer
-        if ($line -match 'mem\[.*\]\s*=' -or $line -match '=\s*mem\[') {
-            Add-Violation $file.FullName $ln "Raw array access on memory buffer - use LoadI32/StoreI32/StoreI8 wrappers instead" "Warning"
+        # 2. transmute usage
+        if ($line -match '\btransmute\b' -and $line -notmatch '\/\/.*transmute') {
+            Add-Violation $file.FullName $ln "std::mem::transmute detected - ensure source and target types have identical layout" "Warning"
+        }
+
+        # 3. raw pointer offset without bounds check
+        if ($line -match '\.offset\(' -and $line -notmatch 'bounds|check|len|size') {
+            Add-Violation $file.FullName $ln "Raw pointer offset without apparent bounds check" "Warning"
+        }
+
+        # 4. CStr::from_ptr with potentially dangling pointer
+        if ($line -match 'CStr::from_ptr' -and $line -notmatch 'as_ptr\(\)') {
+            Add-Violation $file.FullName $ln "CStr::from_ptr used - verify pointer lifetime exceeds CStr usage" "Warning"
+        }
+
+        # 5. Manual memory allocation in Rust (should use Vec/Box)
+        if ($line -match '\balloc::\w+|Layout::new|GlobalAlloc' -and $line -notmatch '\/\/') {
+            Add-Violation $file.FullName $ln "Manual allocator usage detected - prefer safe abstractions" "Warning"
         }
     }
 }

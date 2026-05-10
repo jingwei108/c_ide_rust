@@ -27,7 +27,7 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         11 => host_printf_1(vm, session),
         12 => host_printf_2(vm, session),
         15 => host_printf_n(vm, session),
-        20 => host_scanf_1(vm, session),
+        21 => host_scanf_n(vm, session),
         _ => {}
     }
 }
@@ -73,12 +73,12 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
         }
     } else {
         addr = session.memory.heap_offset;
-        let new_offset = addr + aligned_size;
-        if new_offset > vm.get_memory_size() {
+        let new_offset = addr as u64 + aligned_size as u64;
+        if new_offset > vm.get_memory_size() as u64 {
             vm.push(0);
             return;
         }
-        session.memory.heap_offset = new_offset;
+        session.memory.heap_offset = new_offset as u32;
     }
     // reuse or add region
     let mut reused = false;
@@ -258,31 +258,53 @@ fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     session.runtime.output_lines.push(out);
 }
 
-fn host_scanf_1(vm: &mut CideVM, session: &mut Session) {
+fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
-    let p1 = vm.pop() as u32;
-    let mut fmt_spec = 'd';
-    let mem = vm.get_memory_slice();
-    let mut i = fmt_addr as usize;
-    while i < mem.len() {
-        if mem[i] == 0 { break; }
-        if mem[i] as char == '%' && i + 1 < mem.len() && mem[i + 1] != 0 {
-            fmt_spec = mem[i + 1] as char;
-            break;
+    let fmt = read_cstring(vm, fmt_addr);
+    // 扫描格式字符串，记录每个 % 格式符的类型（跳过 %%）
+    let mut spec_types = Vec::new();
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    chars.next();
+                } else {
+                    spec_types.push(next);
+                    chars.next();
+                }
+            }
         }
-        i += 1;
     }
+    // 按数量 pop 指针参数
+    let mut ptrs = Vec::with_capacity(spec_types.len());
+    for _ in 0..spec_types.len() {
+        ptrs.push(vm.pop() as u32);
+    }
+    // 读取输入行
     if session.runtime.input_index >= session.runtime.input_lines.len() {
         return;
     }
     let line = session.runtime.input_lines[session.runtime.input_index].clone();
     session.runtime.input_index += 1;
-    if fmt_spec == 'c' {
-        let ch = line.chars().next().unwrap_or('\0');
-        vm.store_i8(p1, ch as i32, &super::instruction::SourceLoc::default());
-    } else {
-        let value: i32 = line.trim().parse().unwrap_or(0);
-        vm.store_i32(p1, value, &super::instruction::SourceLoc::default());
+    let tokens: Vec<&str> = line.split_whitespace().collect();
+    // 依次解析并写入各指针地址
+    for (i, spec) in spec_types.iter().enumerate() {
+        if i >= tokens.len() {
+            break;
+        }
+        let ptr = ptrs[i];
+        match spec {
+            'd' => {
+                let value: i32 = tokens[i].parse().unwrap_or(0);
+                vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
+            }
+            'c' => {
+                let ch = tokens[i].chars().next().unwrap_or('\0');
+                vm.store_i8(ptr, ch as i32, &super::instruction::SourceLoc::default());
+            }
+            _ => {}
+        }
     }
 }
 

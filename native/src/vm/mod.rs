@@ -1,3 +1,5 @@
+#![allow(clippy::module_inception)]
+
 pub mod host_funcs;
 pub mod instruction;
 pub mod opcode;

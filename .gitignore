@@ -6,6 +6,10 @@
 # Native build directories
 /native/build
 /native/build-android*
+/native/target
+
+# Rust build logs
+native/check.log
 
 # .NET build artifacts (all platforms)
 **/bin/

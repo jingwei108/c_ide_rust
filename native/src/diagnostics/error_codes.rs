@@ -1,5 +1,6 @@
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
 pub enum ErrorCode {
     Unknown = 0,
     E1001_UnknownChar = 1001,
@@ -64,4 +65,9 @@ pub enum ErrorCode {
     E3047_CaseNotConstant = 3047,
     W3050_AssignInCondition = 3050,
     W3051_ArrayBoundOffByOne = 3051,
+    W3052_ArrayToPointerDecay = 3052,
+    W3053_ImplicitScalarConversion = 3053,
+    W3054_IntToPointerCast = 3054,
+    W3055_VoidPointerCast = 3055,
+    W3056_UnsignedToInt = 3056,
 }
