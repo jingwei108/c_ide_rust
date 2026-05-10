@@ -1256,6 +1256,7 @@ fn format_type(t: &crate::compiler::ast::Type) -> String {
         TypeKind::Void => "void".to_string(),
         TypeKind::Int => "int".to_string(),
         TypeKind::Char => "char".to_string(),
+        TypeKind::Float => "float".to_string(),
         TypeKind::Pointer => {
             let base = match t.base_kind {
                 TypeKind::Struct => format!("struct {}", t.name),
