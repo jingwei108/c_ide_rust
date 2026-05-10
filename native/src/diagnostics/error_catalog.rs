@@ -505,6 +505,13 @@ pub fn lookup_error_info(code: i32) -> Option<ErrorInfo> {
             explanation: "当前编译器将 unsigned int 映射为 int，暂不支持完整的无符号语义。请确保数值范围在有符号 int 内。",
             common_causes: &["使用了 unsigned 关键字", "需要无符号运算但未实现"],
         },
+        3057 => ErrorInfo {
+            code: 3057,
+            emoji: "💡",
+            title: "隐式类型提升",
+            explanation: "代码中发生了安全的隐式类型转换（如 char → int、int → float 或 void* → 具体指针）。这在 C 语言中是允许的，但如果你希望代码更明确，可以使用显式强制转换。",
+            common_causes: &["char 自动提升为 int 参与运算", "int 自动提升为 float 参与运算", "malloc 返回值未显式转换"],
+        },
         _ => return None,
     })
 }
@@ -837,6 +844,17 @@ pub fn generate_fix(
         3056 => {
             (
                 "unsigned 类型暂映射为 int，请确保数值在有符号范围内".to_string(),
+                4,
+                0,
+                0,
+                0,
+                0,
+                String::new(),
+            )
+        }
+        3057 => {
+            (
+                "隐式类型提升是安全的，如需更明确可添加显式强制转换".to_string(),
                 4,
                 0,
                 0,

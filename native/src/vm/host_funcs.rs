@@ -1,20 +1,25 @@
-use super::vm::CideVM;
+use super::vm::{CideVM, HEAP_START, STACK_START};
 use crate::session::{MemoryRegion, Session};
 
-fn read_cstring(vm: &CideVM, addr: u32) -> String {
-    let mem = &vm.get_memory_slice();
-    let mut s = String::new();
+fn read_cbytes(vm: &CideVM, addr: u32) -> Vec<u8> {
+    let mem = vm.get_memory_slice();
     let start = addr as usize;
     if start >= mem.len() {
-        return s;
+        return Vec::new();
     }
+    let mut bytes = Vec::new();
     for i in start..mem.len() {
         if mem[i] == 0 {
             break;
         }
-        s.push(mem[i] as char);
+        bytes.push(mem[i]);
     }
-    s
+    bytes
+}
+
+fn read_cstring(vm: &CideVM, addr: u32) -> String {
+    let bytes = read_cbytes(vm, addr);
+    String::from_utf8_lossy(&bytes).into_owned()
 }
 
 pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
@@ -39,6 +44,9 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         38 => host_exit(vm, session),
         39 => host_strcat(vm, session),
         40 => host_atoi(vm, session),
+        50 => host_fprintf_n(vm, session),
+        51 => host_realloc(vm, session),
+        52 => host_qsort(vm, session),
         _ => {}
     }
 }
@@ -332,23 +340,22 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
 
 fn host_strlen(vm: &mut CideVM, _session: &mut Session) {
     let addr = vm.pop() as u32;
-    let s = read_cstring(vm, addr);
-    vm.push(s.len() as i32);
+    let bytes = read_cbytes(vm, addr);
+    vm.push(bytes.len() as i32);
 }
 
 fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
     let dest = vm.pop() as u32;
     let src = vm.pop() as u32;
-    let s = read_cstring(vm, src);
+    let src_bytes = read_cbytes(vm, src);
     let mem_size = vm.get_memory_slice().len();
     if dest as usize >= mem_size {
         return;
     }
     let max_copy = mem_size - dest as usize;
-    let copy_len = s.len().min(max_copy.saturating_sub(1));
-    for (i, ch) in s.bytes().enumerate().take(copy_len) {
-        let idx = dest as usize + i;
-        vm.store_i8(idx as u32, ch as i32, &super::instruction::SourceLoc::default());
+    let copy_len = src_bytes.len().min(max_copy.saturating_sub(1));
+    for i in 0..copy_len {
+        vm.store_i8(dest + i as u32, src_bytes[i] as i32, &super::instruction::SourceLoc::default());
     }
     let end = dest as usize + copy_len;
     vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
@@ -455,10 +462,10 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
         end += 1;
     }
     let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
-    let src_str = read_cstring(vm, src);
-    let copy_len = src_str.len().min(max_copy);
-    for (i, ch) in src_str.bytes().enumerate().take(copy_len) {
-        vm.store_i8((end + i) as u32, ch as i32, &super::instruction::SourceLoc::default());
+    let src_bytes = read_cbytes(vm, src);
+    let copy_len = src_bytes.len().min(max_copy);
+    for i in 0..copy_len {
+        vm.store_i8((end + i) as u32, src_bytes[i] as i32, &super::instruction::SourceLoc::default());
     }
     vm.store_i8((end + copy_len) as u32, 0, &super::instruction::SourceLoc::default());
     vm.push(dest as i32);
@@ -469,4 +476,263 @@ fn host_atoi(vm: &mut CideVM, _session: &mut Session) {
     let s = read_cstring(vm, addr);
     let val = s.trim_start().parse::<i32>().unwrap_or(0);
     vm.push(val);
+}
+
+fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
+    let _stream = vm.pop();
+    let fmt_addr = vm.pop() as u32;
+    let fmt = read_cstring(vm, fmt_addr);
+    let mut spec_count = 0;
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    chars.next();
+                } else {
+                    spec_count += 1;
+                    chars.next();
+                }
+            }
+        }
+    }
+    let mut args = Vec::with_capacity(spec_count);
+    for _ in 0..spec_count {
+        args.push(vm.pop());
+    }
+    let mut out = String::new();
+    let mut used = 0;
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if used < spec_count && ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    out.push('%');
+                    chars.next();
+                } else {
+                    let arg = args[used];
+                    match next {
+                        'd' => out.push_str(&arg.to_string()),
+                        'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
+                        's' => {
+                            let s = read_cstring(vm, arg as u32);
+                            out.push_str(&s);
+                        }
+                        'c' => out.push(arg as u8 as char),
+                        _ => { out.push(ch); out.push(next); }
+                    }
+                    chars.next();
+                    used += 1;
+                }
+            } else {
+                out.push(ch);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    session.runtime.output_lines.push(out);
+}
+
+fn host_realloc(vm: &mut CideVM, session: &mut Session) {
+    let ptr = vm.pop() as u32;
+    let new_size = vm.pop();
+
+    if new_size <= 0 {
+        if ptr != 0 {
+            // Equivalent to free
+            for r in &mut session.memory.regions {
+                if r.addr == ptr && !r.is_freed {
+                    r.is_freed = true;
+                    let aligned_size = ((r.size as u32) + 3) & !3;
+                    session.memory.free_list.push(crate::session::FreeBlock {
+                        addr: r.addr,
+                        size: aligned_size as i32,
+                    });
+                    session.memory.free_list.sort_by_key(|b| b.addr);
+                    let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
+                    for block in session.memory.free_list.drain(..) {
+                        if let Some(last) = merged.last_mut() {
+                            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
+                                last.size += block.size;
+                            } else {
+                                merged.push(block);
+                            }
+                        } else {
+                            merged.push(block);
+                        }
+                    }
+                    session.memory.free_list = merged;
+                    break;
+                }
+            }
+        }
+        vm.push(0);
+        return;
+    }
+
+    if ptr == 0 {
+        // Equivalent to malloc
+        host_malloc(vm, session);
+        return;
+    }
+
+    // Find existing region
+    let mut old_region = None;
+    for r in &session.memory.regions {
+        if r.addr == ptr && !r.is_freed {
+            old_region = Some((r.addr, r.size));
+            break;
+        }
+    }
+
+    if old_region.is_none() {
+        vm.push(0);
+        return;
+    }
+
+    let (old_addr, old_size) = old_region.unwrap();
+    let aligned_new_size = ((new_size as u32) + 3) & !3;
+
+    // Allocate new memory
+    let mut new_addr = 0u32;
+    let mut found_idx = None;
+    for (i, block) in session.memory.free_list.iter().enumerate() {
+        if (block.size as u32) >= aligned_new_size {
+            new_addr = block.addr;
+            found_idx = Some(i);
+            break;
+        }
+    }
+
+    if let Some(idx) = found_idx {
+        let block = &mut session.memory.free_list[idx];
+        if (block.size as u32) > aligned_new_size {
+            block.addr += aligned_new_size;
+            block.size -= aligned_new_size as i32;
+        } else {
+            session.memory.free_list.remove(idx);
+        }
+    } else {
+        let offset = session.memory.heap_offset;
+        let new_offset = (offset as u64) + (aligned_new_size as u64);
+        if new_offset > (HEAP_START + (STACK_START - HEAP_START) / 2) as u64 {
+            vm.push(0);
+            return;
+        }
+        if new_offset > u32::MAX as u64 {
+            vm.push(0);
+            return;
+        }
+        new_addr = offset;
+        session.memory.heap_offset = new_offset as u32;
+    }
+
+    // Copy old data
+    let copy_size = (old_size as u32).min(aligned_new_size);
+    let mem = vm.get_memory_slice().to_vec();
+    for i in 0..copy_size {
+        vm.store_i8(new_addr + i, mem[(old_addr + i) as usize] as i32, &super::instruction::SourceLoc::default());
+    }
+
+    // Zero remaining bytes
+    for i in copy_size..aligned_new_size {
+        vm.store_i8(new_addr + i, 0, &super::instruction::SourceLoc::default());
+    }
+
+    // Free old region
+    for r in &mut session.memory.regions {
+        if r.addr == old_addr && !r.is_freed {
+            r.is_freed = true;
+            let aligned_old_size = ((old_size as u32) + 3) & !3;
+            session.memory.free_list.push(crate::session::FreeBlock {
+                addr: r.addr,
+                size: aligned_old_size as i32,
+            });
+            session.memory.free_list.sort_by_key(|b| b.addr);
+            let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
+            for block in session.memory.free_list.drain(..) {
+                if let Some(last) = merged.last_mut() {
+                    if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
+                        last.size += block.size;
+                    } else {
+                        merged.push(block);
+                    }
+                } else {
+                    merged.push(block);
+                }
+            }
+            session.memory.free_list = merged;
+            break;
+        }
+    }
+
+    // Track new region
+    session.memory.regions.push(MemoryRegion {
+        addr: new_addr,
+        size: new_size as i32,
+        name: String::new(),
+        ty: String::new(),
+        is_heap: true,
+        is_freed: false,
+    });
+
+    vm.push(new_addr as i32);
+}
+
+fn host_qsort(vm: &mut CideVM, session: &mut Session) {
+    let base = vm.pop() as u32;
+    let nmemb = vm.pop() as usize;
+    let size = vm.pop() as usize;
+    let compar = vm.pop() as u32;
+
+    if nmemb <= 1 || size == 0 || base == 0 {
+        return;
+    }
+
+    let mem_size = vm.get_memory_slice().len();
+    if base as usize + nmemb * size > mem_size {
+        return;
+    }
+
+    let mut indices: Vec<usize> = (0..nmemb).collect();
+    const MAX_COMPARE_STEPS: i32 = 1000;
+
+    if compar == 0 {
+        // No comparison function, use default byte comparison
+        let mem = vm.get_memory_slice().to_vec();
+        indices.sort_by(|&i, &j| {
+            let a_start = (base as usize) + i * size;
+            let b_start = (base as usize) + j * size;
+            let a = &mem[a_start..a_start + size];
+            let b = &mem[b_start..b_start + size];
+            a.cmp(b)
+        });
+    } else {
+        indices.sort_by(|&i, &j| {
+            let addr_a = (base as i32) + (i as i32) * (size as i32);
+            let addr_b = (base as i32) + (j as i32) * (size as i32);
+            let result = vm.call_user_function(session, compar, &[addr_a, addr_b], MAX_COMPARE_STEPS);
+            match result {
+                Some(v) => v.cmp(&0),
+                None => std::cmp::Ordering::Equal,
+            }
+        });
+    }
+
+    // Reorder memory according to sorted indices
+    let mem = vm.get_memory_slice().to_vec();
+    let mut temp: Vec<u8> = vec![0; nmemb * size];
+    for (new_pos, &old_idx) in indices.iter().enumerate() {
+        let src_start = (base as usize) + old_idx * size;
+        let dst_start = new_pos * size;
+        temp[dst_start..dst_start + size].copy_from_slice(&mem[src_start..src_start + size]);
+    }
+    for i in 0..nmemb {
+        let src_start = i * size;
+        let dst_start = (base as usize) + i * size;
+        for j in 0..size {
+            vm.store_i8((dst_start + j) as u32, temp[src_start + j] as i32, &super::instruction::SourceLoc::default());
+        }
+    }
 }

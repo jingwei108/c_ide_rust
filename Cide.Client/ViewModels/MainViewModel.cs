@@ -170,9 +170,9 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private bool EnsureCompiled()
     {
         bool ok = _session.EnsureCompiled(SourceCode, BreakpointLines);
+        LoadDiagnostics();
         if (!ok)
         {
-            LoadDiagnostics();
             return false;
         }
         // Load algorithm matches after successful compilation
@@ -427,6 +427,11 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 }
 
                 var sb = new StringBuilder();
+                string hintsSummary = DiagnosticService.GetConversionHintsSummary(Diagnostics.ToList());
+                if (!string.IsNullOrEmpty(hintsSummary))
+                {
+                    sb.Append(hintsSummary);
+                }
                 sb.AppendLine(runResult.Output);
 
                 // Load memory regions, algorithm matches, variables, call stack
@@ -493,7 +498,15 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 }
                 else
                 {
-                    ConsoleOutput = TruncateOutput("程序执行完成。\n" + result.Output);
+                    string hintsSummary = DiagnosticService.GetConversionHintsSummary(Diagnostics.ToList());
+                    if (!string.IsNullOrEmpty(hintsSummary))
+                    {
+                        ConsoleOutput = TruncateOutput(hintsSummary + "程序执行完成。\n" + result.Output);
+                    }
+                    else
+                    {
+                        ConsoleOutput = TruncateOutput("程序执行完成。\n" + result.Output);
+                    }
                     HighlightedLine = -1;
                     StepStatusText = "程序执行完成";
                     IsRunning = false;
@@ -662,5 +675,60 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     public void UpdateLayout(double width, double height)
     {
         Responsive.UpdateLayout(width, height);
+    }
+
+    // ==================== 介绍功能 ====================
+    [ObservableProperty]
+    private bool _isIntroVisible = true;
+
+    [ObservableProperty]
+    private string _introTitle = "👋 欢迎使用 Cide";
+
+    [ObservableProperty]
+    private string _introDescription = "Cide 是一款跨平台 C 语言 IDE，专为学习和调试 C 代码而设计。支持桌面端和移动端，让你随时随地编写和运行 C 程序。";
+
+    [ObservableProperty]
+    private string _introButtonText = "下一步";
+
+    [ObservableProperty]
+    private int _introStep = 1;
+
+    [ObservableProperty]
+    private int _introTotalSteps = 4;
+
+    public string IntroStepDisplay => $"{IntroStep} / {IntroTotalSteps}";
+
+    [RelayCommand]
+    private void IntroNext()
+    {
+        IntroStep++;
+        OnPropertyChanged(nameof(IntroStepDisplay));
+        switch (IntroStep)
+        {
+            case 2:
+                IntroTitle = "✏️ 编写代码";
+                IntroDescription = "在编辑器中编写 C 代码，享受语法高亮、代码模板和智能提示。支持断点设置，方便调试。";
+                IntroButtonText = "下一步";
+                break;
+            case 3:
+                IntroTitle = "▶️ 运行调试";
+                IntroDescription = "点击运行按钮编译并执行代码。支持全速运行和单步调试模式，实时查看程序输出。";
+                IntroButtonText = "下一步";
+                break;
+            case 4:
+                IntroTitle = "🐛 调试工具";
+                IntroDescription = "使用调用栈、监视表达式、变量列表、内存视图、数组可视化等工具深入理解程序运行状态。";
+                IntroButtonText = "完成";
+                break;
+            default:
+                IsIntroVisible = false;
+                break;
+        }
+    }
+
+    [RelayCommand]
+    private void IntroSkip()
+    {
+        IsIntroVisible = false;
     }
 }

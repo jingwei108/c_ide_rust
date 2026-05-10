@@ -264,6 +264,9 @@ public partial class MainView : UserControl
         SetResource("FanBtnCornerRadius", new CornerRadius(fanSize / 2));
         SetResource("FanBtnFontSize", Math.Clamp(16 * scale, 12, 22));
         SetResource("FabRadius", Math.Clamp(90 * scale, 70, 130));
+        double ringSize = Math.Clamp(180 * scale, 140, 260);
+        SetResource("FabRingSize", ringSize);
+        SetResource("FabRingThickness", Math.Clamp(10 * scale, 6, 16));
 
         // 底部标签栏：三键均分屏幕宽度，无硬编码
         SetResource("TabHeaderFontSize", Math.Clamp(12 * scale, 10, 16));
@@ -328,6 +331,15 @@ public partial class MainView : UserControl
             double startAngle = 120;
             double endAngle = 240;
             double step = fans.Length > 1 ? (endAngle - startAngle) / (fans.Length - 1) : 0;
+
+            // 定位圆环：以悬浮球为中心，大小与按钮轨迹匹配
+            if (FanRingEllipse != null)
+            {
+                double ringSize = Resources.TryGetValue("FabRingSize", out var rs) && rs is double d4 ? d4 : 180;
+                Canvas.SetLeft(FanRingEllipse, fabX - ringSize / 2);
+                Canvas.SetTop(FanRingEllipse, fabY - ringSize / 2);
+                FanRingEllipse.Opacity = _isFabOpen ? 0.2 : 0;
+            }
 
             for (int i = 0; i < fans.Length; i++)
             {

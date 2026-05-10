@@ -265,6 +265,34 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
         }
     }
 
+    fn push_hints<T: CompileError>(session: &mut Session, hints: &[T], source: &str) {
+        let source_lines: Vec<&str> = source.lines().collect();
+        for h in hints {
+            let info = crate::diagnostics::error_catalog::lookup_error_info(h.code());
+            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
+                crate::diagnostics::error_catalog::generate_fix(h.code(), h.line(), h.column(), h.message(), &source_lines);
+
+            session.compile.diagnostics.push(crate::session::Diagnostic {
+                line: h.line(),
+                column: h.column(),
+                error_code: h.code(),
+                severity: 2,
+                message: h.message().to_string(),
+                fix_suggestion: if fix_suggestion.is_empty() {
+                    info.map(|i| i.explanation.to_string()).unwrap_or_default()
+                } else {
+                    fix_suggestion.clone()
+                },
+                fix_kind,
+                replace_start_line: rsl,
+                replace_start_column: rsc,
+                replace_end_line: rel,
+                replace_end_column: rec,
+                replacement_text: rt,
+            });
+        }
+    }
+
     // 1. Lexer
     let (tokens, lex_errors) = Lexer::new(full_source.clone()).tokenize();
     if !lex_errors.is_empty() {
@@ -289,13 +317,16 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     };
 
     // 3. TypeChecker
-    let (type_errors, type_warnings) = TypeChecker::new().check(&mut program);
+    let (type_errors, type_warnings, type_hints) = TypeChecker::new().check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, &full_source);
         return -1;
     }
     if !type_warnings.is_empty() {
         push_warnings(session, &type_warnings, &full_source);
+    }
+    if !type_hints.is_empty() {
+        push_hints(session, &type_hints, &full_source);
     }
 
     // 4. BytecodeGen
