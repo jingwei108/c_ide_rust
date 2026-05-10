@@ -268,6 +268,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     }
 
     [RelayCommand]
+    private void JumpToDiagnostic(Diagnostic? diag)
+    {
+        if (diag == null || diag.Line <= 0) return;
+        HighlightedLine = diag.Line;
+    }
+
+    [RelayCommand]
     private void AddWatchExpression()
     {
         if (string.IsNullOrWhiteSpace(NewWatchExpression)) return;

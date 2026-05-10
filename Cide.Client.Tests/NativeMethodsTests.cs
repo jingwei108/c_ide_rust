@@ -13,10 +13,9 @@ public class NativeMethodsTests
             Assert.NotEqual(IntPtr.Zero, session);
             NativeMethods.cide_session_destroy(session);
         }
-        catch (DllNotFoundException)
+        catch (DllNotFoundException ex)
         {
-            // Native library not available in this environment — skip assertion.
-            return;
+            Assert.Fail($"Native library not available: {ex.Message}");
         }
     }
 
@@ -32,9 +31,9 @@ public class NativeMethodsTests
             Assert.NotEqual(0, rc);
             NativeMethods.cide_session_destroy(session);
         }
-        catch (DllNotFoundException)
+        catch (DllNotFoundException ex)
         {
-            return;
+            Assert.Fail($"Native library not available: {ex.Message}");
         }
     }
 
@@ -55,9 +54,9 @@ public class NativeMethodsTests
             Assert.Equal(0, rc);
             NativeMethods.cide_session_destroy(session);
         }
-        catch (DllNotFoundException)
+        catch (DllNotFoundException ex)
         {
-            return;
+            Assert.Fail($"Native library not available: {ex.Message}");
         }
     }
 }

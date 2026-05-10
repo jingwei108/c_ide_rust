@@ -545,7 +545,7 @@ impl TypeChecker {
                     }
                     BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
                         if !self.is_int(&left_type) || !self.is_int(&right_type) {
-                            self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3019_LogicTypeError);
+                            self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3048_BitOpTypeError);
                         }
                         Type::int()
                     }

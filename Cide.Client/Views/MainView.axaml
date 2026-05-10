@@ -185,6 +185,7 @@
                               ErrorLines="{Binding ErrorLines}"
                               WarningLines="{Binding WarningLines}"
                               BreakpointLines="{Binding BreakpointLines}"
+                              HighlightedLine="{Binding HighlightedLine}"
                               Templates="{Binding Templates}" />
           </Border>
           <!-- 移动端模板快捷栏：非桌面时显示 -->
@@ -251,12 +252,31 @@
           </TabControl.Styles>
           <TabItem Header="输出">
             <Border Background="{DynamicResource AppPanelBrush}">
-              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <TextBlock Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+              <Grid>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                  <TextBox Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                            FontFamily="Consolas, Courier New, monospace"
                            FontSize="{DynamicResource ConsoleOutputFontSize}"
-                           Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap" />
-              </ScrollViewer>
+                           Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap"
+                           IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                           CaretBrush="Transparent" />
+                </ScrollViewer>
+                <Button Content="📋 复制"
+                        Click="OnCopyOutputClick"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Margin="8" Padding="6,2" FontSize="11"
+                        Background="{DynamicResource AppCardBrush}"
+                        Foreground="{DynamicResource AppTextMutedBrush}"
+                        BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                        CornerRadius="4"
+                        Opacity="0.8">
+                  <Button.Styles>
+                    <Style Selector="Button:pointerover">
+                      <Setter Property="Opacity" Value="1.0" />
+                    </Style>
+                  </Button.Styles>
+                </Button>
+              </Grid>
             </Border>
           </TabItem>
           <TabItem Header="诊断">
@@ -275,7 +295,16 @@
                               Padding="{DynamicResource CardPadding}"
                               Margin="{DynamicResource CardMargin}"
                               BoxShadow="0 1 4 0 #20000000"
-                              BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                              BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                              Cursor="Hand"
+                              Tag="{Binding}"
+                              PointerPressed="OnDiagnosticPressed"
+                              ToolTip.Tip="点击跳转到错误位置">
+                        <Border.Styles>
+                          <Style Selector="Border:pointerover">
+                            <Setter Property="Opacity" Value="0.92" />
+                          </Style>
+                        </Border.Styles>
                         <StackPanel Spacing="4">
                           <StackPanel Orientation="Horizontal" Spacing="8">
                             <TextBlock Text="{Binding ErrorCode, StringFormat='[{0}]'}" Foreground="{DynamicResource AppSyntaxErrorBrush}" FontWeight="Bold" IsVisible="{Binding ErrorCode, Converter={x:Static vm:IntToBoolConverter.Instance}}" />
@@ -367,12 +396,31 @@
         </TabControl.Styles>
         <TabItem Header="输出">
           <Border Background="{DynamicResource AppPanelBrush}">
-            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-              <TextBlock Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+            <Grid>
+              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <TextBox Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
                          FontFamily="Consolas, Courier New, monospace"
                          FontSize="{DynamicResource ConsoleOutputFontSize}"
-                         Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap" />
-            </ScrollViewer>
+                         Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap"
+                         IsReadOnly="True" BorderThickness="0" Background="Transparent"
+                         CaretBrush="Transparent" />
+              </ScrollViewer>
+              <Button Content="📋 复制"
+                      Click="OnCopyOutputClick"
+                      HorizontalAlignment="Right" VerticalAlignment="Top"
+                      Margin="8" Padding="6,2" FontSize="11"
+                      Background="{DynamicResource AppCardBrush}"
+                      Foreground="{DynamicResource AppTextMutedBrush}"
+                      BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                      CornerRadius="4"
+                      Opacity="0.8">
+                <Button.Styles>
+                  <Style Selector="Button:pointerover">
+                    <Setter Property="Opacity" Value="1.0" />
+                  </Style>
+                </Button.Styles>
+              </Button>
+            </Grid>
           </Border>
         </TabItem>
         <TabItem Header="诊断">
@@ -386,7 +434,16 @@
                             Padding="{DynamicResource CardPadding}"
                             Margin="{DynamicResource CardMargin}"
                             BoxShadow="0 1 4 0 #20000000"
-                            BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
+                            BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                            Cursor="Hand"
+                            Tag="{Binding}"
+                            PointerPressed="OnDiagnosticPressed"
+                            ToolTip.Tip="点击跳转到错误位置">
+                      <Border.Styles>
+                        <Style Selector="Border:pointerover">
+                          <Setter Property="Opacity" Value="0.92" />
+                        </Style>
+                      </Border.Styles>
                       <StackPanel Spacing="4">
                         <StackPanel Orientation="Horizontal" Spacing="8">
                           <TextBlock Text="{Binding ErrorCode, StringFormat='[{0}]'}" Foreground="{DynamicResource AppSyntaxErrorBrush}" FontWeight="Bold" IsVisible="{Binding ErrorCode, Converter={x:Static vm:IntToBoolConverter.Instance}}" />

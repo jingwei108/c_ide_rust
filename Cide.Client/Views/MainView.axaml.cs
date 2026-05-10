@@ -599,4 +599,28 @@ public partial class MainView : UserControl
             vm.JumpToCallStackFrameCommand.Execute(frame);
         }
     }
+
+    private void OnDiagnosticPressed(object? sender, Avalonia.Input.PointerPressedEventArgs e)
+    {
+        if (sender is not Border border) return;
+        if (border.Tag is not Cide.Client.Shared.Core.Diagnostic diag) return;
+
+        if (DataContext is ViewModels.MainViewModel vm)
+        {
+            vm.JumpToDiagnosticCommand.Execute(diag);
+        }
+        e.Handled = true;
+    }
+
+    private async void OnCopyOutputClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel vm) return;
+        if (string.IsNullOrEmpty(vm.ConsoleOutput)) return;
+
+        var topLevel = TopLevel.GetTopLevel(this);
+        if (topLevel?.Clipboard is not null)
+        {
+            await topLevel.Clipboard.SetTextAsync(vm.ConsoleOutput);
+        }
+    }
 }

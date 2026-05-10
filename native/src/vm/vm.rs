@@ -68,7 +68,6 @@ pub struct CideVM {
     error: String,
     last_snapshot_step: i32,
     snapshot_vars: HashMap<String, i32>,
-    get_heap_limit: Option<Box<dyn Fn() -> u32>>,
 }
 
 impl Default for CideVM {
@@ -102,7 +101,6 @@ impl CideVM {
             error: String::new(),
             last_snapshot_step: 0,
             snapshot_vars: HashMap::new(),
-            get_heap_limit: None,
         }
     }
 
@@ -172,13 +170,6 @@ impl CideVM {
 
     pub fn take_vis_events(&mut self) -> Vec<VisEvent> {
         std::mem::take(&mut self.vis_event_queue)
-    }
-
-    pub fn set_heap_limit_callback<F>(&mut self, cb: F)
-    where
-        F: Fn() -> u32 + 'static,
-    {
-        self.get_heap_limit = Some(Box::new(cb));
     }
 
     pub fn add_breakpoint(&mut self, line: i32) {
@@ -522,10 +513,6 @@ impl CideVM {
         }).collect()
     }
 
-    fn get_heap_limit(&self) -> u32 {
-        self.get_heap_limit.as_ref().map(|f| f()).unwrap_or(HEAP_START)
-    }
-
     // --- Run ---
 
     pub fn run(&mut self, session: &mut Session) -> i32 {
@@ -777,8 +764,24 @@ impl CideVM {
             OpCode::BitOr  => { let b = self.pop(); let a = self.pop(); self.push(a | b); }
             OpCode::BitXor => { let b = self.pop(); let a = self.pop(); self.push(a ^ b); }
             OpCode::BitNot => { let a = self.pop(); self.push(!a); }
-            OpCode::Shl => { let b = self.pop(); let a = self.pop(); self.push(a << b); }
-            OpCode::Shr => { let b = self.pop(); let a = self.pop(); self.push(a >> b); }
+            OpCode::Shl => {
+                let b = self.pop();
+                let a = self.pop();
+                if !(0..32).contains(&b) {
+                    self.trap(&format!("Shl 移位量越界：{}（必须是 0~31）", b), &inst.loc);
+                } else {
+                    self.push(a << b);
+                }
+            }
+            OpCode::Shr => {
+                let b = self.pop();
+                let a = self.pop();
+                if !(0..32).contains(&b) {
+                    self.trap(&format!("Shr 移位量越界：{}（必须是 0~31）", b), &inst.loc);
+                } else {
+                    self.push(a >> b);
+                }
+            }
 
             OpCode::Jump => {
                 let target = inst.operand as usize;
@@ -828,7 +831,7 @@ impl CideVM {
                         if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
                             self.trap("Call: 栈溢出", &inst.loc);
                         } else {
-                            let heap_limit = self.get_heap_limit();
+                            let heap_limit = session.memory.heap_offset;
                             if self.mem_stack_top - frame_size_u32 < heap_limit {
                                 self.trap("Call: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", &inst.loc);
                             } else {

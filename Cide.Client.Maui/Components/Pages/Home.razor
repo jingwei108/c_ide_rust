@@ -58,7 +58,10 @@
         <div class="tab-content">
             @if (VM.SelectedTabIndex == 0)
             {
-                <pre class="console-output">@(VM.ConsoleOutput ?? "等待执行...")</pre>
+                <div class="output-pane">
+                    <pre class="console-output">@(VM.ConsoleOutput ?? "等待执行...")</pre>
+                    <button class="btn-copy" @onclick="CopyOutputAsync">📋 复制</button>
+                </div>
             }
             else if (VM.SelectedTabIndex == 1)
             {
@@ -70,7 +73,7 @@
                 {
                     @foreach (var diag in VM.Diagnostics)
                     {
-                        <div class="diag-item @(diag.Severity == 0 ? "error" : "warning")">
+                        <div class="diag-item @(diag.Severity == 0 ? "error" : "warning")" @onclick="() => OnDiagnosticClick(diag)">
                             <div class="diag-header">
                                 <span class="diag-severity">@(diag.Severity == 0 ? "错误" : "警告")</span>
                                 <span class="diag-location">第 @diag.Line 行</span>
@@ -423,6 +426,19 @@
             VM.BreakpointLines.Remove(line);
         else
             VM.BreakpointLines.Add(line);
+    }
+
+    private async Task OnDiagnosticClick(Cide.Client.Shared.Core.Diagnostic diag)
+    {
+        if (diag.Line <= 0 || _editor is null) return;
+        VM.HighlightedLine = diag.Line;
+        await _editor.ScrollToLine(diag.Line);
+    }
+
+    private async Task CopyOutputAsync()
+    {
+        if (string.IsNullOrEmpty(VM.ConsoleOutput)) return;
+        await Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(VM.ConsoleOutput);
     }
 
     private void ToggleTheme() => VM.IsDarkMode = !VM.IsDarkMode;
