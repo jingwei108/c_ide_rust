@@ -28,6 +28,9 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         12 => host_printf_2(vm, session),
         15 => host_printf_n(vm, session),
         21 => host_scanf_n(vm, session),
+        30 => host_strlen(vm, session),
+        31 => host_strcpy(vm, session),
+        32 => host_strcmp(vm, session),
         _ => {}
     }
 }
@@ -306,6 +309,48 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
             _ => {}
         }
     }
+}
+
+fn host_strlen(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let s = read_cstring(vm, addr);
+    vm.push(s.len() as i32);
+}
+
+fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
+    let dest = vm.pop() as u32;
+    let src = vm.pop() as u32;
+    let s = read_cstring(vm, src);
+    let mem_size = vm.get_memory_slice().len();
+    for (i, ch) in s.bytes().enumerate() {
+        let idx = dest as usize + i;
+        if idx < mem_size {
+            vm.store_i8(idx as u32, ch as i32, &super::instruction::SourceLoc::default());
+        }
+    }
+    let end = dest as usize + s.len();
+    if end < mem_size {
+        vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
+    }
+}
+
+fn host_strcmp(vm: &mut CideVM, _session: &mut Session) {
+    let addr1 = vm.pop() as u32;
+    let addr2 = vm.pop() as u32;
+    let mem = vm.get_memory_slice();
+    let mut i = 0usize;
+    let result = loop {
+        let a = if addr1 as usize + i < mem.len() { mem[addr1 as usize + i] } else { 0 };
+        let b = if addr2 as usize + i < mem.len() { mem[addr2 as usize + i] } else { 0 };
+        if a != b {
+            break (a as i8).wrapping_sub(b as i8) as i32;
+        }
+        if a == 0 {
+            break 0;
+        }
+        i += 1;
+    };
+    vm.push(result);
 }
 
 // Helper trait to get memory slice safely
