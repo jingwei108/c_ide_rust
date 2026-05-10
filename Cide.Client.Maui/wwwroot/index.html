@@ -25,5 +25,55 @@
     <script src="js/canvas-interop.js"></script>
     <script src="js/codemirror-interop.js"></script>
     <script src="_framework/blazor.webview.js" autostart="false"></script>
+    <script>
+        // Android WebView touch-scroll fix
+        (function() {
+            function fixCodeMirrorScroller() {
+                var pane = document.querySelector('.editor-pane');
+                var editor = document.querySelector('.cm-editor');
+                var scroller = document.querySelector('.cm-scroller');
+                if (!pane || !editor || !scroller) return;
+
+                var paneH = pane.clientHeight;
+                // Force cm-editor to fill editor-pane height explicitly (do NOT use position:absolute
+                // because intermediate wrapper may become a 0-height containing block)
+                editor.style.position = 'relative';
+                editor.style.width = '100%';
+                editor.style.height = paneH + 'px';
+
+                // Gutters are absolutely positioned and do NOT consume flow space.
+                // The scroller must fill the entire editor height.
+                scroller.style.height = paneH + 'px';
+                scroller.style.maxHeight = paneH + 'px';
+                scroller.style.overflow = 'auto';
+                scroller.style.webkitOverflowScrolling = 'touch';
+                scroller.style.touchAction = 'pan-x pan-y';
+            }
+
+            // Watch for CodeMirror mutating cm-editor / cm-scroller style and re-apply our fix
+            var _cmObserver = null;
+            function startObserver() {
+                var editor = document.querySelector('.cm-editor');
+                var scroller = document.querySelector('.cm-scroller');
+                if ((editor || scroller) && !_cmObserver) {
+                    _cmObserver = new MutationObserver(function(mutations) {
+                        fixCodeMirrorScroller();
+                    });
+                    if (editor) _cmObserver.observe(editor, { attributes: true, attributeFilter: ['style'] });
+                    if (scroller) _cmObserver.observe(scroller, { attributes: true, attributeFilter: ['style'] });
+                }
+            }
+
+            window.addEventListener('load', function() {
+                fixCodeMirrorScroller();
+                startObserver();
+            });
+            window.addEventListener('resize', fixCodeMirrorScroller);
+            setInterval(function() {
+                fixCodeMirrorScroller();
+                startObserver();
+            }, 2000);
+        })();
+    </script>
 </body>
 </html>

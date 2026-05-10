@@ -251,10 +251,12 @@
           </TabControl.Styles>
           <TabItem Header="输出">
             <Border Background="{DynamicResource AppPanelBrush}">
-              <TextBlock Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                         FontFamily="Consolas, Courier New, monospace"
-                         FontSize="{DynamicResource ConsoleOutputFontSize}"
-                         Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap" />
+              <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <TextBlock Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                           FontFamily="Consolas, Courier New, monospace"
+                           FontSize="{DynamicResource ConsoleOutputFontSize}"
+                           Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap" />
+              </ScrollViewer>
             </Border>
           </TabItem>
           <TabItem Header="诊断">
@@ -365,10 +367,12 @@
         </TabControl.Styles>
         <TabItem Header="输出">
           <Border Background="{DynamicResource AppPanelBrush}">
-            <TextBlock Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
-                       FontFamily="Consolas, Courier New, monospace"
-                       FontSize="{DynamicResource ConsoleOutputFontSize}"
-                       Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap" />
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+              <TextBlock Text="{Binding ConsoleOutput}" Foreground="{DynamicResource AppTextSecondaryBrush}"
+                         FontFamily="Consolas, Courier New, monospace"
+                         FontSize="{DynamicResource ConsoleOutputFontSize}"
+                         Margin="{DynamicResource ConsoleOutputMargin}" TextWrapping="Wrap" />
+            </ScrollViewer>
           </Border>
         </TabItem>
         <TabItem Header="诊断">
