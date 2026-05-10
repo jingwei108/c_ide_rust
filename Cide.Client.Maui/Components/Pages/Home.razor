@@ -43,6 +43,12 @@
         </div>
     </div>
 
+    <!-- 程序输入数据（供 scanf 使用） -->
+    <div class="input-section">
+        <div class="input-label">输入数据（每行一个值，供 scanf）</div>
+        <textarea class="input-textarea" @bind="VM.InputText" rows="2"></textarea>
+    </div>
+
     <div class="bottom-panel">
         <div class="tab-bar">
             <button class="tab @(VM.SelectedTabIndex == 0 ? "active" : "")" @onclick="() => VM.SelectedTabIndex = 0">输出</button>
@@ -437,6 +443,7 @@
     public void Dispose()
     {
         VM.PropertyChanged -= OnPropertyChanged;
+        VM.Dispose();
     }
 
     private void OnTouchStart(TouchEventArgs e)

@@ -210,6 +210,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private void CancelAllAnimationsAndSnap()
     {
         _flashCts?.Cancel();
+        _flashCts?.Dispose();
+        _flashCts = null;
 
         // Snap: immediately rebuild all array visualizations without flash
         for (int idx = 0; idx < ArrayVisualizations.Count; idx++)
@@ -366,6 +368,16 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         IsRunning = false;
         System.Threading.Interlocked.Exchange(ref _isRunInProgressFlag, 0);
         RunCodeCommand.NotifyCanExecuteChanged();
+        _runCts?.Dispose();
+        _runCts = null;
+    }
+
+    private const int MaxConsoleOutputLength = 50000; // ~50KB
+
+    private string TruncateOutput(string output)
+    {
+        if (output.Length <= MaxConsoleOutputLength) return output;
+        return output.Substring(0, MaxConsoleOutputLength) + "\n... [输出过长，已截断]";
     }
 
     [RelayCommand(CanExecute = nameof(CanRunCodeAsync))]
@@ -430,7 +442,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                     }
                 }
 
-                ConsoleOutput = sb.ToString();
+                ConsoleOutput = TruncateOutput(sb.ToString());
             }
             else
             {
@@ -445,7 +457,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         }
         catch (System.Exception ex)
         {
-            ConsoleOutput = "异常：" + ex.Message;
+            ConsoleOutput = TruncateOutput("异常：" + ex.Message);
             Errors.Add(ex.Message);
         }
         finally
@@ -474,7 +486,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 }
                 else
                 {
-                    ConsoleOutput = "程序执行完成。\n" + result.Output;
+                    ConsoleOutput = TruncateOutput("程序执行完成。\n" + result.Output);
                     HighlightedLine = -1;
                     StepStatusText = "程序执行完成";
                     IsRunning = false;
@@ -504,13 +516,13 @@ public partial class MainViewModel : ViewModelBase, IDisposable
                 sb.AppendLine($"[{evName}] 第 {ev.Line} 行");
             }
             sb.AppendLine($"[单步] 第 {line} 行");
-            ConsoleOutput = sb.ToString();
+            ConsoleOutput = TruncateOutput(sb.ToString());
             IsRunning = true;
             return true;
         }
         catch (System.Exception ex)
         {
-            ConsoleOutput = "异常：" + ex.Message;
+            ConsoleOutput = TruncateOutput("异常：" + ex.Message);
             Errors.Add(ex.Message);
             IsRunning = false;
             return false;
@@ -546,20 +558,20 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         if (result.Applied)
         {
             SourceCode = result.NewSourceCode!;
-            ConsoleOutput = result.Message;
+            ConsoleOutput = TruncateOutput(result.Message);
             Diagnostics.Clear();
             Errors.Clear();
             _session.Reset();
         }
         else if (!string.IsNullOrEmpty(result.Message))
         {
-            ConsoleOutput = result.Message;
+            ConsoleOutput = TruncateOutput(result.Message);
         }
     }
 
     private void PresentCompileError(string err, bool setIsRunning = false)
     {
-        ConsoleOutput = "编译错误：\n" + err;
+        ConsoleOutput = TruncateOutput("编译错误：\n" + err);
         foreach (var diag in Diagnostics)
         {
             Errors.Add($"[{diag.ErrorCode}] 第{diag.Line}行: {diag.Message}");
@@ -577,7 +589,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private void PresentRuntimeError(string err, bool addDiagnostic)
     {
-        ConsoleOutput = "运行时错误：\n" + err;
+        ConsoleOutput = TruncateOutput("运行时错误：\n" + err);
         Errors.Add(err);
         if (addDiagnostic)
         {
@@ -604,7 +616,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
     private void ValidateAlgorithm(AlgorithmMatch match)
     {
         CurrentValidationResult = AlgorithmValidator.Validate(SourceCode, match);
-        ConsoleOutput = CurrentValidationResult.Value.Message;
+        ConsoleOutput = TruncateOutput(CurrentValidationResult.Value.Message);
     }
 
     [RelayCommand]
@@ -616,6 +628,8 @@ public partial class MainViewModel : ViewModelBase, IDisposable
         StepStatusText = "等待执行...";
         CancelAllAnimationsAndSnap();
         _runCts?.Cancel();
+        _runCts?.Dispose();
+        _runCts = null;
         _session.Reset();
     }
 

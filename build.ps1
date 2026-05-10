@@ -1,5 +1,5 @@
 # C IDE Build Script
-# Builds both the C++ native backend and the Avalonia frontend.
+# Builds the Rust native backend and the Avalonia / MAUI frontend.
 
 param(
     [ValidateSet("Debug", "Release")]
@@ -38,9 +38,7 @@ if ($Clean) {
     Write-Header "Cleaning build artifacts"
     $dirs = @(
         "native/target",
-        "native/build",
-        "native/build-android-arm64-v8a",
-        "native/build-android-armeabi-v7a",
+        "native/target/android",
         "Cide.Client/bin", "Cide.Client/obj",
         "Cide.Client.Desktop/bin", "Cide.Client.Desktop/obj",
         "Cide.Client.Maui/bin", "Cide.Client.Maui/obj",
@@ -164,13 +162,22 @@ if ($Target -eq "Android" -or $Target -eq "All") {
 
             $soDir = if ($Configuration -eq "Release") { "release" } else { "debug" }
             $soSource = Join-Path $root "native/target/$rustTarget/$soDir/libcide_native.so"
+            $soCopied = $false
             if (Test-Path $soSource) {
-                $soDestDir = Join-Path $root "Cide.Client.Maui/lib/$abi"
+                # Copy to csproj-referenced path
+                $soDestDir = Join-Path $root "native/target/android/$abi"
                 New-Item -ItemType Directory -Path $soDestDir -Force | Out-Null
                 Copy-Item $soSource (Join-Path $soDestDir "libcide_native.so") -Force
+                Write-Host "Copied libcide_native.so ($abi) -> native/target/android/$abi/" -ForegroundColor Green
+
+                # Also copy to legacy Maui/lib path for compatibility
+                $mauiLibDir = Join-Path $root "Cide.Client.Maui/lib/$abi"
+                New-Item -ItemType Directory -Path $mauiLibDir -Force | Out-Null
+                Copy-Item $soSource (Join-Path $mauiLibDir "libcide_native.so") -Force
                 Write-Host "Copied libcide_native.so ($abi) -> Cide.Client.Maui/lib/$abi/" -ForegroundColor Green
+                $soCopied = $true
             }
-            else {
+            if (-not $soCopied) {
                 Write-Warning "libcide_native.so not found for $abi at $soSource"
             }
         }

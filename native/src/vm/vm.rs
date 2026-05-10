@@ -11,6 +11,7 @@ pub const GLOBAL_START: u32 = 0x1000;
 pub const HEAP_START: u32 = 0x5000;
 pub const STACK_START: u32 = 0x10000;
 pub const SNAPSHOT_INTERVAL: i32 = 100_000;
+pub const MAX_STACK_DEPTH: usize = 10_000;
 
 #[derive(Debug, Clone, Default)]
 pub struct FuncMeta {
@@ -266,6 +267,10 @@ impl CideVM {
     }
 
     pub fn push(&mut self, val: i32) {
+        if self.stack.len() >= MAX_STACK_DEPTH {
+            self.trap("值栈溢出：栈深度超过限制。请检查是否有无限递归或过多嵌套表达式。", &SourceLoc::default());
+            return;
+        }
         self.stack.push(val);
     }
 
@@ -276,7 +281,7 @@ impl CideVM {
             self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr), loc);
             return 0;
         }
-        if addr + 4 > MEM_SIZE {
+        if addr as u64 + 4 > MEM_SIZE as u64 {
             self.trap(&self.format_bounds_error(addr), loc);
             return 0;
         }
@@ -293,7 +298,7 @@ impl CideVM {
             self.trap(&format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr), loc);
             return;
         }
-        if addr + 4 > MEM_SIZE {
+        if addr as u64 + 4 > MEM_SIZE as u64 {
             self.trap(&self.format_bounds_error(addr), loc);
             return;
         }
@@ -306,7 +311,7 @@ impl CideVM {
             self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）", addr), loc);
             return 0;
         }
-        if addr >= MEM_SIZE {
+        if addr as u64 >= MEM_SIZE as u64 {
             self.trap(&self.format_bounds_error(addr), loc);
             return 0;
         }
@@ -318,7 +323,7 @@ impl CideVM {
             self.trap(&format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr), loc);
             return;
         }
-        if addr >= MEM_SIZE {
+        if addr as u64 >= MEM_SIZE as u64 {
             self.trap(&self.format_bounds_error(addr), loc);
             return;
         }
@@ -326,6 +331,9 @@ impl CideVM {
     }
 
     fn write_i32(&mut self, addr: u32, val: i32) {
+        if addr as u64 + 4 > MEM_SIZE as u64 {
+            return;
+        }
         let bytes = val.to_le_bytes();
         self.memory[addr as usize..addr as usize + 4].copy_from_slice(&bytes);
     }
@@ -547,7 +555,7 @@ impl CideVM {
             return StepResult::Finished;
         }
 
-        self.step_count += 1;
+        self.step_count = self.step_count.saturating_add(1);
         if self.step_count % SNAPSHOT_INTERVAL == 0 {
             self.snapshot_vars.clear();
             for sym in &self.symbols {
@@ -767,20 +775,35 @@ impl CideVM {
             OpCode::Not => { let a = self.pop(); self.push(if a != 0 { 0 } else { 1 }); }
 
             OpCode::Jump => {
-                self.ip = inst.operand as usize;
+                let target = inst.operand as usize;
+                if target >= self.code.len() {
+                    self.trap(&format!("Jump 目标越界：{}（代码长度：{}）", target, self.code.len()), &inst.loc);
+                } else {
+                    self.ip = target;
+                }
             }
 
             OpCode::JumpIfZero => {
                 let val = self.pop();
                 if val == 0 {
-                    self.ip = inst.operand as usize;
+                    let target = inst.operand as usize;
+                    if target >= self.code.len() {
+                        self.trap(&format!("JumpIfZero 目标越界：{}（代码长度：{}）", target, self.code.len()), &inst.loc);
+                    } else {
+                        self.ip = target;
+                    }
                 }
             }
 
             OpCode::JumpIfNotZero => {
                 let val = self.pop();
                 if val != 0 {
-                    self.ip = inst.operand as usize;
+                    let target = inst.operand as usize;
+                    if target >= self.code.len() {
+                        self.trap(&format!("JumpIfNotZero 目标越界：{}（代码长度：{}）", target, self.code.len()), &inst.loc);
+                    } else {
+                        self.ip = target;
+                    }
                 }
             }
 

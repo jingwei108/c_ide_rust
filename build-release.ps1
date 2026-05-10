@@ -1,5 +1,6 @@
 # C IDE Release Build Script
 # Builds both Desktop (Native AOT) and Android (AOT + Trim) in Release configuration.
+# Native backend is built with Rust / cargo / cargo-ndk.
 #
 # Usage:
 #   .\build-release.ps1                    # Build both Desktop and Android
@@ -32,9 +33,7 @@ function Write-Warn($text) { Write-Host $text -ForegroundColor Yellow }
 if ($Clean) {
     Write-Header "Cleaning build artifacts"
     $dirs = @(
-        "native/build",
-        "native/build-android-arm64-v8a",
-        "native/build-android-armeabi-v7a",
+        "native/target/android",
         "Cide.Client/bin", "Cide.Client/obj",
         "Cide.Client.Desktop/bin", "Cide.Client.Desktop/obj",
         "Cide.Client.Maui/bin", "Cide.Client.Maui/obj",
@@ -61,41 +60,26 @@ $androidDir = Join-Path $distDir "android"
 if ($Target -eq "Desktop" -or $Target -eq "All") {
     Write-Header "Building Desktop (Native AOT + Trim)"
 
-    # Native backend
-    $buildDir = Join-Path $root "native/build"
-    New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
-    Push-Location $buildDir
+    # Native backend (Rust)
+    Push-Location (Join-Path $root "native")
     try {
-        $hasNinja = Get-Command "ninja" -ErrorAction SilentlyContinue
-        $hasVS = $env:VisualStudioVersion -or (Get-Command "msbuild" -ErrorAction SilentlyContinue)
-        $cmakeArgs = @("..")
-        if ($hasNinja) {
-            $cmakeArgs += @("-G", "Ninja")
-        } elseif (-not $hasVS) {
-            $cmakeArgs += @("-G", "MinGW Makefiles")
-        }
-        $cmakeArgs += "-DCMAKE_BUILD_TYPE=$Configuration"
-        & cmake @cmakeArgs
-        if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed" }
-        cmake --build . --config $Configuration --parallel
-        if ($LASTEXITCODE -ne 0) { throw "Build failed" }
+        $oldEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        & cargo build --release 2>$null
+        $cargoExit = $LASTEXITCODE
+        $ErrorActionPreference = $oldEAP
+        if ($cargoExit -ne 0) { throw "Cargo build failed (exit $cargoExit)" }
     }
     finally { Pop-Location }
 
     # Copy native DLL
-    $dllCandidates = @(
-        (Join-Path $root "native/build/bin/$Configuration/cide_native.dll"),
-        (Join-Path $root "native/build/bin/cide_native.dll"),
-        (Join-Path $root "native/build/libcide_native.dll")
-    )
-    $dllSource = $null
-    foreach ($c in $dllCandidates) {
-        if (Test-Path $c) { $dllSource = $c; break }
-    }
-    if ($dllSource) {
+    $dllSource = Join-Path $root "native/target/release/cide_native.dll"
+    if (Test-Path $dllSource) {
         New-Item -ItemType Directory -Path $desktopDir -Force | Out-Null
         Copy-Item $dllSource (Join-Path $desktopDir "cide_native.dll") -Force
         Write-Success "Copied cide_native.dll -> dist/desktop/"
+    } else {
+        Write-Warn "cide_native.dll not found at $dllSource"
     }
 
     # Publish Desktop with Native AOT
@@ -134,27 +118,43 @@ if ($Target -eq "Android" -or $Target -eq "All") {
         Write-Warn "ANDROID_NDK_HOME not set. Skipping native .so build."
     }
     else {
-        $abis = @("arm64-v8a", "armeabi-v7a")
-        foreach ($abi in $abis) {
-            $buildDir = Join-Path $root "native/build-android-$abi"
-            New-Item -ItemType Directory -Path $buildDir -Force | Out-Null
-            Push-Location $buildDir
+        $abiMap = @{
+            "arm64-v8a"   = "aarch64-linux-android"
+            "armeabi-v7a" = "armv7-linux-androideabi"
+        }
+        foreach ($abi in $abiMap.Keys) {
+            $rustTarget = $abiMap[$abi]
+            Write-Header "Building Native Backend (Android $abi)"
+
+            Push-Location (Join-Path $root "native")
             try {
-                $toolchain = Join-Path $ndkHome "build/cmake/android.toolchain.cmake"
-                $cmakeArgs = @(
-                    "..", "-G", "Ninja",
-                    "-DCMAKE_TOOLCHAIN_FILE=$toolchain",
-                    "-DANDROID_ABI=$abi",
-                    "-DANDROID_PLATFORM=android-21",
-                    "-DCMAKE_BUILD_TYPE=$Configuration",
-                    "-DCIDE_BUILD_TESTS=OFF"
-                )
-                & cmake @cmakeArgs
-                if ($LASTEXITCODE -ne 0) { throw "CMake failed for $abi" }
-                cmake --build . --config $Configuration --parallel
-                if ($LASTEXITCODE -ne 0) { throw "Build failed for $abi" }
+                $oldEAP = $ErrorActionPreference
+                $ErrorActionPreference = "Continue"
+                & cargo ndk --target $rustTarget --platform 21 build --release 2>$null
+                $cargoExit = $LASTEXITCODE
+                $ErrorActionPreference = $oldEAP
+                if ($cargoExit -ne 0) { throw "Cargo NDK build failed for $abi (exit $cargoExit)" }
+            }
+            catch {
+                Write-Error "Native Android build ($abi) failed: $_"
             }
             finally { Pop-Location }
+
+            $soSource = Join-Path $root "native/target/$rustTarget/release/libcide_native.so"
+            if (Test-Path $soSource) {
+                $soDestDir = Join-Path $root "native/target/android/$abi"
+                New-Item -ItemType Directory -Path $soDestDir -Force | Out-Null
+                Copy-Item $soSource (Join-Path $soDestDir "libcide_native.so") -Force
+                Write-Success "Copied libcide_native.so ($abi) -> native/target/android/$abi/"
+
+                $mauiLibDir = Join-Path $root "Cide.Client.Maui/lib/$abi"
+                New-Item -ItemType Directory -Path $mauiLibDir -Force | Out-Null
+                Copy-Item $soSource (Join-Path $mauiLibDir "libcide_native.so") -Force
+                Write-Success "Copied libcide_native.so ($abi) -> Cide.Client.Maui/lib/$abi/"
+            }
+            else {
+                Write-Warn "libcide_native.so not found for $abi at $soSource"
+            }
         }
     }
 

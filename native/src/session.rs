@@ -10,6 +10,7 @@ pub struct CompileUnit {
 }
 
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct Diagnostic {
     pub line: i32,
     pub column: i32,
@@ -25,24 +26,6 @@ pub struct Diagnostic {
     pub replacement_text: String,
 }
 
-impl Default for Diagnostic {
-    fn default() -> Self {
-        Self {
-            line: 0,
-            column: 0,
-            error_code: 0,
-            severity: 0,
-            message: String::new(),
-            fix_suggestion: String::new(),
-            fix_kind: 0,
-            replace_start_line: 0,
-            replace_start_column: 0,
-            replace_end_line: 0,
-            replace_end_column: 0,
-            replacement_text: String::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default)]
 pub struct FuncMeta {
