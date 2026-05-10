@@ -1020,6 +1020,12 @@
       <Canvas HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
               ClipToBounds="False"
               x:Name="FabCanvas">
+        <!-- 扇形圆环背景：空心圆环，按钮位于圆环轨迹上 -->
+        <Ellipse x:Name="FanRingEllipse"
+                 Width="{DynamicResource FabRingSize}" Height="{DynamicResource FabRingSize}"
+                 Stroke="{DynamicResource AppFanBorderBrush}" StrokeThickness="{DynamicResource FabRingThickness}"
+                 Fill="Transparent"
+                 Opacity="0" IsHitTestVisible="False" />
         <!-- 扇形按钮：毛玻璃质感 + 微妙边框 -->
         <Border x:Name="FanCallStackBorder" Width="{DynamicResource FanBtnSize}" Height="{DynamicResource FanBtnSize}" CornerRadius="{DynamicResource FanBtnCornerRadius}"
                 Background="{DynamicResource AppFanBrush}" BorderBrush="{DynamicResource AppFanBorderBrush}" BorderThickness="1"
@@ -1109,6 +1115,38 @@
           </Button>
         </Border>
       </Canvas>
+    </Grid>
+
+    <!-- ===== 介绍覆盖层 ===== -->
+    <Grid Grid.Column="0" Grid.ColumnSpan="2"
+          IsVisible="{Binding IsIntroVisible}"
+          Background="#CC000000">
+      <Border VerticalAlignment="Center" HorizontalAlignment="Center"
+              Background="{DynamicResource AppPanelBrush}"
+              CornerRadius="16" Padding="24"
+              Width="360">
+        <StackPanel Spacing="16">
+          <TextBlock Text="{Binding IntroTitle}"
+                     FontSize="22" FontWeight="Bold"
+                     Foreground="{DynamicResource AppTextBrush}"
+                     TextAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding IntroDescription}"
+                     FontSize="14"
+                     Foreground="{DynamicResource AppTextSecondaryBrush}"
+                     TextAlignment="Center" TextWrapping="Wrap" />
+          <TextBlock Text="{Binding IntroStepDisplay}"
+                     FontSize="12"
+                     Foreground="{DynamicResource AppTextMutedBrush}"
+                     TextAlignment="Center" />
+          <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Spacing="12">
+            <Button Content="跳过" Command="{Binding IntroSkipCommand}"
+                    Background="Transparent"
+                    Foreground="{DynamicResource AppTextMutedBrush}" />
+            <Button Content="{Binding IntroButtonText}" Command="{Binding IntroNextCommand}"
+                    Background="#0A84FF" Foreground="White" />
+          </StackPanel>
+        </StackPanel>
+      </Border>
     </Grid>
   </Grid>
 </UserControl>

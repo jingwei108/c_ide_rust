@@ -318,10 +318,12 @@ impl BytecodeGen {
         let mut offset = 0;
         for field in fields {
             if field.name == member_name {
+                eprintln!("[DEBUG get_member_offset] {}.{} -> {}", struct_name, member_name, offset);
                 return offset;
             }
-            offset += 4;
+            offset += self.type_size(&field.ty);
         }
+        eprintln!("[DEBUG get_member_offset] {}.{} -> 0 (not found)", struct_name, member_name);
         0
     }
 
@@ -343,7 +345,7 @@ impl BytecodeGen {
     }
 
     fn type_size(&self, ty: &Type) -> i32 {
-        match ty.kind {
+        let size = match ty.kind {
             TypeKind::Void => 0,
             TypeKind::Int => 4,
             TypeKind::Char => 1,
@@ -351,21 +353,31 @@ impl BytecodeGen {
             TypeKind::Pointer => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
-                let elem_size = match ty.base_kind {
-                    TypeKind::Void => 4,
-                    TypeKind::Int => 4,
-                    TypeKind::Char => 1,
-                    TypeKind::Float => 4,
-                    TypeKind::Pointer => 4,
-                    TypeKind::Array => 4,
-                    TypeKind::Struct => {
-                        self.struct_defs.get(&ty.name).map(|f| f.len() as i32 * 4).unwrap_or(0)
-                    }
-                };
+                let elem_size = self.elem_size(ty);
                 elem_count * elem_size
             }
             TypeKind::Struct => {
-                self.struct_defs.get(&ty.name).map(|f| f.len() as i32 * 4).unwrap_or(0)
+                self.struct_defs.get(&ty.name).map(|f| {
+                    f.iter().map(|field| self.type_size(&field.ty)).sum()
+                }).unwrap_or(0)
+            }
+        };
+        eprintln!("[DEBUG type_size] {:?} name={} -> {}", ty.kind, ty.name, size);
+        size
+    }
+
+    fn elem_size(&self, ty: &Type) -> i32 {
+        match ty.base_kind {
+            TypeKind::Void => 4,
+            TypeKind::Int => 4,
+            TypeKind::Char => 1,
+            TypeKind::Float => 4,
+            TypeKind::Pointer => 4,
+            TypeKind::Array => 4,
+            TypeKind::Struct => {
+                self.struct_defs.get(&ty.name).map(|f| {
+                    f.iter().map(|field| self.type_size(&field.ty)).sum()
+                }).unwrap_or(0)
             }
         }
     }
@@ -512,6 +524,7 @@ impl BytecodeGen {
                 let break_base = self.break_patches.len();
                 let continue_base = self.continue_patches.len();
                 self.gen_stmt(body);
+                let cond_ip = self.current_ip();
                 self.gen_expr(cond);
                 self.emit(OpCode::JumpIfNotZero, start_ip as i32, loc);
                 let end_ip = self.current_ip();
@@ -520,7 +533,7 @@ impl BytecodeGen {
                 }
                 self.break_patches.resize(break_base, 0);
                 for i in continue_base..self.continue_patches.len() {
-                    self.patch_jump(self.continue_patches[i], start_ip);
+                    self.patch_jump(self.continue_patches[i], cond_ip);
                 }
                 self.continue_patches.resize(continue_base, 0);
                 self.loop_start_ips.pop();
@@ -683,6 +696,11 @@ impl BytecodeGen {
                 }
             }
             Expr::Identifier { name, .. } => {
+                // Function name used as value (function pointer)
+                if let Some(&idx) = self.func_index.get(name) {
+                    self.emit(OpCode::PushConst, idx, &loc);
+                    return;
+                }
                 let local_idx = self.resolve_local(name);
                 if local_idx >= 0 {
                     if let Some(ty) = self.local_types.get(name) {
@@ -964,6 +982,9 @@ impl BytecodeGen {
                         "exit" => "exit",
                         "strcat" => "strcat",
                         "atoi" => "atoi",
+                        "fprintf" => "fprintf",
+                        "realloc" => "realloc",
+                        "qsort" => "qsort",
                         _ => name.as_str(),
                     };
                     let host_id = match host_name {
@@ -986,6 +1007,9 @@ impl BytecodeGen {
                         "exit" => 38,
                         "strcat" => 39,
                         "atoi" => 40,
+                        "fprintf" => 50,
+                        "realloc" => 51,
+                        "qsort" => 52,
                         _ => {
                             self.report_error(&format!("未定义的函数 '{}'", name), &loc);
                             self.emit(OpCode::PushConst, 0, &loc);
@@ -1044,9 +1068,18 @@ impl BytecodeGen {
     }
 
     fn gen_member_addr(&mut self, object: &mut Expr, member: &str, loc: &SourceLoc) {
+        eprintln!("[DEBUG gen_member_addr] object ty = {:?} {:?}, member = {}", object.ty().kind, object.ty().name, member);
         if object.ty().is_pointer() {
+            eprintln!("  -> pointer branch");
             self.gen_expr(object);
+        } else if let Expr::Index { array, index, ty, .. } = object {
+            eprintln!("  -> index branch");
+            self.gen_index(array, index, ty, loc, true);
+        } else if let Expr::Member { object: inner, member: m, .. } = object {
+            eprintln!("  -> member branch");
+            self.gen_member_addr(inner, m, loc);
         } else if let Expr::Identifier { name, .. } = object {
+            eprintln!("  -> ident branch: name = {}", name);
             if let Some(&idx) = self.local_indices.get(name) {
                 self.emit(OpCode::GetFrameBase, 0, loc);
                 self.emit(OpCode::PushConst, idx * 4, loc);
@@ -1062,6 +1095,7 @@ impl BytecodeGen {
             self.emit(OpCode::PushConst, 0, loc);
         }
         let offset = self.get_member_offset(object.ty(), member);
+        eprintln!("  -> offset = {}", offset);
         if offset > 0 {
             self.emit(OpCode::PushConst, offset, loc);
             self.emit(OpCode::Add, 0, loc);

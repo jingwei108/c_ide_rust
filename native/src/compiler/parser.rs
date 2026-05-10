@@ -226,6 +226,12 @@ impl Parser {
             });
             while self.match_token(TokenType::Comma) {
                 let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+                while self.match_token(TokenType::LBracket) {
+                    if self.check(TokenType::Number) {
+                        self.advance();
+                    }
+                    self.consume(TokenType::RBracket, "预期 ']'");
+                }
                 let extra_init = if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
@@ -382,10 +388,7 @@ impl Parser {
     fn parse_type_and_name(&mut self) -> (Type, String) {
         let base_type = self.parse_base_type();
 
-        if self.match_token(TokenType::Star) {
-            let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-            return (Type { kind: TypeKind::Pointer, name: base_type.name, base_kind: base_type.kind, ..Type::default() }, name_tok.text);
-        }
+        let is_ptr = self.match_token(TokenType::Star);
 
         let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
 
@@ -406,6 +409,16 @@ impl Parser {
                 });
             }
             self.consume(TokenType::RBracket, "预期 ']'");
+        }
+
+        if is_ptr {
+            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name, base_kind: base_type.kind, ..Type::default() };
+            if !dims.is_empty() {
+                let has_unknown = dims.iter().any(|&d| d <= 0);
+                let total = if has_unknown { 0 } else { dims.iter().product() };
+                return (Type { kind: TypeKind::Array, name: ptr_type.name.clone(), array_size: total, base_kind: TypeKind::Pointer, dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
+            }
+            return (ptr_type, name_tok.text);
         }
 
         if !dims.is_empty() {
@@ -489,6 +502,14 @@ impl Parser {
         let mut extra_vars = Vec::new();
         while self.match_token(TokenType::Comma) {
             let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+            // 消费逗号分隔变量声明中的数组维度（如 int a[10], b[20];）
+            // 这些变量共享第一个变量的 base_type，维度信息暂由第一个变量决定
+            while self.match_token(TokenType::LBracket) {
+                if self.check(TokenType::Number) {
+                    self.advance();
+                }
+                self.consume(TokenType::RBracket, "预期 ']'");
+            }
             let extra_init = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
@@ -570,6 +591,12 @@ impl Parser {
             let mut extra_vars = Vec::new();
             while self.match_token(TokenType::Comma) {
                 let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+                while self.match_token(TokenType::LBracket) {
+                    if self.check(TokenType::Number) {
+                        self.advance();
+                    }
+                    self.consume(TokenType::RBracket, "预期 ']'");
+                }
                 let extra_init = if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
@@ -884,7 +911,8 @@ impl Parser {
                self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Struct) ||
                self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
                self.check(TokenType::Short) || self.check(TokenType::Signed) ||
-               self.check(TokenType::Const) {
+               self.check(TokenType::Const) ||
+               (self.check(TokenType::Identifier) && self.typedef_names.contains_key(&self.current().text)) {
                 t = self.parse_base_type();
                 if self.match_token(TokenType::Star) {
                     t = Type { kind: TypeKind::Pointer, name: t.name, ..Type::default() };
