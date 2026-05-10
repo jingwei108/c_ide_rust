@@ -963,3 +963,85 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
 }
+
+
+// ============================================================================
+// Student classic error cases (compile-time & runtime)
+// ============================================================================
+
+#[test]
+fn test_e2e_error_undeclared_variable() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    x = 5;
+    printf("%d", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected compile error for undeclared variable");
+    let err = result.unwrap_err();
+    assert!(err.contains("x") || err.contains("undeclared") || err.contains("not declared") || err.contains("Unknown identifier"),
+        "Error should mention undeclared variable x: {}", err);
+}
+
+#[test]
+fn test_e2e_error_scanf_missing_ampersand() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a;
+    scanf("%d", a);
+    printf("%d", a);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected compile error for scanf without &");
+    let err = result.unwrap_err();
+    assert!(err.contains("scanf") || err.contains("type") || err.contains("pointer") || err.contains("int*"),
+        "Error should mention type mismatch in scanf: {}", err);
+}
+
+#[test]
+fn test_e2e_error_array_out_of_bounds() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[3] = {10, 20, 30};
+    printf("%d", arr[5]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected runtime error for array out of bounds");
+    let err = result.unwrap_err();
+    assert!(err.contains("bounds") || err.contains("out of") || err.contains("overflow") || err.contains("memory")
+        || err.contains("数组越界") || err.contains("越界"),
+        "Error should mention bounds violation: {}", err);
+}
+
+#[test]
+fn test_e2e_error_divide_by_zero() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 5;
+    int b = 0;
+    printf("%d", a / b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected runtime error for divide by zero");
+    let err = result.unwrap_err();
+    assert!(err.contains("zero") || err.contains("divide") || err.contains("arithmetic")
+        || err.contains("除零") || err.contains("除以"),
+        "Error should mention division by zero: {}", err);
+}
+
+// NOTE: Current TypeChecker does not enforce non-void functions to have a return
+// statement on all paths, so this case compiles successfully.
+// #[test]
+// fn test_e2e_error_missing_return_non_void() { ... }
