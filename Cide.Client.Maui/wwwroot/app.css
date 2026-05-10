@@ -990,6 +990,24 @@ html, body {
     background: rgba(255, 193, 7, 0.25) !important;
 }
 
+/* Light mode: enrich CodeMirror syntax highlighting (complements BasicLight theme) */
+.cide-app.light .cm-keyword { color: #d73a49 !important; }
+.cide-app.light .cm-string,
+.cide-app.light .cm-string-2 { color: #a31515 !important; }
+.cide-app.light .cm-number { color: #098658 !important; }
+.cide-app.light .cm-comment { color: #008000 !important; }
+.cide-app.light .cm-typeName,
+.cide-app.light .cm-type { color: #267f99 !important; }
+.cide-app.light .cm-variableName,
+.cide-app.light .cm-variable { color: #001080 !important; }
+.cide-app.light .cm-propertyName,
+.cide-app.light .cm-function,
+.cide-app.light .cm-def { color: #795e26 !important; }
+.cide-app.light .cm-operator,
+.cide-app.light .cm-punctuation { color: #000000 !important; }
+.cide-app.light .cm-meta { color: #0000ff !important; }
+.cide-app.light .cm-invalid { color: #cd3131 !important; text-decoration: underline !important; }
+
 /* Debug Modal */
 .debug-modal-backdrop {
     position: fixed;
