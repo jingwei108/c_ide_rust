@@ -192,9 +192,13 @@ impl BytecodeGen {
         }
 
         let wrapper_ip = self.current_ip();
-        self.emit(OpCode::Call, self.func_index["main"], &SourceLoc { line: 0, column: 0 });
-        self.emit(OpCode::Ret, 0, &SourceLoc { line: 0, column: 0 });
-        self.code[0] = Instruction::new(OpCode::Jump, wrapper_ip as i32, VMSourceLoc::default());
+        if let Some(&main_idx) = self.func_index.get("main") {
+            self.emit(OpCode::Call, main_idx, &SourceLoc { line: 0, column: 0 });
+            self.emit(OpCode::Ret, 0, &SourceLoc { line: 0, column: 0 });
+            self.code[0] = Instruction::new(OpCode::Jump, wrapper_ip as i32, VMSourceLoc::default());
+        } else {
+            self.errors.push("缺少 main 函数入口".to_string());
+        }
 
         if !self.errors.is_empty() {
             return Err(self.errors);
@@ -965,7 +969,7 @@ impl BytecodeGen {
             } else if let Some(&idx) = self.global_indices.get(name) {
                 self.emit(OpCode::PushConst, 0x1000 + idx * 4, loc);
             } else {
-                self.report_error("全局结构体暂不支持", loc);
+                self.report_error("未声明的结构体变量", loc);
                 self.emit(OpCode::PushConst, 0, loc);
             }
         } else {

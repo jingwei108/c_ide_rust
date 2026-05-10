@@ -81,6 +81,10 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
             vm.push(0);
             return;
         }
+        if new_offset > u32::MAX as u64 {
+            vm.push(0);
+            return;
+        }
         session.memory.heap_offset = new_offset as u32;
     }
     // reuse or add region
@@ -322,16 +326,17 @@ fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
     let src = vm.pop() as u32;
     let s = read_cstring(vm, src);
     let mem_size = vm.get_memory_slice().len();
-    for (i, ch) in s.bytes().enumerate() {
+    if dest as usize >= mem_size {
+        return;
+    }
+    let max_copy = mem_size - dest as usize;
+    let copy_len = s.len().min(max_copy.saturating_sub(1));
+    for (i, ch) in s.bytes().enumerate().take(copy_len) {
         let idx = dest as usize + i;
-        if idx < mem_size {
-            vm.store_i8(idx as u32, ch as i32, &super::instruction::SourceLoc::default());
-        }
+        vm.store_i8(idx as u32, ch as i32, &super::instruction::SourceLoc::default());
     }
-    let end = dest as usize + s.len();
-    if end < mem_size {
-        vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
-    }
+    let end = dest as usize + copy_len;
+    vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
 }
 
 fn host_strcmp(vm: &mut CideVM, _session: &mut Session) {

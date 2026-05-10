@@ -45,6 +45,8 @@ typedef enum {
     CIDE_E2004_ExpectedCaseOrDefault = 2004,
     CIDE_E2005_ExpectedSemicolon  = 2005,
     CIDE_E2006_ExpectedClosingBrace = 2006,
+    CIDE_E2007_ExpectedClosingParen = 2007,
+    CIDE_E2008_ExpectedClosingBracket = 2008,
 
     CIDE_E3001_VarRedeclared      = 3001,
     CIDE_E3002_StructRedeclared   = 3002,
@@ -93,8 +95,15 @@ typedef enum {
     CIDE_E3045_CompoundAssignType = 3045,
     CIDE_E3046_SwitchCondType     = 3046,
     CIDE_E3047_CaseNotConstant    = 3047,
+    CIDE_E3048_BitOpTypeError     = 3048,
 
     CIDE_W3050_AssignInCondition  = 3050,
+    CIDE_W3051_ArrayBoundOffByOne = 3051,
+    CIDE_W3052_ArrayToPointerDecay = 3052,
+    CIDE_W3053_ImplicitScalarConversion = 3053,
+    CIDE_W3054_IntToPointerCast   = 3054,
+    CIDE_W3055_VoidPointerCast    = 3055,
+    CIDE_W3056_UnsignedToInt      = 3056,
 } CideErrorCode;
 
 // ========== 编译 ==========
@@ -163,7 +172,7 @@ CIDE_API const char* cide_get_runtime_error(CideSession* s);
 /// Returns the number of bytes copied (excluding null terminator), or -1 on error.
 CIDE_API int cide_get_runtime_error_buf(CideSession* s, char* buf, int max_len);
 
-/// Set input lines for scanf (semicolon-separated lines).
+/// Set input lines for scanf (newline-separated lines).
 CIDE_API void cide_set_input(CideSession* s, const char* input);
 
 /// Get the number of available input lines.

@@ -68,14 +68,59 @@ pub unsafe extern "C" fn cide_session_destroy(s: *mut Session) {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn cide_session_save(_s: *mut Session, _filepath: *const c_char) -> c_int {
-    -1
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SessionSnapshot {
+    compile: CompileState,
+    runtime: RuntimeState,
+    memory: MemoryState,
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_session_load(_s: *mut Session, _filepath: *const c_char) -> c_int {
-    -1
+pub unsafe extern "C" fn cide_session_save(s: *mut Session, filepath: *const c_char) -> c_int {
+    if s.is_null() || filepath.is_null() {
+        return -1;
+    }
+    let session = &*s;
+    let snapshot = SessionSnapshot {
+        compile: session.compile.clone(),
+        runtime: session.runtime.clone(),
+        memory: session.memory.clone(),
+    };
+    let path = CStr::from_ptr(filepath).to_string_lossy().into_owned();
+    match serde_json::to_string_pretty(&snapshot) {
+        Ok(json) => {
+            if std::fs::write(&path, json).is_ok() {
+                0
+            } else {
+                -1
+            }
+        }
+        Err(_) => -1,
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_char) -> c_int {
+    if s.is_null() || filepath.is_null() {
+        return -1;
+    }
+    let session = &mut *s;
+    let path = CStr::from_ptr(filepath).to_string_lossy().into_owned();
+    match std::fs::read_to_string(&path) {
+        Ok(json) => {
+            match serde_json::from_str::<SessionSnapshot>(&json) {
+                Ok(snapshot) => {
+                    session.compile = snapshot.compile;
+                    session.runtime = snapshot.runtime;
+                    session.memory = snapshot.memory;
+                    session.vm = Some(CideVM::default());
+                    0
+                }
+                Err(_) => -1,
+            }
+        }
+        Err(_) => -1,
+    }
 }
 
 #[no_mangle]
@@ -308,6 +353,11 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     0
 }
 
+/// 返回指向编译错误字符串的指针。
+/// 
+/// # 安全性
+/// 返回的指针仅在下次调用 `cide_compile` / `cide_compile_all` 之前有效。
+/// 调用方应立即复制数据，不要长期保存此指针。
 #[no_mangle]
 pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_char {
     if s.is_null() {
@@ -770,7 +820,7 @@ pub unsafe extern "C" fn cide_memory_get_pointer_target(
                 mem[addr as usize + 2],
                 mem[addr as usize + 3],
             ]);
-            if target > 0 {
+            if target >= 0 {
                 *out_target = target as u32;
                 return 0;
             }

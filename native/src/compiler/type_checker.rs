@@ -195,10 +195,9 @@ impl TypeChecker {
             if dims_compatible { return true; }
         }
         if (matches!(target.kind, TypeKind::Int | TypeKind::Char)) && (matches!(value.kind, TypeKind::Int | TypeKind::Char)) {
-            if target.kind != value.kind {
-                let from = if matches!(value.kind, TypeKind::Char) { "char" } else { "int" };
-                let to = if matches!(target.kind, TypeKind::Char) { "char" } else { "int" };
-                self.report_warning(&format!("{} 被隐式转换为 {}。不同类型的标量之间赋值可能会丢失精度。", from, to), loc, ErrorCode::W3053_ImplicitScalarConversion);
+            // 只警告可能丢失精度的情况：int -> char
+            if matches!(target.kind, TypeKind::Char) && matches!(value.kind, TypeKind::Int) {
+                self.report_warning("int 被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
             }
             return true;
         }
@@ -207,7 +206,7 @@ impl TypeChecker {
             return true;
         }
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Pointer) && value.name.is_empty() {
-            self.report_warning("void* 指针被隐式转换为具体类型的指针。请确保内存布局正确。", loc, ErrorCode::W3055_VoidPointerCast);
+            // void* -> concrete pointer 是 C 标准允许的隐式转换（如 malloc），不再警告
             return true;
         }
         false
@@ -532,8 +531,10 @@ impl TypeChecker {
                         Type::int()
                     }
                     BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
-                        if !self.is_int(&left_type) || !self.is_int(&right_type) {
-                            self.report_error("关系运算要求两边都是 int 类型", loc, ErrorCode::E3018_RelationTypeError);
+                        let left_is_ptrlike = matches!(left_type.kind, TypeKind::Pointer | TypeKind::Array);
+                        let right_is_ptrlike = matches!(right_type.kind, TypeKind::Pointer | TypeKind::Array);
+                        if !(self.is_int(&left_type) && self.is_int(&right_type) || left_is_ptrlike && right_is_ptrlike) {
+                            self.report_error("关系运算要求两边都是 int 类型或同类型指针", loc, ErrorCode::E3018_RelationTypeError);
                         }
                         Type::int()
                     }

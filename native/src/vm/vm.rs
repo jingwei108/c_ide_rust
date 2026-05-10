@@ -566,14 +566,6 @@ impl CideVM {
         let inst = self.code[self.ip];
         self.ip += 1;
 
-        if inst.op == OpCode::StepEvent {
-            self.current_line = inst.operand;
-            if self.breakpoints.contains(&self.current_line) {
-                self.paused = true;
-                self.step_event_hit = true;
-            }
-        }
-
         match inst.op {
             OpCode::Nop => {}
 
@@ -889,6 +881,10 @@ impl CideVM {
             }
 
             OpCode::StepEvent => {
+                self.current_line = inst.operand;
+                if self.breakpoints.contains(&self.current_line) {
+                    self.paused = true;
+                }
                 self.step_event_hit = true;
                 for &(line, ty) in &self.vis_event_lines {
                     if line == inst.operand {
