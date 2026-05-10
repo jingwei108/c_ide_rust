@@ -50,7 +50,8 @@ public static class CodeFixService
             string line = lines[startLine];
             int startCol = diagnostic.ReplaceStartColumn;
             int endCol = diagnostic.ReplaceEndColumn;
-            if (startCol < 0 || endCol > line.Length || startCol >= endCol)
+            // startCol == endCol means insert; startCol > endCol is invalid
+            if (startCol < 0 || endCol > line.Length || startCol > endCol)
                 return new CodeFixResult(false, null, string.Empty);
 
             string before = line.Substring(0, startCol);

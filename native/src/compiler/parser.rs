@@ -87,10 +87,17 @@ impl Parser {
             TokenType::RBracket => ErrorCode::E2008_ExpectedClosingBracket,
             _ => ErrorCode::E2005_ExpectedSemicolon,
         };
+        // For missing semicolon, report at the previous token's position
+        // (where the semicolon should have been) rather than the next token.
+        let (err_line, err_column) = if ty == TokenType::Semicolon && self.pos > 0 {
+            (self.previous().line, self.previous().column)
+        } else {
+            (self.current().line, self.current().column)
+        };
         self.errors.push(ParseError {
             message: msg.to_string(),
-            line: self.current().line,
-            column: self.current().column,
+            line: err_line,
+            column: err_column,
             code: code as i32,
         });
         self.peek(0)

@@ -138,6 +138,23 @@
             ensureObserver(id);
         },
 
+        async scrollToLine(id, line) {
+            await ensureModule();
+            const view = getView(id);
+            if (!view) return;
+            const doc = view.state.doc;
+            if (line < 1 || line > doc.lines) return;
+            const lineObj = doc.line(line);
+            // Set selection to the start of the line
+            view.dispatch({ selection: { anchor: lineObj.from } });
+            // Scroll the line into the center of the viewport
+            const block = view.lineBlockAt(lineObj.from);
+            if (block) {
+                view.scrollDOM.scrollTop = block.top - view.scrollDOM.clientHeight / 2 + block.height / 2;
+            }
+            view.focus();
+        },
+
         async insertTemplate(id, text) {
             await ensureModule();
             const view = getView(id);

@@ -10,7 +10,6 @@ pub struct CompileUnit {
 }
 
 #[derive(Debug, Clone)]
-#[derive(Default)]
 pub struct Diagnostic {
     pub line: i32,
     pub column: i32,

@@ -63,6 +63,7 @@ pub enum ErrorCode {
     E3045_CompoundAssignType = 3045,
     E3046_SwitchCondType = 3046,
     E3047_CaseNotConstant = 3047,
+    E3048_BitOpTypeError = 3048,
     W3050_AssignInCondition = 3050,
     W3051_ArrayBoundOffByOne = 3051,
     W3052_ArrayToPointerDecay = 3052,

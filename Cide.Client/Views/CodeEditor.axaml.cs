@@ -5,6 +5,7 @@ using Avalonia.Collections;
 using Avalonia.Input;
 using Avalonia.Media;
 using AvaloniaEdit;
+using AvaloniaEdit.Rendering;
 using AvaloniaEdit.TextMate;
 using System;
 using System.Collections.Generic;
@@ -96,7 +97,17 @@ public partial class CodeEditor : UserControl
         set => SetValue(TemplatesProperty, value);
     }
 
+    public static readonly StyledProperty<int> HighlightedLineProperty =
+        AvaloniaProperty.Register<CodeEditor, int>(nameof(HighlightedLine), defaultValue: -1);
+
+    public int HighlightedLine
+    {
+        get => GetValue(HighlightedLineProperty);
+        set => SetValue(HighlightedLineProperty, value);
+    }
+
     private AvaloniaList<LineNumberItem> _lineNumbers = new();
+    private ErrorLineBackgroundRenderer? _errorLineRenderer;
     private bool _suppressDocumentEvent;
     private TextMate.Installation? _textMateInstallation;
     private RegistryOptions? _registryOptions;
@@ -126,6 +137,8 @@ public partial class CodeEditor : UserControl
             Editor.TextArea.TextView.ScrollOffsetChanged += OnEditorScrollOffsetChanged;
             LineNumbers.PointerPressed += OnLineNumbersPointerPressed;
             TemplateSuggestionList.SelectionChanged += OnTemplateSuggestionSelected;
+            _errorLineRenderer = new ErrorLineBackgroundRenderer(this);
+            Editor.TextArea.TextView.BackgroundRenderers.Add(_errorLineRenderer);
             UpdateLineNumbers();
             Console.WriteLine("[CIDE_EDITOR] Constructor END");
         }
@@ -179,6 +192,11 @@ public partial class CodeEditor : UserControl
             Application.Current.PropertyChanged -= OnAppPropertyChanged;
         }
 
+        if (_errorLineRenderer != null && Editor?.TextArea?.TextView != null)
+        {
+            Editor.TextArea.TextView.BackgroundRenderers.Remove(_errorLineRenderer);
+        }
+        _errorLineRenderer = null;
         _textMateInstallation?.Dispose();
         _textMateInstallation = null;
         _registryOptions = null;
@@ -282,6 +300,11 @@ public partial class CodeEditor : UserControl
         else if (change.Property == ErrorLinesProperty || change.Property == WarningLinesProperty || change.Property == BreakpointLinesProperty)
         {
             UpdateLineNumbers();
+            Editor?.TextArea?.TextView?.InvalidateLayer(KnownLayer.Background);
+        }
+        else if (change.Property == HighlightedLineProperty)
+        {
+            ScrollToLine(HighlightedLine);
         }
     }
 
@@ -495,6 +518,17 @@ public partial class CodeEditor : UserControl
         BreakpointLines = bpSet.ToList();
     }
 
+    private void ScrollToLine(int line)
+    {
+        if (line < 1 || Editor?.Document == null) return;
+        if (line > Editor.Document.LineCount) return;
+        var docLine = Editor.Document.GetLineByNumber(line);
+        if (docLine == null) return;
+        Editor.CaretOffset = docLine.Offset;
+        Editor.TextArea.Caret.BringCaretToView();
+        Editor.Focus();
+    }
+
     private void UpdateLineNumbers()
     {
         var lines = Editor.Document.LineCount;
@@ -514,6 +548,36 @@ public partial class CodeEditor : UserControl
                 IsWarning = warningSet.Contains(i),
                 IsBreakpoint = bpSet.Contains(i)
             });
+        }
+    }
+
+    /// <summary>
+    /// Renders a faint red background behind error lines in the editor content area.
+    /// </summary>
+    private class ErrorLineBackgroundRenderer : IBackgroundRenderer
+    {
+        private readonly CodeEditor _editor;
+        public ErrorLineBackgroundRenderer(CodeEditor editor) => _editor = editor;
+
+        public KnownLayer Layer => KnownLayer.Background;
+
+        public void Draw(TextView textView, DrawingContext drawingContext)
+        {
+            if (_editor.ErrorLines == null || _editor.ErrorLines.Count == 0) return;
+            if (!textView.VisualLinesValid) return;
+
+            var errorSet = new HashSet<int>(_editor.ErrorLines);
+            var brush = new SolidColorBrush(Color.Parse("#22FF4444"));
+
+            foreach (var vline in textView.VisualLines)
+            {
+                int lineNumber = vline.FirstDocumentLine.LineNumber;
+                if (!errorSet.Contains(lineNumber)) continue;
+
+                double y = vline.GetTextLineVisualYPosition(vline.TextLines[0], VisualYPosition.TextTop) - textView.ScrollOffset.Y;
+                var rect = new Rect(0, y, textView.Bounds.Width, vline.Height);
+                drawingContext.DrawRectangle(brush, null, rect);
+            }
         }
     }
 }

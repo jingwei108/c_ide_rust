@@ -103,6 +103,12 @@
             await JS.InvokeVoidAsync("cideCodeMirrorInterop.setHighlightLine", "cide-editor", line);
     }
 
+    public async Task ScrollToLine(int line)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.scrollToLine", "cide-editor", line);
+    }
+
     public async Task InsertTemplate(string text)
     {
         if (JS is not null)

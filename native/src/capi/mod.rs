@@ -10,6 +10,35 @@ use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 use std::slice;
 
+/// Trait to abstract over LexerError, ParseError, and TypeError.
+trait CompileError {
+    fn line(&self) -> i32;
+    fn column(&self) -> i32;
+    fn code(&self) -> i32;
+    fn message(&self) -> &str;
+}
+
+impl CompileError for crate::compiler::lexer::LexerError {
+    fn line(&self) -> i32 { self.line }
+    fn column(&self) -> i32 { self.column }
+    fn code(&self) -> i32 { self.code }
+    fn message(&self) -> &str { &self.message }
+}
+
+impl CompileError for crate::compiler::parser::ParseError {
+    fn line(&self) -> i32 { self.line }
+    fn column(&self) -> i32 { self.column }
+    fn code(&self) -> i32 { self.code }
+    fn message(&self) -> &str { &self.message }
+}
+
+impl CompileError for crate::compiler::type_checker::TypeError {
+    fn line(&self) -> i32 { self.line }
+    fn column(&self) -> i32 { self.column }
+    fn code(&self) -> i32 { self.code }
+    fn message(&self) -> &str { &self.message }
+}
+
 unsafe fn cstr_to_str(s: *const c_char) -> Option<&'static str> {
     if s.is_null() {
         return None;
@@ -114,34 +143,89 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     session.compile.errors_buffer.clear();
     session.compile.compiled = false;
 
-    // 拼接所有编译单元
+    // 拼接所有编译单元（避免末尾多余换行导致行号偏移）
     let mut full_source = String::new();
     for unit in &session.compile.compile_units {
         full_source.push_str(&unit.source);
-        full_source.push('\n');
+        if !unit.source.ends_with('\n') {
+            full_source.push('\n');
+        }
     }
 
-    // 1. Lexer
-    let (tokens, lex_errors) = Lexer::new(full_source).tokenize();
-    if !lex_errors.is_empty() {
+    // Helper: 将编译错误同时填充到 diagnostics 和 errors 字符串
+    fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], source: &str) {
+        let source_lines: Vec<&str> = source.lines().collect();
         let mut err_str = String::new();
-        for e in &lex_errors {
-            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code, e.line, e.column, e.message));
+        for e in errors {
+            // Auto-generate fix suggestion for common errors
+            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) = match e.code() {
+                2005 => {
+                    // Missing semicolon: insert at end of line
+                    let line_idx = (e.line() as usize).saturating_sub(1);
+                    let line_text = source_lines.get(line_idx).unwrap_or(&"");
+                    let trimmed_len = line_text.trim_end().len() as i32;
+                    ("语句末尾缺少分号，建议添加 ';'".to_string(), 1, e.line(), trimmed_len, e.line(), trimmed_len, ";".to_string())
+                }
+                3023 => {
+                    // Undeclared variable
+                    ("变量未声明，建议先声明变量再使用".to_string(), 4, 0, 0, 0, 0, String::new())
+                }
+                3015 => {
+                    // Invalid condition (e.g. assignment in if)
+                    ("条件表达式不合法，建议检查是否误用 '=' 代替 '=='".to_string(), 4, 0, 0, 0, 0, String::new())
+                }
+                _ => (String::new(), 0, 0, 0, 0, 0, String::new()),
+            };
+            session.compile.diagnostics.push(crate::session::Diagnostic {
+                line: e.line(),
+                column: e.column(),
+                error_code: e.code(),
+                severity: 0,
+                message: e.message().to_string(),
+                fix_suggestion,
+                fix_kind,
+                replace_start_line: rsl,
+                replace_start_column: rsc,
+                replace_end_line: rel,
+                replace_end_column: rec,
+                replacement_text: rt,
+            });
+            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code(), e.line(), e.column(), e.message()));
         }
         session.compile.errors = err_str.clone();
         session.compile.errors_buffer = err_str;
+    }
+
+    fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], _source: &str) {
+        for w in warnings {
+            session.compile.diagnostics.push(crate::session::Diagnostic {
+                line: w.line(),
+                column: w.column(),
+                error_code: w.code(),
+                severity: 1,
+                message: w.message().to_string(),
+                fix_suggestion: String::new(),
+                fix_kind: 0,
+                replace_start_line: 0,
+                replace_start_column: 0,
+                replace_end_line: 0,
+                replace_end_column: 0,
+                replacement_text: String::new(),
+            });
+        }
+    }
+
+    // 1. Lexer
+    let (tokens, lex_errors) = Lexer::new(full_source.clone()).tokenize();
+    if !lex_errors.is_empty() {
+        push_diagnostics(session, &lex_errors, &full_source);
         return -1;
     }
 
     // 2. Parser
     let (maybe_program, parse_errors) = Parser::new(tokens).parse();
     if !parse_errors.is_empty() {
-        let mut err_str = String::new();
-        for e in &parse_errors {
-            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code, e.line, e.column, e.message));
-        }
-        session.compile.errors = err_str.clone();
-        session.compile.errors_buffer = err_str;
+        push_diagnostics(session, &parse_errors, &full_source);
         return -1;
     }
 
@@ -155,15 +239,13 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     };
 
     // 3. TypeChecker
-    let (type_errors, _type_warnings) = TypeChecker::new().check(&mut program);
+    let (type_errors, type_warnings) = TypeChecker::new().check(&mut program);
     if !type_errors.is_empty() {
-        let mut err_str = String::new();
-        for e in &type_errors {
-            err_str.push_str(&format!("错误 E{} (第{}行, 第{}列): {}\n", e.code, e.line, e.column, e.message));
-        }
-        session.compile.errors = err_str.clone();
-        session.compile.errors_buffer = err_str;
+        push_diagnostics(session, &type_errors, &full_source);
         return -1;
+    }
+    if !type_warnings.is_empty() {
+        push_warnings(session, &type_warnings, &full_source);
     }
 
     // 4. BytecodeGen
@@ -295,9 +377,6 @@ unsafe fn setup_vm(vm: &mut CideVM, session: &Session) {
         }
     }
     vm.set_vis_event_lines(vis_lines);
-
-    let heap_offset = session.memory.heap_offset;
-    vm.set_heap_limit_callback(move || heap_offset);
 
     let mem = vm.get_memory();
     let mem_size = vm.get_memory_size() as usize;

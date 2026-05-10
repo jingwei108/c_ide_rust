@@ -700,12 +700,14 @@ impl BytecodeGen {
                 match op {
                     BinaryOp::Add => {
                         if left_is_ptr && !right_is_ptr {
-                            self.emit(OpCode::PushConst, 4, &loc);
+                            let step = self.ptr_step_size(left.ty());
+                            self.emit(OpCode::PushConst, step, &loc);
                             self.emit(OpCode::Mul, 0, &loc);
                             self.emit(OpCode::Add, 0, &loc);
                         } else if !left_is_ptr && right_is_ptr {
+                            let step = self.ptr_step_size(right.ty());
                             self.emit(OpCode::Swap, 0, &loc);
-                            self.emit(OpCode::PushConst, 4, &loc);
+                            self.emit(OpCode::PushConst, step, &loc);
                             self.emit(OpCode::Mul, 0, &loc);
                             self.emit(OpCode::Swap, 0, &loc);
                             self.emit(OpCode::Add, 0, &loc);
