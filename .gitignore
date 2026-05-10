@@ -28,6 +28,7 @@ native/check.log
 /*.pdb
 /*.lib
 /*.dll
+/*.so
 /*.tmp
 *.log
 
