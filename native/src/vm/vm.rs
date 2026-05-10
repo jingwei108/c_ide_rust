@@ -203,6 +203,95 @@ impl CideVM {
         self.cancelled = true;
     }
 
+    /// Call a user-defined function from a host function context.
+    /// Used by host_qsort to invoke the user-supplied comparison function.
+    /// Returns the return value on success, or None if the function trapped.
+    pub fn call_user_function(&mut self, session: &mut Session, func_idx: u32, args: &[i32], max_steps: i32) -> Option<i32> {
+        let idx = func_idx as usize;
+        if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
+            return None;
+        }
+        let meta = self.func_table[idx].clone();
+        let frame_size = (meta.local_count as u64) * 4;
+        if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
+            return None;
+        }
+        let frame_size_u32 = frame_size as u32;
+        if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
+            return None;
+        }
+
+        // Save state
+        let saved_ip = self.ip;
+        let saved_call_stack = self.call_stack.clone();
+        let saved_mem_stack_top = self.mem_stack_top;
+        let saved_stack = self.stack.clone();
+        let saved_error = self.error.clone();
+        let saved_finished = self.finished;
+        let saved_step_event_hit = self.step_event_hit;
+        let saved_current_line = self.current_line;
+        let start_step = self.step_count;
+
+        // Setup call frame
+        self.mem_stack_top -= frame_size_u32;
+        let locals_base = self.mem_stack_top;
+        // Arguments: args[0] is first param, args[n-1] is last param.
+        // VM Call convention: last param is at locals_base + 0, first param at locals_base + (count-1)*4
+        for i in 0..meta.arg_count {
+            let arg_idx = (meta.arg_count - 1 - i) as usize;
+            let arg = if arg_idx < args.len() { args[arg_idx] } else { 0 };
+            let arg_addr = (locals_base as u64) + (i as u64) * 4;
+            self.write_i32(arg_addr as u32, arg);
+        }
+        for i in meta.arg_count..meta.local_count {
+            let local_addr = (locals_base as u64) + (i as u64) * 4;
+            self.write_i32(local_addr as u32, 0);
+        }
+        let func_name = if idx < self.func_names.len() {
+            self.func_names[idx].clone()
+        } else {
+            format!("func_{}", func_idx)
+        };
+        self.call_stack.push(CallFrame {
+            return_ip: self.code.len(),
+            locals_base,
+            local_count: meta.local_count,
+            func_name,
+        });
+        self.ip = meta.ip;
+
+        // Execute until return or trap
+        let mut result = None;
+        loop {
+            if self.step_count - start_step >= max_steps {
+                break;
+            }
+            let step_result = self.step(session);
+            match step_result {
+                StepResult::Finished | StepResult::Trap => {
+                    result = if !self.stack.is_empty() { self.stack.pop() } else { Some(0) };
+                    break;
+                }
+                StepResult::Paused => {
+                    self.paused = false;
+                }
+                StepResult::Ok => {}
+            }
+        }
+
+        // Restore state
+        self.ip = saved_ip;
+        self.call_stack = saved_call_stack;
+        self.mem_stack_top = saved_mem_stack_top;
+        self.stack = saved_stack;
+        self.error = saved_error;
+        self.finished = saved_finished;
+        self.step_event_hit = saved_step_event_hit;
+        self.current_line = saved_current_line;
+
+        result
+    }
+
     pub fn set_max_steps(&mut self, max: i32) {
         self.max_steps = max;
     }
@@ -617,6 +706,7 @@ impl CideVM {
 
             OpCode::GetFrameBase => {
                 if let Some(frame) = self.call_stack.last() {
+                    eprintln!("[VM GetFrameBase] locals_base = {}", frame.locals_base);
                     self.push(frame.locals_base as i32);
                 } else {
                     self.trap("GetFrameBase: 无调用帧", &inst.loc);
@@ -668,6 +758,7 @@ impl CideVM {
 
             OpCode::LoadMem => {
                 let addr = self.pop() as u32;
+                eprintln!("[VM LoadMem] addr = 0x{:04X}", addr);
                 let val = self.load_i32(addr, &inst.loc);
                 self.push(val);
             }
@@ -675,6 +766,7 @@ impl CideVM {
             OpCode::StoreMem => {
                 let val = self.pop();
                 let addr = self.pop() as u32;
+                eprintln!("[VM StoreMem] addr = 0x{:04X}, val = {}", addr, val);
                 self.store_i32(addr, val, &inst.loc);
             }
 

@@ -69,9 +69,6 @@ docs/                   设计文档、事故报告
 
 ### 当前不支持
 - **匿名结构体变量声明** — `struct { int x; } v;`（变量声明中的匿名 struct 暂不支持，但 `typedef struct { ... } Name;` 已支持）
-- **`realloc`** — 仅有 `malloc`/`free`
-- **`qsort`** — 未实现
-- **`stderr` / `fprintf(stderr, ...)`** — 仅有 `printf`/`scanf`
 - **`double`** — 未实现（仅支持 `float`）
 - **函数调用参数的隐式转换提示** — 当前对 `printf` 格式字符串 `%f` 的参数不做类型检查，传入 int 不会自动转换（已知限制）
 
@@ -90,6 +87,9 @@ docs/                   设计文档、事故报告
 - **函数前向声明** — `int foo(int);` 原型声明，函数定义可放在调用者之后
 - **字符串库函数** — `strlen(s)`、`strcpy(dest, src)`、`strcmp(a, b)`（宿主导入函数）
 - **显式类型转换（Cast）** — `(int*)p`、`(char*)arr`、`(float)a`、`(int)b` 等标量/指针间转换
+- **`fprintf`** — `fprintf(stdout, "format", ...)` / `fprintf(stderr, "format", ...)`，stream 参数被忽略，输出行为与 `printf` 相同
+- **`realloc`** — `realloc(ptr, new_size)`，支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
+- **`qsort`** — `qsort(base, nmemb, size, compar)`，支持用户自定义比较函数（通过 VM 调用用户函数）
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护
@@ -117,6 +117,17 @@ docs/                   设计文档、事故报告
 - **C# 单元测试假阳性修复（2026-05-10）**：`catch (DllNotFoundException)` 后直接 `return` 导致 DLL 缺失时 3 个测试全部静默通过 → 改为 `Assert.Fail`，并在 `csproj` 中引用 native DLL 确保复制到输出目录
 - **BytecodeGen 缺失 main 保护（2026-05-10）**：`self.func_index["main"]` 在空源码时 panic → 改为 `get("main")` 安全查找，缺失时返回错误"缺少 main 函数入口"
 - **TypeChecker 赋值警告降噪（2026-05-10）**：`W3053_ImplicitScalarConversion` 对 `char->int` 安全提升也报警告 → 只保留 `int->char`（可能截断）的警告；`W3055_VoidPointerCast` 对 `malloc` 返回的 `void*->int*` 也报警告 → 删除（C 标准允许）
+- **隐式转换提示系统（2026-05-10）**：TypeChecker 新增 `hints` 集合（severity=2），对所有被允许的隐式转换分类提示：
+  - **Warning (severity=1)**：危险转换（`int→char`、`float→int`、`array→pointer`、`int→pointer`）
+  - **Hint (severity=2)**：安全提升（`char→int`、`int→float`、`char→float`、`void*→具体指针`）
+  - C API 新增 `push_hints`，编译成功后按 error → warning → hint 顺序推送诊断
+  - 前端 `EnsureCompiled()` 编译成功后也调用 `LoadDiagnostics()`，确保 warnings/hints 被加载
+  - `RunCodeAsync()` 在 `ConsoleOutput` 开头追加提示汇总（如"发现 X 处隐式类型转换"），优先级在错误之后
+- **新增宿主函数 `fprintf`/`realloc`/`qsort`**：
+  - `fprintf(stream, format, ...)`：忽略 stream 参数，输出行为与 `printf` 相同；Lexer 预定义 `stdout=1`、`stderr=2` 宏
+  - `realloc(ptr, new_size)`：完整支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
+  - `qsort(base, nmemb, size, compar)`：支持用户自定义比较函数，通过 `vm.call_user_function` 在 host 上下文中调用用户函数
+- **函数指针基础支持**：TypeChecker 将函数名识别为 `int`（函数索引）；BytecodeGen 生成 `PushConst func_idx`；支持将函数名作为参数传递（如 `qsort(..., cmp)`）
 - **TypeChecker 指针关系运算（2026-05-10）**：`< <= > >=` 拒绝指针比较 → 允许同类型指针（含数组退化）间比较
 - **Lexer UTF-8 安全加固（2026-05-10）**：`peek()`/`advance()` 使用 `as_bytes()[i] as char` → 改用 `source[pos..].chars().nth()` 和 `char.len_utf8()`，正确跳过多字节 UTF-8 字符（如中文注释）
 - **BytecodeGen 错误消息勘误（2026-05-10）**：`gen_member_addr` 中"全局结构体暂不支持" → 改为"未声明的结构体变量"（该分支实际处理的是变量未找到）
