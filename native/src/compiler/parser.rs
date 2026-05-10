@@ -152,25 +152,7 @@ impl Parser {
                 if is_enum_decl {
                     self.parse_enum_decl(&mut program);
                 } else {
-                    let (ty, _name) = self.parse_type_and_name();
-                    let name_tok = self.previous().clone();
-                    if self.check(TokenType::LParen) {
-                        self.pos = checkpoint;
-                        program.funcs.push(self.parse_func_decl());
-                    } else {
-                        let init = if self.match_token(TokenType::Assign) {
-                            if self.check(TokenType::LBrace) {
-                                Some(self.parse_init_list())
-                            } else {
-                                Some(self.parse_expression())
-                            }
-                        } else { None };
-                        self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
-                        program.globals.push(GlobalDecl {
-                            loc: SourceLoc { line: name_tok.line, column: name_tok.column },
-                            ty, name: name_tok.text, init,
-                        });
-                    }
+                    self.parse_global_var_or_func(&mut program);
                 }
             } else if self.check(TokenType::Struct) {
                 let checkpoint = self.pos;
@@ -181,61 +163,10 @@ impl Parser {
                 if is_struct_decl {
                     program.structs.push(self.parse_struct_decl());
                 } else {
-                    let (ty, _name) = self.parse_type_and_name();
-                    let name_tok = self.previous().clone();
-                    if self.check(TokenType::LParen) {
-                        self.pos = checkpoint;
-                        program.funcs.push(self.parse_func_decl());
-                    } else {
-                        let init = if self.match_token(TokenType::Assign) {
-                            if self.check(TokenType::LBrace) {
-                                Some(self.parse_init_list())
-                            } else {
-                                Some(self.parse_expression())
-                            }
-                        } else { None };
-                        self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
-                        program.globals.push(GlobalDecl {
-                            loc: SourceLoc { line: name_tok.line, column: name_tok.column },
-                            ty, name: name_tok.text, init,
-                        });
-                    }
+                    self.parse_global_var_or_func(&mut program);
                 }
             } else if self.is_type_token() {
-                let checkpoint = self.pos;
-                let (ty, _name) = self.parse_type_and_name();
-                let name_tok = self.previous().clone();
-                if self.check(TokenType::LParen) {
-                    self.pos = checkpoint;
-                    program.funcs.push(self.parse_func_decl());
-                } else {
-                    let init = if self.match_token(TokenType::Assign) {
-                        if self.check(TokenType::LBrace) {
-                            Some(self.parse_init_list())
-                        } else {
-                            Some(self.parse_expression())
-                        }
-                    } else { None };
-                    program.globals.push(GlobalDecl {
-                        loc: SourceLoc { line: name_tok.line, column: name_tok.column },
-                        ty: ty.clone(), name: name_tok.text, init,
-                    });
-                    while self.match_token(TokenType::Comma) {
-                        let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-                        let extra_init = if self.match_token(TokenType::Assign) {
-                            if self.check(TokenType::LBrace) {
-                                Some(self.parse_init_list())
-                            } else {
-                                Some(self.parse_expression())
-                            }
-                        } else { None };
-                        program.globals.push(GlobalDecl {
-                            loc: SourceLoc { line: extra_name_tok.line, column: extra_name_tok.column },
-                            ty: ty.clone(), name: extra_name_tok.text, init: extra_init,
-                        });
-                    }
-                    self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
-                }
+                self.parse_global_var_or_func(&mut program);
             } else {
                 self.errors.push(ParseError {
                     message: format!("预期 struct、函数或全局变量声明，找到: {}", self.current().text),
@@ -248,6 +179,43 @@ impl Parser {
         }
 
         Some(program)
+    }
+
+    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode) {
+        let checkpoint = self.pos;
+        let (ty, _name) = self.parse_type_and_name();
+        let name_tok = self.previous().clone();
+        if self.check(TokenType::LParen) {
+            self.pos = checkpoint;
+            program.funcs.push(self.parse_func_decl());
+        } else {
+            let init = if self.match_token(TokenType::Assign) {
+                if self.check(TokenType::LBrace) {
+                    Some(self.parse_init_list())
+                } else {
+                    Some(self.parse_expression())
+                }
+            } else { None };
+            program.globals.push(GlobalDecl {
+                loc: SourceLoc { line: name_tok.line, column: name_tok.column },
+                ty: ty.clone(), name: name_tok.text, init,
+            });
+            while self.match_token(TokenType::Comma) {
+                let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+                let extra_init = if self.match_token(TokenType::Assign) {
+                    if self.check(TokenType::LBrace) {
+                        Some(self.parse_init_list())
+                    } else {
+                        Some(self.parse_expression())
+                    }
+                } else { None };
+                program.globals.push(GlobalDecl {
+                    loc: SourceLoc { line: extra_name_tok.line, column: extra_name_tok.column },
+                    ty: ty.clone(), name: extra_name_tok.text, init: extra_init,
+                });
+            }
+            self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
+        }
     }
 
     fn parse_struct_decl(&mut self) -> StructDecl {
@@ -796,6 +764,7 @@ impl Parser {
         }
         if self.check(TokenType::LParen) {
             let checkpoint = self.pos;
+            let typedef_snapshot = self.typedef_names.clone();
             self.advance(); // consume '('
             if self.is_type_token() {
                 let t = self.parse_type_only();
@@ -806,6 +775,7 @@ impl Parser {
                 }
             }
             self.pos = checkpoint;
+            self.typedef_names = typedef_snapshot;
         }
         if self.match_token(TokenType::Minus) {
             let operand = self.parse_unary();
@@ -933,6 +903,11 @@ impl Parser {
             let value: i32 = self.previous().text.parse().unwrap_or(0);
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             return Expr::Literal { value, loc, ty: Type::int() };
+        }
+        if self.match_token(TokenType::CharLiteral) {
+            let value: i32 = self.previous().text.parse().unwrap_or(0);
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Literal { value, loc, ty: Type::char() };
         }
         if self.match_token(TokenType::String) {
             let value = self.previous().text.clone();

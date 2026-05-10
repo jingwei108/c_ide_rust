@@ -1,4 +1,4 @@
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum TypeKind {
     Void,
     Int,
@@ -8,7 +8,7 @@ pub enum TypeKind {
     Struct,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Type {
     pub kind: TypeKind,
     pub name: String,
@@ -137,7 +137,7 @@ impl std::fmt::Display for Type {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct SourceLoc {
     pub line: i32,
     pub column: i32,

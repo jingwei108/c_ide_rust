@@ -5,7 +5,7 @@ use std::collections::HashMap;
 pub enum TokenType {
     Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
     Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const,
-    Identifier, Number, String,
+    Identifier, Number, CharLiteral, String,
     Plus, Minus, Star, Slash, Percent,
     Eq, Ne, Lt, Le, Gt, Ge,
     AndAnd, OrOr, Not,
@@ -444,7 +444,7 @@ impl Lexer {
             });
             valid = false;
         }
-        let mut tok = self.make_token(TokenType::Number, &self.source[start..self.pos]);
+        let mut tok = self.make_token(TokenType::CharLiteral, &self.source[start..self.pos]);
         if valid {
             tok.text = value.to_string();
         }
@@ -538,8 +538,8 @@ impl Lexer {
         if self.pos >= self.source.len() {
             return '\0';
         }
-        let c = self.source.as_bytes()[self.pos] as char;
-        self.pos += 1;
+        let c = self.source[self.pos..].chars().next().unwrap_or('\0');
+        self.pos += c.len_utf8();
         if c == '\n' {
             self.line += 1;
             self.column = 1;

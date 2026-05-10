@@ -1,12 +1,12 @@
 use super::opcode::OpCode;
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
 pub struct SourceLoc {
     pub line: i32,
     pub column: i32,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Instruction {
     pub op: OpCode,
     pub operand: i32,

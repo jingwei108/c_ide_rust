@@ -3,13 +3,13 @@ use crate::vm::instruction::Instruction;
 use crate::vm::vm::CideVM;
 use std::collections::HashMap;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompileUnit {
     pub filename: String,
     pub source: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diagnostic {
     pub line: i32,
     pub column: i32,
@@ -26,14 +26,14 @@ pub struct Diagnostic {
 }
 
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FuncMeta {
     pub ip: usize,
     pub arg_count: i32,
     pub local_count: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Symbol {
     pub name: String,
     pub addr: u32,
@@ -42,7 +42,7 @@ pub struct Symbol {
     pub scope_depth: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlgorithmMatch {
     pub name: String,
     pub display_name: String,
@@ -53,7 +53,7 @@ pub struct AlgorithmMatch {
     pub vis_events: Vec<(i32, i32, String)>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CompileState {
     pub errors: String,
     pub errors_buffer: String,
@@ -71,13 +71,13 @@ pub struct CompileState {
     pub struct_fields: HashMap<String, Vec<(String, i32)>>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceEntry {
     pub line: i32,
     pub operation: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VariableSnapshot {
     pub name: String,
     pub addr: u32,
@@ -86,14 +86,14 @@ pub struct VariableSnapshot {
     pub value: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VisEvent {
     pub ty: i32,
     pub line: i32,
     pub extra: [i32; 3],
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeState {
     pub error: String,
     pub output_lines: Vec<String>,
@@ -108,7 +108,7 @@ pub struct RuntimeState {
     pub vis_event_cache: Vec<VisEvent>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryRegion {
     pub addr: u32,
     pub size: i32,
@@ -118,13 +118,13 @@ pub struct MemoryRegion {
     pub is_freed: bool,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FreeBlock {
     pub addr: u32,
     pub size: i32,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct MemoryState {
     pub regions: Vec<MemoryRegion>,
     pub free_list: Vec<FreeBlock>,

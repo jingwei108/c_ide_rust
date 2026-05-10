@@ -99,6 +99,30 @@ docs/                   设计文档、事故报告
 - **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
 - **C 子集 P1 拓展（2026-05-10）**：复合赋值扩展到数组索引/指针解引用/结构体成员（`a[i]+=1`、`*p+=1`、`s.mem+=1`）、取地址扩展到复杂左值（`&a[i]`、`&s.mem`）、全局结构体变量成员访问、自增/自减扩展到复杂左值（`a[i]++`、`*p++`、`s.mem++`）→ BytecodeGen 全部支持，新增 7 个 E2E 测试
 - **C 子集 P2 拓展（2026-05-10）**：位运算符 `& | ^ ~ << >>` 全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM），新增 2 个 E2E 测试；三目运算符 `? :` 全管线支持，新增 1 个 E2E 测试
+- **BytecodeGen 指针步长修复（2026-05-10）**：`BinaryOp::Add` 指针+整数时硬编码 `PushConst 4` → 改用 `ptr_step_size()`，正确支持 `char*`（步长 1）和 `struct*`（步长为结构体大小）
+- **VM 栈-堆碰撞保护修复（2026-05-10）**：`heap_limit` 闭包在 `setup_vm` 时按值捕获初始 `heap_offset`，后续 `malloc` 修改不反映 → 删除闭包机制，`Call` 指令处直接读取 `session.memory.heap_offset`
+- **TypeChecker 警告透传修复（2026-05-10）**：`W3050`~`W3056` 被 `_type_warnings` 丢弃，前端完全看不到 → 新增 `push_warnings()`，severity 设为 1，C# 前端 `DiagnosticService` 正确渲染为 warning 行
+- **VM 移位指令越界保护（2026-05-10）**：`Shl`/`Shr` 直接执行 `a << b` 不检查边界 → 添加 `!(0..32).contains(&b)` 检查，越界时 `trap` 报告未定义行为
+- **位运算错误码勘误（2026-05-10）**：位运算报错借用 `E3019_LogicTypeError` → 新增 `E3048_BitOpTypeError` 专用错误码
+- **Session Default 冲突修复（2026-05-10）**：`session.rs` 同时存在 `#[derive(Default)]` 和手动 `impl Default` → 删除派生宏，保留手动实现（`vm: Some(CideVM::default())`）
+- **C# 单元测试假阳性修复（2026-05-10）**：`catch (DllNotFoundException)` 后直接 `return` 导致 DLL 缺失时 3 个测试全部静默通过 → 改为 `Assert.Fail`，并在 `csproj` 中引用 native DLL 确保复制到输出目录
+- **BytecodeGen 缺失 main 保护（2026-05-10）**：`self.func_index["main"]` 在空源码时 panic → 改为 `get("main")` 安全查找，缺失时返回错误"缺少 main 函数入口"
+- **TypeChecker 赋值警告降噪（2026-05-10）**：`W3053_ImplicitScalarConversion` 对 `char->int` 安全提升也报警告 → 只保留 `int->char`（可能截断）的警告；`W3055_VoidPointerCast` 对 `malloc` 返回的 `void*->int*` 也报警告 → 删除（C 标准允许）
+- **TypeChecker 指针关系运算（2026-05-10）**：`< <= > >=` 拒绝指针比较 → 允许同类型指针（含数组退化）间比较
+- **Lexer UTF-8 安全加固（2026-05-10）**：`peek()`/`advance()` 使用 `as_bytes()[i] as char` → 改用 `source[pos..].chars().nth()` 和 `char.len_utf8()`，正确跳过多字节 UTF-8 字符（如中文注释）
+- **BytecodeGen 错误消息勘误（2026-05-10）**：`gen_member_addr` 中"全局结构体暂不支持" → 改为"未声明的结构体变量"（该分支实际处理的是变量未找到）
+- **字符字面量类型精度（2026-05-10）**：Lexer 返回 `TokenType::Number`，Parser 无法区分 `'a'` 和 `97` → 新增 `TokenType::CharLiteral`，Parser 生成 `Type::char()` 的 `Expr::Literal`
+- **VM StepEvent 逻辑集中（2026-05-10）**：StepEvent 的断点检查分散在 `match` 之前和 `match` 分支中 → 全部合并到 `match` 分支，消除状态不一致风险
+- **host_strcpy 安全加固（2026-05-10）**：不检查目标缓冲区大小，空间不足时可能不写终止符 → 始终确保在边界内写入 null 终止符
+- **host_malloc u32 溢出保护（2026-05-10）**：`new_offset as u32` 在极端大值时截断 → 添加 `new_offset > u32::MAX` 检查
+- **NULL 指针内存视图（2026-05-10）**：`cide_memory_get_pointer_target` 用 `target > 0` 排除 NULL → 改为 `target >= 0`，内存视图中可显示指向 0x0000 的指针
+- **Parser 重复代码消除（2026-05-10）**：`parse_program()` 中 enum/struct/普通类型三个分支各含 ~25 行重复的变量声明/初始化逻辑 → 提取 `parse_global_var_or_func()` 公共方法
+- **类型转换回滚安全（2026-05-10）**：`parse_unary()` 用 checkpoint + rollback 检测 `(type)expr`，`parse_type_only()` 中解析 `enum Name` 会副作用插入 `typedef_names` → rollback 时同步恢复 `typedef_names` 快照
+- **C API 裸指针文档（2026-05-10）**：`cide_get_compile_errors` 返回 `String` 内部裸指针，无生命周期文档 → 添加 `///` 安全注释，明确指针仅在下次编译前有效
+- **会话保存/加载（2026-05-10）**：`cide_session_save/load` 为桩函数 → 引入 `serde` + `serde_json`，实现 `SessionSnapshot` 序列化/反序列化，保存 compile/runtime/memory 状态
+- **文档同步（2026-05-10）**：`DESIGN.md` / `ROADMAP.md` 仍描述 C++ 后端（CMake/Clang/WasmCodeGen）→ 全面更新为 Rust 后端（Cargo/自定义字节码）
+- **C 头文件同步（2026-05-10）**：`cide_capi.h` 缺失 `E2007`/`E2008`/`E3048`/`W3051`~`W3056` → 补全；注释"分号分隔"改为"换行分隔"
+- **CI/CD 初始化（2026-05-10）**：零 CI/CD → 新增 `.github/workflows/ci.yml`，覆盖 Rust 编译/测试/clippy + C# 编译/测试
 
 ## 构建命令
 

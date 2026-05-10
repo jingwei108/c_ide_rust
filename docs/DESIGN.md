@@ -1,7 +1,7 @@
 ﻿# C IDE 项目设计文档
 
 > 一款面向教学场景的移动端 C 语言子集 IDE
-> 核心技术：C# Avalonia 前端 + C++ 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
+> 核心技术：C# Avalonia 前端 + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
 
 ---
 
@@ -39,7 +39,7 @@
 
 | 平台 | 优先级 | 技术方案 |
 |------|--------|---------|
-| Android (手机/平板) | P0 | .NET MAUI Blazor Hybrid + C++ `.so` + P/Invoke |
+| Android (手机/平板) | P0 | .NET MAUI Blazor Hybrid + Rust `.so` + P/Invoke |
 | Windows Desktop | P1 | Avalonia + 调试与开发主力平台 |
 | iOS | P2 | 后续考虑 |
 
@@ -49,9 +49,9 @@
 |------|------|------|
 | 前端 UI | Avalonia 11.x + C# 12（桌面）；MAUI Blazor Hybrid（移动） | 跨平台，参考 2048 验证 Android 可行性 |
 | 前端渲染 | Skia / Avalonia Canvas（桌面）；SkiaSharp（移动） | **放弃 OpenGL**，避免移动端闪退 |
-| 后端核心 | C++20 | 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机 |
+| 后端核心 | Rust 1.95 | 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机 |
 | 通信 | C API (`extern "C"`) | 统一 P/Invoke（Android/Desktop） |
-| 构建 | CMake + dotnet + PowerShell | 与参考项目保持一致 |
+| 构建 | Cargo + dotnet + PowerShell | 与参考项目保持一致 |
 
 ### 1.4 参考项目经验
 
@@ -81,7 +81,7 @@
                                     |
                                     v P/Invoke (统一 C API)
 +-----------------------------------------------------------------------------+
-|                        C++ 后端 (Native DLL / .so)                          |
+|                        Rust 后端 (Native DLL / .so)                          |
 |                                                                             |
 |  +---------------------------------------------------------------------+    |
 |  | ① C 子集编译器                                                       |    |
@@ -136,36 +136,31 @@
 c-ide/
 ├── build.ps1                          # 一键构建脚本
 ├── README.md
-├── native/                            # C++ 后端
-│   ├── CMakeLists.txt
+├── native/                            # Rust 后端
+│   ├── Cargo.toml
 │   ├── include/
-│   │   └── cide_capi.h               # C API 头文件
+│   │   └── cide_capi.h               # C API 头文件（供 C# P/Invoke 参考）
 │   ├── src/
 │   │   ├── compiler/                  # C 子集 → 字节码编译器
-│   │   │   ├── Lexer.cpp / .hpp
-│   │   │   ├── Parser.cpp / .hpp
-│   │   │   ├── Ast.hpp
-│   │   │   ├── TypeChecker.cpp / .hpp
-│   │   │   ├── BytecodeGen.cpp / .hpp    # AST → CideVM 字节码
-│   │   │   └── SourceMap.cpp / .hpp
+│   │   │   ├── lexer.rs
+│   │   │   ├── parser.rs
+│   │   │   ├── ast.rs
+│   │   │   ├── type_checker.rs
+│   │   │   └── bytecode_gen.rs       # AST → CideVM 字节码
 │   │   ├── vm/                        # CideVM 教学虚拟机
-│   │   │   ├── CideVM.cpp / .hpp
-│   │   │   ├── OpCode.hpp
-│   │   │   └── Instruction.hpp
+│   │   │   ├── vm.rs
+│   │   │   ├── opcode.rs
+│   │   │   ├── instruction.rs
+│   │   │   └── host_funcs.rs
 │   │   ├── diagnostics/               # 诊断系统
-│   │   │   ├── ErrorCodes.hpp
-│   │   │   ├── DiagnosticEngine.cpp / .hpp
-│   │   │   ├── QuickFixGenerator.cpp / .hpp
-│   │   │   └── AlgorithmMatcher.cpp / .hpp
-│   │   └── capi/
-│   │       └── cide_capi.cpp         # C API 桥接层
+│   │   │   └── error_codes.rs
+│   │   ├── capi/
+│   │   │   └── mod.rs                # C API 桥接层
+│   │   └── session.rs                # Session 状态管理
 │   └── tests/                         # 测试套件
-│       ├── Phase2RegressionTest.cpp
-│       ├── Phase3Batch1Test.cpp      # 数组/指针/结构体
-│       ├── Phase3Batch2Test.cpp      # 运行时错误
-│       ├── Phase3Batch3Test.cpp      # 内存视图
-│       ├── Phase3Batch4Test.cpp      # printf/scanf
-│       └── NewFeaturesTest.cpp
+│       ├── end_to_end_test.rs
+│       ├── end_to_end_extra_test.rs
+│       └── compile_pipeline_test.rs
 ├── Cide.Client/                       # Avalonia 共享库
 │   ├── Core/
 │   │   ├── CompilerService.cs
@@ -295,8 +290,9 @@ SourceMap 生成 + 字符串数据段收集
 
 CideVM 是栈式虚拟机，核心循环逐条解释执行 `Instruction`：
 
-```cpp
-enum class OpCode : uint8_t {
+```rust
+#[repr(u8)]
+enum OpCode {
     PushConst, LoadLocal, StoreLocal, LoadGlobal, StoreGlobal,
     LoadMem, StoreMem, LoadMemByte, StoreMemByte,
     Add, Sub, Mul, Div, Mod, Neg,
@@ -682,7 +678,7 @@ void bubbleSort(int arr[], int n) {
 ## 11. 开发阶段
 
 ### Phase 1: 基础架构（✅ 已完成）
-- [x] 项目脚手架：build.ps1, CMake, .csproj, 目录结构
+- [x] 项目脚手架：build.ps1, Cargo, .csproj, 目录结构
 - [x] C API 接口定义：cide_capi.h
 - [x] Avalonia 共享项目 + Android 入口 + 响应式布局框架
 - [x] 代码编辑器基础（行号 + 基础高亮 + 触控优化）
