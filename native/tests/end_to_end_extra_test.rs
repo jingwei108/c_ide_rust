@@ -845,3 +845,121 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
 }
+
+
+#[test]
+fn test_e2e_forward_decl() {
+    let src = r#"
+#include <stdio.h>
+int add(int a, int b);
+int main() {
+    printf("%d", add(1, 2));
+    return 0;
+}
+int add(int a, int b) {
+    return a + b;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_strlen() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char s[] = "hello";
+    int len = strlen(s);
+    printf("%d", len);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("5")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_strcpy() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char src[] = "hello";
+    char dest[10];
+    strcpy(dest, src);
+    printf("%s", dest);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("hello")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_strcmp() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char a[] = "abc";
+    char b[] = "abc";
+    char c[] = "abd";
+    int r1 = strcmp(a, b);
+    int r2 = strcmp(a, c);
+    printf("%d %d", r1, r2);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("0 -1"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_cast_malloc() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(sizeof(int));
+    *p = 42;
+    printf("%d", *p);
+    free(p);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_cast_pointer() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[3] = {1, 2, 3};
+    char *c = (char*)arr;
+    printf("%d", *c);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
+}

@@ -282,7 +282,12 @@ impl Parser {
 
         let params = self.parse_param_list();
         self.consume(TokenType::RParen, "预期 ')'");
-        let body = self.parse_block();
+        let body = if self.check(TokenType::LBrace) {
+            Some(self.parse_block())
+        } else {
+            self.consume(TokenType::Semicolon, "函数声明后预期 ';' 或 '{'");
+            None
+        };
 
         FuncDecl {
             loc: SourceLoc { line: name_tok.line, column: name_tok.column },
@@ -370,7 +375,8 @@ impl Parser {
         }
 
         if !dims.is_empty() {
-            let total = dims.iter().map(|&d| if d > 0 { d } else { 1 }).product();
+            let has_unknown = dims.iter().any(|&d| d <= 0);
+            let total = if has_unknown { 0 } else { dims.iter().product() };
             return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind, dims, is_unsigned: base_type.is_unsigned }, name_tok.text);
         }
 
@@ -780,6 +786,19 @@ impl Parser {
     fn parse_unary(&mut self) -> Expr {
         if self.match_token(TokenType::Sizeof) {
             return self.parse_sizeof();
+        }
+        if self.check(TokenType::LParen) {
+            let checkpoint = self.pos;
+            self.advance(); // consume '('
+            if self.is_type_token() {
+                let t = self.parse_type_only();
+                if self.match_token(TokenType::RParen) {
+                    let operand = self.parse_unary();
+                    let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                    return Expr::Cast { expr: Box::new(operand), target_type: t.clone(), loc, ty: t };
+                }
+            }
+            self.pos = checkpoint;
         }
         if self.match_token(TokenType::Minus) {
             let operand = self.parse_unary();

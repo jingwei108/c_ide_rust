@@ -72,15 +72,17 @@ impl TypeChecker {
 
         // Pass 2: Register function signatures
         for f in &program.funcs {
-            if self.funcs.contains_key(&f.name) {
-                self.report_error(&format!("函数 '{}' 重复定义", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
-                continue;
-            }
-            let sym = FuncSymbol {
+            let new_sym = FuncSymbol {
                 return_type: f.return_type.clone(),
                 param_types: f.params.iter().map(|p| p.ty.clone()).collect(),
             };
-            self.funcs.insert(f.name.clone(), sym);
+            if let Some(existing) = self.funcs.get(&f.name) {
+                if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
+                    self.report_error(&format!("函数 '{}' 的声明与之前定义签名不一致", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
+                }
+                continue;
+            }
+            self.funcs.insert(f.name.clone(), new_sym);
         }
 
         // Pass 2.5: Register globals and check initializers
@@ -105,7 +107,9 @@ impl TypeChecker {
 
         // Pass 3: Check function bodies
         for f in &mut program.funcs {
-            self.visit_func_decl(f);
+            if f.body.is_some() {
+                self.visit_func_decl(f);
+            }
         }
 
         self.exit_scope();
@@ -349,7 +353,9 @@ impl TypeChecker {
         for p in &node.params {
             self.declare_var(&p.name, &p.ty, false);
         }
-        self.dispatch_stmt(&mut node.body);
+        if let Some(ref mut body) = node.body {
+            self.dispatch_stmt(body);
+        }
         self.exit_scope();
     }
 
@@ -366,8 +372,7 @@ impl TypeChecker {
                 }
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
-                        let mut ty = var_type.clone();
-                        self.check_array_initializer(&mut ty, init_expr, loc);
+                        self.check_array_initializer(var_type, init_expr, loc);
                     } else if var_type.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
                         self.check_struct_initializer(var_type, init_expr, loc);
                     } else {
@@ -381,8 +386,7 @@ impl TypeChecker {
                 for (ename, einit) in extra_vars.iter_mut() {
                     if let Some(ref mut init_expr) = einit {
                         if var_type.is_array() {
-                            let mut ty = var_type.clone();
-                            self.check_array_initializer(&mut ty, init_expr, loc);
+                            self.check_array_initializer(var_type, init_expr, loc);
                         } else if var_type.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
                             self.check_struct_initializer(var_type, init_expr, loc);
                         } else {
@@ -673,6 +677,11 @@ impl TypeChecker {
                 *ty = Type::int();
                 ty.clone()
             }
+            Expr::Cast { expr, target_type, ty, .. } => {
+                self.resolve_expr_type(expr);
+                *ty = target_type.clone();
+                ty.clone()
+            }
             Expr::InitList { elements, ty, .. } => {
                 for elem in elements.iter_mut() {
                     self.resolve_expr_type(elem);
@@ -751,6 +760,43 @@ impl TypeChecker {
                     }
                 }
                 Type::void()
+            }
+            "strlen" => {
+                if args.len() != 1 {
+                    self.report_error("strlen 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let arg_type = self.resolve_expr_type(&mut args[0]);
+                    if !arg_type.is_pointer() && !arg_type.is_array() {
+                        self.report_error("strlen 参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                }
+                Type::int()
+            }
+            "strcpy" => {
+                if args.len() != 2 {
+                    self.report_error("strcpy 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    for (i, arg) in args.iter_mut().enumerate() {
+                        let arg_type = self.resolve_expr_type(arg);
+                        if !arg_type.is_pointer() && !arg_type.is_array() {
+                            self.report_error(&format!("strcpy 的第 {} 个参数必须是指针或数组", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                        }
+                    }
+                }
+                Type::void()
+            }
+            "strcmp" => {
+                if args.len() != 2 {
+                    self.report_error("strcmp 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    for (i, arg) in args.iter_mut().enumerate() {
+                        let arg_type = self.resolve_expr_type(arg);
+                        if !arg_type.is_pointer() && !arg_type.is_array() {
+                            self.report_error(&format!("strcmp 的第 {} 个参数必须是指针或数组", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                        }
+                    }
+                }
+                Type::int()
             }
             _ => {
                 let sym = self.funcs.get(name).cloned();

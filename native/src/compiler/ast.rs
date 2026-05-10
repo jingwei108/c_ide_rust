@@ -178,6 +178,7 @@ pub enum Expr {
     Assign { op: AssignOp, left: Box<Expr>, right: Box<Expr>, loc: SourceLoc, ty: Type },
     Ternary { cond: Box<Expr>, then_branch: Box<Expr>, else_branch: Box<Expr>, loc: SourceLoc, ty: Type },
     Sizeof { target_type: Option<Type>, operand: Option<Box<Expr>>, loc: SourceLoc, ty: Type },
+    Cast { expr: Box<Expr>, target_type: Type, loc: SourceLoc, ty: Type },
     InitList { elements: Vec<Expr>, loc: SourceLoc, ty: Type },
 }
 
@@ -195,6 +196,7 @@ impl Expr {
             Expr::Assign { loc, .. } => loc,
             Expr::Ternary { loc, .. } => loc,
             Expr::Sizeof { loc, .. } => loc,
+            Expr::Cast { loc, .. } => loc,
             Expr::InitList { loc, .. } => loc,
         }
     }
@@ -211,6 +213,7 @@ impl Expr {
             Expr::Assign { ty, .. } => ty,
             Expr::Ternary { ty, .. } => ty,
             Expr::Sizeof { ty, .. } => ty,
+            Expr::Cast { ty, .. } => ty,
             Expr::InitList { ty, .. } => ty,
         }
     }
@@ -227,6 +230,7 @@ impl Expr {
             Expr::Assign { ty, .. } => *ty = new_ty,
             Expr::Ternary { ty, .. } => *ty = new_ty,
             Expr::Sizeof { ty, .. } => *ty = new_ty,
+            Expr::Cast { ty, .. } => *ty = new_ty,
             Expr::InitList { ty, .. } => *ty = new_ty,
         }
     }
@@ -269,7 +273,7 @@ pub struct FuncDecl {
     pub return_type: Type,
     pub name: String,
     pub params: Vec<Param>,
-    pub body: Stmt,
+    pub body: Option<Stmt>,
 }
 
 #[derive(Debug, Clone)]

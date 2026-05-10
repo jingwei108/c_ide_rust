@@ -80,6 +80,9 @@ docs/                   设计文档、事故报告
 - **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(arr)`、`sizeof(ptr)`
 - **`scanf` 多参数** — `scanf("%d %d %d", &a, &b, &c)`
 - **指针算术** — `p++` / `p--` / `p + i` / `p - i` / `p - q`，自动按 pointee 类型大小缩放（`int*` 步长 4，`char*` 步长 1，`struct*` 步长为结构体大小）
+- **函数前向声明** — `int foo(int);` 原型声明，函数定义可放在调用者之后
+- **字符串库函数** — `strlen(s)`、`strcpy(dest, src)`、`strcmp(a, b)`（宿主导入函数）
+- **显式类型转换（Cast）** — `(int*)p`、`(char*)arr` 等标量/指针间转换
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护

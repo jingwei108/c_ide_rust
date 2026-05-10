@@ -160,6 +160,7 @@ impl BytecodeGen {
 
         // Pass 2: Register function metadata
         for f in &program.funcs {
+            if f.body.is_none() { continue; }
             self.func_index.insert(f.name.clone(), self.next_func_idx);
             self.next_func_idx += 1;
             self.func_table.insert(f.name.clone(), FuncMeta {
@@ -172,12 +173,15 @@ impl BytecodeGen {
 
         // Pass 3: Generate function bodies
         for f in &mut program.funcs {
+            if f.body.is_none() { continue; }
             let func_ip = self.current_ip();
             if let Some(meta) = self.func_table.get_mut(&f.name) {
                 meta.ip = func_ip;
             }
             self.enter_function(&f.name, &f.params);
-            self.gen_stmt(&mut f.body);
+            if let Some(ref mut body) = f.body {
+                self.gen_stmt(body);
+            }
             if f.return_type.is_void() {
                 self.emit(OpCode::RetVoid, 0, &f.loc);
             } else {
@@ -879,6 +883,9 @@ impl BytecodeGen {
                         "print_int" => "__cide_output",
                         "printf" => "__cide_printf_n",
                         "scanf" => "__cide_scanf_n",
+                        "strlen" => "strlen",
+                        "strcpy" => "strcpy",
+                        "strcmp" => "strcmp",
                         _ => name.as_str(),
                     };
                     let host_id = match host_name {
@@ -890,6 +897,9 @@ impl BytecodeGen {
                         "__cide_printf_1" => 11,
                         "__cide_printf_n" => 15,
                         "__cide_scanf_n" => 21,
+                        "strlen" => 30,
+                        "strcpy" => 31,
+                        "strcmp" => 32,
                         _ => {
                             self.report_error(&format!("未定义的函数 '{}'", name), &loc);
                             self.emit(OpCode::PushConst, 0, &loc);
@@ -931,6 +941,9 @@ impl BytecodeGen {
                     0
                 };
                 self.emit(OpCode::PushConst, size, &loc);
+            }
+            Expr::Cast { expr, .. } => {
+                self.gen_expr(expr);
             }
             Expr::InitList { .. } => {
                 self.report_error("初始化列表只能在变量声明中使用", &loc);
