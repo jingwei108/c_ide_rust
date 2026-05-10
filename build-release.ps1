@@ -38,6 +38,7 @@ if ($Clean) {
         "Cide.Client.Desktop/bin", "Cide.Client.Desktop/obj",
         "Cide.Client.Maui/bin", "Cide.Client.Maui/obj",
         "Cide.Client.Shared/bin", "Cide.Client.Shared/obj",
+        "Cide.Client.Tests/bin", "Cide.Client.Tests/obj",
         "dist"
     )
     foreach ($d in $dirs) {
@@ -63,12 +64,8 @@ if ($Target -eq "Desktop" -or $Target -eq "All") {
     # Native backend (Rust)
     Push-Location (Join-Path $root "native")
     try {
-        $oldEAP = $ErrorActionPreference
-        $ErrorActionPreference = "Continue"
-        & cargo build --release 2>$null
-        $cargoExit = $LASTEXITCODE
-        $ErrorActionPreference = $oldEAP
-        if ($cargoExit -ne 0) { throw "Cargo build failed (exit $cargoExit)" }
+        & cargo build --release
+        if ($LASTEXITCODE -ne 0) { throw "cargo build failed (exit $LASTEXITCODE)" }
     }
     finally { Pop-Location }
 
@@ -91,8 +88,8 @@ if ($Target -eq "Desktop" -or $Target -eq "All") {
             -r win-x64 `
             --self-contained true `
             -o $desktopDir
+        if ($LASTEXITCODE -ne 0) { throw "Desktop publish failed" }
     }
-    catch { Write-Error "Desktop publish failed: $_" }
     finally { Pop-Location }
 
     # Report size
@@ -128,12 +125,8 @@ if ($Target -eq "Android" -or $Target -eq "All") {
 
             Push-Location (Join-Path $root "native")
             try {
-                $oldEAP = $ErrorActionPreference
-                $ErrorActionPreference = "Continue"
-                & cargo ndk --target $rustTarget --platform 21 build --release 2>$null
-                $cargoExit = $LASTEXITCODE
-                $ErrorActionPreference = $oldEAP
-                if ($cargoExit -ne 0) { throw "Cargo NDK build failed for $abi (exit $cargoExit)" }
+                & cargo ndk --target $rustTarget --platform 21 build --release
+                if ($LASTEXITCODE -ne 0) { throw "cargo ndk build failed for $abi (exit $LASTEXITCODE)" }
             }
             catch {
                 Write-Error "Native Android build ($abi) failed: $_"
@@ -167,8 +160,8 @@ if ($Target -eq "Android" -or $Target -eq "All") {
             -c $Configuration `
             -p:AndroidPackageFormat=apk `
             -o "$androidDir"
+        if ($LASTEXITCODE -ne 0) { throw "Android publish failed" }
     }
-    catch { Write-Error "Android publish failed: $_" }
     finally { Pop-Location }
 
     # Report APK size

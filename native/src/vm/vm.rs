@@ -773,6 +773,12 @@ impl CideVM {
             OpCode::And => { let b = self.pop(); let a = self.pop(); self.push(if a != 0 && b != 0 { 1 } else { 0 }); }
             OpCode::Or  => { let b = self.pop(); let a = self.pop(); self.push(if a != 0 || b != 0 { 1 } else { 0 }); }
             OpCode::Not => { let a = self.pop(); self.push(if a != 0 { 0 } else { 1 }); }
+            OpCode::BitAnd => { let b = self.pop(); let a = self.pop(); self.push(a & b); }
+            OpCode::BitOr  => { let b = self.pop(); let a = self.pop(); self.push(a | b); }
+            OpCode::BitXor => { let b = self.pop(); let a = self.pop(); self.push(a ^ b); }
+            OpCode::BitNot => { let a = self.pop(); self.push(!a); }
+            OpCode::Shl => { let b = self.pop(); let a = self.pop(); self.push(a << b); }
+            OpCode::Shr => { let b = self.pop(); let a = self.pop(); self.push(a >> b); }
 
             OpCode::Jump => {
                 let target = inst.operand as usize;

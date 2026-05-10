@@ -508,6 +508,8 @@ impl TypeChecker {
                             left_type.clone()
                         } else if self.is_int(&left_type) && right_type.is_pointer() && matches!(op, BinaryOp::Add) {
                             right_type.clone()
+                        } else if left_type.is_pointer() && right_type.is_pointer() && matches!(op, BinaryOp::Sub) {
+                            Type::int()
                         } else {
                             self.report_error("算术运算要求两边都是 int 类型，或指针与整数", loc, ErrorCode::E3016_ArithmeticTypeError);
                             Type::int()
@@ -537,13 +539,32 @@ impl TypeChecker {
                         }
                         Type::int()
                     }
+                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                        if !self.is_int(&left_type) || !self.is_int(&right_type) {
+                            self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3019_LogicTypeError);
+                        }
+                        Type::int()
+                    }
                 };
+                ty.clone()
+            }
+            Expr::Ternary { cond, then_branch, else_branch, loc, ty } => {
+                let cond_type = self.resolve_expr_type(cond);
+                if !self.is_int(&cond_type) {
+                    self.report_error("三目运算符条件必须是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                }
+                let then_type = self.resolve_expr_type(then_branch);
+                let else_type = self.resolve_expr_type(else_branch);
+                if then_type != else_type {
+                    self.report_error("三目运算符分支类型不匹配", loc, ErrorCode::E3004_TypeMismatch);
+                }
+                *ty = then_type;
                 ty.clone()
             }
             Expr::Unary { op, operand, loc, ty } => {
                 let operand_type = self.resolve_expr_type(operand);
                 *ty = match op {
-                    UnaryOp::Neg | UnaryOp::Not => {
+                    UnaryOp::Neg | UnaryOp::Not | UnaryOp::BitNot => {
                         if !self.is_int(&operand_type) {
                             self.report_error("一元运算要求操作数是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
                         }
@@ -563,10 +584,14 @@ impl TypeChecker {
                         }
                     }
                     UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
-                        if !self.is_int(&operand_type) {
-                            self.report_error("自增/自减要求 int 类型", loc, ErrorCode::E3022_IncDecTypeError);
+                        if !self.is_int(&operand_type) && !operand_type.is_pointer() {
+                            self.report_error("自增/自减要求 int 类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
                         }
-                        Type::int()
+                        if operand_type.is_pointer() {
+                            operand_type.clone()
+                        } else {
+                            Type::int()
+                        }
                     }
                 };
                 ty.clone()

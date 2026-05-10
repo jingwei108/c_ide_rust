@@ -374,7 +374,7 @@ public partial class MainViewModel : ViewModelBase, IDisposable
 
     private const int MaxConsoleOutputLength = 50000; // ~50KB
 
-    private string TruncateOutput(string output)
+    private static string TruncateOutput(string output)
     {
         if (output.Length <= MaxConsoleOutputLength) return output;
         return output.Substring(0, MaxConsoleOutputLength) + "\n... [输出过长，已截断]";

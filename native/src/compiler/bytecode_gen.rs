@@ -310,6 +310,23 @@ impl BytecodeGen {
         0
     }
 
+    fn ptr_step_size(&self, ty: &Type) -> i32 {
+        match ty.kind {
+            TypeKind::Pointer => {
+                match ty.base_kind {
+                    TypeKind::Char => 1,
+                    TypeKind::Int | TypeKind::Pointer => 4,
+                    TypeKind::Struct => {
+                        self.struct_defs.get(&ty.name).map(|f| f.len() as i32 * 4).unwrap_or(4)
+                    }
+                    _ => 4,
+                }
+            }
+            TypeKind::Array => compute_stride(ty),
+            _ => 1,
+        }
+    }
+
     fn type_size(&self, ty: &Type) -> i32 {
         match ty.kind {
             TypeKind::Void => 0,
@@ -693,8 +710,14 @@ impl BytecodeGen {
                         }
                     }
                     BinaryOp::Sub => {
-                        if left_is_ptr && !right_is_ptr {
-                            self.emit(OpCode::PushConst, 4, &loc);
+                        if left_is_ptr && right_is_ptr {
+                            let step = self.ptr_step_size(left.ty());
+                            self.emit(OpCode::Sub, 0, &loc);
+                            self.emit(OpCode::PushConst, step, &loc);
+                            self.emit(OpCode::Div, 0, &loc);
+                        } else if left_is_ptr && !right_is_ptr {
+                            let step = self.ptr_step_size(left.ty());
+                            self.emit(OpCode::PushConst, step, &loc);
                             self.emit(OpCode::Mul, 0, &loc);
                             self.emit(OpCode::Sub, 0, &loc);
                         } else {
@@ -712,6 +735,11 @@ impl BytecodeGen {
                     BinaryOp::Ge => self.emit(OpCode::Ge, 0, &loc),
                     BinaryOp::And => self.emit(OpCode::And, 0, &loc),
                     BinaryOp::Or => self.emit(OpCode::Or, 0, &loc),
+                    BinaryOp::BitAnd => self.emit(OpCode::BitAnd, 0, &loc),
+                    BinaryOp::BitOr => self.emit(OpCode::BitOr, 0, &loc),
+                    BinaryOp::BitXor => self.emit(OpCode::BitXor, 0, &loc),
+                    BinaryOp::Shl => self.emit(OpCode::Shl, 0, &loc),
+                    BinaryOp::Shr => self.emit(OpCode::Shr, 0, &loc),
                 }
             }
             Expr::Unary { op, operand, .. } => {
@@ -724,21 +752,37 @@ impl BytecodeGen {
                         self.gen_expr(operand);
                         self.emit(OpCode::Not, 0, &loc);
                     }
+                    UnaryOp::BitNot => {
+                        self.gen_expr(operand);
+                        self.emit(OpCode::BitNot, 0, &loc);
+                    }
                     UnaryOp::Addr => {
-                        if let Expr::Identifier { name, .. } = operand.as_ref() {
-                            if let Some(&idx) = self.local_indices.get(name) {
-                                self.emit(OpCode::GetFrameBase, 0, &loc);
-                                self.emit(OpCode::PushConst, idx * 4, &loc);
-                                self.emit(OpCode::Add, 0, &loc);
-                            } else if let Some(&idx) = self.global_indices.get(name) {
-                                self.emit(OpCode::PushConst, 0x1000 + idx * 4, &loc);
-                            } else {
+                        match operand.as_mut() {
+                            Expr::Identifier { name, .. } => {
+                                if let Some(&idx) = self.local_indices.get(name) {
+                                    self.emit(OpCode::GetFrameBase, 0, &loc);
+                                    self.emit(OpCode::PushConst, idx * 4, &loc);
+                                    self.emit(OpCode::Add, 0, &loc);
+                                } else if let Some(&idx) = self.global_indices.get(name) {
+                                    self.emit(OpCode::PushConst, 0x1000 + idx * 4, &loc);
+                                } else {
+                                    self.report_error("取地址暂不支持此表达式", &loc);
+                                    self.emit(OpCode::PushConst, 0, &loc);
+                                }
+                            }
+                            Expr::Index { array, index, ty, .. } => {
+                                self.gen_index(array, index, ty, &loc, true);
+                            }
+                            Expr::Member { object, member, .. } => {
+                                self.gen_member_addr(object, member, &loc);
+                            }
+                            Expr::Unary { op: UnaryOp::Deref, operand: inner, .. } => {
+                                self.gen_expr(inner);
+                            }
+                            _ => {
                                 self.report_error("取地址暂不支持此表达式", &loc);
                                 self.emit(OpCode::PushConst, 0, &loc);
                             }
-                        } else {
-                            self.report_error("取地址暂不支持此表达式", &loc);
-                            self.emit(OpCode::PushConst, 0, &loc);
                         }
                     }
                     UnaryOp::Deref => {
@@ -748,32 +792,78 @@ impl BytecodeGen {
                     UnaryOp::PreInc | UnaryOp::PostInc | UnaryOp::PreDec | UnaryOp::PostDec => {
                         let is_inc = matches!(op, UnaryOp::PreInc | UnaryOp::PostInc);
                         let is_pre = matches!(op, UnaryOp::PreInc | UnaryOp::PreDec);
-                        if let Expr::Identifier { name, .. } = operand.as_ref() {
-                            let local_idx = self.resolve_local(name);
-                            if local_idx >= 0 {
-                                self.emit(OpCode::LoadLocal, local_idx, &loc);
-                                if !is_pre { self.emit(OpCode::Dup, 0, &loc); }
-                                self.emit(OpCode::PushConst, 1, &loc);
-                                self.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, &loc);
-                                if is_pre { self.emit(OpCode::Dup, 0, &loc); }
-                                self.emit(OpCode::StoreLocal, local_idx, &loc);
-                            } else {
-                                let global_idx = self.resolve_global(name);
-                                if global_idx >= 0 {
-                                    self.emit(OpCode::LoadGlobal, global_idx, &loc);
+                        fn gen_mem_inc_dec(gen: &mut BytecodeGen, is_inc: bool, is_pre: bool, step: i32, loc: &SourceLoc) {
+                            // stack top: address
+                            let addr_temp = gen.get_temp_slot(2);
+                            gen.emit(OpCode::StoreLocal, addr_temp, loc); // save address
+                            gen.emit(OpCode::LoadLocal, addr_temp, loc);
+                            gen.emit(OpCode::LoadMem, 0, loc); // read current value
+                            if !is_pre {
+                                gen.emit(OpCode::Dup, 0, loc); // keep old value for post
+                            }
+                            gen.emit(OpCode::PushConst, step, loc);
+                            gen.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, loc);
+                            let val_temp = gen.get_temp_slot(0);
+                            gen.emit(OpCode::StoreLocal, val_temp, loc); // save new value
+                            gen.emit(OpCode::LoadLocal, addr_temp, loc);
+                            gen.emit(OpCode::LoadLocal, val_temp, loc);
+                            gen.emit(OpCode::StoreMem, 0, loc); // write new value
+                            if is_pre {
+                                gen.emit(OpCode::LoadLocal, addr_temp, loc);
+                                gen.emit(OpCode::LoadMem, 0, loc); // return new value
+                            }
+                            // for post, old value is already on stack
+                        }
+                        match operand.as_mut() {
+                            Expr::Identifier { name, .. } => {
+                                let step = if let Some(ty) = self.local_types.get(name) {
+                                    self.ptr_step_size(ty)
+                                } else if let Some(ty) = self.global_types.get(name) {
+                                    self.ptr_step_size(ty)
+                                } else { 1 };
+                                let local_idx = self.resolve_local(name);
+                                if local_idx >= 0 {
+                                    self.emit(OpCode::LoadLocal, local_idx, &loc);
                                     if !is_pre { self.emit(OpCode::Dup, 0, &loc); }
-                                    self.emit(OpCode::PushConst, 1, &loc);
+                                    self.emit(OpCode::PushConst, step, &loc);
                                     self.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, &loc);
                                     if is_pre { self.emit(OpCode::Dup, 0, &loc); }
-                                    self.emit(OpCode::StoreGlobal, global_idx, &loc);
+                                    self.emit(OpCode::StoreLocal, local_idx, &loc);
                                 } else {
-                                    self.report_error("自增/自减暂只支持简单变量", &loc);
-                                    self.emit(OpCode::PushConst, 0, &loc);
+                                    let global_idx = self.resolve_global(name);
+                                    if global_idx >= 0 {
+                                        self.emit(OpCode::LoadGlobal, global_idx, &loc);
+                                        if !is_pre { self.emit(OpCode::Dup, 0, &loc); }
+                                        self.emit(OpCode::PushConst, step, &loc);
+                                        self.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, &loc);
+                                        if is_pre { self.emit(OpCode::Dup, 0, &loc); }
+                                        self.emit(OpCode::StoreGlobal, global_idx, &loc);
+                                    } else {
+                                        self.report_error("自增/自减暂只支持简单变量", &loc);
+                                        self.emit(OpCode::PushConst, 0, &loc);
+                                    }
                                 }
                             }
-                        } else {
-                            self.report_error("自增/自减暂只支持简单变量", &loc);
-                            self.emit(OpCode::PushConst, 0, &loc);
+                            Expr::Index { array, index, ty, .. } => {
+                                let result_ty = ty.clone();
+                                let step = self.ptr_step_size(ty);
+                                self.gen_index(array, index, &result_ty, &loc, true);
+                                gen_mem_inc_dec(self, is_inc, is_pre, step, &loc);
+                            }
+                            Expr::Member { object, member, ty, .. } => {
+                                let step = self.ptr_step_size(ty);
+                                self.gen_member_addr(object, member, &loc);
+                                gen_mem_inc_dec(self, is_inc, is_pre, step, &loc);
+                            }
+                            Expr::Unary { op: UnaryOp::Deref, operand: inner, .. } => {
+                                let step = self.ptr_step_size(inner.ty());
+                                self.gen_expr(inner);
+                                gen_mem_inc_dec(self, is_inc, is_pre, step, &loc);
+                            }
+                            _ => {
+                                self.report_error("自增/自减暂只支持简单变量", &loc);
+                                self.emit(OpCode::PushConst, 0, &loc);
+                            }
                         }
                     }
                 }
@@ -813,27 +903,21 @@ impl BytecodeGen {
                 self.gen_index(array, index, ty, &loc, false);
             }
             Expr::Member { object, member, .. } => {
-                if object.ty().is_pointer() {
-                    self.gen_expr(object);
-                } else if let Expr::Identifier { name, .. } = object.as_ref() {
-                    if let Some(&idx) = self.local_indices.get(name) {
-                        self.emit(OpCode::GetFrameBase, 0, &loc);
-                        self.emit(OpCode::PushConst, idx * 4, &loc);
-                        self.emit(OpCode::Add, 0, &loc);
-                    } else {
-                        self.report_error("全局结构体暂不支持", &loc);
-                        self.emit(OpCode::PushConst, 0, &loc);
-                    }
-                } else {
-                    self.report_error("复杂结构体表达式暂不支持", &loc);
-                    self.emit(OpCode::PushConst, 0, &loc);
-                }
-                let offset = self.get_member_offset(object.ty(), member);
-                if offset > 0 {
-                    self.emit(OpCode::PushConst, offset, &loc);
-                    self.emit(OpCode::Add, 0, &loc);
-                }
+                self.gen_member_addr(object, member, &loc);
                 self.emit(OpCode::LoadMem, 0, &loc);
+            }
+            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+                self.gen_expr(cond);
+                let else_jump = self.current_ip();
+                self.emit(OpCode::JumpIfZero, 0, &loc);
+                self.gen_expr(then_branch);
+                let end_jump = self.current_ip();
+                self.emit(OpCode::Jump, 0, &loc);
+                let else_ip = self.current_ip();
+                self.patch_jump(else_jump, else_ip);
+                self.gen_expr(else_branch);
+                let end_ip = self.current_ip();
+                self.patch_jump(end_jump, end_ip);
             }
             Expr::Assign { op, left, right, .. } => {
                 self.gen_assign(op, left, right, &loc);
@@ -852,6 +936,31 @@ impl BytecodeGen {
                 self.report_error("初始化列表只能在变量声明中使用", &loc);
                 self.emit(OpCode::PushConst, 0, &loc);
             }
+        }
+    }
+
+    fn gen_member_addr(&mut self, object: &mut Expr, member: &str, loc: &SourceLoc) {
+        if object.ty().is_pointer() {
+            self.gen_expr(object);
+        } else if let Expr::Identifier { name, .. } = object {
+            if let Some(&idx) = self.local_indices.get(name) {
+                self.emit(OpCode::GetFrameBase, 0, loc);
+                self.emit(OpCode::PushConst, idx * 4, loc);
+                self.emit(OpCode::Add, 0, loc);
+            } else if let Some(&idx) = self.global_indices.get(name) {
+                self.emit(OpCode::PushConst, 0x1000 + idx * 4, loc);
+            } else {
+                self.report_error("全局结构体暂不支持", loc);
+                self.emit(OpCode::PushConst, 0, loc);
+            }
+        } else {
+            self.report_error("复杂结构体表达式暂不支持", loc);
+            self.emit(OpCode::PushConst, 0, loc);
+        }
+        let offset = self.get_member_offset(object.ty(), member);
+        if offset > 0 {
+            self.emit(OpCode::PushConst, offset, loc);
+            self.emit(OpCode::Add, 0, loc);
         }
     }
 
@@ -952,69 +1061,21 @@ impl BytecodeGen {
                 self.emit(OpCode::LoadGlobal, global_idx, loc);
                 return;
             }
-        } else if let Expr::Index { array, index, .. } = left {
+        } else if let Expr::Index { array, index, ty, .. } = left {
+            let result_ty = ty.clone();
+            self.gen_index(array, index, &result_ty, loc, true);
             if *op != AssignOp::Assign {
-                self.report_error("复合赋值暂不支持数组索引", loc);
+                self.emit(OpCode::Dup, 0, loc);
+                self.emit(OpCode::LoadMem, 0, loc);
                 self.gen_expr(right);
-                self.emit(OpCode::Pop, 0, loc);
-                self.emit(OpCode::PushConst, 0, loc);
-                return;
+                emit_compound(self, loc);
+            } else {
+                self.gen_expr(right);
             }
-            let mut bound_size = -1;
-            let mut sym_idx = -1;
-            if let Expr::Identifier { name, .. } = array.as_ref() {
-                if let Some(ty) = self.local_types.get(name) {
-                    if ty.is_array() {
-                        bound_size = if ty.dims.is_empty() { ty.array_size } else { ty.dims[0] };
-                        sym_idx = self.resolve_symbol_index(name);
-                    }
-                } else if let Some(ty) = self.global_types.get(name) {
-                    if ty.is_array() {
-                        bound_size = if ty.dims.is_empty() { ty.array_size } else { ty.dims[0] };
-                        sym_idx = self.resolve_symbol_index(name);
-                    }
-                }
-            } else if let Expr::Index { .. } = array.as_ref() {
-                if array.ty().is_array() && !array.ty().dims.is_empty() {
-                    bound_size = array.ty().dims[0];
-                }
-            }
-            let stride = compute_stride(array.ty());
-            self.gen_expr(array);
-            self.gen_expr(index);
-
-            if bound_size > 0 && sym_idx >= 0 {
-                let idx_temp = self.get_temp_slot(1);
-                self.emit(OpCode::StoreLocal, idx_temp, loc);
-                self.emit(OpCode::LoadLocal, idx_temp, loc);
-                self.emit(OpCode::PushConst, 0, loc);
-                self.emit(OpCode::Ge, 0, loc);
-                self.emit(OpCode::Not, 0, loc);
-                let jump_neg = self.current_ip();
-                self.emit(OpCode::JumpIfZero, 0, loc);
-                self.emit(OpCode::LoadLocal, idx_temp, loc);
-                self.emit(OpCode::TrapBounds, sym_idx, loc);
-                self.patch_jump(jump_neg, self.current_ip());
-                self.emit(OpCode::LoadLocal, idx_temp, loc);
-                self.emit(OpCode::PushConst, bound_size, loc);
-                self.emit(OpCode::Lt, 0, loc);
-                self.emit(OpCode::Not, 0, loc);
-                let jump_ok = self.current_ip();
-                self.emit(OpCode::JumpIfZero, 0, loc);
-                self.emit(OpCode::LoadLocal, idx_temp, loc);
-                self.emit(OpCode::TrapBounds, sym_idx, loc);
-                self.patch_jump(jump_ok, self.current_ip());
-                self.emit(OpCode::LoadLocal, idx_temp, loc);
-            }
-
-            self.emit(OpCode::PushConst, stride, loc);
-            self.emit(OpCode::Mul, 0, loc);
-            self.emit(OpCode::Add, 0, loc);
-            let addr_temp = self.get_temp_slot(2);
-            self.emit(OpCode::StoreLocal, addr_temp, loc);
-            self.gen_expr(right);
             let val_temp = self.get_temp_slot(0);
             self.emit(OpCode::StoreLocal, val_temp, loc);
+            let addr_temp = self.get_temp_slot(2);
+            self.emit(OpCode::StoreLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, val_temp, loc);
             self.emit(OpCode::StoreMem, 0, loc);
@@ -1022,17 +1083,17 @@ impl BytecodeGen {
             self.emit(OpCode::LoadMem, 0, loc);
             return;
         } else if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left {
+            self.gen_expr(operand);
             if *op != AssignOp::Assign {
-                self.report_error("复合赋值暂不支持指针解引用", loc);
+                self.emit(OpCode::Dup, 0, loc);
+                self.emit(OpCode::LoadMem, 0, loc);
                 self.gen_expr(right);
-                self.emit(OpCode::Pop, 0, loc);
-                self.emit(OpCode::PushConst, 0, loc);
-                return;
+                emit_compound(self, loc);
+            } else {
+                self.gen_expr(right);
             }
-            self.gen_expr(right);
             let val_temp = self.get_temp_slot(0);
             self.emit(OpCode::StoreLocal, val_temp, loc);
-            self.gen_expr(operand);
             let addr_temp = self.get_temp_slot(1);
             self.emit(OpCode::StoreLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, addr_temp, loc);
@@ -1042,34 +1103,17 @@ impl BytecodeGen {
             self.emit(OpCode::LoadMem, 0, loc);
             return;
         } else if let Expr::Member { object, member, .. } = left {
+            self.gen_member_addr(object, member, loc);
             if *op != AssignOp::Assign {
-                self.report_error("复合赋值暂不支持结构体成员", loc);
+                self.emit(OpCode::Dup, 0, loc);
+                self.emit(OpCode::LoadMem, 0, loc);
                 self.gen_expr(right);
-                self.emit(OpCode::Pop, 0, loc);
-                self.emit(OpCode::PushConst, 0, loc);
-                return;
+                emit_compound(self, loc);
+            } else {
+                self.gen_expr(right);
             }
-            self.gen_expr(right);
             let val_temp = self.get_temp_slot(0);
             self.emit(OpCode::StoreLocal, val_temp, loc);
-            if object.ty().is_pointer() {
-                self.gen_expr(object);
-            } else if let Expr::Identifier { name, .. } = object.as_ref() {
-                if let Some(&idx) = self.local_indices.get(name) {
-                    self.emit(OpCode::GetFrameBase, 0, loc);
-                    self.emit(OpCode::PushConst, idx * 4, loc);
-                    self.emit(OpCode::Add, 0, loc);
-                } else {
-                    self.emit(OpCode::PushConst, 0, loc);
-                }
-            } else {
-                self.emit(OpCode::PushConst, 0, loc);
-            }
-            let offset = self.get_member_offset(object.ty(), member);
-            if offset > 0 {
-                self.emit(OpCode::PushConst, offset, loc);
-                self.emit(OpCode::Add, 0, loc);
-            }
             let addr_temp = self.get_temp_slot(1);
             self.emit(OpCode::StoreLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, addr_temp, loc);
