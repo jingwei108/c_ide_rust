@@ -789,6 +789,56 @@ impl CideVM {
                 }
             }
 
+            OpCode::PushConstF => { self.push(inst.operand); }
+
+            OpCode::AddF => {
+                let b = f32::from_bits(self.pop() as u32);
+                let a = f32::from_bits(self.pop() as u32);
+                let r = a + b;
+                self.push(r.to_bits() as i32);
+            }
+            OpCode::SubF => {
+                let b = f32::from_bits(self.pop() as u32);
+                let a = f32::from_bits(self.pop() as u32);
+                let r = a - b;
+                self.push(r.to_bits() as i32);
+            }
+            OpCode::MulF => {
+                let b = f32::from_bits(self.pop() as u32);
+                let a = f32::from_bits(self.pop() as u32);
+                let r = a * b;
+                self.push(r.to_bits() as i32);
+            }
+            OpCode::DivF => {
+                let b = f32::from_bits(self.pop() as u32);
+                let a = f32::from_bits(self.pop() as u32);
+                if b == 0.0 {
+                    self.trap("浮点数除以零", &inst.loc);
+                } else {
+                    let r = a / b;
+                    self.push(r.to_bits() as i32);
+                }
+            }
+            OpCode::NegF => {
+                let a = f32::from_bits(self.pop() as u32);
+                let r = -a;
+                self.push(r.to_bits() as i32);
+            }
+            OpCode::EqF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a == b { 1 } else { 0 }); }
+            OpCode::NeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a != b { 1 } else { 0 }); }
+            OpCode::LtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a < b { 1 } else { 0 }); }
+            OpCode::LeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a <= b { 1 } else { 0 }); }
+            OpCode::GtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a > b { 1 } else { 0 }); }
+            OpCode::GeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a >= b { 1 } else { 0 }); }
+            OpCode::CastI2F => {
+                let a = self.pop() as f32;
+                self.push(a.to_bits() as i32);
+            }
+            OpCode::CastF2I => {
+                let a = f32::from_bits(self.pop() as u32);
+                self.push(a as i32);
+            }
+
             OpCode::Jump => {
                 let target = inst.operand as usize;
                 if target >= self.code.len() {

@@ -39,6 +39,30 @@ pub struct TypeChecker {
     switch_depth: i32,
 }
 
+fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
+    let current_ty = expr.ty().clone();
+    if target.kind == TypeKind::Float && current_ty.kind != TypeKind::Float && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char) {
+        let loc = *expr.loc();
+        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        *expr = Expr::Cast {
+            expr: Box::new(old),
+            target_type: Type::float(),
+            loc,
+            ty: Type::float(),
+        };
+    } else if target.kind != TypeKind::Float && current_ty.kind == TypeKind::Float && matches!(target.kind, TypeKind::Int | TypeKind::Char) {
+        let loc = *expr.loc();
+        let target_ty = if target.kind == TypeKind::Char { Type::char() } else { Type::int() };
+        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        *expr = Expr::Cast {
+            expr: Box::new(old),
+            target_type: target_ty.clone(),
+            loc,
+            ty: target_ty,
+        };
+    }
+}
+
 impl Default for TypeChecker {
     fn default() -> Self {
         Self::new()
@@ -164,9 +188,12 @@ impl TypeChecker {
     fn is_int(&self, t: &Type) -> bool {
         matches!(t.kind, TypeKind::Int | TypeKind::Char)
     }
+    fn is_scalar(&self, t: &Type) -> bool {
+        matches!(t.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)
+    }
 
     fn is_comparable(&self, a: &Type, b: &Type) -> bool {
-        if matches!(a.kind, TypeKind::Int) && matches!(b.kind, TypeKind::Int) { return true; }
+        if matches!(a.kind, TypeKind::Int | TypeKind::Float) && matches!(b.kind, TypeKind::Int | TypeKind::Float) { return true; }
         if matches!(a.kind, TypeKind::Pointer) && matches!(b.kind, TypeKind::Pointer) { return true; }
         if matches!(a.kind, TypeKind::Pointer) && matches!(b.kind, TypeKind::Array) { return true; }
         if matches!(a.kind, TypeKind::Array) && matches!(b.kind, TypeKind::Pointer) { return true; }
@@ -194,10 +221,13 @@ impl TypeChecker {
             }
             if dims_compatible { return true; }
         }
-        if (matches!(target.kind, TypeKind::Int | TypeKind::Char)) && (matches!(value.kind, TypeKind::Int | TypeKind::Char)) {
-            // 只警告可能丢失精度的情况：int -> char
-            if matches!(target.kind, TypeKind::Char) && matches!(value.kind, TypeKind::Int) {
-                self.report_warning("int 被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+        if (matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)) && (matches!(value.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)) {
+            // 只警告可能丢失精度的情况：int -> char 或 float -> int
+            if matches!(target.kind, TypeKind::Char) && matches!(value.kind, TypeKind::Int | TypeKind::Float) {
+                self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+            }
+            if matches!(target.kind, TypeKind::Int) && matches!(value.kind, TypeKind::Float) {
+                self.report_warning("float 被隐式转换为 int，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
             }
             return true;
         }
@@ -481,8 +511,8 @@ impl TypeChecker {
 
     fn check_condition(&mut self, cond: &mut Expr, ctx: &str, loc: &SourceLoc) {
         let ty = self.resolve_expr_type(cond);
-        if !matches!(ty.kind, TypeKind::Int | TypeKind::Pointer | TypeKind::Array) {
-            self.report_error(&format!("{} 必须是整数或指针类型", ctx), loc, ErrorCode::E3015_InvalidCondition);
+        if !self.is_scalar(&ty) && !matches!(ty.kind, TypeKind::Pointer | TypeKind::Array) {
+            self.report_error(&format!("{} 必须是整数、浮点数或指针类型", ctx), loc, ErrorCode::E3015_InvalidCondition);
         }
         let is_assign_expr = |e: &Expr| matches!(e, Expr::Assign { op: AssignOp::Assign, .. });
         if is_assign_expr(cond) {
@@ -505,8 +535,8 @@ impl TypeChecker {
                 let right_type = self.resolve_expr_type(right);
                 *ty = match op {
                     BinaryOp::Add | BinaryOp::Sub => {
-                        if self.is_int(&left_type) && self.is_int(&right_type) {
-                            Type::int()
+                        if self.is_scalar(&left_type) && self.is_scalar(&right_type) {
+                            if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
                         } else if left_type.is_pointer() && self.is_int(&right_type) {
                             left_type.clone()
                         } else if self.is_int(&left_type) && right_type.is_pointer() && matches!(op, BinaryOp::Add) {
@@ -518,9 +548,15 @@ impl TypeChecker {
                             Type::int()
                         }
                     }
-                    BinaryOp::Mul | BinaryOp::Div | BinaryOp::Mod => {
+                    BinaryOp::Mul | BinaryOp::Div => {
+                        if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
+                            self.report_error("乘除运算要求两边都是 int 或 float 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
+                        }
+                        if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
+                    }
+                    BinaryOp::Mod => {
                         if !self.is_int(&left_type) || !self.is_int(&right_type) {
-                            self.report_error("算术运算要求两边都是 int 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
+                            self.report_error("取模运算要求两边都是 int 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
                         }
                         Type::int()
                     }
@@ -533,14 +569,14 @@ impl TypeChecker {
                     BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
                         let left_is_ptrlike = matches!(left_type.kind, TypeKind::Pointer | TypeKind::Array);
                         let right_is_ptrlike = matches!(right_type.kind, TypeKind::Pointer | TypeKind::Array);
-                        if !(self.is_int(&left_type) && self.is_int(&right_type) || left_is_ptrlike && right_is_ptrlike) {
-                            self.report_error("关系运算要求两边都是 int 类型或同类型指针", loc, ErrorCode::E3018_RelationTypeError);
+                        if !(self.is_scalar(&left_type) && self.is_scalar(&right_type) || left_is_ptrlike && right_is_ptrlike) {
+                            self.report_error("关系运算要求两边都是 int/float 类型或同类型指针", loc, ErrorCode::E3018_RelationTypeError);
                         }
                         Type::int()
                     }
                     BinaryOp::And | BinaryOp::Or => {
-                        if !self.is_int(&left_type) || !self.is_int(&right_type) {
-                            self.report_error("逻辑运算要求两边都是 int 类型", loc, ErrorCode::E3019_LogicTypeError);
+                        if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
+                            self.report_error("逻辑运算要求两边都是 int 或 float 类型", loc, ErrorCode::E3019_LogicTypeError);
                         }
                         Type::int()
                     }
@@ -555,8 +591,8 @@ impl TypeChecker {
             }
             Expr::Ternary { cond, then_branch, else_branch, loc, ty } => {
                 let cond_type = self.resolve_expr_type(cond);
-                if !self.is_int(&cond_type) {
-                    self.report_error("三目运算符条件必须是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                if !self.is_scalar(&cond_type) && !matches!(cond_type.kind, TypeKind::Pointer | TypeKind::Array) {
+                    self.report_error("三目运算符条件必须是 int、float 或指针类型", loc, ErrorCode::E3020_UnaryTypeError);
                 }
                 let then_type = self.resolve_expr_type(then_branch);
                 let else_type = self.resolve_expr_type(else_branch);
@@ -569,9 +605,15 @@ impl TypeChecker {
             Expr::Unary { op, operand, loc, ty } => {
                 let operand_type = self.resolve_expr_type(operand);
                 *ty = match op {
-                    UnaryOp::Neg | UnaryOp::Not | UnaryOp::BitNot => {
+                    UnaryOp::Neg => {
+                        if !self.is_scalar(&operand_type) {
+                            self.report_error("取负运算要求操作数是 int 或 float 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                        }
+                        if operand_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
+                    }
+                    UnaryOp::Not | UnaryOp::BitNot => {
                         if !self.is_int(&operand_type) {
-                            self.report_error("一元运算要求操作数是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                            self.report_error("逻辑非/按位取反要求操作数是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
                         }
                         Type::int()
                     }
@@ -589,7 +631,7 @@ impl TypeChecker {
                         }
                     }
                     UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
-                        if !self.is_int(&operand_type) && !operand_type.is_pointer() {
+                        if !self.is_int(&operand_type) && operand_type.kind != TypeKind::Float && !operand_type.is_pointer() {
                             self.report_error("自增/自减要求 int 类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
                         }
                         if let Expr::Identifier { name, .. } = operand.as_ref() {
@@ -609,6 +651,7 @@ impl TypeChecker {
                 ty.clone()
             }
             Expr::Literal { .. } => Type::int(),
+            Expr::FloatLiteral { .. } => Type::float(),
             Expr::StringLiteral { .. } => Type::pointer(TypeKind::Char, "char"),
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
@@ -679,8 +722,8 @@ impl TypeChecker {
                 if !self.is_assignable(&left_type, &right_type, loc) {
                     self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
                 }
-                if *op != AssignOp::Assign && (!self.is_int(&left_type) || !self.is_int(&right_type)) {
-                    self.report_error("复合赋值要求两边都是 int 类型", loc, ErrorCode::E3045_CompoundAssignType);
+                if *op != AssignOp::Assign && (!self.is_scalar(&left_type) || !self.is_scalar(&right_type)) {
+                    self.report_error("复合赋值要求两边都是 int 或 float 类型", loc, ErrorCode::E3045_CompoundAssignType);
                 }
                 *ty = left_type.clone();
                 ty.clone()
@@ -713,9 +756,12 @@ impl TypeChecker {
                 if args.len() != 1 {
                     self.report_error("malloc 需要一个参数", loc, ErrorCode::E3024_MallocArgCount);
                 } else {
+                    let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_int(&arg_type) {
+                    if !self.is_assignable(&expected, &arg_type, loc) {
                         self.report_error("malloc 参数必须是 int", loc, ErrorCode::E3025_MallocArgType);
+                    } else {
+                        insert_implicit_cast(&mut args[0], &expected);
                     }
                 }
                 Type::pointer(TypeKind::Void, "")
@@ -735,9 +781,12 @@ impl TypeChecker {
                 if args.len() != 1 {
                     self.report_error(&format!("{} 需要一个参数", name), loc, ErrorCode::E3028_BuiltInArgCount);
                 } else {
+                    let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_int(&arg_type) {
+                    if !self.is_assignable(&expected, &arg_type, loc) {
                         self.report_error(&format!("{} 参数必须是 int", name), loc, ErrorCode::E3029_BuiltInArgType);
+                    } else {
+                        insert_implicit_cast(&mut args[0], &expected);
                     }
                 }
                 Type::void()
@@ -752,8 +801,8 @@ impl TypeChecker {
                     }
                     for (i, arg) in args.iter_mut().enumerate().skip(1) {
                         let arg_type = self.resolve_expr_type(arg);
-                        if !self.is_int(&arg_type) && !arg_type.is_pointer() && !arg_type.is_array() {
-                            self.report_error(&format!("printf 的第 {} 个参数必须是 int、char 或指针", i + 1), loc, ErrorCode::E3032_PrintfArgType);
+                        if !self.is_scalar(&arg_type) && !arg_type.is_pointer() && !arg_type.is_array() {
+                            self.report_error(&format!("printf 的第 {} 个参数必须是 int、float、char 或指针", i + 1), loc, ErrorCode::E3032_PrintfArgType);
                         }
                     }
                 }
@@ -823,9 +872,12 @@ impl TypeChecker {
                 if args.len() != 1 {
                     self.report_error("putchar 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
                 } else {
+                    let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_int(&arg_type) {
+                    if !self.is_assignable(&expected, &arg_type, loc) {
                         self.report_error("putchar 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    } else {
+                        insert_implicit_cast(&mut args[0], &expected);
                     }
                 }
                 Type::void()
@@ -840,9 +892,12 @@ impl TypeChecker {
                 if args.len() != 1 {
                     self.report_error("srand 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
                 } else {
+                    let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_int(&arg_type) {
+                    if !self.is_assignable(&expected, &arg_type, loc) {
                         self.report_error("srand 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    } else {
+                        insert_implicit_cast(&mut args[0], &expected);
                     }
                 }
                 Type::void()
@@ -856,9 +911,12 @@ impl TypeChecker {
                         self.report_error("memset 第一个参数必须是指针", loc, ErrorCode::E3029_BuiltInArgType);
                     }
                     for i in 1..3 {
+                        let expected = Type::int();
                         let t = self.resolve_expr_type(&mut args[i]);
-                        if !self.is_int(&t) {
+                        if !self.is_assignable(&expected, &t, loc) {
                             self.report_error(&format!("memset 的第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                        } else {
+                            insert_implicit_cast(&mut args[i], &expected);
                         }
                     }
                 }
@@ -868,9 +926,12 @@ impl TypeChecker {
                 if args.len() != 1 {
                     self.report_error("exit 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
                 } else {
+                    let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_int(&arg_type) {
+                    if !self.is_assignable(&expected, &arg_type, loc) {
                         self.report_error("exit 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    } else {
+                        insert_implicit_cast(&mut args[0], &expected);
                     }
                 }
                 Type::void()
@@ -909,6 +970,8 @@ impl TypeChecker {
                             let arg_type = self.resolve_expr_type(arg);
                             if !self.is_assignable(expected, &arg_type, loc) {
                                 self.report_error(&format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1), loc, ErrorCode::E3038_FuncArgType);
+                            } else {
+                                insert_implicit_cast(arg, expected);
                             }
                         }
                     }
