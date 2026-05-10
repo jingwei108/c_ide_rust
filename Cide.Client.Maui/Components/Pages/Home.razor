@@ -24,10 +24,7 @@
         <button class="btn-theme" @onclick="ToggleTheme">@(VM.IsDarkMode ? "亮" : "暗")</button>
     </div>
 
-    <div class="editor-pane"
-         @ontouchstart="OnTouchStart"
-         @ontouchmove="OnTouchMove"
-         @ontouchend="OnTouchEnd">
+    <div class="editor-pane">
         <CodeMirrorEditor @ref="_editor" Code="@VM.SourceCode" CodeChanged="OnCodeChanged"
                           BreakpointToggled="OnBreakpointToggled"
                           IsDarkTheme="@VM.IsDarkMode" />
@@ -50,7 +47,10 @@
     </div>
 
     <div class="bottom-panel">
-        <div class="tab-bar">
+        <div class="tab-bar"
+             @ontouchstart="OnTouchStart"
+             @ontouchmove="OnTouchMove"
+             @ontouchend="OnTouchEnd">
             <button class="tab @(VM.SelectedTabIndex == 0 ? "active" : "")" @onclick="() => VM.SelectedTabIndex = 0">输出</button>
             <button class="tab @(VM.SelectedTabIndex == 1 ? "active" : "")" @onclick="() => VM.SelectedTabIndex = 1">诊断</button>
             <button class="tab @(VM.SelectedTabIndex == 2 ? "active" : "")" @onclick="() => VM.SelectedTabIndex = 2">算法</button>
@@ -144,11 +144,11 @@
 {
     <div class="debug-modal-backdrop" @onclick="CloseDebugModal">
         <div class="debug-modal-content"
-             @onclick:stopPropagation
-             @ontouchstart="OnModalTouchStart"
-             @ontouchmove="OnModalTouchMove"
-             @ontouchend="OnModalTouchEnd">
-            <div class="debug-modal-drag-handle"></div>
+             @onclick:stopPropagation>
+            <div class="debug-modal-drag-handle"
+                 @ontouchstart="OnModalTouchStart"
+                 @ontouchmove="OnModalTouchMove"
+                 @ontouchend="OnModalTouchEnd"></div>
             <div class="debug-modal-header">
                 <span>@_debugModalTitle</span>
                 <button @onclick="CloseDebugModal">✕</button>
