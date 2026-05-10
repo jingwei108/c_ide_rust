@@ -1,0 +1,418 @@
+# 学生经典错误代码测试集
+
+> 以下代码片段可直接粘贴到 Cide 编辑器中，用于测试编译器诊断、错误提示和自动修复能力。
+> 每个片段包含：**错误代码** + **预期问题** + **正确写法**。
+
+---
+
+## 1. 语法类错误
+
+### 1.1 缺少分号
+```c
+#include <stdio.h>
+int main() {
+    int a = 10
+    printf("%d\n", a);
+    return 0;
+}
+```
+**预期诊断**：Parser 错误，指出第 3 行缺少 `;`。  
+**正确写法**：`int a = 10;`
+
+### 1.2 括号不匹配
+```c
+#include <stdio.h>
+int main() {
+    int arr[3] = {1, 2, 3;
+    printf("%d\n", arr[0]);
+    return 0;
+}
+```
+**预期诊断**：Parser 错误，初始化列表 `}` 不匹配。  
+**正确写法**：`int arr[3] = {1, 2, 3};`
+
+### 1.3 字符串引号未闭合
+```c
+#include <stdio.h>
+int main() {
+    char s[10] = "hello;
+    printf("%s\n", s);
+    return 0;
+}
+```
+**预期诊断**：Lexer 错误，字符串引号未闭合。  
+**正确写法**：`char s[10] = "hello";`
+
+---
+
+## 2. 声明与类型错误
+
+### 2.1 变量未声明就使用
+```c
+#include <stdio.h>
+int main() {
+    x = 5;
+    printf("%d\n", x);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 错误，`x` 未声明。  
+**正确写法**：先 `int x;` 再使用。
+
+### 2.2 重复定义变量
+```c
+#include <stdio.h>
+int main() {
+    int a = 1;
+    int a = 2;
+    printf("%d\n", a);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 错误，同一作用域内重复定义 `a`。  
+**正确写法**：去掉重复声明，或直接赋值 `a = 2;`。
+
+### 2.3 隐式类型转换警告（赋值截断）
+```c
+#include <stdio.h>
+int main() {
+    int a = 3.14;
+    printf("%d\n", a);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 警告，double 赋值给 int 会截断小数。  
+**正确写法**：`int a = (int)3.14;` 或 `double a = 3.14;`
+
+### 2.4 数组大小不是常量
+```c
+#include <stdio.h>
+int main() {
+    int n = 5;
+    int arr[n];
+    arr[0] = 1;
+    printf("%d\n", arr[0]);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker/Parser 错误（若当前子集不支持 VLA）。  
+**正确写法**：`int arr[5];` 或 `#define N 5` 后 `int arr[N];`
+
+---
+
+## 3. 数组与指针常见错误
+
+### 3.1 数组越界访问
+```c
+#include <stdio.h>
+int main() {
+    int arr[3] = {10, 20, 30};
+    printf("%d\n", arr[5]);
+    return 0;
+}
+```
+**预期行为**：VM 运行期越界，可能读到脏数据或报错（取决于 VM 边界检查）。  
+**正确写法**：确保索引在 `0 ~ 2` 范围内。
+
+### 3.2 数组名当指针用但试图整体赋值
+```c
+#include <stdio.h>
+int main() {
+    int a[3] = {1, 2, 3};
+    int b[3];
+    b = a;
+    printf("%d\n", b[0]);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 错误，数组不可赋值。  
+**正确写法**：逐个拷贝 `b[0] = a[0]; b[1] = a[1]; b[2] = a[2];`
+
+### 3.3 未初始化的指针解引用
+```c
+#include <stdio.h>
+int main() {
+    int *p;
+    *p = 10;
+    printf("%d\n", *p);
+    return 0;
+}
+```
+**预期行为**：VM 运行期访问非法地址，可能崩溃或报错。  
+**正确写法**：`int x; int *p = &x; *p = 10;`
+
+### 3.4 指针类型不匹配
+```c
+#include <stdio.h>
+int main() {
+    int x = 10;
+    float *p = &x;
+    printf("%f\n", *p);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 警告/错误，`float*` 与 `int*` 不兼容。  
+**正确写法**：`int *p = &x;`
+
+---
+
+## 4. 函数相关错误
+
+### 4.1 函数未声明先调用
+```c
+#include <stdio.h>
+int main() {
+    int r = add(3, 4);
+    printf("%d\n", r);
+    return 0;
+}
+int add(int a, int b) {
+    return a + b;
+}
+```
+**预期诊断**：TypeChecker 错误（若当前子集要求前向声明），或默认 int 隐式声明警告。  
+**正确写法**：在 `main` 前加 `int add(int, int);` 原型声明。
+
+### 4.2 实参与形参类型不匹配
+```c
+#include <stdio.h>
+int add(int a, int b) {
+    return a + b;
+}
+int main() {
+    int r = add(3.5, 2);
+    printf("%d\n", r);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 警告，double 传入 int 形参会截断。  
+**正确写法**：`add((int)3.5, 2)` 或修改函数参数类型。
+
+### 4.3 非 void 函数缺少 return
+```c
+#include <stdio.h>
+int add(int a, int b) {
+    int c = a + b;
+}
+int main() {
+    printf("%d\n", add(1, 2));
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 警告/错误，非 void 函数缺少 return。  
+**正确写法**：`return c;`
+
+### 4.4 递归缺少终止条件（栈溢出/死循环）
+```c
+#include <stdio.h>
+int fact(int n) {
+    return n * fact(n - 1);
+}
+int main() {
+    printf("%d\n", fact(5));
+    return 0;
+}
+```
+**预期行为**：VM 无限递归，step_count 溢出或调用栈溢出。  
+**正确写法**：添加终止条件 `if (n <= 1) return 1;`
+
+---
+
+## 5. 字符串与 scanf 错误
+
+### 5.1 scanf 忘记取地址符 &
+```c
+#include <stdio.h>
+int main() {
+    int a;
+    scanf("%d", a);
+    printf("%d\n", a);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 警告，`scanf` 参数应为 `int*` 但传入 `int`。  
+**正确写法**：`scanf("%d", &a);`
+
+### 5.2 字符串用 scanf %s 读取到未分配空间的指针
+```c
+#include <stdio.h>
+int main() {
+    char *s;
+    scanf("%s", s);
+    printf("%s\n", s);
+    return 0;
+}
+```
+**预期行为**：VM 运行期写入非法地址，崩溃或报错。  
+**正确写法**：`char s[100]; scanf("%s", s);`
+
+### 5.3 strcpy 目标数组太小
+```c
+#include <stdio.h>
+#include <string.h>
+int main() {
+    char s[5];
+    strcpy(s, "hello world");
+    printf("%s\n", s);
+    return 0;
+}
+```
+**预期行为**：VM 运行期缓冲区溢出，破坏相邻内存。  
+**正确写法**：`char s[20]; strcpy(s, "hello world");`
+
+---
+
+## 6. 运算符与逻辑错误
+
+### 6.1 赋值号 `=` 与比较号 `==` 混淆
+```c
+#include <stdio.h>
+int main() {
+    int a = 5;
+    if (a = 0) {
+        printf("yes\n");
+    } else {
+        printf("no\n");
+    }
+    return 0;
+}
+```
+**预期行为**：编译通过但逻辑错误，输出 `no`（因为 `a = 0` 结果为 0）。  
+**正确写法**：`if (a == 0)`
+
+### 6.2 死循环：for 条件恒真
+```c
+#include <stdio.h>
+int main() {
+    for (int i = 0; i >= 0; i++) {
+        printf("%d\n", i);
+    }
+    return 0;
+}
+```
+**预期行为**：VM step_count 溢出终止。  
+**正确写法**：设置合理的终止条件 `i < 10`。
+
+### 6.3 整数除以零
+```c
+#include <stdio.h>
+int main() {
+    int a = 5;
+    int b = 0;
+    printf("%d\n", a / b);
+    return 0;
+}
+```
+**预期行为**：VM 运行期除以零错误。  
+**正确写法**：判断 `if (b != 0)` 再除。
+
+### 6.4 位运算符误用（优先级陷阱）
+```c
+#include <stdio.h>
+int main() {
+    int a = 5;
+    int b = 3;
+    if (a & b == 1) {
+        printf("yes\n");
+    }
+    return 0;
+}
+```
+**预期行为**：`==` 优先级高于 `&`，实际为 `a & (b == 1)`。  
+**正确写法**：`if ((a & b) == 1)`
+
+---
+
+## 7. 复合结构与 typedef 错误
+
+### 7.1 struct 成员访问用错运算符
+```c
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+};
+int main() {
+    struct Point p;
+    p->x = 10;
+    printf("%d\n", p->x);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 错误，`p` 是结构体变量不是指针，不能用 `->`。  
+**正确写法**：`p.x = 10;`
+
+### 7.2 typedef 后忘记用新类型名
+```c
+#include <stdio.h>
+typedef int Integer;
+int main() {
+    Integer a = 5;
+    int b = a;
+    printf("%d\n", b);
+    return 0;
+}
+```
+*（此段本身正确，可用于验证 typedef 正常。错误版本如下）*
+```c
+#include <stdio.h>
+typedef int Integer;
+int main() {
+    Intger a = 5;  /* 拼写错误 */
+    printf("%d\n", a);
+    return 0;
+}
+```
+**预期诊断**：TypeChecker 错误，`Intger` 未定义。  
+**正确写法**：`Integer a = 5;`
+
+---
+
+## 8. 综合调试挑战
+
+### 8.1 多重错误混合（适合测试诊断列表）
+```c
+#include <stdio.h>
+int main() {
+    int a = 10
+    int b;
+    b = a + c;
+    scanf("%d", a);
+    for (int i = 0; i < 5; i++)
+        printf("%d ", i)
+    return 0;
+}
+```
+**预期诊断**（应同时报告）：
+1. 第 4 行缺少 `;`
+2. 第 6 行 `c` 未声明
+3. 第 7 行 `scanf` 参数类型不匹配（应为 `int*`）
+4. 第 9 行 `printf` 后缺少 `;`
+5. 第 10 行 `for` 循环体后的语句受 `for` 控制，缩进歧义（可选警告）
+
+### 8.2 段错误三件套
+```c
+#include <stdio.h>
+int main() {
+    int *p;
+    *p = 1;           /* 野指针写 */
+    int arr[2];
+    arr[100] = 2;     /* 数组越界 */
+    char *s;
+    strcpy(s, "x");   /* 野指针字符串操作 */
+    return 0;
+}
+```
+**预期行为**：VM 运行期多次越界/非法访问，应被边界检查捕获。
+
+---
+
+## 测试建议
+
+| 测试维度 | 推荐用例 |
+|----------|----------|
+| **Parser 死循环防护** | 1.2、8.1（故意留语法错误） |
+| **TypeChecker 错误收集** | 2.1、4.1、8.1（多错误同时存在） |
+| **VM 边界检查** | 3.1、3.3、5.3、8.2 |
+| **自动修复建议** | 1.1、2.1、4.1、5.1、6.1、7.1 |
+| **安全加固验证** | 4.4（step_count）、6.2（死循环）、6.3（除零） |
