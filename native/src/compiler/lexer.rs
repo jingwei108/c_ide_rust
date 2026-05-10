@@ -4,18 +4,18 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
-    Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned,
+    Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const,
     Identifier, Number, String,
     Plus, Minus, Star, Slash, Percent,
     Eq, Ne, Lt, Le, Gt, Ge,
     AndAnd, OrOr, Not,
     Assign, PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign,
-    Ampersand,
+    Ampersand, BitOr, BitXor, BitNot, Shl, Shr,
     Increment, Decrement,
     Semicolon, Comma,
     LParen, RParen, LBrace, RBrace, LBracket, RBracket,
     Dot, Arrow,
-    Colon,
+    Colon, Question,
     Eof,
     Unknown,
 }
@@ -96,8 +96,17 @@ impl Lexer {
             return self.string_literal();
         }
 
+        if c == '\'' {
+            return self.char_literal();
+        }
+
         if c == '/' && self.peek(1) == '/' {
             self.skip_comment();
+            return self.next_token();
+        }
+
+        if c == '/' && self.peek(1) == '*' {
+            self.skip_block_comment();
             return self.next_token();
         }
 
@@ -145,16 +154,7 @@ impl Lexer {
                 self.advance();
                 self.make_token(TokenType::Not, "!")
             }
-            '<' => {
-                if self.match_char('=') { return self.make_token(TokenType::Le, "<="); }
-                self.advance();
-                self.make_token(TokenType::Lt, "<")
-            }
-            '>' => {
-                if self.match_char('=') { return self.make_token(TokenType::Ge, ">="); }
-                self.advance();
-                self.make_token(TokenType::Gt, ">")
-            }
+
             '&' => {
                 if self.match_char('&') { return self.make_token(TokenType::AndAnd, "&&"); }
                 self.advance();
@@ -163,13 +163,27 @@ impl Lexer {
             '|' => {
                 if self.match_char('|') { return self.make_token(TokenType::OrOr, "||"); }
                 self.advance();
-                self.errors.push(LexerError {
-                    message: "暂不支持单竖线 '|'，逻辑或请使用 '||'".to_string(),
-                    line: self.line,
-                    column: self.column,
-                    code: ErrorCode::E1004_UnsupportedOp as i32,
-                });
-                self.make_token(TokenType::Unknown, "|")
+                self.make_token(TokenType::BitOr, "|")
+            }
+            '^' => {
+                self.advance();
+                self.make_token(TokenType::BitXor, "^")
+            }
+            '~' => {
+                self.advance();
+                self.make_token(TokenType::BitNot, "~")
+            }
+            '<' => {
+                if self.match_char('<') { return self.make_token(TokenType::Shl, "<<"); }
+                if self.match_char('=') { return self.make_token(TokenType::Le, "<="); }
+                self.advance();
+                self.make_token(TokenType::Lt, "<")
+            }
+            '>' => {
+                if self.match_char('>') { return self.make_token(TokenType::Shr, ">>"); }
+                if self.match_char('=') { return self.make_token(TokenType::Ge, ">="); }
+                self.advance();
+                self.make_token(TokenType::Gt, ">")
             }
             ';' => { self.advance(); self.make_token(TokenType::Semicolon, ";") }
             ',' => { self.advance(); self.make_token(TokenType::Comma, ",") }
@@ -181,6 +195,7 @@ impl Lexer {
             ']' => { self.advance(); self.make_token(TokenType::RBracket, "]") }
             '.' => { self.advance(); self.make_token(TokenType::Dot, ".") }
             ':' => { self.advance(); self.make_token(TokenType::Colon, ":") }
+            '?' => { self.advance(); self.make_token(TokenType::Question, "?") }
             _ => {
                 self.advance();
                 self.errors.push(LexerError {
@@ -211,6 +226,30 @@ impl Lexer {
 
     fn number(&mut self) -> Token {
         let start = self.pos;
+        if self.peek(0) == '0' && (self.peek(1) == 'x' || self.peek(1) == 'X') {
+            self.advance(); // '0'
+            self.advance(); // 'x' or 'X'
+            let hex_start = self.pos;
+            while self.pos < self.source.len() && self.peek(0).is_ascii_hexdigit() {
+                self.advance();
+            }
+            if self.pos == hex_start {
+                self.errors.push(LexerError {
+                    message: "十六进制数字格式错误".to_string(),
+                    line: self.line,
+                    column: self.column,
+                    code: ErrorCode::E1001_UnknownChar as i32,
+                });
+                return self.make_token(TokenType::Unknown, "0x");
+            }
+            let text = &self.source[start..self.pos];
+            // Convert hex to decimal string so parser can parse it
+            let hex_str = &text[2..];
+            if let Ok(val) = u64::from_str_radix(hex_str, 16) {
+                return self.make_token(TokenType::Number, &val.to_string());
+            }
+            return self.make_token(TokenType::Number, text);
+        }
         while self.pos < self.source.len() && self.peek(0).is_ascii_digit() {
             self.advance();
         }
@@ -237,9 +276,31 @@ impl Lexer {
                 match next {
                     'n' => value.push('\n'),
                     't' => value.push('\t'),
+                    'r' => value.push('\r'),
+                    'a' => value.push('\x07'),
+                    'b' => value.push('\x08'),
+                    'f' => value.push('\x0C'),
+                    'v' => value.push('\x0B'),
                     '\\' => value.push('\\'),
                     '"' => value.push('"'),
                     '0' => value.push('\0'),
+                    'x' => {
+                        // \xHH hex escape
+                        let h1 = self.peek(2);
+                        let h2 = self.peek(3);
+                        if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() {
+                            let hex = &self.source[self.pos + 2..self.pos + 4];
+                            if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                                value.push(byte as char);
+                            }
+                            self.advance();
+                            self.advance();
+                            self.advance();
+                            self.advance();
+                            continue;
+                        }
+                        value.push(next);
+                    }
                     _ => value.push(next),
                 }
                 self.advance();
@@ -279,6 +340,115 @@ impl Lexer {
         while self.pos < self.source.len() && self.peek(0) != '\n' {
             self.advance();
         }
+    }
+
+    fn skip_block_comment(&mut self) {
+        self.advance(); // '/'
+        self.advance(); // '*'
+        while self.pos < self.source.len() {
+            if self.peek(0) == '*' && self.peek(1) == '/' {
+                self.advance();
+                self.advance();
+                return;
+            }
+            self.advance();
+        }
+        self.errors.push(LexerError {
+            message: "块注释未闭合".to_string(),
+            line: self.line,
+            column: self.column,
+            code: ErrorCode::E1002_UnterminatedString as i32,
+        });
+    }
+
+    fn char_literal(&mut self) -> Token {
+        let start = self.pos;
+        self.advance(); // consume opening '
+        let mut value = 0i32;
+        let mut valid = true;
+        if self.pos < self.source.len() && self.peek(0) == '\'' {
+            self.errors.push(LexerError {
+                message: "空字符字面量".to_string(),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1001_UnknownChar as i32,
+            });
+            valid = false;
+        } else if self.pos < self.source.len() && self.peek(0) == '\\' && self.pos + 1 < self.source.len() {
+            let next = self.source.as_bytes()[self.pos + 1] as char;
+            value = match next {
+                'n' => '\n' as i32,
+                't' => '\t' as i32,
+                'r' => '\r' as i32,
+                'a' => 0x07,
+                'b' => 0x08,
+                'f' => 0x0C,
+                'v' => 0x0B,
+                '\\' => '\\' as i32,
+                '\'' => '\'' as i32,
+                '0' => 0,
+                'x' => {
+                    let h1 = self.peek(2);
+                    let h2 = self.peek(3);
+                    if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() {
+                        let hex = &self.source[self.pos + 2..self.pos + 4];
+                        u8::from_str_radix(hex, 16).unwrap_or(0) as i32
+                    } else {
+                        self.errors.push(LexerError {
+                            message: "字符字面量十六进制转义格式错误".to_string(),
+                            line: self.line,
+                            column: self.column,
+                            code: ErrorCode::E1001_UnknownChar as i32,
+                        });
+                        valid = false;
+                        0
+                    }
+                }
+                _ => {
+                    self.errors.push(LexerError {
+                        message: format!("未知字符转义: '\\{}'", next),
+                        line: self.line,
+                        column: self.column,
+                        code: ErrorCode::E1001_UnknownChar as i32,
+                    });
+                    valid = false;
+                    0
+                }
+            };
+            self.advance();
+            self.advance();
+            if next == 'x' && valid {
+                self.advance();
+                self.advance();
+            }
+        } else if self.pos < self.source.len() {
+            value = self.peek(0) as i32;
+            self.advance();
+        } else {
+            self.errors.push(LexerError {
+                message: "字符字面量未闭合".to_string(),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1002_UnterminatedString as i32,
+            });
+            valid = false;
+        }
+        if self.pos < self.source.len() && self.peek(0) == '\'' {
+            self.advance();
+        } else {
+            self.errors.push(LexerError {
+                message: "字符字面量未闭合".to_string(),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1002_UnterminatedString as i32,
+            });
+            valid = false;
+        }
+        let mut tok = self.make_token(TokenType::Number, &self.source[start..self.pos]);
+        if valid {
+            tok.text = value.to_string();
+        }
+        tok
     }
 
     fn skip_preprocessor_directive(&mut self) {
@@ -419,6 +589,10 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         "typedef"  => Some(TokenType::Typedef),
         "enum"     => Some(TokenType::Enum),
         "unsigned" => Some(TokenType::Unsigned),
+        "long"     => Some(TokenType::Long),
+        "short"    => Some(TokenType::Short),
+        "signed"   => Some(TokenType::Signed),
+        "const"    => Some(TokenType::Const),
         _          => None,
     }
 }

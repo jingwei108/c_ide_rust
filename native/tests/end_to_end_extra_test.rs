@@ -466,3 +466,382 @@ int main() {
     let output = outputs.join(" ");
     assert!(output.contains("4 1 8 20 4 8"), "Outputs: {:?}", outputs);
 }
+
+
+#[test]
+fn test_e2e_char_literal() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char c = 'A';
+    printf("%d", c);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("65")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_block_comment() {
+    let src = r#"
+#include <stdio.h>
+/* this is a block comment */
+int main() {
+    int a = 1;
+    /* nested
+       multiline
+       comment */
+    int b = 2;
+    printf("%d", a + b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_type_qualifiers() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    const int a = 10;
+    long b = 20;
+    short c = 30;
+    signed int d = 40;
+    unsigned int e = 50;
+    printf("%d", a + b + c + d + e);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("150")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_hex_literal() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 0x0A;
+    int b = 0xFF;
+    int c = 0x100;
+    printf("%d %d %d", a, b, c);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("10 255 256"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_escape_sequences() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    char s[10];
+    s[0] = '\r';
+    s[1] = '\a';
+    s[2] = '\b';
+    s[3] = '\f';
+    s[4] = '\v';
+    s[5] = '\x41';
+    printf("%d %d %d %d %d %d", s[0], s[1], s[2], s[3], s[4], s[5]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("13 7 8 12 11 65"), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_compound_assign_array() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[3] = {10, 20, 30};
+    arr[0] += 5;
+    arr[1] -= 5;
+    arr[2] *= 2;
+    printf("%d %d %d", arr[0], arr[1], arr[2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("15 15 60"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_compound_assign_deref() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 10;
+    int *p = &x;
+    *p += 5;
+    printf("%d", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("15")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_compound_assign_member() {
+    let src = r#"
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+};
+int main() {
+    struct Point p;
+    p.x = 10;
+    p.y = 20;
+    p.x += 5;
+    p.y -= 5;
+    printf("%d %d", p.x, p.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("15 15"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_addr_of_array_index() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[3] = {10, 20, 30};
+    int *p = &arr[1];
+    printf("%d", *p);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("20")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_addr_of_member() {
+    let src = r#"
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+};
+int main() {
+    struct Point p;
+    p.x = 42;
+    int *px = &p.x;
+    printf("%d", *px);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_global_struct_member() {
+    let src = r#"
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+};
+struct Point g;
+int main() {
+    g.x = 10;
+    g.y = 20;
+    printf("%d %d", g.x, g.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("10 20"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_inc_dec_complex() {
+    let src = r#"
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+};
+int main() {
+    int arr[3] = {10, 20, 30};
+    int a = arr[0]++;
+    int b = ++arr[1];
+    struct Point p;
+    p.x = 5;
+    p.y = 10;
+    int c = p.x--;
+    int d = --p.y;
+    printf("%d %d %d %d %d %d", a, b, arr[0], arr[1], c, d);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("10 21 11 21 5 9"), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_bitwise_ops() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 5;   // 0101
+    int b = 3;   // 0011
+    int c = a & b;
+    int d = a | b;
+    int e = a ^ b;
+    int f = ~a;
+    int g = a << 1;
+    int h = a >> 1;
+    printf("%d %d %d %d %d %d", c, d, e, f, g, h);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("1 7 6 -6 10 2"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_bitwise_precedence() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int r = 1 | 2 & 4;
+    printf("%d", r);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_ternary() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 5;
+    int b = 3;
+    int max = a > b ? a : b;
+    int min = a < b ? a : b;
+    int sign = a > 0 ? 1 : (a < 0 ? -1 : 0);
+    printf("%d %d %d", max, min, sign);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("5 3 1"), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_ptr_inc_dec() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[3] = {10, 20, 30};
+    int *p = arr;
+    int a = *p;
+    p = p + 1;
+    int b = *p;
+    p++;
+    int c = *p;
+    p--;
+    int d = *p;
+    printf("%d %d %d %d", a, b, c, d);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let output = outputs.join(" ");
+    assert!(output.contains("10 20 30 20"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_ptr_sub_ptr() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[5] = {10, 20, 30, 40, 50};
+    int *p = &arr[4];
+    int *q = &arr[1];
+    int diff = p - q;
+    printf("%d", diff);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
+}

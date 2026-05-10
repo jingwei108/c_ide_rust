@@ -152,11 +152,12 @@ pub enum BinaryOp {
     Add, Sub, Mul, Div, Mod,
     Eq, Ne, Lt, Le, Gt, Ge,
     And, Or,
+    BitAnd, BitOr, BitXor, Shl, Shr,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnaryOp {
-    Neg, Not, Addr, Deref, PreInc, PreDec, PostInc, PostDec,
+    Neg, Not, BitNot, Addr, Deref, PreInc, PreDec, PostInc, PostDec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -175,6 +176,7 @@ pub enum Expr {
     Index { array: Box<Expr>, index: Box<Expr>, loc: SourceLoc, ty: Type },
     Member { object: Box<Expr>, member: String, loc: SourceLoc, ty: Type },
     Assign { op: AssignOp, left: Box<Expr>, right: Box<Expr>, loc: SourceLoc, ty: Type },
+    Ternary { cond: Box<Expr>, then_branch: Box<Expr>, else_branch: Box<Expr>, loc: SourceLoc, ty: Type },
     Sizeof { target_type: Option<Type>, operand: Option<Box<Expr>>, loc: SourceLoc, ty: Type },
     InitList { elements: Vec<Expr>, loc: SourceLoc, ty: Type },
 }
@@ -191,6 +193,7 @@ impl Expr {
             Expr::Index { loc, .. } => loc,
             Expr::Member { loc, .. } => loc,
             Expr::Assign { loc, .. } => loc,
+            Expr::Ternary { loc, .. } => loc,
             Expr::Sizeof { loc, .. } => loc,
             Expr::InitList { loc, .. } => loc,
         }
@@ -206,6 +209,7 @@ impl Expr {
             Expr::Index { ty, .. } => ty,
             Expr::Member { ty, .. } => ty,
             Expr::Assign { ty, .. } => ty,
+            Expr::Ternary { ty, .. } => ty,
             Expr::Sizeof { ty, .. } => ty,
             Expr::InitList { ty, .. } => ty,
         }
@@ -221,6 +225,7 @@ impl Expr {
             Expr::Index { ty, .. } => *ty = new_ty,
             Expr::Member { ty, .. } => *ty = new_ty,
             Expr::Assign { ty, .. } => *ty = new_ty,
+            Expr::Ternary { ty, .. } => *ty = new_ty,
             Expr::Sizeof { ty, .. } => *ty = new_ty,
             Expr::InitList { ty, .. } => *ty = new_ty,
         }

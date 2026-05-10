@@ -80,21 +80,12 @@ if (-not $SkipNativeBuild) {
 
         Push-Location (Join-Path $root "native")
         try {
-            $cargoArgs = @(
-                "ndk",
-                "--target", $rustTarget,
-                "--platform", "21",
-                "build"
-            )
+            $cargoArgs = @("ndk", "--target", $rustTarget, "--platform", "21", "build")
             if ($Configuration -eq "Release") {
                 $cargoArgs += "--release"
             }
-            $oldEAP = $ErrorActionPreference
-            $ErrorActionPreference = "Continue"
-            & cargo @cargoArgs 2>$null
-            $cargoExit = $LASTEXITCODE
-            $ErrorActionPreference = $oldEAP
-            if ($cargoExit -ne 0) { throw "Cargo NDK build failed for $abi (exit $cargoExit)" }
+            & cargo $cargoArgs
+            if ($LASTEXITCODE -ne 0) { throw "cargo ndk build failed for $abi (exit $LASTEXITCODE)" }
         }
         catch {
             Write-ErrorColored "Native Android build ($abi) failed: $_"

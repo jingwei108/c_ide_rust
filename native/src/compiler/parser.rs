@@ -105,7 +105,8 @@ impl Parser {
                 TokenType::Return | TokenType::Break | TokenType::Continue |
                 TokenType::Struct | TokenType::Switch | TokenType::Case |
                 TokenType::Default | TokenType::Typedef | TokenType::Enum |
-                TokenType::Unsigned | TokenType::RBrace => return,
+                TokenType::Unsigned | TokenType::Long | TokenType::Short |
+                TokenType::Signed | TokenType::Const | TokenType::RBrace => return,
                 _ => { self.advance(); }
             }
         }
@@ -114,7 +115,9 @@ impl Parser {
     fn is_type_token(&self) -> bool {
         if self.check(TokenType::Int) || self.check(TokenType::Void) ||
            self.check(TokenType::Char) || self.check(TokenType::Struct) ||
-           self.check(TokenType::Enum) || self.check(TokenType::Unsigned) {
+           self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
+           self.check(TokenType::Long) || self.check(TokenType::Short) ||
+           self.check(TokenType::Signed) || self.check(TokenType::Const) {
             return true;
         }
         if self.check(TokenType::Identifier) {
@@ -295,13 +298,23 @@ impl Parser {
     // =========================================================================
 
     fn parse_base_type(&mut self) -> Type {
-        if self.match_token(TokenType::Int) { return Type::int(); }
-        if self.match_token(TokenType::Unsigned) {
-            self.match_token(TokenType::Int);
-            return Type::unsigned_int();
+        // Collect type qualifiers/modifiers (const, signed, unsigned, long, short)
+        let mut is_unsigned = false;
+        loop {
+            if self.match_token(TokenType::Const) { continue; }
+            if self.match_token(TokenType::Signed) { continue; }
+            if self.match_token(TokenType::Unsigned) { is_unsigned = true; continue; }
+            if self.match_token(TokenType::Long) { continue; }
+            if self.match_token(TokenType::Short) { continue; }
+            break;
+        }
+        if self.match_token(TokenType::Int) {
+            return if is_unsigned { Type::unsigned_int() } else { Type::int() };
         }
         if self.match_token(TokenType::Void) { return Type::void(); }
-        if self.match_token(TokenType::Char) { return Type::char(); }
+        if self.match_token(TokenType::Char) {
+            return if is_unsigned { Type::unsigned_int() } else { Type::char() };
+        }
         if self.match_token(TokenType::Struct) {
             let name_tok = self.consume(TokenType::Identifier, "预期结构体名称").clone();
             return Type::struct_type(name_tok.text);
@@ -319,13 +332,12 @@ impl Parser {
                 return ty;
             }
         }
-        self.errors.push(ParseError {
-            message: "预期类型名称 (int, char, void, struct)".to_string(),
-            line: self.current().line,
-            column: self.current().column,
-            code: ErrorCode::E2001_ExpectedType as i32,
-        });
-        Type::void()
+        // If modifiers like long/short/signed/const were present but no explicit base type,
+        // default to int (e.g. "long b", "short x", "signed y")
+        if is_unsigned {
+            return Type::unsigned_int();
+        }
+        Type::int()
     }
 
     fn parse_type_and_name(&mut self) -> (Type, String) {
@@ -580,7 +592,7 @@ impl Parser {
     }
 
     fn parse_assign(&mut self) -> Expr {
-        let left = self.parse_or();
+        let left = self.parse_ternary();
         let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
 
         if self.match_token(TokenType::Assign) {
@@ -611,6 +623,18 @@ impl Parser {
         left
     }
 
+    fn parse_ternary(&mut self) -> Expr {
+        let cond = self.parse_or();
+        if self.match_token(TokenType::Question) {
+            let then_branch = self.parse_ternary();
+            self.consume(TokenType::Colon, "预期 ':'");
+            let else_branch = self.parse_ternary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Ternary { cond: Box::new(cond), then_branch: Box::new(then_branch), else_branch: Box::new(else_branch), loc, ty: Type::default() };
+        }
+        cond
+    }
+
     fn parse_or(&mut self) -> Expr {
         let mut left = self.parse_and();
         while self.match_token(TokenType::OrOr) {
@@ -622,11 +646,41 @@ impl Parser {
     }
 
     fn parse_and(&mut self) -> Expr {
-        let mut left = self.parse_equality();
+        let mut left = self.parse_bit_or();
         while self.match_token(TokenType::AndAnd) {
-            let right = self.parse_equality();
+            let right = self.parse_bit_or();
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             left = Expr::Binary { op: BinaryOp::And, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        left
+    }
+
+    fn parse_bit_or(&mut self) -> Expr {
+        let mut left = self.parse_bit_xor();
+        while self.match_token(TokenType::BitOr) {
+            let right = self.parse_bit_xor();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            left = Expr::Binary { op: BinaryOp::BitOr, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        left
+    }
+
+    fn parse_bit_xor(&mut self) -> Expr {
+        let mut left = self.parse_bit_and();
+        while self.match_token(TokenType::BitXor) {
+            let right = self.parse_bit_and();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            left = Expr::Binary { op: BinaryOp::BitXor, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        left
+    }
+
+    fn parse_bit_and(&mut self) -> Expr {
+        let mut left = self.parse_equality();
+        while self.match_token(TokenType::Ampersand) {
+            let right = self.parse_equality();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            left = Expr::Binary { op: BinaryOp::BitAnd, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
         }
         left
     }
@@ -648,24 +702,40 @@ impl Parser {
     }
 
     fn parse_relational(&mut self) -> Expr {
-        let mut left = self.parse_additive();
+        let mut left = self.parse_shift();
         loop {
             if self.match_token(TokenType::Lt) {
-                let right = self.parse_additive();
+                let right = self.parse_shift();
                 let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
                 left = Expr::Binary { op: BinaryOp::Lt, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
             } else if self.match_token(TokenType::Le) {
-                let right = self.parse_additive();
+                let right = self.parse_shift();
                 let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
                 left = Expr::Binary { op: BinaryOp::Le, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
             } else if self.match_token(TokenType::Gt) {
-                let right = self.parse_additive();
+                let right = self.parse_shift();
                 let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
                 left = Expr::Binary { op: BinaryOp::Gt, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
             } else if self.match_token(TokenType::Ge) {
-                let right = self.parse_additive();
+                let right = self.parse_shift();
                 let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
                 left = Expr::Binary { op: BinaryOp::Ge, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else { break; }
+        }
+        left
+    }
+
+    fn parse_shift(&mut self) -> Expr {
+        let mut left = self.parse_additive();
+        loop {
+            if self.match_token(TokenType::Shl) {
+                let right = self.parse_additive();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Shl, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::Shr) {
+                let right = self.parse_additive();
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                left = Expr::Binary { op: BinaryOp::Shr, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
             } else { break; }
         }
         left
@@ -721,6 +791,11 @@ impl Parser {
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             return Expr::Unary { op: UnaryOp::Not, operand: Box::new(operand), loc, ty: Type::default() };
         }
+        if self.match_token(TokenType::BitNot) {
+            let operand = self.parse_unary();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::Unary { op: UnaryOp::BitNot, operand: Box::new(operand), loc, ty: Type::default() };
+        }
         if self.match_token(TokenType::Ampersand) {
             let operand = self.parse_unary();
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
@@ -751,7 +826,10 @@ impl Parser {
             let mut is_type = false;
             let mut t = Type::default();
             if self.check(TokenType::Int) || self.check(TokenType::Void) ||
-               self.check(TokenType::Char) || self.check(TokenType::Struct) {
+               self.check(TokenType::Char) || self.check(TokenType::Struct) ||
+               self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
+               self.check(TokenType::Short) || self.check(TokenType::Signed) ||
+               self.check(TokenType::Const) {
                 t = self.parse_base_type();
                 if self.match_token(TokenType::Star) {
                     t = Type { kind: TypeKind::Pointer, name: t.name, ..Type::default() };

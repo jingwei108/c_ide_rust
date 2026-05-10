@@ -67,10 +67,10 @@ docs/                   设计文档、事故报告
 ## 已知限制
 
 ### 当前不支持
-- **指针自增/自减（`p++`、`p--`）** — 部分支持（`p + i` 已支持，但 `++p` 仅支持 int 变量）
-- **逗号分隔的多变量声明** — 已支持（`int a = 1, b = 2;`）
+（暂无）
 
 ### 已支持的关键特性
+- **逗号分隔的多变量声明** — `int a = 1, b = 2;`
 - **多维数组**（`int arr[3][3]`）— 声明、嵌套初始化列表 `{ {1,2}, {3,4} }`、索引访问 `arr[i][j]`、函数参数传递 `void f(int[][3])`
 - **`#define` 宏** — 简单常量替换（如 `#define N 100`）
 - **printf 可变参数** — 支持任意数量参数（如 `printf("%d %d %d", a, b, c)`）
@@ -79,6 +79,7 @@ docs/                   设计文档、事故报告
 - **`typedef`** — `typedef int Integer; Integer a = 42;`
 - **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(arr)`、`sizeof(ptr)`
 - **`scanf` 多参数** — `scanf("%d %d %d", &a, &b, &c)`
+- **指针算术** — `p++` / `p--` / `p + i` / `p - i` / `p - q`，自动按 pointee 类型大小缩放（`int*` 步长 4，`char*` 步长 1，`struct*` 步长为结构体大小）
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护
@@ -92,6 +93,9 @@ docs/                   设计文档、事故报告
 - **C# 前端单元测试（2026-05-10）**：新建 `Cide.Client.Tests` xUnit 项目，覆盖 Session 创建/编译成功/编译失败路径 → 4 测试通过
 - **Maui VM 释放（2026-05-10）**：`MainViewModel.Dispose()` 添加 `_disposed` 幂等保护；`Home.razor` 页面销毁时调用 `VM.Dispose()`
 - **unsigned 类型提示（2026-05-10）**：Parser 保留 `is_unsigned` 标记；TypeChecker 遇到 `unsigned int x;` 时报告 `W3056` 提示"被映射为 int，暂不支持无符号语义"
+- **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
+- **C 子集 P1 拓展（2026-05-10）**：复合赋值扩展到数组索引/指针解引用/结构体成员（`a[i]+=1`、`*p+=1`、`s.mem+=1`）、取地址扩展到复杂左值（`&a[i]`、`&s.mem`）、全局结构体变量成员访问、自增/自减扩展到复杂左值（`a[i]++`、`*p++`、`s.mem++`）→ BytecodeGen 全部支持，新增 7 个 E2E 测试
+- **C 子集 P2 拓展（2026-05-10）**：位运算符 `& | ^ ~ << >>` 全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM），新增 2 个 E2E 测试；三目运算符 `? :` 全管线支持，新增 1 个 E2E 测试
 
 ## 构建命令
 
