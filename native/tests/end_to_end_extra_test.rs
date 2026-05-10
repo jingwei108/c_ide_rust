@@ -1,5 +1,9 @@
 use std::ffi::{c_char, CString};
 
+fn filter_outputs(outputs: Vec<String>) -> Vec<String> {
+    outputs.into_iter().filter(|s| !s.starts_with("程序运行完成")).collect()
+}
+
 fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
     unsafe {
         let session = cide_native::capi::cide_session_create();
@@ -27,7 +31,7 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
             cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
-            let out_str = String::from_utf8_lossy(&buf);
+            let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
             for line in out_str.lines() {
                 if !line.is_empty() {
                     outputs.push(line.to_string());
@@ -1482,4 +1486,414 @@ int main() {
     assert_eq!(ret, 0);
     let joined = outputs.join("");
     assert!(joined.contains("A"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_multi_array_var_decl() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int pre[100], in[100];
+    pre[0] = 1;
+    pre[1] = 2;
+    in[0] = 3;
+    in[1] = 4;
+    printf("%d %d %d %d", pre[0], pre[1], in[0], in[1]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let joined = outputs.join("");
+    assert!(joined.contains("1 2 3 4"), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_fprintf() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    fprintf(stdout, "hello %d", 42);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let joined = outputs.join("");
+    assert!(joined.contains("hello 42"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_realloc() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int *)malloc(sizeof(int) * 2);
+    p[0] = 10;
+    p[1] = 20;
+    p = (int *)realloc(p, sizeof(int) * 4);
+    p[2] = 30;
+    p[3] = 40;
+    printf("%d %d %d %d", p[0], p[1], p[2], p[3]);
+    free(p);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let joined = outputs.join("");
+    assert!(joined.contains("10 20 30 40"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_qsort() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int cmp(const void *a, const void *b) {
+    int ia = *(int*)a;
+    int ib = *(int*)b;
+    return ia - ib;
+}
+int main() {
+    int arr[] = {5, 2, 8, 1, 9};
+    qsort(arr, 5, sizeof(int), cmp);
+    printf("%d %d %d %d %d", arr[0], arr[1], arr[2], arr[3], arr[4]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let joined = outputs.join("");
+    assert!(joined.contains("1 2 5 8 9"), "Outputs: {:?}", outputs);
+}
+
+
+#[test]
+fn test_e2e_chinese_string() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    printf("你好世界");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let joined = outputs.join("");
+    assert!(joined.contains("你好世界"), "Outputs: {:?}", outputs);
+}
+
+
+// ============================================================================
+// Medium-difficulty random tests
+// ============================================================================
+
+#[test]
+fn test_e2e_struct_array_bubble_sort() {
+    let src = r#"
+#include <stdio.h>
+typedef struct {
+    int id;
+    int score;
+} Student;
+
+int main() {
+    Student s[3];
+    s[0].id = 3; s[0].score = 85;
+    s[1].id = 1; s[1].score = 92;
+    s[2].id = 2; s[2].score = 78;
+
+    for (int i = 0; i < 2; i++) {
+        for (int j = 0; j < 2 - i; j++) {
+            if (s[j].score > s[j+1].score) {
+                Student tmp = s[j];
+                s[j] = s[j+1];
+                s[j+1] = tmp;
+            }
+        }
+    }
+
+    for (int i = 0; i < 3; i++) {
+        printf("%d %d\n", s[i].id, s[i].score);
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["2 78", "3 85", "1 92"]);
+}
+
+#[test]
+fn test_e2e_linked_list() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+typedef struct Node {
+    int data;
+    struct Node *next;
+} Node;
+
+Node* create_list(int n) {
+    Node *head = NULL;
+    Node *tail = NULL;
+    for (int i = 0; i < n; i++) {
+        Node *p = (Node*)malloc(sizeof(Node));
+        p->data = i + 1;
+        p->next = NULL;
+        if (!head) {
+            head = tail = p;
+        } else {
+            tail->next = p;
+            tail = p;
+        }
+    }
+    return head;
+}
+
+void print_list(Node *head) {
+    while (head) {
+        printf("%d ", head->data);
+        head = head->next;
+    }
+    printf("\n");
+}
+
+int main() {
+    Node *list = create_list(5);
+    print_list(list);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["1 2 3 4 5 "]);
+}
+
+#[test]
+fn test_e2e_fibonacci_recursive() {
+    let src = r#"
+#include <stdio.h>
+int fib(int n) {
+    if (n <= 1) return n;
+    return fib(n - 1) + fib(n - 2);
+}
+int main() {
+    for (int i = 0; i <= 10; i++) {
+        printf("%d ", fib(i));
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["0 1 1 2 3 5 8 13 21 34 55 "]);
+}
+
+#[test]
+fn test_e2e_pointer_array() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 10, b = 20, c = 30;
+    int *arr[3];
+    arr[0] = &a;
+    arr[1] = &b;
+    arr[2] = &c;
+    for (int i = 0; i < 3; i++) {
+        printf("%d ", *arr[i]);
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["10 20 30 "]);
+}
+
+#[test]
+fn test_e2e_strcat_strlen() {
+    let src = r#"
+#include <stdio.h>
+#include <string.h>
+int main() {
+    char s1[30] = "Hello";
+    char s2[10] = "World";
+    strcat(s1, " ");
+    strcat(s1, s2);
+    printf("%s %d\n", s1, strlen(s1));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["Hello World 11"]);
+}
+
+#[test]
+fn test_e2e_2d_array_func_arg() {
+    let src = r#"
+#include <stdio.h>
+void print_mat(int m[][3], int rows) {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < 3; j++) {
+            printf("%d ", m[i][j]);
+        }
+        printf("\n");
+    }
+}
+int main() {
+    int mat[2][3] = {{1, 2, 3}, {4, 5, 6}};
+    print_mat(mat, 2);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["1 2 3 ", "4 5 6 "]);
+}
+
+#[test]
+fn test_e2e_nested_struct() {
+    let src = r#"
+#include <stdio.h>
+typedef struct {
+    int x;
+    int y;
+} Point;
+
+typedef struct {
+    Point top_left;
+    Point bottom_right;
+} Rect;
+
+int main() {
+    Rect r;
+    r.top_left.x = 0;
+    r.top_left.y = 0;
+    r.bottom_right.x = 10;
+    r.bottom_right.y = 20;
+    printf("%d %d %d %d\n", r.top_left.x, r.top_left.y, r.bottom_right.x, r.bottom_right.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["0 0 10 20"]);
+}
+
+#[test]
+fn test_e2e_do_while_continue() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int i = 0;
+    int sum = 0;
+    do {
+        i++;
+        if (i % 2 == 0) continue;
+        sum += i;
+    } while (i < 10);
+    printf("%d\n", sum);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["25"]);
+}
+
+#[test]
+fn test_e2e_nested_ternary() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 5, b = 3, c = 7;
+    int max = (a > b) ? ((a > c) ? a : c) : ((b > c) ? b : c);
+    printf("%d\n", max);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["7"]);
+}
+
+#[test]
+fn test_e2e_qsort_struct_array() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+typedef struct {
+    int id;
+    int score;
+} Student;
+
+int cmp(const void *a, const void *b) {
+    Student *sa = (Student*)a;
+    Student *sb = (Student*)b;
+    return sa->score - sb->score;
+}
+
+int main() {
+    Student s[4];
+    s[0].id = 1; s[0].score = 85;
+    s[1].id = 2; s[1].score = 92;
+    s[2].id = 3; s[2].score = 78;
+    s[3].id = 4; s[3].score = 88;
+    qsort(s, 4, sizeof(Student), cmp);
+    for (int i = 0; i < 4; i++) {
+        printf("%d %d\n", s[i].id, s[i].score);
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["3 78", "1 85", "4 88", "2 92"]);
 }

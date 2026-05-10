@@ -352,6 +352,22 @@
 
 <FloatingActionButton OnMenuItemSelected="ShowDebugTab" />
 
+<!-- 介绍覆盖层 -->
+@if (VM.IsIntroVisible)
+{
+    <div class="intro-overlay">
+        <div class="intro-card">
+            <div class="intro-title">@VM.IntroTitle</div>
+            <div class="intro-desc">@VM.IntroDescription</div>
+            <div class="intro-step">@VM.IntroStepDisplay</div>
+            <div class="intro-buttons">
+                <button class="intro-btn-skip" @onclick="() => VM.IntroSkipCommand.Execute(null)">跳过</button>
+                <button class="intro-btn-next" @onclick="() => VM.IntroNextCommand.Execute(null)">@VM.IntroButtonText</button>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private CodeMirrorEditor? _editor;
     private bool _showDebugModal = false;

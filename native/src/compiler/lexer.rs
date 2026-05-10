@@ -48,13 +48,27 @@ pub struct Lexer {
 
 impl Lexer {
     pub fn new(source: String) -> Self {
+        let mut macros = HashMap::new();
+        // Predefine common stdio macros for fprintf compatibility
+        macros.insert("stdout".to_string(), vec![Token {
+            ty: TokenType::Number,
+            text: "1".to_string(),
+            line: 0,
+            column: 0,
+        }]);
+        macros.insert("stderr".to_string(), vec![Token {
+            ty: TokenType::Number,
+            text: "2".to_string(),
+            line: 0,
+            column: 0,
+        }]);
         Self {
             source,
             errors: Vec::new(),
             pos: 0,
             line: 1,
             column: 1,
-            macros: HashMap::new(),
+            macros,
         }
     }
 
@@ -316,8 +330,8 @@ impl Lexer {
                 self.advance();
                 self.advance();
             } else {
-                value.push(self.peek(0));
-                self.advance();
+                let c = self.advance();
+                value.push(c);
             }
         }
         if self.pos >= self.source.len() || self.peek(0) != '"' {

@@ -31,6 +31,7 @@ struct StructSymbol {
 pub struct TypeChecker {
     errors: Vec<TypeError>,
     warnings: Vec<TypeError>,
+    hints: Vec<TypeError>,
     funcs: HashMap<String, FuncSymbol>,
     structs: HashMap<String, StructSymbol>,
     scopes: Vec<HashMap<String, VarSymbol>>,
@@ -74,6 +75,7 @@ impl TypeChecker {
         Self {
             errors: Vec::new(),
             warnings: Vec::new(),
+            hints: Vec::new(),
             funcs: HashMap::new(),
             structs: HashMap::new(),
             scopes: Vec::new(),
@@ -83,7 +85,7 @@ impl TypeChecker {
         }
     }
 
-    pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>) {
+    pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
         // Pass 1: Register structs
         for s in &program.structs {
             if self.structs.contains_key(&s.name) {
@@ -137,7 +139,7 @@ impl TypeChecker {
         }
 
         self.exit_scope();
-        (self.errors, self.warnings)
+        (self.errors, self.warnings, self.hints)
     }
 
     // =========================================================================
@@ -185,6 +187,10 @@ impl TypeChecker {
         self.warnings.push(TypeError { message: msg.to_string(), line: loc.line, column: loc.column, code: code as i32 });
     }
 
+    fn report_hint(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
+        self.hints.push(TypeError { message: msg.to_string(), line: loc.line, column: loc.column, code: code as i32 });
+    }
+
     fn is_int(&self, t: &Type) -> bool {
         matches!(t.kind, TypeKind::Int | TypeKind::Char)
     }
@@ -222,12 +228,20 @@ impl TypeChecker {
             if dims_compatible { return true; }
         }
         if (matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)) && (matches!(value.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)) {
-            // 只警告可能丢失精度的情况：int -> char 或 float -> int
+            // 警告可能丢失精度的情况
             if matches!(target.kind, TypeKind::Char) && matches!(value.kind, TypeKind::Int | TypeKind::Float) {
                 self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
             }
             if matches!(target.kind, TypeKind::Int) && matches!(value.kind, TypeKind::Float) {
                 self.report_warning("float 被隐式转换为 int，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+            }
+            // 提示安全的隐式提升
+            if matches!(target.kind, TypeKind::Int) && matches!(value.kind, TypeKind::Char) {
+                self.report_hint("char 被隐式提升为 int。", loc, ErrorCode::H3057_ImplicitConversionHint);
+            }
+            if matches!(target.kind, TypeKind::Float) && matches!(value.kind, TypeKind::Int | TypeKind::Char) {
+                let src = if matches!(value.kind, TypeKind::Char) { "char" } else { "int" };
+                self.report_hint(&format!("{} 被隐式提升为 float。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
             }
             return true;
         }
@@ -236,7 +250,9 @@ impl TypeChecker {
             return true;
         }
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Pointer) && value.name.is_empty() {
-            // void* -> concrete pointer 是 C 标准允许的隐式转换（如 malloc），不再警告
+            if value.base_kind == TypeKind::Void {
+                self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
+            }
             return true;
         }
         false
@@ -611,9 +627,15 @@ impl TypeChecker {
                         }
                         if operand_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
                     }
-                    UnaryOp::Not | UnaryOp::BitNot => {
+                    UnaryOp::Not => {
+                        if !self.is_scalar(&operand_type) && !operand_type.is_pointer() {
+                            self.report_error("逻辑非要求操作数是标量或指针类型", loc, ErrorCode::E3020_UnaryTypeError);
+                        }
+                        Type::int()
+                    }
+                    UnaryOp::BitNot => {
                         if !self.is_int(&operand_type) {
-                            self.report_error("逻辑非/按位取反要求操作数是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                            self.report_error("按位取反要求操作数是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
                         }
                         Type::int()
                     }
@@ -656,6 +678,9 @@ impl TypeChecker {
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
                     *ty = sym.ty;
+                } else if self.funcs.contains_key(name) {
+                    // Function name used as value (function pointer)
+                    *ty = Type::int();
                 } else {
                     self.report_error(&format!("未声明的变量 '{}'", name), loc, ErrorCode::E3023_UndeclaredVar);
                     *ty = Type::int();
@@ -675,7 +700,9 @@ impl TypeChecker {
                 } else if !arr_type.is_array() && !arr_type.is_pointer() {
                     self.report_error("不能对非数组/指针类型进行索引", loc, ErrorCode::E3040_IndexNonArray);
                     *ty = Type::int();
-                } else if arr_type.is_array() && !arr_type.dims.is_empty() && arr_type.dims.len() > 1 {
+                } else if arr_type.is_array() && !arr_type.dims.is_empty() {
+                    *ty = arr_type.subscript_type();
+                } else if arr_type.is_pointer() {
                     *ty = arr_type.subscript_type();
                 } else if arr_type.base_kind == TypeKind::Struct {
                     *ty = Type::struct_type(&arr_type.name);
@@ -959,6 +986,67 @@ impl TypeChecker {
                     }
                 }
                 Type::int()
+            }
+            "fprintf" => {
+                if args.len() < 2 {
+                    self.report_error("fprintf 至少需要 2 个参数（文件指针和格式字符串）", loc, ErrorCode::E3030_PrintfArgCount);
+                } else {
+                    let stream_type = self.resolve_expr_type(&mut args[0]);
+                    if !stream_type.is_pointer() && !matches!(stream_type.kind, TypeKind::Int) {
+                        self.report_error("fprintf 的第一个参数必须是文件指针或整数", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                    let fmt_type = self.resolve_expr_type(&mut args[1]);
+                    if !fmt_type.is_pointer() && !fmt_type.is_array() {
+                        self.report_error("fprintf 的第二个参数必须是字符串", loc, ErrorCode::E3031_PrintfFirstArg);
+                    }
+                    for (i, arg) in args.iter_mut().enumerate().skip(2) {
+                        let arg_type = self.resolve_expr_type(arg);
+                        if !self.is_scalar(&arg_type) && !arg_type.is_pointer() && !arg_type.is_array() {
+                            self.report_error(&format!("fprintf 的第 {} 个参数必须是 int、float、char 或指针", i + 1), loc, ErrorCode::E3032_PrintfArgType);
+                        }
+                    }
+                }
+                Type::void()
+            }
+            "realloc" => {
+                if args.len() != 2 {
+                    self.report_error("realloc 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let ptr_type = self.resolve_expr_type(&mut args[0]);
+                    if !ptr_type.is_pointer() && !matches!(ptr_type.kind, TypeKind::Int) {
+                        self.report_error("realloc 第一个参数必须是指针", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                    let size_type = self.resolve_expr_type(&mut args[1]);
+                    if !self.is_assignable(&Type::int(), &size_type, loc) {
+                        self.report_error("realloc 第二个参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+                    } else {
+                        insert_implicit_cast(&mut args[1], &Type::int());
+                    }
+                }
+                Type::pointer(TypeKind::Void, "")
+            }
+            "qsort" => {
+                if args.len() != 4 {
+                    self.report_error("qsort 需要四个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+                } else {
+                    let base_type = self.resolve_expr_type(&mut args[0]);
+                    if !base_type.is_pointer() && !base_type.is_array() {
+                        self.report_error("qsort 第一个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                    for i in 1..3 {
+                        let t = self.resolve_expr_type(&mut args[i]);
+                        if !self.is_assignable(&Type::int(), &t, loc) {
+                            self.report_error(&format!("qsort 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                        } else {
+                            insert_implicit_cast(&mut args[i], &Type::int());
+                        }
+                    }
+                    let compar_type = self.resolve_expr_type(&mut args[3]);
+                    if !matches!(compar_type.kind, TypeKind::Int) && !compar_type.is_pointer() {
+                        self.report_error("qsort 第四个参数必须是函数指针", loc, ErrorCode::E3029_BuiltInArgType);
+                    }
+                }
+                Type::void()
             }
             _ => {
                 let sym = self.funcs.get(name).cloned();

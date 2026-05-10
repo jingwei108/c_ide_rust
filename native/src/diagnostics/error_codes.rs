@@ -73,4 +73,5 @@ pub enum ErrorCode {
     W3054_IntToPointerCast = 3054,
     W3055_VoidPointerCast = 3055,
     W3056_UnsignedToInt = 3056,
+    H3057_ImplicitConversionHint = 3057,
 }
