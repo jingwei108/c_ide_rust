@@ -53,7 +53,7 @@
         }
         _isInternalChange = false;
 
-        var newTheme = IsDarkTheme ? ThemeMirrorTheme.OneDark : ThemeMirrorTheme.GithubLight;
+        var newTheme = IsDarkTheme ? ThemeMirrorTheme.OneDark : ThemeMirrorTheme.BasicLight;
         if (_theme != newTheme)
         {
             _theme = newTheme;
@@ -81,7 +81,7 @@
 
     public async Task SetTheme(bool dark)
     {
-        _theme = dark ? ThemeMirrorTheme.OneDark : ThemeMirrorTheme.GithubLight;
+        _theme = dark ? ThemeMirrorTheme.OneDark : ThemeMirrorTheme.BasicLight;
         await InvokeAsync(StateHasChanged);
     }
 
