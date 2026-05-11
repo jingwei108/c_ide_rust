@@ -54,7 +54,7 @@ impl BytecodeGen {
             errors: Vec::new(),
             func_table: HashMap::new(),
             func_index: HashMap::new(),
-            next_func_idx: 0,
+            next_func_idx: 1,
             current_func: String::new(),
             current_func_arg_count: 0,
             global_indices: HashMap::new(),
@@ -94,7 +94,8 @@ impl BytecodeGen {
             if g.ty.is_array() {
                 elem_count = g.ty.array_size;
             } else if g.ty.is_struct() {
-                elem_count = self.struct_defs.get(&g.ty.name).map(|f| f.len() as i32).unwrap_or(1);
+                elem_count = self.type_size(&g.ty) / 4;
+                if elem_count < 1 { elem_count = 1; }
             }
             if elem_count < 1 {
                 if let Some(ref init) = g.init {
@@ -318,12 +319,10 @@ impl BytecodeGen {
         let mut offset = 0;
         for field in fields {
             if field.name == member_name {
-                eprintln!("[DEBUG get_member_offset] {}.{} -> {}", struct_name, member_name, offset);
                 return offset;
             }
             offset += self.type_size(&field.ty);
         }
-        eprintln!("[DEBUG get_member_offset] {}.{} -> 0 (not found)", struct_name, member_name);
         0
     }
 
@@ -339,13 +338,26 @@ impl BytecodeGen {
                     _ => 4,
                 }
             }
-            TypeKind::Array => compute_stride(ty),
+            TypeKind::Array => compute_stride(ty, self.elem_type_size(ty)),
             _ => 1,
         }
     }
 
+    fn elem_type_size(&self, arr_type: &Type) -> i32 {
+        match arr_type.base_kind {
+            TypeKind::Char => 1,
+            TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
+            TypeKind::Struct => {
+                self.struct_defs.get(&arr_type.name).map(|f| {
+                    f.iter().map(|field| self.type_size(&field.ty)).sum()
+                }).unwrap_or(4)
+            }
+            _ => 4,
+        }
+    }
+
     fn type_size(&self, ty: &Type) -> i32 {
-        let size = match ty.kind {
+        match ty.kind {
             TypeKind::Void => 0,
             TypeKind::Int => 4,
             TypeKind::Char => 1,
@@ -353,7 +365,7 @@ impl BytecodeGen {
             TypeKind::Pointer => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
-                let elem_size = self.elem_size(ty);
+                let elem_size = self.elem_type_size(ty);
                 elem_count * elem_size
             }
             TypeKind::Struct => {
@@ -361,9 +373,7 @@ impl BytecodeGen {
                     f.iter().map(|field| self.type_size(&field.ty)).sum()
                 }).unwrap_or(0)
             }
-        };
-        eprintln!("[DEBUG type_size] {:?} name={} -> {}", ty.kind, ty.name, size);
-        size
+        }
     }
 
     fn elem_size(&self, ty: &Type) -> i32 {
@@ -396,10 +406,9 @@ impl BytecodeGen {
                 for s in stmts { self.gen_stmt(s); }
             }
             Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
-                let elem_count = if var_type.is_array() {
-                    var_type.array_size
-                } else if var_type.is_struct() {
-                    self.struct_defs.get(&var_type.name).map(|f| f.len() as i32).unwrap_or(1)
+                let elem_count = if var_type.is_array() || var_type.is_struct() {
+                    let sz = (self.type_size(var_type) + 3) / 4;
+                    if sz < 1 { 1 } else { sz }
                 } else { 1 };
 
                 let mut emit_one = |n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
@@ -440,6 +449,8 @@ impl BytecodeGen {
                                     self.emit(OpCode::StoreMem, 0, loc);
                                 }
                             }
+                        } else if var_type.is_struct() {
+                            self.gen_struct_copy_to_local(local_idx, e, loc);
                         } else if var_type.is_array() && matches!(e, Expr::StringLiteral { .. }) {
                             if let Expr::StringLiteral { ref value, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
@@ -447,7 +458,8 @@ impl BytecodeGen {
                                 self.emit(OpCode::PushConst, local_idx * 4, loc);
                                 self.emit(OpCode::Add, 0, loc);
                                 self.emit(OpCode::StoreLocal, base_temp, loc);
-                                for i in 0..elem_count as usize {
+                                let byte_count = var_type.array_size as usize;
+                                for i in 0..byte_count {
                                     self.emit(OpCode::LoadLocal, base_temp, loc);
                                     self.emit(OpCode::PushConst, i as i32, loc);
                                     self.emit(OpCode::Add, 0, loc);
@@ -477,7 +489,7 @@ impl BytecodeGen {
             }
             Stmt::Expr { expr, .. } => {
                 self.gen_expr(expr);
-                if !expr.ty().is_void() {
+                if !expr.ty().is_void() && !expr.ty().is_struct() {
                     self.emit(OpCode::Pop, 0, &loc);
                 }
             }
@@ -1022,9 +1034,11 @@ impl BytecodeGen {
             Expr::Index { array, index, ty, .. } => {
                 self.gen_index(array, index, ty, &loc, false);
             }
-            Expr::Member { object, member, .. } => {
+            Expr::Member { object, member, ty, .. } => {
                 self.gen_member_addr(object, member, &loc);
-                self.emit(OpCode::LoadMem, 0, &loc);
+                if !ty.is_array() {
+                    self.emit(OpCode::LoadMem, 0, &loc);
+                }
             }
             Expr::Ternary { cond, then_branch, else_branch, .. } => {
                 self.gen_expr(cond);
@@ -1068,18 +1082,13 @@ impl BytecodeGen {
     }
 
     fn gen_member_addr(&mut self, object: &mut Expr, member: &str, loc: &SourceLoc) {
-        eprintln!("[DEBUG gen_member_addr] object ty = {:?} {:?}, member = {}", object.ty().kind, object.ty().name, member);
         if object.ty().is_pointer() {
-            eprintln!("  -> pointer branch");
             self.gen_expr(object);
         } else if let Expr::Index { array, index, ty, .. } = object {
-            eprintln!("  -> index branch");
             self.gen_index(array, index, ty, loc, true);
         } else if let Expr::Member { object: inner, member: m, .. } = object {
-            eprintln!("  -> member branch");
             self.gen_member_addr(inner, m, loc);
         } else if let Expr::Identifier { name, .. } = object {
-            eprintln!("  -> ident branch: name = {}", name);
             if let Some(&idx) = self.local_indices.get(name) {
                 self.emit(OpCode::GetFrameBase, 0, loc);
                 self.emit(OpCode::PushConst, idx * 4, loc);
@@ -1095,7 +1104,6 @@ impl BytecodeGen {
             self.emit(OpCode::PushConst, 0, loc);
         }
         let offset = self.get_member_offset(object.ty(), member);
-        eprintln!("  -> offset = {}", offset);
         if offset > 0 {
             self.emit(OpCode::PushConst, offset, loc);
             self.emit(OpCode::Add, 0, loc);
@@ -1122,12 +1130,12 @@ impl BytecodeGen {
                 bound_size = array.ty().dims[0];
             }
         }
-        let stride = compute_stride(array.ty());
+        let stride = compute_stride(array.ty(), self.elem_type_size(array.ty()));
         self.gen_expr(array);
         self.gen_expr(index);
 
         if bound_size > 0 && sym_idx >= 0 {
-            let idx_temp = self.get_temp_slot(0);
+            let idx_temp = self.get_temp_slot(2);
             self.emit(OpCode::StoreLocal, idx_temp, loc);
             // check >= 0
             self.emit(OpCode::LoadLocal, idx_temp, loc);
@@ -1156,7 +1164,11 @@ impl BytecodeGen {
         self.emit(OpCode::Mul, 0, loc);
         self.emit(OpCode::Add, 0, loc);
         if !is_assign && !result_ty.is_array() {
-            self.emit(OpCode::LoadMem, 0, loc);
+            if result_ty.kind == TypeKind::Char {
+                self.emit(OpCode::LoadMemByte, 0, loc);
+            } else {
+                self.emit(OpCode::LoadMem, 0, loc);
+            }
         }
     }
 
@@ -1169,8 +1181,87 @@ impl BytecodeGen {
         }
     }
 
+    fn gen_addr(&mut self, expr: &mut Expr, loc: &SourceLoc) {
+        match expr {
+            Expr::Identifier { name, .. } => {
+                if let Some(&idx) = self.local_indices.get(name) {
+                    self.emit(OpCode::GetFrameBase, 0, loc);
+                    self.emit(OpCode::PushConst, idx * 4, loc);
+                    self.emit(OpCode::Add, 0, loc);
+                } else if let Some(&idx) = self.global_indices.get(name) {
+                    self.emit(OpCode::PushConst, 0x1000 + idx * 4, loc);
+                } else {
+                    self.report_error("未声明的变量", loc);
+                    self.emit(OpCode::PushConst, 0, loc);
+                }
+            }
+            Expr::Index { array, index, ty, .. } => {
+                self.gen_index(array, index, ty, loc, true);
+            }
+            Expr::Member { object, member, .. } => {
+                self.gen_member_addr(object, member, loc);
+            }
+            Expr::Unary { op: UnaryOp::Deref, operand, .. } => {
+                self.gen_expr(operand);
+            }
+            _ => {
+                self.report_error("不支持的地址生成", loc);
+                self.emit(OpCode::PushConst, 0, loc);
+            }
+        }
+    }
+
+    fn gen_struct_copy(&mut self, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
+        let size = self.type_size(left.ty());
+        if size <= 0 { return; }
+        let src_temp = self.get_temp_slot(0);
+        let dst_temp = self.get_temp_slot(1);
+        self.gen_addr(right, loc);
+        self.emit(OpCode::StoreLocal, src_temp, loc);
+        self.gen_addr(left, loc);
+        self.emit(OpCode::StoreLocal, dst_temp, loc);
+        for i in 0..size / 4 {
+            self.emit(OpCode::LoadLocal, dst_temp, loc);
+            if i > 0 {
+                self.emit(OpCode::PushConst, i * 4, loc);
+                self.emit(OpCode::Add, 0, loc);
+            }
+            self.emit(OpCode::LoadLocal, src_temp, loc);
+            if i > 0 {
+                self.emit(OpCode::PushConst, i * 4, loc);
+                self.emit(OpCode::Add, 0, loc);
+            }
+            self.emit(OpCode::LoadMem, 0, loc);
+            self.emit(OpCode::StoreMem, 0, loc);
+        }
+    }
+
+    fn gen_struct_copy_to_local(&mut self, local_idx: i32, right: &mut Expr, loc: &SourceLoc) {
+        let size = self.type_size(right.ty());
+        if size <= 0 { return; }
+        let src_temp = self.get_temp_slot(0);
+        self.gen_addr(right, loc);
+        self.emit(OpCode::StoreLocal, src_temp, loc);
+        for i in 0..size / 4 {
+            self.emit(OpCode::GetFrameBase, 0, loc);
+            self.emit(OpCode::PushConst, (local_idx + i) * 4, loc);
+            self.emit(OpCode::Add, 0, loc);
+            self.emit(OpCode::LoadLocal, src_temp, loc);
+            if i > 0 {
+                self.emit(OpCode::PushConst, i * 4, loc);
+                self.emit(OpCode::Add, 0, loc);
+            }
+            self.emit(OpCode::LoadMem, 0, loc);
+            self.emit(OpCode::StoreMem, 0, loc);
+        }
+    }
+
     fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
         let left_is_float = left.ty().kind == TypeKind::Float;
+        if left.ty().is_struct() && *op == AssignOp::Assign {
+            self.gen_struct_copy(left, right, loc);
+            return;
+        }
         let emit_compound = |this: &mut Self, loc: &SourceLoc| {
             match op {
                 AssignOp::AddAssign => this.emit(if left_is_float { OpCode::AddF } else { OpCode::Add }, 0, loc),
@@ -1214,7 +1305,11 @@ impl BytecodeGen {
             self.gen_index(array, index, &result_ty, loc, true);
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
-                self.emit(OpCode::LoadMem, 0, loc);
+                if result_ty.kind == TypeKind::Char {
+                    self.emit(OpCode::LoadMemByte, 0, loc);
+                } else {
+                    self.emit(OpCode::LoadMem, 0, loc);
+                }
                 self.gen_expr_with_cast(right, left_is_float, loc);
                 emit_compound(self, loc);
             } else {
@@ -1226,7 +1321,11 @@ impl BytecodeGen {
             self.emit(OpCode::StoreLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, val_temp, loc);
-            self.emit(OpCode::StoreMem, 0, loc);
+            if result_ty.kind == TypeKind::Char {
+                self.emit(OpCode::StoreMemByte, 0, loc);
+            } else {
+                self.emit(OpCode::StoreMem, 0, loc);
+            }
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             self.emit(OpCode::LoadMem, 0, loc);
             return;
@@ -1303,15 +1402,22 @@ fn flatten_init_list(elements: &[Expr]) -> Vec<i32> {
             Expr::Literal { value, .. } => result.push(*value),
             Expr::FloatLiteral { value, .. } => result.push((*value as f32).to_bits() as i32),
             Expr::InitList { elements: sub, .. } => result.extend(flatten_init_list(sub)),
+            Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
+                if let Expr::Literal { value, .. } = operand.as_ref() {
+                    result.push(-*value);
+                } else {
+                    result.push(0);
+                }
+            }
             _ => result.push(0),
         }
     }
     result
 }
 
-fn compute_stride(arr_type: &Type) -> i32 {
-    if !arr_type.is_array() || arr_type.dims.is_empty() { return 4; }
-    let mut stride = 4;
+fn compute_stride(arr_type: &Type, elem_size: i32) -> i32 {
+    if !arr_type.is_array() || arr_type.dims.is_empty() { return elem_size; }
+    let mut stride = elem_size;
     for i in 1..arr_type.dims.len() {
         stride *= if arr_type.dims[i] > 0 { arr_type.dims[i] } else { 1 };
     }
