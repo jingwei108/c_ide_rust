@@ -61,6 +61,13 @@ pub fn lookup_error_info(code: i32) -> Option<ErrorInfo> {
             explanation: "你使用了当前 C IDE 子集尚未支持的语法。请查阅支持列表，使用替代写法。",
             common_causes: &["使用了当前编译器未实现的 C 特性"],
         },
+        1010 => ErrorInfo {
+            code: 1010,
+            emoji: "💬",
+            title: "块注释未闭合",
+            explanation: "块注释 /* 开始后没有找到配对的 */。请检查是否遗漏了结束标记。",
+            common_causes: &["忘记写 */", "注释嵌套导致不匹配"],
+        },
         // Parser
         2001 => ErrorInfo {
             code: 2001,
@@ -873,34 +880,25 @@ pub fn generate_fix(
 /// Returns (start_byte, end_byte) of the '=' if found.
 fn find_single_equals_in_condition(line: &str) -> Option<(usize, usize)> {
     let mut in_parens = false;
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i] as char;
+    let mut prev_char = '\0';
+    for (idx, c) in line.char_indices() {
         if c == '(' {
             in_parens = true;
-            i += 1;
+            prev_char = c;
             continue;
         }
         if c == ')' {
             in_parens = false;
-            i += 1;
+            prev_char = c;
             continue;
         }
         if in_parens && c == '=' {
-            // Check it's not part of ==, <=, >=, !=
-            let prev = if i > 0 { bytes[i - 1] as char } else { '\0' };
-            let next = if i + 1 < bytes.len() { bytes[i + 1] as char } else { '\0' };
-            if prev != '=' && prev != '!' && prev != '<' && prev != '>' && next != '=' {
-                return Some((i, i + 1));
+            let next_char = line[idx..].chars().nth(1).unwrap_or('\0');
+            if prev_char != '=' && prev_char != '!' && prev_char != '<' && prev_char != '>' && next_char != '=' {
+                return Some((idx, idx + c.len_utf8()));
             }
         }
-        // Advance by char width (ASCII fast path)
-        if c.len_utf8() == 1 {
-            i += 1;
-        } else {
-            i += c.len_utf8();
-        }
+        prev_char = c;
     }
     None
 }

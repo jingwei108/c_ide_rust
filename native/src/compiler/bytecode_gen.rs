@@ -171,9 +171,14 @@ impl BytecodeGen {
             if f.body.is_none() { continue; }
             self.func_index.insert(f.name.clone(), self.next_func_idx);
             self.next_func_idx += 1;
+            let arg_slots: i32 = f.params.iter().map(|p| {
+                if p.ty.is_array() { return 1; }
+                let sz = (self.type_size(&p.ty) + 3) / 4;
+                if sz < 1 { 1 } else { sz }
+            }).sum();
             self.func_table.insert(f.name.clone(), FuncMeta {
                 ip: 0,
-                arg_count: f.params.len() as i32,
+                arg_count: arg_slots,
                 local_count: 0,
                 return_type: f.return_type.clone(),
             });
@@ -247,23 +252,31 @@ impl BytecodeGen {
 
     fn enter_function(&mut self, name: &str, params: &[Param]) {
         self.current_func = name.to_string();
-        self.current_func_arg_count = params.len() as i32;
         self.local_indices.clear();
         self.local_types.clear();
         self.next_local_idx = 0;
-        for (i, p) in params.iter().enumerate() {
-            self.local_indices.insert(p.name.clone(), i as i32);
+        let mut slot_offset = 0;
+        for p in params.iter() {
+            let slots = if p.ty.is_array() {
+                1
+            } else {
+                let sz = (self.type_size(&p.ty) + 3) / 4;
+                if sz < 1 { 1 } else { sz }
+            };
+            self.local_indices.insert(p.name.clone(), slot_offset);
             self.local_types.insert(p.name.clone(), p.ty.clone());
             self.sym_index.insert(p.name.clone(), self.symbols.len() as i32);
             self.symbols.push(VMSymbol {
                 name: p.name.clone(),
-                addr: i as u32 * 4,
+                addr: slot_offset as u32 * 4,
                 is_local: true,
                 ty: p.ty.clone(),
                 scope_depth: 1,
             });
+            slot_offset += slots;
         }
-        self.next_local_idx = params.len() as i32;
+        self.next_local_idx = slot_offset;
+        self.current_func_arg_count = slot_offset;
         self.temp_slot0 = -1;
         self.temp_slot1 = -1;
         self.temp_slot2 = -1;
@@ -333,7 +346,9 @@ impl BytecodeGen {
                     TypeKind::Char => 1,
                     TypeKind::Int | TypeKind::Pointer => 4,
                     TypeKind::Struct => {
-                        self.struct_defs.get(&ty.name).map(|f| f.len() as i32 * 4).unwrap_or(4)
+                        self.struct_defs.get(&ty.name).map(|f| {
+                            f.iter().map(|field| self.type_size(&field.ty)).sum()
+                        }).unwrap_or(4)
                     }
                     _ => 4,
                 }
@@ -428,9 +443,26 @@ impl BytecodeGen {
                         if var_type.is_array() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let values = flatten_init_list(elements);
-                                for i in 0..elem_count as usize {
-                                    self.emit(OpCode::PushConst, values.get(i).copied().unwrap_or(0), loc);
-                                    self.emit(OpCode::StoreLocal, local_idx + i as i32, loc);
+                                if var_type.base_kind == TypeKind::Char {
+                                    let base_temp = self.get_temp_slot(0);
+                                    self.emit(OpCode::GetFrameBase, 0, loc);
+                                    self.emit(OpCode::PushConst, local_idx * 4, loc);
+                                    self.emit(OpCode::Add, 0, loc);
+                                    self.emit(OpCode::StoreLocal, base_temp, loc);
+                                    let byte_count = var_type.array_size as usize;
+                                    for i in 0..byte_count {
+                                        self.emit(OpCode::LoadLocal, base_temp, loc);
+                                        self.emit(OpCode::PushConst, i as i32, loc);
+                                        self.emit(OpCode::Add, 0, loc);
+                                        let byte = values.get(i).copied().unwrap_or(0);
+                                        self.emit(OpCode::PushConst, byte, loc);
+                                        self.emit(OpCode::StoreMemByte, 0, loc);
+                                    }
+                                } else {
+                                    for i in 0..elem_count as usize {
+                                        self.emit(OpCode::PushConst, values.get(i).copied().unwrap_or(0), loc);
+                                        self.emit(OpCode::StoreLocal, local_idx + i as i32, loc);
+                                    }
                                 }
                             }
                         } else if var_type.is_struct() && matches!(e, Expr::InitList { .. }) {
@@ -440,11 +472,15 @@ impl BytecodeGen {
                                 self.emit(OpCode::PushConst, local_idx * 4, loc);
                                 self.emit(OpCode::Add, 0, loc);
                                 self.emit(OpCode::StoreLocal, base_temp, loc);
+                                let fields = self.struct_defs.get(&var_type.name).cloned().unwrap_or_default();
                                 for (i, elem) in elements.iter_mut().enumerate() {
-                                    if i >= elem_count as usize { break; }
+                                    if i >= elem_count as usize || i >= fields.len() { break; }
+                                    let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
                                     self.emit(OpCode::LoadLocal, base_temp, loc);
-                                    self.emit(OpCode::PushConst, i as i32 * 4, loc);
-                                    self.emit(OpCode::Add, 0, loc);
+                                    if offset > 0 {
+                                        self.emit(OpCode::PushConst, offset, loc);
+                                        self.emit(OpCode::Add, 0, loc);
+                                    }
                                     self.gen_expr(elem);
                                     self.emit(OpCode::StoreMem, 0, loc);
                                 }
@@ -974,7 +1010,34 @@ impl BytecodeGen {
             }
             Expr::Call { name, args, .. } => {
                 for arg in args.iter_mut().rev() {
-                    self.gen_expr(arg);
+                    let arg_ty = arg.ty();
+                    if arg_ty.is_struct() {
+                        let sz = (self.type_size(arg_ty) + 3) / 4;
+                        let slots = if sz < 1 { 1 } else { sz };
+                        if let Expr::Identifier { name: arg_name, .. } = arg {
+                            if let Some(&idx) = self.local_indices.get(arg_name) {
+                                for i in (0..slots).rev() {
+                                    self.emit(OpCode::LoadLocal, idx + i, &loc);
+                                }
+                            } else if let Some(&idx) = self.global_indices.get(arg_name) {
+                                for i in (0..slots).rev() {
+                                    self.emit(OpCode::LoadGlobal, idx + i, &loc);
+                                }
+                            } else {
+                                self.gen_expr(arg);
+                                for _ in 1..slots {
+                                    self.emit(OpCode::PushConst, 0, &loc);
+                                }
+                            }
+                        } else {
+                            self.gen_expr(arg);
+                            for _ in 1..slots {
+                                self.emit(OpCode::PushConst, 0, &loc);
+                            }
+                        }
+                    } else {
+                        self.gen_expr(arg);
+                    }
                 }
                 if let Some(&idx) = self.func_index.get(name) {
                     self.emit(OpCode::Call, idx, &loc);

@@ -124,7 +124,7 @@ impl TypeChecker {
                     self.check_struct_initializer(&g.ty, init, &g.loc);
                 } else {
                     let init_type = self.resolve_expr_type(init);
-                    if !self.is_assignable(&g.ty, &init_type, &g.loc) {
+                    if !self.check_assignable(&g.ty, &init_type, &g.loc) {
                         self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, g.ty), &g.loc, ErrorCode::E3004_TypeMismatch);
                     }
                 }
@@ -208,7 +208,7 @@ impl TypeChecker {
         false
     }
 
-    fn is_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
+    fn check_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if target == value { return true; }
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Array)
             && target.base_kind == value.base_kind && target.name == value.name {
@@ -270,6 +270,28 @@ impl TypeChecker {
         None
     }
 
+    fn expr_involves_array_or_pointer(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Index { .. } => true,
+            Expr::Identifier { name, .. } => {
+                self.lookup_var(name).map(|s| s.ty.is_array() || s.ty.is_pointer()).unwrap_or(false)
+            }
+            Expr::Binary { left, right, .. } => {
+                self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right)
+            }
+            Expr::Unary { operand, .. } => self.expr_involves_array_or_pointer(operand),
+            Expr::Assign { left, right, .. } => {
+                self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right)
+            }
+            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+                self.expr_involves_array_or_pointer(cond)
+                    || self.expr_involves_array_or_pointer(then_branch)
+                    || self.expr_involves_array_or_pointer(else_branch)
+            }
+            _ => false,
+        }
+    }
+
     // =========================================================================
     // Initializer checks
     // =========================================================================
@@ -277,7 +299,7 @@ impl TypeChecker {
     fn check_struct_initializer(&mut self, struct_type: &Type, init: &mut Expr, loc: &SourceLoc) {
         if !matches!(init, Expr::InitList { .. }) {
             let init_type = self.resolve_expr_type(init);
-            if !self.is_assignable(struct_type, &init_type, loc) {
+            if !self.check_assignable(struct_type, &init_type, loc) {
                 self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, struct_type), loc, ErrorCode::E3004_TypeMismatch);
             }
             return;
@@ -299,7 +321,7 @@ impl TypeChecker {
         for (i, elem) in elements.iter_mut().enumerate() {
             if i >= fields.len() { break; }
             let e_type = self.resolve_expr_type(elem);
-            if !self.is_assignable(&fields[i].0, &e_type, loc) {
+            if !self.check_assignable(&fields[i].0, &e_type, loc) {
                 self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", fields[i].1, fields[i].0, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
             }
         }
@@ -313,7 +335,7 @@ impl TypeChecker {
                 _ => Type::int(),
             };
             let e_type = self.resolve_expr_type(init);
-            if !self.is_assignable(&expected, &e_type, loc) {
+            if !self.check_assignable(&expected, &e_type, loc) {
                 self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", expected, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
                 return false;
             }
@@ -371,7 +393,7 @@ impl TypeChecker {
             }
             for elem in elements.iter_mut() {
                 let e_type = self.resolve_expr_type(elem);
-                if !self.is_assignable(&elem_type, &e_type, loc) {
+                if !self.check_assignable(&elem_type, &e_type, loc) {
                     self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
                 }
             }
@@ -426,7 +448,7 @@ impl TypeChecker {
                         self.check_struct_initializer(var_type, init_expr, loc);
                     } else {
                         let init_type = self.resolve_expr_type(init_expr);
-                        if !self.is_assignable(var_type, &init_type, loc) {
+                        if !self.check_assignable(var_type, &init_type, loc) {
                             self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
                         }
                     }
@@ -440,7 +462,7 @@ impl TypeChecker {
                             self.check_struct_initializer(var_type, init_expr, loc);
                         } else {
                             let init_type = self.resolve_expr_type(init_expr);
-                            if !self.is_assignable(var_type, &init_type, loc) {
+                            if !self.check_assignable(var_type, &init_type, loc) {
                                 self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
                             }
                         }
@@ -471,8 +493,10 @@ impl TypeChecker {
                 if let Some(ref mut i) = init { self.dispatch_stmt(i); }
                 if let Some(ref mut c) = cond {
                     self.check_condition(c, "for 条件", loc);
-                    if let Expr::Binary { op: BinaryOp::Le, .. } = c {
-                        self.report_warning("循环条件中使用了 '<='，如果用于数组索引，可能导致越界（off-by-one 错误）。你是否想使用 '<'？", loc, ErrorCode::W3051_ArrayBoundOffByOne);
+                    if let Expr::Binary { op: BinaryOp::Le, left, right, .. } = c {
+                        if self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right) {
+                            self.report_warning("循环条件中使用了 '<='，如果用于数组索引，可能导致越界（off-by-one 错误）。你是否想使用 '<'？", loc, ErrorCode::W3051_ArrayBoundOffByOne);
+                        }
                     }
                 }
                 if let Some(ref mut s) = step { self.resolve_expr_type(s); }
@@ -490,7 +514,7 @@ impl TypeChecker {
                     if let Some(ref mut v) = value {
                         let val_type = self.resolve_expr_type(v);
                         let expected = self.current_func_return.clone();
-                        if !self.is_assignable(&expected, &val_type, loc) {
+                        if !self.check_assignable(&expected, &val_type, loc) {
                             self.report_error(&format!("返回类型不匹配：期望 '{}'，实际 '{}'", self.current_func_return, val_type), loc, ErrorCode::E3014_ReturnTypeMismatch);
                         }
                     } else {
@@ -616,7 +640,7 @@ impl TypeChecker {
                 }
                 let then_type = self.resolve_expr_type(then_branch);
                 let else_type = self.resolve_expr_type(else_branch);
-                if then_type != else_type {
+                if then_type.kind != else_type.kind || then_type.name != else_type.name || then_type.base_kind != else_type.base_kind {
                     self.report_error("三目运算符分支类型不匹配", loc, ErrorCode::E3004_TypeMismatch);
                 }
                 *ty = then_type;
@@ -704,9 +728,7 @@ impl TypeChecker {
                 } else if !arr_type.is_array() && !arr_type.is_pointer() {
                     self.report_error("不能对非数组/指针类型进行索引", loc, ErrorCode::E3040_IndexNonArray);
                     *ty = Type::int();
-                } else if arr_type.is_array() && !arr_type.dims.is_empty() {
-                    *ty = arr_type.subscript_type();
-                } else if arr_type.is_pointer() {
+                } else if (arr_type.is_array() && !arr_type.dims.is_empty()) || arr_type.is_pointer() {
                     *ty = arr_type.subscript_type();
                 } else if arr_type.base_kind == TypeKind::Struct {
                     *ty = Type::struct_type(&arr_type.name);
@@ -750,7 +772,7 @@ impl TypeChecker {
                         }
                     }
                 }
-                if !self.is_assignable(&left_type, &right_type, loc) {
+                if !self.check_assignable(&left_type, &right_type, loc) {
                     self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
                 }
                 if *op != AssignOp::Assign && (!self.is_scalar(&left_type) || !self.is_scalar(&right_type)) {
@@ -789,7 +811,7 @@ impl TypeChecker {
                 } else {
                     let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_assignable(&expected, &arg_type, loc) {
+                    if !self.check_assignable(&expected, &arg_type, loc) {
                         self.report_error("malloc 参数必须是 int", loc, ErrorCode::E3025_MallocArgType);
                     } else {
                         insert_implicit_cast(&mut args[0], &expected);
@@ -814,7 +836,7 @@ impl TypeChecker {
                 } else {
                     let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_assignable(&expected, &arg_type, loc) {
+                    if !self.check_assignable(&expected, &arg_type, loc) {
                         self.report_error(&format!("{} 参数必须是 int", name), loc, ErrorCode::E3029_BuiltInArgType);
                     } else {
                         insert_implicit_cast(&mut args[0], &expected);
@@ -905,7 +927,7 @@ impl TypeChecker {
                 } else {
                     let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_assignable(&expected, &arg_type, loc) {
+                    if !self.check_assignable(&expected, &arg_type, loc) {
                         self.report_error("putchar 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
                     } else {
                         insert_implicit_cast(&mut args[0], &expected);
@@ -925,7 +947,7 @@ impl TypeChecker {
                 } else {
                     let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_assignable(&expected, &arg_type, loc) {
+                    if !self.check_assignable(&expected, &arg_type, loc) {
                         self.report_error("srand 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
                     } else {
                         insert_implicit_cast(&mut args[0], &expected);
@@ -944,7 +966,7 @@ impl TypeChecker {
                     for i in 1..3 {
                         let expected = Type::int();
                         let t = self.resolve_expr_type(&mut args[i]);
-                        if !self.is_assignable(&expected, &t, loc) {
+                        if !self.check_assignable(&expected, &t, loc) {
                             self.report_error(&format!("memset 的第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
                         } else {
                             insert_implicit_cast(&mut args[i], &expected);
@@ -959,7 +981,7 @@ impl TypeChecker {
                 } else {
                     let expected = Type::int();
                     let arg_type = self.resolve_expr_type(&mut args[0]);
-                    if !self.is_assignable(&expected, &arg_type, loc) {
+                    if !self.check_assignable(&expected, &arg_type, loc) {
                         self.report_error("exit 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
                     } else {
                         insert_implicit_cast(&mut args[0], &expected);
@@ -1021,7 +1043,7 @@ impl TypeChecker {
                         self.report_error("realloc 第一个参数必须是指针", loc, ErrorCode::E3029_BuiltInArgType);
                     }
                     let size_type = self.resolve_expr_type(&mut args[1]);
-                    if !self.is_assignable(&Type::int(), &size_type, loc) {
+                    if !self.check_assignable(&Type::int(), &size_type, loc) {
                         self.report_error("realloc 第二个参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
                     } else {
                         insert_implicit_cast(&mut args[1], &Type::int());
@@ -1039,7 +1061,7 @@ impl TypeChecker {
                     }
                     for i in 1..3 {
                         let t = self.resolve_expr_type(&mut args[i]);
-                        if !self.is_assignable(&Type::int(), &t, loc) {
+                        if !self.check_assignable(&Type::int(), &t, loc) {
                             self.report_error(&format!("qsort 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
                         } else {
                             insert_implicit_cast(&mut args[i], &Type::int());
@@ -1060,7 +1082,7 @@ impl TypeChecker {
                     } else {
                         for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
                             let arg_type = self.resolve_expr_type(arg);
-                            if !self.is_assignable(expected, &arg_type, loc) {
+                            if !self.check_assignable(expected, &arg_type, loc) {
                                 self.report_error(&format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1), loc, ErrorCode::E3038_FuncArgType);
                             } else {
                                 insert_implicit_cast(arg, expected);

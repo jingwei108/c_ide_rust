@@ -261,6 +261,15 @@ impl Lexer {
             // Convert hex to decimal string so parser can parse it
             let hex_str = &text[2..];
             if let Ok(val) = u64::from_str_radix(hex_str, 16) {
+                if val > i32::MAX as u64 {
+                    self.errors.push(LexerError {
+                        message: format!("十六进制数值 0x{} 超出 int 范围", hex_str),
+                        line: self.line,
+                        column: self.column,
+                        code: ErrorCode::E1006_UnsupportedFeature as i32,
+                    });
+                    return self.make_token(TokenType::Number, "0");
+                }
                 return self.make_token(TokenType::Number, &val.to_string());
             }
             return self.make_token(TokenType::Number, text);
@@ -381,7 +390,7 @@ impl Lexer {
             message: "块注释未闭合".to_string(),
             line: self.line,
             column: self.column,
-            code: ErrorCode::E1002_UnterminatedString as i32,
+            code: ErrorCode::E1010_UnterminatedComment as i32,
         });
     }
 
@@ -551,10 +560,10 @@ impl Lexer {
     }
 
     fn peek(&self, offset: usize) -> char {
-        if self.pos + offset >= self.source.len() {
+        if self.pos >= self.source.len() {
             '\0'
         } else {
-            self.source.as_bytes()[self.pos + offset] as char
+            self.source[self.pos..].chars().nth(offset).unwrap_or('\0')
         }
     }
 

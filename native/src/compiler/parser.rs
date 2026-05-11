@@ -143,28 +143,35 @@ impl Parser {
         while !self.is_at_end() {
             if self.check(TokenType::Typedef) {
                 let checkpoint = self.pos;
+                let errors_checkpoint = self.errors.len();
                 self.advance();
                 if self.check(TokenType::Struct) {
                     let s_checkpoint = self.pos;
+                    let s_errors_checkpoint = self.errors.len();
                     self.advance();
                     if self.check(TokenType::Identifier) {
                         self.advance();
                     }
                     if self.check(TokenType::LBrace) {
                         self.pos = checkpoint;
+                        self.errors.truncate(errors_checkpoint);
                         self.parse_typedef_struct_decl(&mut program);
                         continue;
                     }
                     self.pos = s_checkpoint;
+                    self.errors.truncate(s_errors_checkpoint);
                 }
                 self.pos = checkpoint;
+                self.errors.truncate(errors_checkpoint);
                 self.parse_typedef();
             } else if self.check(TokenType::Enum) {
                 let checkpoint = self.pos;
+                let errors_checkpoint = self.errors.len();
                 self.advance();
                 self.consume(TokenType::Identifier, "预期 enum 名称");
                 let is_enum_decl = self.check(TokenType::LBrace);
                 self.pos = checkpoint;
+                self.errors.truncate(errors_checkpoint);
                 if is_enum_decl {
                     self.parse_enum_decl(&mut program);
                 } else {
@@ -172,21 +179,26 @@ impl Parser {
                 }
             } else if self.check(TokenType::Struct) {
                 let checkpoint = self.pos;
+                let errors_checkpoint = self.errors.len();
                 self.advance();
                 if self.check(TokenType::LBrace) {
                     self.pos = checkpoint;
+                    self.errors.truncate(errors_checkpoint);
                     program.structs.push(self.parse_struct_decl());
                 } else if self.check(TokenType::Identifier) {
                     self.advance();
                     if self.check(TokenType::LBrace) {
                         self.pos = checkpoint;
+                        self.errors.truncate(errors_checkpoint);
                         program.structs.push(self.parse_struct_decl());
                     } else {
                         self.pos = checkpoint;
+                        self.errors.truncate(errors_checkpoint);
                         self.parse_global_var_or_func(&mut program);
                     }
                 } else {
                     self.pos = checkpoint;
+                    self.errors.truncate(errors_checkpoint);
                     self.parse_global_var_or_func(&mut program);
                 }
             } else if self.is_type_token() {
@@ -381,6 +393,21 @@ impl Parser {
         } else {
             if is_unsigned { Type::unsigned_int() } else { Type::int() }
         };
+        if is_unsigned && !matches!(t.kind, TypeKind::Int | TypeKind::Char) {
+            self.errors.push(ParseError {
+                message: format!("'unsigned' 不能修饰 '{}' 类型", match t.kind {
+                    TypeKind::Float => "float",
+                    TypeKind::Struct => "struct",
+                    TypeKind::Void => "void",
+                    TypeKind::Pointer => "指针",
+                    TypeKind::Array => "数组",
+                    _ => "此",
+                }),
+                line: self.current().line,
+                column: self.current().column,
+                code: ErrorCode::E1006_UnsupportedFeature as i32,
+            });
+        }
         t.is_const = is_const;
         t
     }
@@ -412,7 +439,7 @@ impl Parser {
         }
 
         if is_ptr {
-            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name, base_kind: base_type.kind, ..Type::default() };
+            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name.clone(), base_kind: base_type.kind, is_const: base_type.is_const, is_unsigned: base_type.is_unsigned, ..Type::default() };
             if !dims.is_empty() {
                 let has_unknown = dims.iter().any(|&d| d <= 0);
                 let total = if has_unknown { 0 } else { dims.iter().product() };
