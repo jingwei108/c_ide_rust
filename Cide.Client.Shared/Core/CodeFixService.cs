@@ -161,9 +161,8 @@ public static class CodeFixService
                         if (!precededByOp && !followedByEq)
                         {
                             sb.Append("==");
-                            sb.Append(cond.Substring(i + 1));
                             applied = true;
-                            break;
+                            continue;
                         }
                     }
                     sb.Append(cond[i]);

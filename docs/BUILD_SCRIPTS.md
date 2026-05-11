@@ -1,12 +1,8 @@
-# ⚠️ 已废弃
+# C IDE 构建与测试脚本指南
 
-> 本文档描述的是旧版 **C++/CMake** 构建流程，项目已迁移至 **Rust/Cargo**。请参考 [`BUILD.md`](BUILD.md) 获取最新构建指南。
+本文档说明项目中所有 Python 构建脚本的使用方法、参数和常见问题排查。
 
----
-
-# C IDE 构建与测试脚本指南（旧版）
-
-本文档说明项目中所有 PowerShell 脚本的使用方法、参数和常见问题排查。
+> **技术栈**：后端 Rust/Cargo，前端 .NET MAUI Blazor Hybrid，构建脚本 Python 3。
 
 ---
 
@@ -14,110 +10,134 @@
 
 | 脚本 | 功能 | 适用场景 |
 |:---|:---|:---|
-| [`build.ps1`](../build.ps1) | 构建 Native 后端 + Avalonia 前端（桌面） | 日常开发编译、打包、发布 |
-| [`test-mobile.ps1`](../test-mobile.ps1) | 移动端完整测试流水线：构建 → 安装 → 启动 → 日志 | MAUI Android 真机/模拟器测试 |
+| [`scripts/build.py`](../scripts/build.py) | 构建 Native 后端 + MAUI 前端（Desktop / Android） | 日常开发编译、打包 |
+| [`scripts/build_release.py`](../scripts/build_release.py) | Release 构建（Desktop 自包含 + Android AOT/Trim） | 发布打包 |
+| [`scripts/test_mobile.py`](../scripts/test_mobile.py) | 移动端完整测试流水线：构建 → 安装 → 启动 → 日志 | MAUI Android 真机/模拟器测试 |
+| [`scripts/test_full_chain.py`](../scripts/test_full_chain.py) | 全链验证：安装 → 启动 → smoke test | CI / 回归验证 |
+
+所有脚本共用 [`scripts/build_utils.py`](../scripts/build_utils.py) 中的通用工具（彩色输出、命令执行、ADB/NDK 自动探测、设备检测等）。
 
 ---
 
-## `build.ps1` — 主构建脚本
+## `scripts/build.py` — 日常构建
 
 ### 功能概述
 
-统一构建 C++ Native 后端和 C# 前端，支持桌面端（Windows）和 Android 端。
+统一构建 Rust Native 后端和 C# MAUI 前端，支持桌面端（Windows）和 Android 端。
 
 **构建流程**（桌面端）：
-1. Native 后端：CMake + Ninja/MSVC/MinGW 编译 `cide_native.dll`
-2. 前端：`.NET publish` 打包 `Cide.Client.Desktop`
+1. Native 后端：`cargo build` 编译 `cide_native.dll`
+2. 前端：`dotnet publish` 打包 `Cide.Client.Maui` (Windows)
 3. 将 DLL 复制到 `dist/desktop/`
 
-**构建流程**（Android 端，由 `test-mobile.ps1` 处理）：
-1. Native 后端：NDK 交叉编译 `arm64-v8a` + `armeabi-v7a` 的 `libcide_native.so`
-2. 前端：`.NET publish` 打包 MAUI APK 到 `dist/android/`
+**构建流程**（Android 端）：
+1. Native 后端：`cargo ndk` 交叉编译 `arm64-v8a` + `armeabi-v7a` 的 `libcide_native.so`
+2. 前端：`dotnet publish` 打包 MAUI APK 到 `dist/android/`
 
 ### 参数
 
 | 参数 | 类型 | 默认值 | 说明 |
 |:---|:---|:---|:---|
-| `-Configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
-| `-Target` | `Desktop` / `Android` / `All` | `Desktop` | 构建目标平台 |
-| `-Clean` | Switch | 关闭 | 清理所有构建产物（`native/build*`、`bin/obj`、`dist`） |
-| `-Run` | Switch | 关闭 | 构建完成后运行桌面端应用（仅 `-Target Desktop` 有效） |
-| `-Compiler` | `Default` / `Clang` / `ClangCL` / `MSVC` / `MinGW` | `Default` | 桌面端 C++ 编译器选择 |
+| `-c`, `--configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
+| `-t`, `--target` | `Desktop` / `Android` / `All` | `Desktop` | 构建目标平台 |
+| `--clean` | flag | 关闭 | 清理所有构建产物 |
+| `--run` | flag | 关闭 | 构建完成后运行桌面端应用（仅 `-t Desktop` 有效） |
+| `--test` | flag | 关闭 | 构建前运行 `cargo test` 和 `cargo clippy` |
 
 ### 使用示例
 
-```powershell
+```bash
 # 桌面端 Debug 构建（默认）
-.\build.ps1
+python scripts/build.py
 
 # 桌面端 Release 构建，构建完成后直接运行
-.\build.ps1 -Configuration Release -Run
+python scripts/build.py -c Release --run
 
 # 清理所有构建产物
-.\build.ps1 -Clean
-
-# 使用 Clang 编译桌面端 Native 后端
-.\build.ps1 -Compiler Clang
+python scripts/build.py --clean
 
 # Android 端完整构建（NDK .so + APK）
-.\build.ps1 -Target Android
+python scripts/build.py -t Android
 
 # 同时构建桌面端和 Android 端
-.\build.ps1 -Target All
+python scripts/build.py -t All
 ```
-
-### 桌面端编译器选择
-
-| 编译器 | 要求 | 说明 |
-|:---|:---|:---|
-| `Default` | Ninja 或 Visual Studio | 自动探测：优先 Ninja，其次 VS，最后 MinGW |
-| `Clang` | Ninja + `C:/Clang/clang+llvm-22.1.4-x86_64-pc-windows-msvc` | 使用 Clang/Clang++ |
-| `ClangCL` | Ninja + 同上 | 使用 clang-cl（MSVC 兼容模式） |
-| `MSVC` | Visual Studio | 使用 Visual C++ 编译器 |
-| `MinGW` | MinGW | 使用 MinGW Makefiles 生成器 |
 
 ### 环境变量
 
 | 变量 | 说明 |
 |:---|:---|
-| `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` | Android NDK 路径，用于 `-Target Android` |
+| `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT` | Android NDK 路径，用于 `-t Android` |
 
 ---
 
-## `test-mobile.ps1` — 移动端测试流水线
+## `scripts/build_release.py` — 发布构建
 
 ### 功能概述
 
-专注于 **MAUI Android** 真机/模拟器的**快速测试循环**，提供从 Native `.so` 编译 → APK 打包 → 设备安装 → 应用启动 → Logcat 日志抓取的完整自动化流水线。
-
-与 `build.ps1 -Target Android` 的区别：
-- `build.ps1` 构建 **Avalonia Desktop**（`Cide.Client.Desktop`）
-- `test-mobile.ps1` 构建 **MAUI Android**（`Cide.Client.Maui`），并自动完成安装、启动、日志抓取
+- **Desktop**：Rust Release + MAUI Windows 单文件自包含发布
+- **Android**：Rust Release NDK 交叉编译 + MAUI AOT + Trim + r8
 
 ### 参数
 
 | 参数 | 类型 | 默认值 | 说明 |
 |:---|:---|:---|:---|
-| `-Configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
-| `-SkipNativeBuild` | Switch | 关闭 | 跳过 NDK 原生 `.so` 编译，仅重新打包 APK |
-| `-Install` | Switch | 关闭 | APK 构建完成后自动安装到设备 |
-| `-Run` | Switch | 关闭 | 安装后自动启动应用 |
-| `-Logcat` | Switch | 关闭 | 启动后实时抓取应用日志（`Ctrl+C` 停止） |
+| `-t`, `--target` | `Desktop` / `Android` / `All` | `All` | 构建目标平台 |
+| `--clean` | flag | 关闭 | 清理所有构建产物 |
 
 ### 使用示例
 
-```powershell
+```bash
+# 构建桌面端和 Android 端 Release
+python scripts/build_release.py
+
+# 仅构建桌面端
+python scripts/build_release.py -t Desktop
+
+# 清理后构建
+python scripts/build_release.py --clean
+```
+
+---
+
+## `scripts/test_mobile.py` — 移动端测试流水线
+
+### 功能概述
+
+专注于 **MAUI Android** 真机/模拟器的快速测试循环：
+
+```
+Native .so 编译 → APK 打包 → 设备安装 → 应用启动 → Logcat 日志抓取
+```
+
+与 `build.py -t Android` 的区别：
+- `build.py` 仅构建输出到 `dist/`
+- `test_mobile.py` 额外完成安装、启动、日志抓取
+
+### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|:---|:---|:---|:---|
+| `-c`, `--configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
+| `--skip-native-build` | flag | 关闭 | 跳过 NDK `.so` 编译，仅重新打包 APK |
+| `--install` | flag | 关闭 | APK 构建完成后自动安装到设备 |
+| `--run` | flag | 关闭 | 安装后自动启动应用 |
+| `--logcat` | flag | 关闭 | 启动后实时抓取应用日志（`Ctrl+C` 停止） |
+
+### 使用示例
+
+```bash
 # 仅构建 APK（含 Native .so）
-.\test-mobile.ps1
+python scripts/test_mobile.py
 
 # 快速重新打包（前端代码改动后，跳过 .so 编译）
-.\test-mobile.ps1 -SkipNativeBuild -Install -Run
+python scripts/test_mobile.py --skip-native-build --install --run
 
 # 构建 + 安装 + 启动 + 实时日志（完整测试流水线）
-.\test-mobile.ps1 -Install -Run -Logcat
+python scripts/test_mobile.py --install --run --logcat
 
 # Release 模式构建并安装
-.\test-mobile.ps1 -Configuration Release -Install -Run
+python scripts/test_mobile.py -c Release --install --run
 ```
 
 ### 自动检测
@@ -142,35 +162,54 @@ D:\Program Files (x86)\Microsoft Visual Studio\Shared\Android\android-sdk\platfo
 
 ---
 
-## 常见问题排查（FAQ）
+## `scripts/test_full_chain.py` — 全链验证
 
-### Q1: `build.ps1` 桌面端编译报错 "CMake configuration failed"
+### 功能概述
 
-**排查**：
-```powershell
-# 确认 CMake 和 Ninja 已安装
-Get-Command cmake
-Get-Command ninja
+在已连接设备上验证完整链路：APK 安装 → 应用启动 → WebView 加载检测。
 
-# 确认 Visual Studio 已安装（如用 MSVC）
-Get-Command msbuild
+### 参数
+
+| 参数 | 类型 | 默认值 | 说明 |
+|:---|:---|:---|:---|
+| `--device` | string | 自动探测 | 指定设备序列号 |
+| `--apk-path` | string | `dist\android\com.cide.app-Signed.apk` | APK 路径 |
+| `--skip-install` | flag | 关闭 | 跳过 APK 安装 |
+
+### 使用示例
+
+```bash
+# 自动探测设备并验证
+python scripts/test_full_chain.py
+
+# 指定设备
+python scripts/test_full_chain.py --device <serial>
+
+# 使用自定义 APK 路径，跳过安装
+python scripts/test_full_chain.py --apk-path dist/android/my.apk --skip-install
 ```
-
-**解决**：
-- 未安装 CMake：从 [cmake.org](https://cmake.org/download/) 下载安装
-- 未安装 Ninja：`choco install ninja` 或从 [GitHub Releases](https://github.com/ninja-build/ninja/releases) 下载
 
 ---
 
-### Q2: `build.ps1` / `test-mobile.ps1` Android 端报错 "ANDROID_NDK_HOME not set"
+## 常见问题排查（FAQ）
+
+### Q1: 脚本报错 "cargo ndk command not found"
 
 **解决**：
-```powershell
-# 临时设置（当前会话有效）
-$env:ANDROID_NDK_HOME = "C:\Your\Path\To\Android\Sdk\ndk\27.0.1"
+```bash
+cargo install cargo-ndk
+```
 
-# 永久设置（用户级）
-[Environment]::SetEnvironmentVariable("ANDROID_NDK_HOME", "C:\Your\Path\To\Android\Sdk\ndk\27.0.1", "User")
+---
+
+### Q2: `build.py` / `test_mobile.py` Android 端报错 "ANDROID_NDK_HOME not set"
+
+**解决**：
+```bash
+# 临时设置（当前会话有效）
+export ANDROID_NDK_HOME="/path/to/ndk/27.0.1"
+# Windows PowerShell:
+# $env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
 ```
 
 如果通过 Visual Studio 安装了 Android 工作负载，脚本通常能自动探测到默认路径。
@@ -181,7 +220,7 @@ $env:ANDROID_NDK_HOME = "C:\Your\Path\To\Android\Sdk\ndk\27.0.1"
 
 **诊断步骤**：
 
-```powershell
+```bash
 adb devices
 ```
 
@@ -210,18 +249,13 @@ adb devices
 
 ---
 
-### Q5: `test-mobile.ps1` 设备频繁掉线
+### Q5: `test_mobile.py` 设备频繁掉线
 
 1. 手机屏幕保持亮屏（开发者选项中开启"不锁定屏幕"）
 2. 关闭 USB 调试的自动关闭功能（部分 MIUI/ColorOS 有）
 3. 换 USB 口 / 换数据线
 4. 如果脚本检测失败，直接使用手动命令：
-   ```powershell
-   # MAUI 版本（当前默认）
-   adb install -r "dist/android/com.cide.mobile-Signed.apk"
-   adb shell monkey -p com.cide.mobile -c android.intent.category.LAUNCHER 1
-   
-   # 旧版 Avalonia Android（已冻结）
+   ```bash
    adb install -r "dist/android/com.cide.app-Signed.apk"
    adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
    ```
@@ -234,35 +268,40 @@ adb devices
 
 ### 桌面端手动构建
 
-```powershell
+```bash
 # Native 后端
-cd native/build
-cmake .. -G Ninja -DCMAKE_BUILD_TYPE=Debug
-cmake --build . --parallel
+cd native
+cargo build --release          # Release
+cargo build                    # Debug
+
+# DLL 输出路径
+# Release: native/target/release/cide_native.dll
+# Debug:   native/target/debug/cide_native.dll
 
 # 前端
-dotnet publish Cide.Client.Desktop/Cide.Client.Desktop.csproj -c Debug -o dist/desktop
+dotnet publish Cide.Client.Maui/Cide.Client.Maui.csproj \
+    -f net10.0-windows10.0.19041.0 \
+    -c Release -o dist/desktop --self-contained false
 
 # 运行
-dist/desktop/Cide.Client.Desktop.exe
+dist/desktop/Cide.Client.Maui.exe
 ```
 
 ### Android 手动构建与安装
 
-```powershell
+```bash
 # 1. NDK 交叉编译 arm64-v8a
-$ndk = $env:ANDROID_NDK_HOME
-$toolchain = "$ndk/build/cmake/android.toolchain.cmake"
-cd native/build-android-arm64-v8a
-cmake .. -G Ninja -DCMAKE_TOOLCHAIN_FILE="$toolchain" -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-21 -DCMAKE_BUILD_TYPE=Debug -DCIDE_BUILD_TESTS=OFF
-cmake --build . --parallel
-cd ../..
+cd native
+cargo ndk -t aarch64-linux-android --platform 21 build --release
 
 # 2. 复制 .so
-Copy-Item "native/build-android-arm64-v8a/lib/libcide_native.so" "Cide.Client.Maui/lib/arm64-v8a/" -Force
+mkdir -p Cide.Client.Maui/lib/arm64-v8a
+cp native/target/aarch64-linux-android/release/libcide_native.so Cide.Client.Maui/lib/arm64-v8a/
 
 # 3. 构建 APK
-dotnet publish Cide.Client.Maui/Cide.Client.Maui.csproj -c Debug -o dist/android
+dotnet publish Cide.Client.Maui/Cide.Client.Maui.csproj \
+    -f net10.0-android -c Release \
+    -p:AndroidPackageFormat=apk -o dist/android
 
 # 4. 安装并启动
 adb install -r "dist/android/com.cide.app-Signed.apk"
@@ -276,4 +315,5 @@ adb logcat --pid=$(adb shell pidof com.cide.app)
 
 ## 相关文档
 
-- [`OPTIMIZATION_AND_BUG_ANALYSIS_20260427.md`](OPTIMIZATION_AND_BUG_ANALYSIS_20260427.md) — 项目整体优化与 Bug 分析
+- [`BUILD.md`](BUILD.md) — 构建指南与环境要求
+- [`AGENTS.md`](../AGENTS.md) — Agent 快速参考（构建命令速查）

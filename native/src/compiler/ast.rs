@@ -125,6 +125,8 @@ impl Type {
                 let base = match self.base_kind {
                     TypeKind::Struct => format!("struct {}", self.name),
                     TypeKind::Char => "char".to_string(),
+                    TypeKind::Float => "float".to_string(),
+                    TypeKind::Void => "void".to_string(),
                     _ => "int".to_string(),
                 };
                 format!("{}*", base)

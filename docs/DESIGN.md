@@ -1,7 +1,7 @@
 ﻿# C IDE 项目设计文档
 
 > 一款面向教学场景的移动端 C 语言子集 IDE
-> 核心技术：C# Avalonia 前端 + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
+> 核心技术：.NET MAUI Blazor Hybrid 前端 + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
 
 ---
 
@@ -40,15 +40,15 @@
 | 平台 | 优先级 | 技术方案 |
 |------|--------|---------|
 | Android (手机/平板) | P0 | .NET MAUI Blazor Hybrid + Rust `.so` + P/Invoke |
-| Windows Desktop | P1 | Avalonia + 调试与开发主力平台 |
+| Windows Desktop | P1 | MAUI Blazor Hybrid + WinUI3 |
 | iOS | P2 | 后续考虑 |
 
 ### 1.3 技术栈
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| 前端 UI | Avalonia 11.x + C# 12（桌面）；MAUI Blazor Hybrid（移动） | 跨平台，参考 2048 验证 Android 可行性 |
-| 前端渲染 | Skia / Avalonia Canvas（桌面）；SkiaSharp（移动） | **放弃 OpenGL**，避免移动端闪退 |
+| 前端 UI | .NET MAUI Blazor Hybrid（Android + Windows Desktop） | 跨平台，统一 UI |
+| 前端渲染 | SkiaSharp（跨平台） | **放弃 OpenGL**，避免移动端闪退 |
 | 后端核心 | Rust 1.95 | 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机 |
 | 通信 | C API (`extern "C"`) | 统一 P/Invoke（Android/Desktop） |
 | 构建 | Cargo + dotnet + PowerShell | 与参考项目保持一致 |
@@ -58,7 +58,7 @@
 | 来源 | 关键经验 | 本项目应用 |
 |------|---------|-----------|
 | **VisualBinaryTree.Desktop** | C 子集解释器（Lexer/Parser/AST/TypeChecker/VM）、C API 边界设计、双模式执行（编译/解释） | 参考其 C 子集范围和编译器分层设计；后端最终采用自研 CideVM |
-| **2048** | Avalonia Android + 浏览器入口、Canvas + DispatcherTimer 动画、CancelAll+Snap 防闪退模式、Android 启动画面 workaround | **放弃 OpenGL** 用 Canvas；动画并发处理；触控手势；移动端适配 |
+| **2048** | MAUI Android + 浏览器入口、Canvas + 动画、CancelAll+Snap 防闪退模式、Android 启动画面 workaround | **放弃 OpenGL** 用 Canvas；动画并发处理；触控手势；移动端适配 |
 
 ---
 
@@ -68,7 +68,7 @@
 
 ```
 +-----------------------------------------------------------------------------+
-|                     C# Avalonia 前端 (Android / Desktop)                     |
+|                     C# MAUI 前端 (Android / Desktop)                     |
 |  +-------------+  +-------------+  +-------------------------------------+  |
 |  | CodeEditor  |  | MemoryView  |  | KnowledgeCard / QuickFixPanel       |  |
 |  |  代码编辑器  |  |  内存视图    |  | 知识卡片 / 一键修复面板               |  |
@@ -161,7 +161,7 @@ c-ide/
 │       ├── end_to_end_test.rs
 │       ├── end_to_end_extra_test.rs
 │       └── compile_pipeline_test.rs
-├── Cide.Client/                       # Avalonia 共享库
+├── Cide.Client.Maui/                  # MAUI 跨平台前端（Android + Windows Desktop）
 │   ├── Core/
 │   │   ├── CompilerService.cs
 │   │   ├── NativeMethods.cs
@@ -190,7 +190,7 @@ c-ide/
 │   └── ViewModels/
 │       ├── MainViewModel.cs
 │       └── ResponsiveLayoutViewModel.cs
-├── Cide.Client.Desktop/
+
 └── docs/
     ├── DESIGN.md
     ├── C_SUBSET_SPEC.md
@@ -680,7 +680,7 @@ void bubbleSort(int arr[], int n) {
 ### Phase 1: 基础架构（✅ 已完成）
 - [x] 项目脚手架：build.ps1, Cargo, .csproj, 目录结构
 - [x] C API 接口定义：cide_capi.h
-- [x] Avalonia 共享项目 + Android 入口 + 响应式布局框架
+- [x] MAUI 跨平台项目 + Android / Windows 入口 + 响应式布局框架
 - [x] 代码编辑器基础（行号 + 基础高亮 + 触控优化）
 - [x] **最小 wasm3 原型**：加载简单 WASM 模块，P/Invoke 验证全链路
 
@@ -733,7 +733,7 @@ void bubbleSort(int arr[], int n) {
 | 执行引擎 | **自研 CideVM（替代 wasm3）** | 教学专用：完全可控的单步/诊断/内存可视化；局部变量映射到线性内存支持 `&x` |
 | 编译目标 | **自定义扁平字节码（替代 WASM）** | 只实现教学子集需要的 ~30 条指令；简化编译器和 VM 的耦合 |
 | 可视化方式 | **零侵入自动注入** | 初学者写纯 C，系统自动识别算法 |
-| 渲染引擎 | **Avalonia Canvas（放弃 OpenGL）** | 参考 2048，避免移动端闪退 |
+| 渲染引擎 | **SkiaSharp（放弃 OpenGL）** | 参考 2048，避免移动端闪退 |
 | 动画稳定性 | **CancelAll + SnapToFinalState** | 参考 2048 修复经验 |
 | 中文支持 | **三级信息 + 运行时值注入** | L1 感知/L2 理解/L3 原理 |
 | 算法修复 | **诊断 + 引导，不代写代码** | 保护学习过程 |
