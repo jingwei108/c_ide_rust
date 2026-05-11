@@ -236,10 +236,9 @@ impl CideVM {
         self.mem_stack_top -= frame_size_u32;
         let locals_base = self.mem_stack_top;
         // Arguments: args[0] is first param, args[n-1] is last param.
-        // VM Call convention: last param is at locals_base + 0, first param at locals_base + (count-1)*4
+        // VM Call convention: first param is at locals_base + 0
         for i in 0..meta.arg_count {
-            let arg_idx = (meta.arg_count - 1 - i) as usize;
-            let arg = if arg_idx < args.len() { args[arg_idx] } else { 0 };
+            let arg = if (i as usize) < args.len() { args[i as usize] } else { 0 };
             let arg_addr = (locals_base as u64) + (i as u64) * 4;
             self.write_i32(arg_addr as u32, arg);
         }
@@ -706,7 +705,6 @@ impl CideVM {
 
             OpCode::GetFrameBase => {
                 if let Some(frame) = self.call_stack.last() {
-                    eprintln!("[VM GetFrameBase] locals_base = {}", frame.locals_base);
                     self.push(frame.locals_base as i32);
                 } else {
                     self.trap("GetFrameBase: 无调用帧", &inst.loc);
@@ -758,7 +756,6 @@ impl CideVM {
 
             OpCode::LoadMem => {
                 let addr = self.pop() as u32;
-                eprintln!("[VM LoadMem] addr = 0x{:04X}", addr);
                 let val = self.load_i32(addr, &inst.loc);
                 self.push(val);
             }
@@ -766,7 +763,6 @@ impl CideVM {
             OpCode::StoreMem => {
                 let val = self.pop();
                 let addr = self.pop() as u32;
-                eprintln!("[VM StoreMem] addr = 0x{:04X}, val = {}", addr, val);
                 self.store_i32(addr, val, &inst.loc);
             }
 
@@ -985,6 +981,7 @@ impl CideVM {
                             } else {
                                 self.mem_stack_top -= frame_size_u32;
                                 let locals_base = self.mem_stack_top;
+
                                 for i in (0..meta.arg_count).rev() {
                                     let arg = self.pop();
                                     let arg_addr = (locals_base as u64) + ((meta.arg_count - 1 - i) as u64) * 4;
