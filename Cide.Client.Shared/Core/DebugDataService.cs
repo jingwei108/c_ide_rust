@@ -236,7 +236,7 @@ public class DebugDataService
             if (nextOffset < 0) nextOffset = Constants.DefaultStructNextOffset;
             if (dataOffset < 0) dataOffset = Constants.DefaultStructDataOffset;
 
-            while (currentAddr != 0 && currentAddr >= Constants.NullTrapEnd && !visited.Contains(currentAddr))
+            while (currentAddr != 0 && currentAddr >= Constants.NullTrapEnd && !visited.Contains(currentAddr) && currentAddr < Constants.LinearMemorySize)
             {
                 visited.Add(currentAddr);
 

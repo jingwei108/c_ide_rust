@@ -1,12 +1,7 @@
 @inject IJSRuntime JSRuntime
 
 <div class="fab-wrapper">
-    <!-- 扇形展开背景光晕 -->
-    <div class="fab-fan-bg @(IsOpen ? "open" : "")" style="@FanBgStyle"></div>
-    <!-- 扇形弧线装饰 -->
-    <div class="fab-fan-arc @(IsOpen ? "open" : "")" style="@FanBgStyle"></div>
-    <!-- 扇形圆环背景 -->
-    <div class="fab-fan-ring @(IsOpen ? "open" : "")" style="@FanBgStyle"></div>
+    <div class="fab-stack-backdrop @(IsOpen ? "open" : "")" style="@StackBackdropStyle"></div>
 
     @foreach (var item in _menuItems)
     {
@@ -24,7 +19,6 @@
          @ontouchmove="OnTouchMove"
          @ontouchmove:preventDefault
          @ontouchend="OnTouchEnd">
-        <span>@(IsOpen ? "✕" : "调")</span>
     </div>
 </div>
 
@@ -42,14 +36,17 @@
     private DotNetObjectReference<FloatingActionButton>? _dotNetRef;
 
     private const double FabSize = 56;
-    private const double FanRadius = 90;
-    private const double FanBtnSize = 44;
     private const double DragThreshold = 8;
 
     private readonly (int Index, string Label)[] _menuItems = new[]
     {
-        (0, "栈"), (1, "表"), (2, "变"), (3, "存"),
-        (4, "组"), (5, "针"), (6, "知"), (7, "算")
+        (0, "调用栈"),
+        (1, "监视变量"),
+        (2, "局部变量"),
+        (3, "内存区域"),
+        (4, "数组可视化"),
+        (5, "指针视图"),
+        (6, "知识卡片")
     };
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -76,7 +73,6 @@
                 StateHasChanged();
             }
 
-            // Register window resize listener so the FAB stays on-screen after rotation
             try
             {
                 await JSRuntime.InvokeVoidAsync("eval", $@"
@@ -109,7 +105,6 @@
         }
         else
         {
-            // Keep within bounds after rotation
             FabX = Math.Clamp(FabX, FabSize / 2, WindowWidth - FabSize / 2);
             FabY = Math.Clamp(FabY, FabSize / 2 + 48, WindowHeight - FabSize / 2 - 8);
         }
@@ -140,15 +135,12 @@
                     x = FabSize * 0.25;
             }
 
-            double left = x - FabSize / 2;
-            double top = y - FabSize / 2;
-
             var ci = System.Globalization.CultureInfo.InvariantCulture;
-            return $"left: {left.ToString("F1", ci)}px; top: {top.ToString("F1", ci)}px;";
+            return $"left: {(x - FabSize / 2).ToString("F1", ci)}px; top: {(y - FabSize / 2).ToString("F1", ci)}px;";
         }
     }
 
-    private string FanBgStyle
+    private string StackBackdropStyle
     {
         get
         {
@@ -171,24 +163,22 @@
         }
     }
 
+    private bool ExpandDown => FabY < WindowHeight * 0.5;
+
     private string GetMenuItemStyle(int index)
     {
         if (!IsOpen || WindowWidth <= 0)
-            return "opacity: 0; pointer-events: none; transform: scale(0.4);";
+            return "opacity: 0; pointer-events: none; transform: translateX(-50%) scale(0.8);";
 
-        double startAngle = 120 * Math.PI / 180;
-        double endAngle = 240 * Math.PI / 180;
-        double step = _menuItems.Length > 1 ? (endAngle - startAngle) / (_menuItems.Length - 1) : 0;
-        double angle = startAngle + step * index;
-
-        double fx = FabX + FanRadius * Math.Cos(angle);
-        double fy = FabY - FanRadius * Math.Sin(angle);
-
-        double left = fx - FanBtnSize / 2;
-        double top = fy - FanBtnSize / 2;
+        double itemHeight = 44;
+        double gap = 8;
+        double offset = (index + 1) * (itemHeight + gap);
+        double top = ExpandDown ? FabY + offset : FabY - offset - itemHeight;
+        double left = FabX;
 
         var ci = System.Globalization.CultureInfo.InvariantCulture;
-        return $"left: {left.ToString("F1", ci)}px; top: {top.ToString("F1", ci)}px; opacity: 1; pointer-events: auto; transform: scale(1);";
+        string delay = $"{(index * 40)}ms";
+        return $"left: {left.ToString("F1", ci)}px; top: {top.ToString("F1", ci)}px; opacity: 1; pointer-events: auto; transform: translateX(-50%) scale(1); transition-delay: {delay};";
     }
 
     private void OnTouchStart(TouchEventArgs e)

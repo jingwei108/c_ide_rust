@@ -230,6 +230,7 @@ impl CideVM {
         let saved_finished = self.finished;
         let saved_step_event_hit = self.step_event_hit;
         let saved_current_line = self.current_line;
+        let saved_vis_event_queue = std::mem::take(&mut self.vis_event_queue);
         let start_step = self.step_count;
 
         // Setup call frame
@@ -287,6 +288,7 @@ impl CideVM {
         self.finished = saved_finished;
         self.step_event_hit = saved_step_event_hit;
         self.current_line = saved_current_line;
+        self.vis_event_queue = saved_vis_event_queue;
 
         result
     }
@@ -623,7 +625,8 @@ impl CideVM {
                 }
                 StepResult::Trap => return 0,
                 StepResult::Paused => {
-                    self.paused = false;
+                    self.trap("完整运行模式下遇到暂停状态（可能是断点配置不一致）", &SourceLoc::default());
+                    return 0;
                 }
                 StepResult::Ok => {}
             }

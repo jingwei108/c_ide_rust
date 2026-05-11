@@ -20,7 +20,12 @@ public sealed class CompilerSessionService : IDisposable
     public bool EnsureCompiled(string sourceCode, IEnumerable<int> breakpointLines)
     {
         if (_compiler != null && !_compiler.IsDisposed && _lastCompiledCode == sourceCode)
+        {
+            _compiler.ClearBreakpoints();
+            foreach (int line in breakpointLines)
+                _compiler.AddBreakpoint(line);
             return true;
+        }
 
         _compiler?.Dispose();
         _compiler = new CompilerService();

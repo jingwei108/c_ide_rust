@@ -505,7 +505,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    public void StepNext()
+    public async Task StepNextAsync()
     {
         if (!EnsureCompiled())
         {
@@ -522,7 +522,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
         // Set program input for scanf
         Compiler.SetInput(InputText);
 
-        DoSingleStep();
+        await Task.Run(() => DoSingleStep());
     }
 
     [RelayCommand]
