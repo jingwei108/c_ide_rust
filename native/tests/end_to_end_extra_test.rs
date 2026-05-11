@@ -2572,3 +2572,447 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out, vec!["12", "10", "1"]);
 }
+
+
+// ============================================================================
+// Built-in template tests
+// ============================================================================
+
+#[test]
+fn test_e2e_template_quick_sort() {
+    let src = r#"
+#include <stdio.h>
+void quickSort(int arr[], int low, int high) {
+    if (low < high) {
+        int pivot = partition(arr, low, high);
+        quickSort(arr, low, pivot - 1);
+        quickSort(arr, pivot + 1, high);
+    }
+}
+
+int partition(int arr[], int low, int high) {
+    int pivot = arr[high];
+    int i = low - 1;
+    for (int j = low; j < high; j++) {
+        if (arr[j] <= pivot) {
+            i++;
+            int temp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = temp;
+        }
+    }
+    int temp = arr[i + 1];
+    arr[i + 1] = arr[high];
+    arr[high] = temp;
+    return i + 1;
+}
+
+int main() {
+    int arr[7] = {3, 6, 8, 10, 1, 2, 1};
+    quickSort(arr, 0, 6);
+    for (int i = 0; i < 7; i++) {
+        printf("%d ", arr[i]);
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["1 1 2 3 6 8 10 "]);
+}
+
+#[test]
+fn test_e2e_template_pointer_swap() {
+    let src = r#"
+#include <stdio.h>
+void swap(int* a, int* b) {
+    int temp = *a;
+    *a = *b;
+    *b = temp;
+}
+
+int main() {
+    int x = 5, y = 10;
+    swap(&x, &y);
+    printf("%d %d\n", x, y);
+    int arr[3] = {1, 2, 3};
+    swap(&arr[0], &arr[2]);
+    printf("%d %d %d\n", arr[0], arr[1], arr[2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["10 5", "3 2 1"]);
+}
+
+
+// ============================================================================
+// Medium-difficulty random tests (batch 6)
+// ============================================================================
+
+#[test]
+fn test_e2e_template_bubble_sort_int() {
+    let src = r#"
+#include <stdio.h>
+void bubbleSort(int arr[], int n) {
+    for (int i = 0; i < n - 1; i++) {
+        for (int j = 0; j < n - i - 1; j++) {
+            if (arr[j] > arr[j + 1]) {
+                int temp = arr[j];
+                arr[j] = arr[j + 1];
+                arr[j + 1] = temp;
+            }
+        }
+    }
+}
+int main() {
+    int arr[6] = {5, 1, 4, 2, 8, 0};
+    bubbleSort(arr, 6);
+    for (int i = 0; i < 6; i++) {
+        printf("%d ", arr[i]);
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["0 1 2 4 5 8 "]);
+}
+
+#[test]
+fn test_e2e_my_strcmp() {
+    let src = r#"
+#include <stdio.h>
+int my_strcmp(char a[], char b[]) {
+    int i = 0;
+    while (a[i] != 0 && b[i] != 0) {
+        if (a[i] != b[i]) return a[i] - b[i];
+        i++;
+    }
+    return a[i] - b[i];
+}
+int main() {
+    printf("%d\n", my_strcmp("abc", "abc"));
+    printf("%d\n", my_strcmp("abc", "abd"));
+    printf("%d\n", my_strcmp("abd", "abc"));
+    printf("%d\n", my_strcmp("ab", "abc"));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["0", "-1", "1", "-99"]);
+}
+
+#[test]
+fn test_e2e_struct_array_avg() {
+    let src = r#"
+#include <stdio.h>
+typedef struct {
+    int score;
+} Student;
+int main() {
+    Student s[4];
+    s[0].score = 80;
+    s[1].score = 90;
+    s[2].score = 70;
+    s[3].score = 100;
+    int sum = 0;
+    for (int i = 0; i < 4; i++) {
+        sum += s[i].score;
+    }
+    float avg = (float)sum / 4;
+    printf("%f\n", avg);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["85.000000"]);
+}
+
+#[test]
+fn test_e2e_substring_find() {
+    let src = r#"
+#include <stdio.h>
+int find_substring(char s[], char sub[]) {
+    int i = 0;
+    while (s[i] != 0) {
+        int j = 0;
+        while (sub[j] != 0 && s[i + j] == sub[j]) {
+            j++;
+        }
+        if (sub[j] == 0) return i;
+        i++;
+    }
+    return -1;
+}
+int main() {
+    printf("%d\n", find_substring("hello world", "world"));
+    printf("%d\n", find_substring("hello world", "lo"));
+    printf("%d\n", find_substring("hello world", "xyz"));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["6", "3", "-1"]);
+}
+
+#[test]
+fn test_e2e_array_rotate() {
+    let src = r#"
+#include <stdio.h>
+void reverse(int arr[], int start, int end) {
+    while (start < end) {
+        int tmp = arr[start];
+        arr[start] = arr[end];
+        arr[end] = tmp;
+        start++;
+        end--;
+    }
+}
+void rotate_right(int arr[], int n, int k) {
+    k = k % n;
+    reverse(arr, 0, n - 1);
+    reverse(arr, 0, k - 1);
+    reverse(arr, k, n - 1);
+}
+int main() {
+    int arr[6] = {1, 2, 3, 4, 5, 6};
+    rotate_right(arr, 6, 2);
+    for (int i = 0; i < 6; i++) {
+        printf("%d ", arr[i]);
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["5 6 1 2 3 4 "]);
+}
+
+
+// ============================================================================
+// Medium-difficulty random tests (batch 7)
+// ============================================================================
+
+#[test]
+fn test_e2e_find_mode() {
+    let src = r#"
+#include <stdio.h>
+int find_mode(int arr[], int n) {
+    int max_count = 0;
+    int mode = arr[0];
+    for (int i = 0; i < n; i++) {
+        int count = 0;
+        for (int j = 0; j < n; j++) {
+            if (arr[j] == arr[i]) count++;
+        }
+        if (count > max_count) {
+            max_count = count;
+            mode = arr[i];
+        }
+    }
+    return mode;
+}
+int main() {
+    int a[8] = {1, 2, 3, 2, 4, 2, 5, 1};
+    printf("%d\n", find_mode(a, 8));
+    int b[5] = {7, 7, 8, 8, 8};
+    printf("%d\n", find_mode(b, 5));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["2", "8"]);
+}
+
+#[test]
+fn test_e2e_array_queue() {
+    let src = r#"
+#include <stdio.h>
+#define MAX 5
+typedef struct {
+    int data[MAX];
+    int front;
+    int rear;
+    int count;
+} Queue;
+
+void init(Queue *q) {
+    q->front = 0;
+    q->rear = 0;
+    q->count = 0;
+}
+
+int is_empty(Queue *q) {
+    return q->count == 0;
+}
+
+int is_full(Queue *q) {
+    return q->count == MAX;
+}
+
+void enqueue(Queue *q, int x) {
+    q->data[q->rear] = x;
+    q->rear = (q->rear + 1) % MAX;
+    q->count++;
+}
+
+int dequeue(Queue *q) {
+    int x = q->data[q->front];
+    q->front = (q->front + 1) % MAX;
+    q->count--;
+    return x;
+}
+
+int main() {
+    Queue *q = (Queue*)malloc(sizeof(Queue));
+    init(q);
+    enqueue(q, 10);
+    enqueue(q, 20);
+    enqueue(q, 30);
+    printf("%d ", dequeue(q));
+    printf("%d ", dequeue(q));
+    enqueue(q, 40);
+    enqueue(q, 50);
+    enqueue(q, 60);
+    printf("%d\n", is_full(q));
+    while (!is_empty(q)) {
+        printf("%d ", dequeue(q));
+    }
+    printf("\n");
+    free(q);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["10 20 0", "30 40 50 60 "]);
+}
+
+#[test]
+fn test_e2e_string_to_int() {
+    let src = r#"
+#include <stdio.h>
+int my_atoi(char s[]) {
+    int i = 0;
+    int sign = 1;
+    if (s[i] == '-') {
+        sign = -1;
+        i++;
+    }
+    int val = 0;
+    while (s[i] != 0) {
+        val = val * 10 + (s[i] - '0');
+        i++;
+    }
+    return sign * val;
+}
+int main() {
+    printf("%d\n", my_atoi("123"));
+    printf("%d\n", my_atoi("-456"));
+    printf("%d\n", my_atoi("0"));
+    printf("%d\n", my_atoi("9876"));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["123", "-456", "0", "9876"]);
+}
+
+#[test]
+fn test_e2e_gcd_lcm() {
+    let src = r#"
+#include <stdio.h>
+int gcd(int a, int b) {
+    while (b != 0) {
+        int temp = b;
+        b = a % b;
+        a = temp;
+    }
+    return a;
+}
+int lcm(int a, int b) {
+    return a * (b / gcd(a, b));
+}
+int main() {
+    printf("%d\n", gcd(48, 18));
+    printf("%d\n", gcd(7, 5));
+    printf("%d\n", lcm(4, 6));
+    printf("%d\n", lcm(21, 6));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["6", "1", "12", "42"]);
+}
+
+#[test]
+fn test_e2e_bitmask_flags() {
+    let src = r#"
+#include <stdio.h>
+#define FLAG_READ  1
+#define FLAG_WRITE 2
+#define FLAG_EXEC  4
+int main() {
+    int perm = FLAG_READ | FLAG_WRITE;
+    printf("%d ", perm & FLAG_READ);
+    printf("%d ", perm & FLAG_WRITE);
+    printf("%d\n", perm & FLAG_EXEC);
+    perm = perm | FLAG_EXEC;
+    printf("%d ", perm & FLAG_EXEC);
+    perm = perm & ~FLAG_WRITE;
+    printf("%d ", perm & FLAG_WRITE);
+    printf("%d\n", perm & FLAG_READ);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["1 2 0", "4 0 1"]);
+}

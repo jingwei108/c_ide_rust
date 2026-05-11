@@ -7,7 +7,7 @@
         <!-- 播放 / 停止 合一 -->
         <button class="btn-run" @onclick="VM.RunCodeAsync" disabled="@(!VM.CanRunCodeAsync)">▶</button>
         <button class="btn-stop" @onclick="VM.StopExecution" style="display:@(VM.IsRunning ? "flex" : "none")">■</button>
-        <button class="btn-step" @onclick="VM.StepNext">⏭ 下一步</button>
+        <button class="btn-step" @onclick="VM.StepNextAsync">⏭ 下一步</button>
 
         <div class="toolbar-slider">
             <input type="range" min="0" max="500" step="50" @bind="VM.ExecutionSpeed" />

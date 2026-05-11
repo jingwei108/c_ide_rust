@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Razor">
 
     <PropertyGroup>
-        <TargetFrameworks>net10.0-android</TargetFrameworks>
+        <TargetFrameworks>net10.0-android;net10.0-windows10.0.19041.0</TargetFrameworks>
         <OutputType>Exe</OutputType>
         <RootNamespace>Cide.Client.Maui</RootNamespace>
         <UseMaui>true</UseMaui>
@@ -13,11 +13,14 @@
         <MauiXamlInflator>SourceGen</MauiXamlInflator>
 
         <ApplicationTitle>C IDE</ApplicationTitle>
-        <ApplicationId>com.cide.mobile</ApplicationId>
+        <ApplicationId>com.cide.app</ApplicationId>
         <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
         <ApplicationVersion>1</ApplicationVersion>
 
         <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">24.0</SupportedOSPlatformVersion>
+        <SupportedOSPlatformVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</SupportedOSPlatformVersion>
+        <TargetPlatformMinVersion Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">10.0.17763.0</TargetPlatformMinVersion>
+        <WindowsPackageType Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">None</WindowsPackageType>
 
         <!-- Ensure native .so files are not compressed in APK -->
         <AndroidStoreUncompressedFileExtensions>.so</AndroidStoreUncompressedFileExtensions>
@@ -83,6 +86,18 @@
     <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'android'">
         <AndroidNativeLibrary Include="..\native\target\android\arm64-v8a\libcide_native.so" Abi="arm64-v8a" />
         <AndroidNativeLibrary Include="..\native\target\android\armeabi-v7a\libcide_native.so" Abi="armeabi-v7a" />
+    </ItemGroup>
+
+    <!-- Windows native library (Rust build) -->
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+        <Content Include="..\native\target\debug\cide_native.dll" Condition="'$(Configuration)' == 'Debug'">
+            <Link>cide_native.dll</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <Content Include="..\native\target\release\cide_native.dll" Condition="'$(Configuration)' == 'Release'">
+            <Link>cide_native.dll</Link>
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 
     <ItemGroup>

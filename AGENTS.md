@@ -4,7 +4,7 @@
 
 Cide 是一个跨平台 C 语言 IDE，包含：
 
-- **前端**：.NET MAUI (Android) + Avalonia (Desktop)
+- **前端**：.NET MAUI (Android + Desktop Windows)
 - **后端**：共享 Rust native 编译器/VM (`cide_native`)
 - **编译管线**：Lexer → Parser → TypeChecker → BytecodeGen → CideVM
 
@@ -13,7 +13,7 @@ Cide 是一个跨平台 C 语言 IDE，包含：
 | 层级 | 技术 |
 |------|------|
 | Android | .NET 10 MAUI BlazorWebView + CodeMirror6 |
-| Desktop | Avalonia 11.3.0 + .NET 10 |
+| Desktop | .NET 10 MAUI BlazorWebView + WinUI3 |
 | Native | **Rust 1.95.0**, Cargo, cdylib/staticlib/rlib |
 | VM | 自定义字节码解释器，256KB 线性内存 |
 
@@ -24,9 +24,7 @@ native/src/compiler/    Lexer, Parser, TypeChecker, BytecodeGen, AST (Rust)
 native/src/vm/          CideVM 字节码解释器 (Rust)
 native/src/capi/        C API (P/Invoke / JNI 接口) (Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议 (Rust)
-Cide.Client/            Avalonia 桌面端共享代码
-Cide.Client.Desktop/    Avalonia 桌面端入口
-Cide.Client.Maui/       MAUI 移动端
+Cide.Client.Maui/       MAUI 跨平台前端 (Android + Desktop Windows)
 Cide.Client.Shared/     共享 ViewModel / 服务
 docs/                   设计文档、事故报告
 ```
@@ -159,10 +157,26 @@ docs/                   设计文档、事故报告
 
 ## 构建命令
 
-```powershell
+```bash
+# 日常构建（桌面端 Debug）
+python scripts/build.py
+
+# 构建并运行桌面端 Release
+python scripts/build.py -c Release --run
+
+# Android 完整构建（.so + APK）
+python scripts/build.py -t Android
+
+# 构建 + 安装 + 启动 + 日志（移动端完整流水线）
+python scripts/test_mobile.py --install --run --logcat
+
+# Release 发布构建
+python scripts/build_release.py
+
+# --- 手动命令（脚本不可用时的备选） ---
+
 # 构建 native DLL (Release Desktop)
-cd native
-cargo build --release
+cd native && cargo build --release
 # 输出: native/target/release/cide_native.dll
 
 # 构建 Android .so (arm64-v8a + armeabi-v7a)
@@ -171,7 +185,7 @@ cargo ndk -t aarch64-linux-android -o target/android build --release
 cargo ndk -t armv7-linux-androideabi -o target/android build --release
 
 # 构建并运行桌面端
-dotnet run --project Cide.Client.Desktop/Cide.Client.Desktop.csproj --configuration Debug
+dotnet run --project Cide.Client.Maui/Cide.Client.Maui.csproj --framework net10.0-windows10.0.19041.0 --configuration Debug
 
 # 构建移动端 (需要 Android SDK)
 dotnet build Cide.Client.Maui/Cide.Client.Maui.csproj --framework net10.0-android

@@ -71,10 +71,12 @@ public record VariableSnapshot
 /// <summary>
 /// High-level wrapper around the native C IDE compiler and runtime.
 /// </summary>
-public class CompilerService : IDisposable
+[System.Diagnostics.CodeAnalysis.SuppressMessage("Design", "CA2216:Disposable types should declare finalizer", Justification = "Finalizer intentionally removed to avoid native call from GC thread")]
+public sealed class CompilerService : IDisposable
 {
     private IntPtr _session;
     private volatile int _disposed;
+    private readonly object _sessionLock = new object();
 
     public bool IsDisposed => _disposed != 0;
 
@@ -469,17 +471,18 @@ public class CompilerService : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    protected virtual void Dispose(bool disposing)
+    private void Dispose(bool disposing)
     {
         if (Interlocked.Exchange(ref _disposed, 1) == 0)
         {
-            NativeMethods.cide_session_destroy(_session);
-            _session = IntPtr.Zero;
+            lock (_sessionLock)
+            {
+                if (_session != IntPtr.Zero)
+                {
+                    NativeMethods.cide_session_destroy(_session);
+                    _session = IntPtr.Zero;
+                }
+            }
         }
-    }
-
-    ~CompilerService()
-    {
-        Dispose(false);
     }
 }

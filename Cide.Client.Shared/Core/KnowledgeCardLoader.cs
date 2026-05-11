@@ -72,9 +72,9 @@ public static class KnowledgeCardLoader
                 );
                 _cards.Add(card);
             }
-            catch (Exception)
+            catch (Exception ex) when (ex is JsonException || ex is IOException || ex is InvalidOperationException)
             {
-                // Skip malformed JSON files
+                // Skip malformed JSON files or I/O errors
             }
         }
 

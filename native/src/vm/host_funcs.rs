@@ -1,4 +1,4 @@
-use super::vm::{CideVM, HEAP_START, STACK_START};
+use super::vm::CideVM;
 use crate::session::{MemoryRegion, Session};
 
 fn read_cbytes(vm: &CideVM, addr: u32) -> Vec<u8> {
@@ -350,6 +350,7 @@ fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
     let src_bytes = read_cbytes(vm, src);
     let mem_size = vm.get_memory_slice().len();
     if dest as usize >= mem_size {
+        vm.push(0);
         return;
     }
     let max_copy = mem_size - dest as usize;
@@ -616,7 +617,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     } else {
         let offset = session.memory.heap_offset;
         let new_offset = (offset as u64) + (aligned_new_size as u64);
-        if new_offset > (HEAP_START + (STACK_START - HEAP_START) / 2) as u64 {
+        if new_offset > vm.get_memory_size() as u64 {
             vm.push(0);
             return;
         }
@@ -630,9 +631,12 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
 
     // Copy old data
     let copy_size = (old_size as u32).min(aligned_new_size);
-    let mem = vm.get_memory_slice().to_vec();
+    let copy_buf = {
+        let mem = vm.get_memory_slice();
+        mem[old_addr as usize..(old_addr + copy_size) as usize].to_vec()
+    };
     for i in 0..copy_size {
-        vm.store_i8(new_addr + i, mem[(old_addr + i) as usize] as i32, &super::instruction::SourceLoc::default());
+        vm.store_i8(new_addr + i, copy_buf[i as usize] as i32, &super::instruction::SourceLoc::default());
     }
 
     // Zero remaining bytes
@@ -700,7 +704,7 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
 
     if compar == 0 {
         // No comparison function, use default byte comparison
-        let mem = vm.get_memory_slice().to_vec();
+        let mem = vm.get_memory_slice();
         indices.sort_by(|&i, &j| {
             let a_start = (base as usize) + i * size;
             let b_start = (base as usize) + j * size;
@@ -713,7 +717,6 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
             let addr_a = (base as i32) + (i as i32) * (size as i32);
             let addr_b = (base as i32) + (j as i32) * (size as i32);
             let result = vm.call_user_function(session, compar, &[addr_a, addr_b], MAX_COMPARE_STEPS);
-            eprintln!("[DEBUG qsort] compare i={} j={} addr_a=0x{:04X} addr_b=0x{:04X} result={:?}", i, j, addr_a, addr_b, result);
             match result {
                 Some(v) => v.cmp(&0),
                 None => std::cmp::Ordering::Equal,
@@ -722,12 +725,14 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     }
 
     // Reorder memory according to sorted indices
-    let mem = vm.get_memory_slice().to_vec();
     let mut temp: Vec<u8> = vec![0; nmemb * size];
-    for (new_pos, &old_idx) in indices.iter().enumerate() {
-        let src_start = (base as usize) + old_idx * size;
-        let dst_start = new_pos * size;
-        temp[dst_start..dst_start + size].copy_from_slice(&mem[src_start..src_start + size]);
+    {
+        let mem = vm.get_memory_slice();
+        for (new_pos, &old_idx) in indices.iter().enumerate() {
+            let src_start = (base as usize) + old_idx * size;
+            let dst_start = new_pos * size;
+            temp[dst_start..dst_start + size].copy_from_slice(&mem[src_start..src_start + size]);
+        }
     }
     for i in 0..nmemb {
         let src_start = i * size;

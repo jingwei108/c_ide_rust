@@ -4,9 +4,8 @@
 
 ## 核心技术栈
 
-- **桌面前端**: C# Avalonia 11.x
-- **移动前端**: .NET MAUI Blazor Hybrid + CodeMirror 6
-- **前端渲染**: Skia / Avalonia Canvas（桌面）；SkiaSharp（移动端）
+- **前端**: .NET MAUI Blazor Hybrid + CodeMirror 6（Android + Windows Desktop）
+- **前端渲染**: SkiaSharp（跨平台）
 - **后端核心**: Rust 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机
 - **通信**: C API (`extern "C"`) + P/Invoke
 - **构建**: Rust/Cargo + dotnet + PowerShell
@@ -16,15 +15,17 @@
 | 平台 | 优先级 | 状态 |
 |------|--------|------|
 | Android (MAUI Blazor Hybrid) | P0 | ✅ 核心功能可用 |
-| Windows Desktop (Avalonia) | P1 | ✅ 开发中 |
+| Windows Desktop (MAUI Blazor Hybrid) | P1 | ✅ 开发中 |
 | iOS | P2 | 后续考虑 |
 
 ## 项目结构
 
 ```
-├── build.ps1                    # 日常构建脚本
-├── build-release.ps1            # Release 发布构建脚本
-├── test-mobile.ps1              # MAUI Android 测试流水线
+├── scripts/
+│   ├── build.py                 # 日常构建脚本
+│   ├── build_release.py         # Release 发布构建脚本
+│   ├── test_mobile.py           # MAUI Android 测试流水线
+│   └── test_full_chain.py       # 全链验证脚本
 ├── native/                      # Rust 后端
 │   ├── Cargo.toml
 │   ├── src/
@@ -33,14 +34,7 @@
 │   │   ├── capi/                # C API (P/Invoke / JNI 接口)
 │   │   └── diagnostics/         # 结构化诊断与自动修复建议
 │   └── tests/                   # Rust 集成测试
-├── Cide.Client/                 # Avalonia 共享库（桌面端）
-│   ├── Core/
-│   │   ├── NativeMethods.cs     # P/Invoke 声明
-│   │   └── CompilerService.cs   # 编译器服务封装
-│   ├── Views/                   # 视图（AXAML）
-│   └── ViewModels/              # 视图模型（MVVM）
-├── Cide.Client.Desktop/         # Avalonia 桌面入口
-├── Cide.Client.Maui/            # MAUI Blazor Hybrid 移动端（当前主要开发目标）
+├── Cide.Client.Maui/            # MAUI Blazor Hybrid 跨平台前端（Android + Windows Desktop）
 │   ├── Components/              # Blazor 组件（CodeMirror 6、工具栏、面板）
 │   ├── Core/                    # 复用后端（NativeMethods、CompilerService、Models）
 │   ├── ViewModels/              # 适配后的 MainViewModel
@@ -63,22 +57,22 @@
 
 ```powershell
 # 构建并运行桌面端
-.\build.ps1 -Target Desktop -Run
+python scripts/build.py --run
 
 # 构建并测试 MAUI Android（构建 → 安装 → 启动）
-.\test-mobile.ps1 -Install -Run
+python scripts/test_mobile.py --install --run
 
 # 快速重新打包（仅前端改动）
-.\test-mobile.ps1 -SkipNativeBuild -Install -Run
+python scripts/test_mobile.py --skip-native-build --install --run
 
 # 构建 + 实时日志
-.\test-mobile.ps1 -Install -Run -Logcat
+python scripts/test_mobile.py --install --run --logcat
 
 # 清理并重新构建
-.\build.ps1 -Clean -Target Desktop
+python scripts/build.py --clean -t Desktop
 
 # 构建前运行测试
-.\build.ps1 -Test -Target Desktop
+python scripts/build.py --test -t Desktop
 ```
 
 详见 [`docs/BUILD.md`](BUILD.md)。
