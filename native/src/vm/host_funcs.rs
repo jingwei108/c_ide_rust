@@ -713,6 +713,7 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
             let addr_a = (base as i32) + (i as i32) * (size as i32);
             let addr_b = (base as i32) + (j as i32) * (size as i32);
             let result = vm.call_user_function(session, compar, &[addr_a, addr_b], MAX_COMPARE_STEPS);
+            eprintln!("[DEBUG qsort] compare i={} j={} addr_a=0x{:04X} addr_b=0x{:04X} result={:?}", i, j, addr_a, addr_b, result);
             match result {
                 Some(v) => v.cmp(&0),
                 None => std::cmp::Ordering::Equal,

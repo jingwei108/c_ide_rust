@@ -83,6 +83,10 @@ impl Type {
     pub fn total_elements(&self) -> i32 {
         if !self.is_array() { return 1; }
         if !self.dims.is_empty() {
+            let has_negative = self.dims.iter().any(|&d| d < 0);
+            if has_negative && self.array_size > 0 {
+                return self.array_size;
+            }
             self.dims.iter().map(|&d| if d > 0 { d } else { 1 }).product()
         } else if self.array_size > 0 {
             self.array_size
@@ -94,7 +98,16 @@ impl Type {
     pub fn subscript_type(&self) -> Self {
         if !self.is_array() { return self.clone(); }
         if self.dims.len() <= 1 {
-            return Self { kind: self.base_kind.clone(), name: self.name.clone(), ..Self::default() };
+            let mut t = Self { kind: self.base_kind.clone(), name: self.name.clone(), ..Self::default() };
+            if self.base_kind == TypeKind::Pointer {
+                t.base_kind = match self.name.as_str() {
+                    "char" => TypeKind::Char,
+                    "float" => TypeKind::Float,
+                    "void" => TypeKind::Void,
+                    _ => TypeKind::Int,
+                };
+            }
+            return t;
         }
         let mut t = self.clone();
         t.dims.remove(0);

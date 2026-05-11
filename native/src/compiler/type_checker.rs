@@ -199,7 +199,7 @@ impl TypeChecker {
     }
 
     fn is_comparable(&self, a: &Type, b: &Type) -> bool {
-        if matches!(a.kind, TypeKind::Int | TypeKind::Float) && matches!(b.kind, TypeKind::Int | TypeKind::Float) { return true; }
+        if matches!(a.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) && matches!(b.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) { return true; }
         if matches!(a.kind, TypeKind::Pointer) && matches!(b.kind, TypeKind::Pointer) { return true; }
         if matches!(a.kind, TypeKind::Pointer) && matches!(b.kind, TypeKind::Array) { return true; }
         if matches!(a.kind, TypeKind::Array) && matches!(b.kind, TypeKind::Pointer) { return true; }
@@ -213,6 +213,10 @@ impl TypeChecker {
         if matches!(target.kind, TypeKind::Pointer) && matches!(value.kind, TypeKind::Array)
             && target.base_kind == value.base_kind && target.name == value.name {
             self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+            return true;
+        }
+        if matches!(target.kind, TypeKind::Array) && matches!(value.kind, TypeKind::Pointer)
+            && target.base_kind == value.base_kind {
             return true;
         }
         if matches!(target.kind, TypeKind::Array) && matches!(value.kind, TypeKind::Array)
