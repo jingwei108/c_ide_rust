@@ -309,6 +309,12 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     }
     // 读取输入行
     if session.runtime.input_index >= session.runtime.input_lines.len() {
+        // 输入不足：将已 pop 的参数重新 push 回栈，等待前端提供输入
+        for &p in ptrs.iter().rev() {
+            vm.push(p as i32);
+        }
+        vm.push(fmt_addr as i32);
+        session.runtime.waiting_input = true;
         return;
     }
     let line = session.runtime.input_lines[session.runtime.input_index].clone();
@@ -394,6 +400,25 @@ impl MemorySlice for CideVM {
 
 
 fn host_getchar(vm: &mut CideVM, session: &mut Session) {
+    // 先检查是否有可用输入
+    let has_input = {
+        let mut idx = session.runtime.input_index;
+        let mut offset = session.runtime.input_char_offset;
+        let mut found = false;
+        while idx < session.runtime.input_lines.len() {
+            if offset < session.runtime.input_lines[idx].len() {
+                found = true;
+                break;
+            }
+            idx += 1;
+            offset = 0;
+        }
+        found
+    };
+    if !has_input {
+        session.runtime.waiting_input = true;
+        return;
+    }
     let mut result = -1i32;
     while session.runtime.input_index < session.runtime.input_lines.len() {
         let line = &session.runtime.input_lines[session.runtime.input_index];

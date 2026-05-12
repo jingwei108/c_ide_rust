@@ -50,6 +50,12 @@ public static class NativeMethods
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
     public static extern int cide_input_count(IntPtr session);
 
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int cide_is_waiting_input(IntPtr session);
+
+    [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]
+    public static extern int cide_provide_input_line(IntPtr session, [MarshalAs(UnmanagedType.LPUTF8Str)] string line);
+
     // ========== 输出 ==========
 
     [DllImport(LibName, CallingConvention = CallingConvention.Cdecl)]

@@ -238,6 +238,18 @@ public sealed class CompilerService : IDisposable
         NativeMethods.cide_set_input(_session, input);
     }
 
+    public bool IsWaitingInput()
+    {
+        EnsureNotDisposed();
+        return NativeMethods.cide_is_waiting_input(_session) != 0;
+    }
+
+    public void ProvideInput(string line)
+    {
+        EnsureNotDisposed();
+        NativeMethods.cide_provide_input_line(_session, line);
+    }
+
     public int GetAlgorithmMatchCount()
     {
         EnsureNotDisposed();

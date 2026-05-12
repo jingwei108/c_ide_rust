@@ -14,7 +14,8 @@ public readonly record struct StepResult(
     int CurrentLine,
     string Output,
     string? RuntimeError,
-    List<VisEventEx> VisEvents);
+    List<VisEventEx> VisEvents,
+    bool WaitingInput = false);
 
 /// <summary>
 /// Result of a full-speed run.
@@ -23,7 +24,8 @@ public readonly record struct RunResult(
     bool Success,
     string Output,
     string? RuntimeError,
-    List<VisEventEx> VisEvents);
+    List<VisEventEx> VisEvents,
+    bool WaitingInput = false);
 
 /// <summary>
 /// Encapsulates pure execution logic (stepping and full-speed run) against the compiler VM.
@@ -43,6 +45,7 @@ public class ExecutionService
     public StepResult StepNext()
     {
         bool ok = _compiler.StepNext();
+        bool waitingInput = _compiler.IsWaitingInput();
 
         // Collect vis events (Compare/Swap/Update) with extended payload
         var visEvents = new List<VisEventEx>();
@@ -58,7 +61,7 @@ public class ExecutionService
         string output = "";
         int currentLine = 0;
 
-        if (!ok)
+        if (!ok && !waitingInput)
         {
             runtimeError = _compiler.GetRuntimeError();
             output = _compiler.GetOutput();
@@ -69,7 +72,7 @@ public class ExecutionService
             output = _compiler.GetOutput();
         }
 
-        return new StepResult(ok, currentLine, output, runtimeError, visEvents);
+        return new StepResult(ok, currentLine, output, runtimeError, visEvents, waitingInput);
     }
 
     /// <summary>
@@ -79,8 +82,9 @@ public class ExecutionService
     public RunResult RunFullSpeed()
     {
         bool ok = _compiler.Run();
+        bool waitingInput = _compiler.IsWaitingInput();
         string output = _compiler.GetOutput();
-        string? runtimeError = ok ? null : (_compiler.GetRuntimeError() ?? "未知运行时错误");
+        string? runtimeError = (ok && !waitingInput) ? null : (_compiler.GetRuntimeError() ?? "未知运行时错误");
 
         // Collect vis events that accumulated during full-speed run
         var visEvents = new List<VisEventEx>();
@@ -92,6 +96,6 @@ public class ExecutionService
         }
         _compiler.ClearVisEvents();
 
-        return new RunResult(ok, output, runtimeError, visEvents);
+        return new RunResult(ok, output, runtimeError, visEvents, waitingInput);
     }
 }
