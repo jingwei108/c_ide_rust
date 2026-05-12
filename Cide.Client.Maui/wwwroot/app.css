@@ -196,6 +196,109 @@ html, body {
     }
 }
 
+/* Symbol Bar (mobile keyboard companion) */
+.symbol-bar {
+    flex-shrink: 0;
+    background: #1e1e1e;
+    border-top: 1px solid #333;
+    padding: 4px 6px;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.2s ease, opacity 0.2s ease, padding 0.2s ease;
+}
+
+.symbol-bar.visible {
+    max-height: 52px;
+    opacity: 1;
+    padding: 6px 8px;
+}
+
+.cide-app.light .symbol-bar {
+    background: #f0f0f0;
+    border-top-color: #ddd;
+}
+
+.symbol-scroll {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-x;
+    align-items: center;
+}
+
+.symbol-scroll::-webkit-scrollbar {
+    display: none;
+}
+
+.symbol-btn {
+    flex-shrink: 0;
+    min-width: 32px;
+    height: 32px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 6px;
+    background: #3a3a3c;
+    color: #eee;
+    font-size: 14px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s, transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.symbol-btn:active {
+    transform: scale(0.92);
+    background: #0A84FF;
+    color: white;
+}
+
+.cide-app.light .symbol-btn {
+    background: #e0e0e0;
+    color: #333;
+}
+
+.cide-app.light .symbol-btn:active {
+    background: #0A84FF;
+    color: white;
+}
+
+.symbol-pair {
+    font-weight: bold;
+    min-width: 40px;
+}
+
+.symbol-action {
+    background: #2c2c2e;
+    font-size: 13px;
+    min-width: 36px;
+}
+
+.cide-app.light .symbol-action {
+    background: #d0d0d0;
+}
+
+.symbol-divider {
+    width: 1px;
+    height: 20px;
+    background: #555;
+    flex-shrink: 0;
+    margin: 0 2px;
+}
+
+.cide-app.light .symbol-divider {
+    background: #ccc;
+}
+
 /* Template Bar */
 .template-bar {
     flex-shrink: 0;
@@ -250,54 +353,64 @@ html, body {
     color: white;
 }
 
-/* Input Section */
-.input-section {
-    flex-shrink: 0;
-    padding: 6px 12px;
+/* Inline Input */
+.inline-input-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
     border-top: 1px solid #333;
-    border-bottom: 1px solid #333;
-    background: #252526;
+    background: #1e1e1e;
+    flex-shrink: 0;
 }
 
-.cide-app.light .input-section {
-    background: #f5f5f5;
+.cide-app.light .inline-input-row {
+    background: #ffffff;
     border-top-color: #ddd;
-    border-bottom-color: #ddd;
 }
 
-.input-label {
-    font-size: 11px;
-    color: #888;
-    margin-bottom: 4px;
+.inline-input-prompt {
+    color: #0A84FF;
+    font-size: 14px;
+    font-weight: bold;
+    flex-shrink: 0;
 }
 
-.cide-app.light .input-label {
-    color: #666;
-}
-
-.input-textarea {
-    width: 100%;
-    resize: none;
+.inline-input {
+    flex: 1;
     border: 1px solid #444;
     border-radius: 6px;
-    padding: 6px 8px;
+    padding: 6px 10px;
     font-family: 'Consolas', 'Courier New', monospace;
-    font-size: 12px;
-    line-height: 1.4;
-    background: #1e1e1e;
+    font-size: 13px;
+    background: #252526;
     color: #d4d4d4;
     outline: none;
-    box-sizing: border-box;
 }
 
-.cide-app.light .input-textarea {
-    background: #ffffff;
+.cide-app.light .inline-input {
+    background: #f5f5f5;
     color: #333333;
     border-color: #ccc;
 }
 
-.input-textarea:focus {
+.inline-input:focus {
     border-color: #0A84FF;
+}
+
+.inline-input-btn {
+    flex-shrink: 0;
+    padding: 6px 14px;
+    border: none;
+    border-radius: 6px;
+    background: #0A84FF;
+    color: white;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.inline-input-btn:hover {
+    background: #0066cc;
 }
 
 /* Bottom Panel */
@@ -317,6 +430,23 @@ html, body {
 .cide-app.dark .bottom-panel {
     background: #252526;
     border-top-color: #333;
+}
+
+.bottom-panel.floating-top {
+    position: absolute;
+    top: 48px;
+    left: 0;
+    right: 0;
+    height: 55vh;
+    z-index: 200;
+    border-top: none;
+    border-bottom: 1px solid #333;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+}
+
+.cide-app.light .bottom-panel.floating-top {
+    border-bottom-color: #ddd;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
 }
 
 .tab-bar {

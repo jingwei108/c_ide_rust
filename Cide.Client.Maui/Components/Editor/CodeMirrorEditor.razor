@@ -11,6 +11,7 @@
     LineWrapping="false"
     TabSize="4"
     Setup="_setup"
+    IndentationUnit="4"
     Editable="true"
     ReadOnly="false"
     HighlightActiveLine="true"
@@ -113,6 +114,30 @@
     {
         if (JS is not null)
             await JS.InvokeVoidAsync("cideCodeMirrorInterop.insertTemplate", "cide-editor", text);
+    }
+
+    public async Task InsertPair(string open, string close)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.insertPair", "cide-editor", open, close);
+    }
+
+    public async Task MoveCursor(int offset)
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.moveCursor", "cide-editor", offset);
+    }
+
+    public async Task Undo()
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.undo", "cide-editor");
+    }
+
+    public async Task Redo()
+    {
+        if (JS is not null)
+            await JS.InvokeVoidAsync("cideCodeMirrorInterop.redo", "cide-editor");
     }
 
     public async ValueTask DisposeAsync()

@@ -43,6 +43,7 @@ pub enum StepResult {
     Paused,
     Finished,
     Trap,
+    WaitingInput,
 }
 
 pub struct CideVM {
@@ -274,6 +275,9 @@ impl CideVM {
                 }
                 StepResult::Paused => {
                     self.paused = false;
+                }
+                StepResult::WaitingInput => {
+                    break;
                 }
                 StepResult::Ok => {}
             }
@@ -626,6 +630,9 @@ impl CideVM {
                 StepResult::Trap => return 0,
                 StepResult::Paused => {
                     self.trap("完整运行模式下遇到暂停状态（可能是断点配置不一致）", &SourceLoc::default());
+                    return 0;
+                }
+                StepResult::WaitingInput => {
                     return 0;
                 }
                 StepResult::Ok => {}
@@ -1014,6 +1021,10 @@ impl CideVM {
 
             OpCode::CallHost => {
                 execute_host_func(self, session, inst.operand as u32);
+                if session.runtime.waiting_input {
+                    self.ip -= 1;
+                    return StepResult::WaitingInput;
+                }
             }
 
             OpCode::Ret => {
