@@ -398,3 +398,89 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("120")), "Outputs: {:?}", outputs);
 }
+
+#[test]
+fn test_e2e_interactive_scanf() {
+    unsafe {
+        let session = cide_native::capi::cide_session_create();
+        assert!(!session.is_null());
+
+        let src = CString::new(r#"
+#include <stdio.h>
+int main() {
+    int a, b;
+    scanf("%d %d", &a, &b);
+    printf("sum = %d", a + b);
+    return 0;
+}
+"#).unwrap();
+
+        let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
+        assert_eq!(compile_ret, 0);
+
+        // 第一次运行：没有输入，应该等待输入
+        let run_ret = cide_native::capi::cide_run(session);
+        assert_eq!(run_ret, 2, "Expected waiting input (2), got {}", run_ret);
+
+        let waiting = cide_native::capi::cide_is_waiting_input(session);
+        assert_eq!(waiting, 1, "Expected waiting_input = 1");
+
+        // 提供输入
+        let line = CString::new("3 4").unwrap();
+        let provide_ret = cide_native::capi::cide_provide_input_line(session, line.as_ptr() as *const c_char);
+        assert_eq!(provide_ret, 0);
+
+        // 再次运行：应该完成
+        let run_ret2 = cide_native::capi::cide_run(session);
+        assert_eq!(run_ret2, 0, "Expected success (0), got {}", run_ret2);
+
+        let out_len = cide_native::capi::cide_get_output_length(session);
+        assert!(out_len > 0);
+        let mut buf = vec![0u8; out_len as usize + 1];
+        cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+        let out_str = String::from_utf8_lossy(&buf);
+        assert!(out_str.contains("sum = 7"), "Output: {}", out_str);
+
+        cide_native::capi::cide_session_destroy(session);
+    }
+}
+
+#[test]
+fn test_e2e_interactive_getchar() {
+    unsafe {
+        let session = cide_native::capi::cide_session_create();
+        assert!(!session.is_null());
+
+        let src = CString::new(r#"
+#include <stdio.h>
+int main() {
+    char c = getchar();
+    printf("char = %c", c);
+    return 0;
+}
+"#).unwrap();
+
+        let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
+        assert_eq!(compile_ret, 0);
+
+        // 没有输入，应该等待
+        let run_ret = cide_native::capi::cide_run(session);
+        assert_eq!(run_ret, 2);
+
+        // 提供输入
+        let line = CString::new("X").unwrap();
+        cide_native::capi::cide_provide_input_line(session, line.as_ptr() as *const c_char);
+
+        let run_ret2 = cide_native::capi::cide_run(session);
+        assert_eq!(run_ret2, 0);
+
+        let out_len = cide_native::capi::cide_get_output_length(session);
+        assert!(out_len > 0);
+        let mut buf = vec![0u8; out_len as usize + 1];
+        cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+        let out_str = String::from_utf8_lossy(&buf);
+        assert!(out_str.contains("char = X"), "Output: {}", out_str);
+
+        cide_native::capi::cide_session_destroy(session);
+    }
+}

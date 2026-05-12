@@ -129,7 +129,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
     private string _newWatchExpression = "";
 
     [ObservableProperty]
-    private string _inputText = "";
+    private bool _isWaitingInput = false;
+
+    [ObservableProperty]
+    private string _pendingInputText = "";
 
     [ObservableProperty]
     private int _executionSpeed = 0;
@@ -354,86 +357,11 @@ public partial class MainViewModel : ObservableObject, IDisposable
             return;
 
         RunCodeCommand.NotifyCanExecuteChanged();
-        ResetExecutionState();
+        if (!IsWaitingInput) ResetExecutionState();
 
         try
         {
-            // Run compilation and execution on background thread to avoid blocking UI
-            await Task.Run(async () =>
-            {
-                if (!EnsureCompiled())
-                {
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        PresentCompileError(Compiler.GetCompileErrors() ?? "未知编译错误", setIsRunning: true);
-                    });
-                    return;
-                }
-
-                Compiler.ClearBreakpoints();
-                foreach (int bpLine in BreakpointLines)
-                {
-                    Compiler.AddBreakpoint(bpLine);
-                }
-
-                // Set program input for scanf
-                Compiler.SetInput(InputText);
-
-                if (ExecutionSpeed <= 0)
-                {
-                    var execService = new ExecutionService(Compiler);
-                    var runResult = execService.RunFullSpeed();
-                    if (!runResult.Success)
-                    {
-                        await MainThread.InvokeOnMainThreadAsync(() =>
-                        {
-                            PresentRuntimeError(runResult.RuntimeError!, addDiagnostic: true);
-                        });
-                        return;
-                    }
-
-                    var sb = new StringBuilder();
-                    sb.AppendLine(runResult.Output);
-
-                    var debugService = new DebugDataService(Compiler);
-                    var memRegions = debugService.LoadMemoryRegions();
-                    var algoMatches = debugService.LoadAlgorithmMatches();
-                    var visEvents = runResult.VisEvents;
-
-                    // Append vis event summary for full-speed run
-                    if (visEvents.Count > 0)
-                    {
-                        sb.AppendLine($"\n--- 执行轨迹 ({visEvents.Count} 个事件) ---");
-                        foreach (var ev in visEvents)
-                        {
-                            string evName = ev.Type == 1 ? "🔍 比较" : ev.Type == 2 ? "🔃 交换" : "📝 更新";
-                            sb.AppendLine($"[{evName}] 第 {ev.Line} 行");
-                        }
-                    }
-
-                    string output = TruncateOutput(sb.ToString());
-
-                    await MainThread.InvokeOnMainThreadAsync(() =>
-                    {
-                        MemoryRegions.Clear();
-                        foreach (var region in memRegions) MemoryRegions.Add(region);
-                        AlgorithmMatches = new ObservableCollection<AlgorithmMatch>(algoMatches);
-                        LoadVariables(visEvents);
-                        LoadCallStack();
-                        ConsoleOutput = output;
-                    });
-                }
-                else
-                {
-                    _runCts?.Dispose();
-                    _runCts = new CancellationTokenSource();
-                    while (IsRunning)
-                    {
-                        if (!DoSingleStep()) break;
-                        await Task.Delay(ExecutionSpeed, _runCts.Token);
-                    }
-                }
-            });
+            await ExecuteAsync(isSingleStep: false);
         }
         catch (Exception ex)
         {
@@ -442,7 +370,10 @@ public partial class MainViewModel : ObservableObject, IDisposable
         }
         finally
         {
-            FinishExecution();
+            if (!IsWaitingInput)
+            {
+                FinishExecution();
+            }
         }
     }
 
@@ -454,6 +385,13 @@ public partial class MainViewModel : ObservableObject, IDisposable
         {
             var execService = new ExecutionService(Compiler);
             var result = execService.StepNext();
+
+            if (result.WaitingInput)
+            {
+                ConsoleOutput = TruncateOutput(result.Output + "\n[等待输入...] 请输入数据后按发送\n");
+                IsWaitingInput = true;
+                return false;
+            }
 
             if (!result.Continue)
             {
@@ -519,10 +457,136 @@ public partial class MainViewModel : ObservableObject, IDisposable
             Compiler.AddBreakpoint(bpLine);
         }
 
-        // Set program input for scanf
-        Compiler.SetInput(InputText);
-
         await Task.Run(() => DoSingleStep());
+    }
+
+    [RelayCommand]
+    public async Task SubmitInteractiveInputAsync()
+    {
+        if (string.IsNullOrEmpty(PendingInputText)) return;
+        string line = PendingInputText;
+        PendingInputText = "";
+        IsWaitingInput = false;
+
+        await Task.Run(() => Compiler.ProvideInput(line));
+
+        try
+        {
+            await ExecuteAsync(isSingleStep: false);
+        }
+        catch (Exception ex)
+        {
+            ConsoleOutput = "异常：" + ex.Message;
+            Errors.Add(ex.Message);
+        }
+        finally
+        {
+            if (!IsWaitingInput)
+            {
+                FinishExecution();
+            }
+        }
+    }
+
+    private async Task ExecuteAsync(bool isSingleStep)
+    {
+        if (!EnsureCompiled())
+        {
+            PresentCompileError(Compiler.GetCompileErrors() ?? "未知编译错误", setIsRunning: true);
+            return;
+        }
+
+        Compiler.ClearBreakpoints();
+        foreach (int bpLine in BreakpointLines)
+        {
+            Compiler.AddBreakpoint(bpLine);
+        }
+
+        await Task.Run(async () =>
+        {
+            if (isSingleStep)
+            {
+                DoSingleStep();
+            }
+            else if (ExecutionSpeed > 0)
+            {
+                _runCts?.Dispose();
+                _runCts = new CancellationTokenSource();
+                while (IsRunning)
+                {
+                    if (!DoSingleStep()) break;
+                    try
+                    {
+                        await Task.Delay(ExecutionSpeed, _runCts.Token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                }
+            }
+            else
+            {
+                while (true)
+                {
+                    var execService = new ExecutionService(Compiler);
+                    var runResult = execService.RunFullSpeed();
+
+                    if (runResult.WaitingInput)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                        {
+                            IsWaitingInput = true;
+                            var sb = new StringBuilder();
+                            sb.AppendLine(runResult.Output);
+                            sb.AppendLine("[等待输入...] 请输入数据后按发送");
+                            ConsoleOutput = TruncateOutput(sb.ToString());
+                        });
+                        break;
+                    }
+
+                    if (!runResult.Success)
+                    {
+                        await MainThread.InvokeOnMainThreadAsync(() =>
+                        {
+                            PresentRuntimeError(runResult.RuntimeError!, addDiagnostic: true);
+                        });
+                        break;
+                    }
+
+                    var sb = new StringBuilder();
+                    sb.AppendLine(runResult.Output);
+
+                    var debugService = new DebugDataService(Compiler);
+                    var memRegions = debugService.LoadMemoryRegions();
+                    var algoMatches = debugService.LoadAlgorithmMatches();
+                    var visEvents = runResult.VisEvents;
+
+                    if (visEvents.Count > 0)
+                    {
+                        sb.AppendLine($"\n--- 执行轨迹 ({visEvents.Count} 个事件) ---");
+                        foreach (var ev in visEvents)
+                        {
+                            string evName = ev.Type == 1 ? "🔍 比较" : ev.Type == 2 ? "🔃 交换" : "📝 更新";
+                            sb.AppendLine($"[{evName}] 第 {ev.Line} 行");
+                        }
+                    }
+
+                    string output = TruncateOutput(sb.ToString());
+
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        MemoryRegions.Clear();
+                        foreach (var region in memRegions) MemoryRegions.Add(region);
+                        AlgorithmMatches = new ObservableCollection<AlgorithmMatch>(algoMatches);
+                        LoadVariables(visEvents);
+                        LoadCallStack();
+                        ConsoleOutput = output;
+                    });
+                    break;
+                }
+            }
+        });
     }
 
     [RelayCommand]
@@ -597,6 +661,7 @@ public partial class MainViewModel : ObservableObject, IDisposable
     public void StopExecution()
     {
         IsRunning = false;
+        IsWaitingInput = false;
         CurrentStepIndex = -1;
         HighlightedLine = -1;
         StepStatusText = "等待执行...";

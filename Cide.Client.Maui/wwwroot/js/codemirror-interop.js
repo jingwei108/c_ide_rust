@@ -86,6 +86,182 @@
         }
     }
 
+    // VS-style single-line auto formatter
+    function formatLine(text) {
+        const leadingMatch = text.match(/^(\s*)(.*)$/);
+        if (!leadingMatch) return text;
+        const prefix = leadingMatch[1];
+        let s = leadingMatch[2];
+        if (!s) return text;
+
+        let result = '';
+        let i = 0;
+        let lastChar = '';
+        let inString = false;
+        let stringChar = '';
+
+        while (i < s.length) {
+            const ch = s[i];
+            const prev = s[i - 1] || '';
+
+            // Strings
+            if ((ch === '"' || ch === "'") && prev !== '\\') {
+                if (!inString) {
+                    inString = true;
+                    stringChar = ch;
+                    if (lastChar && /[a-zA-Z0-9_)]/.test(lastChar)) {
+                        result += ' ';
+                        lastChar = ' ';
+                    }
+                    result += ch;
+                    lastChar = ch;
+                    i++;
+                    continue;
+                } else if (stringChar === ch) {
+                    inString = false;
+                    result += ch;
+                    lastChar = ch;
+                    i++;
+                    continue;
+                }
+            }
+            if (inString) {
+                result += ch;
+                lastChar = ch;
+                i++;
+                continue;
+            }
+
+            // Comments: preserve rest of line
+            if (ch === '/' && (s[i + 1] === '/' || s[i + 1] === '*')) {
+                if (lastChar && lastChar !== ' ') {
+                    result += ' ';
+                    lastChar = ' ';
+                }
+                result += s.slice(i);
+                break;
+            }
+
+            // Collapse whitespace
+            if (/\s/.test(ch)) {
+                if (lastChar && !/\s/.test(lastChar)) {
+                    result += ' ';
+                    lastChar = ' ';
+                }
+                i++;
+                continue;
+            }
+
+            // Comma
+            if (ch === ',') {
+                result += ', ';
+                lastChar = ' ';
+                i++;
+                continue;
+            }
+
+            // Semicolon: no space before
+            if (ch === ';') {
+                if (lastChar === ' ') {
+                    result = result.slice(0, -1);
+                }
+                result += ';';
+                lastChar = ';';
+                i++;
+                continue;
+            }
+
+            // Parentheses and brackets
+            if (ch === '(') {
+                if (lastChar && /[a-zA-Z0-9_]/.test(lastChar)) {
+                    result += ' ';
+                }
+                result += '(';
+                lastChar = '(';
+                i++;
+                continue;
+            }
+            if (ch === ')') {
+                if (lastChar === ' ') {
+                    result = result.slice(0, -1);
+                }
+                result += ')';
+                lastChar = ')';
+                i++;
+                continue;
+            }
+            if (ch === '[') {
+                if (lastChar === ' ') {
+                    result = result.slice(0, -1);
+                }
+                result += '[';
+                lastChar = '[';
+                i++;
+                continue;
+            }
+            if (ch === ']') {
+                if (lastChar === ' ') {
+                    result = result.slice(0, -1);
+                }
+                result += ']';
+                lastChar = ']';
+                i++;
+                continue;
+            }
+            if (ch === '{') {
+                if (lastChar && /[a-zA-Z0-9_)]/.test(lastChar)) {
+                    result += ' ';
+                }
+                result += '{';
+                lastChar = '{';
+                i++;
+                continue;
+            }
+            if (ch === '}') {
+                if (lastChar === ' ') {
+                    result = result.slice(0, -1);
+                }
+                result += '}';
+                lastChar = '}';
+                i++;
+                continue;
+            }
+
+            // Two-char operators
+            const twoChar = ch + (s[i + 1] || '');
+            const twoOps = ['==', '!=', '<=', '>=', '&&', '||', '<<', '>>', '+=', '-=', '*=', '/=', '%=', '&=', '|=', '^=', '->'];
+            if (twoOps.includes(twoChar)) {
+                if (lastChar && /[a-zA-Z0-9_\)\]]/.test(lastChar) && lastChar !== ' ') {
+                    result += ' ';
+                }
+                result += twoChar;
+                lastChar = twoChar[1];
+                i += 2;
+                continue;
+            }
+
+            // Single-char operators
+            const singleOps = ['=', '<', '>', '+', '-', '*', '/', '%', '&', '|', '^', '?', ':', '!', '~'];
+            if (singleOps.includes(ch)) {
+                const isUnaryLike = !lastChar || /[\s\(\[\{,;=\+\-\*\/%&\|\^<>!~]/.test(lastChar);
+                if (!isUnaryLike && lastChar !== ' ') {
+                    result += ' ';
+                }
+                result += ch;
+                lastChar = ch;
+                i++;
+                continue;
+            }
+
+            // Default identifier/number chars
+            result += ch;
+            lastChar = ch;
+            i++;
+        }
+
+        return prefix + result;
+    }
+
     // Re-apply decorations on scroll / resize so virtual scrolling gets updated
     const observerMap = new Map();
     function ensureObserver(id) {
@@ -105,6 +281,43 @@
 
         const mutObs = new MutationObserver(onChange);
         mutObs.observe(dom.querySelector('.cm-content') || dom, { childList: true, subtree: true });
+
+        // Auto-format previous line on Enter (VS-style)
+        dom.addEventListener('keydown', (e) => {
+            if (e.key !== 'Enter') return;
+            setTimeout(() => {
+                const v = getView(id);
+                if (!v) return;
+                const state = v.state;
+                const pos = state.selection.main.head;
+                const cur = state.doc.lineAt(pos);
+                if (cur.number > 1) {
+                    const prev = state.doc.line(cur.number - 1);
+                    const formatted = formatLine(prev.text);
+                    if (formatted !== prev.text) {
+                        v.dispatch({
+                            changes: { from: prev.from, to: prev.to, insert: formatted }
+                        });
+                    }
+                }
+            }, 0);
+        });
+
+        // Symbol bar visibility: show when editor is focused, hide when blurred
+        const symbolBar = document.getElementById('symbol-bar');
+        const cmContent = dom.querySelector('.cm-content');
+        if (symbolBar && cmContent) {
+            const showBar = () => symbolBar.classList.add('visible');
+            const hideBar = () => {
+                setTimeout(() => {
+                    if (!cmContent.matches(':focus')) {
+                        symbolBar.classList.remove('visible');
+                    }
+                }, 150);
+            };
+            cmContent.addEventListener('focus', showBar);
+            cmContent.addEventListener('blur', hideBar);
+        }
 
         observerMap.set(id, {
             disconnect() {
@@ -163,6 +376,43 @@
             view.dispatch({
                 changes: { from: pos, to: pos, insert: text }
             });
+        },
+
+        async insertPair(id, open, close) {
+            await ensureModule();
+            const view = getView(id);
+            if (!view) return;
+            const pos = view.state.selection.main.head;
+            view.dispatch({
+                changes: { from: pos, to: pos, insert: open + close },
+                selection: { anchor: pos + open.length }
+            });
+        },
+
+        async moveCursor(id, offset) {
+            await ensureModule();
+            const view = getView(id);
+            if (!view) return;
+            const pos = view.state.selection.main.head;
+            const newPos = Math.max(0, Math.min(pos + offset, view.state.doc.length));
+            view.dispatch({ selection: { anchor: newPos } });
+            view.focus();
+        },
+
+        async undo(id) {
+            await ensureModule();
+            const mod = gaeljModule;
+            if (mod?.dispatchCommand) {
+                mod.dispatchCommand(id, 'Undo');
+            }
+        },
+
+        async redo(id) {
+            await ensureModule();
+            const mod = gaeljModule;
+            if (mod?.dispatchCommand) {
+                mod.dispatchCommand(id, 'Redo');
+            }
         },
 
         async destroy(id) {

@@ -486,18 +486,27 @@ pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
         return -1;
     }
     let session = &mut *s;
-    session.runtime.output_lines.clear();
-    session.runtime.error.clear();
-    session.runtime.trace.clear();
-    session.memory.regions.clear();
-    session.memory.free_list.clear();
-    session.memory.heap_offset = 0x5000;
-    session.memory.alloc_counter = 0;
-    session.runtime.running = true;
+    let is_resume = session.runtime.waiting_input;
+
+    if !is_resume {
+        session.runtime.output_lines.clear();
+        session.runtime.error.clear();
+        session.runtime.trace.clear();
+        session.memory.regions.clear();
+        session.memory.free_list.clear();
+        session.memory.heap_offset = 0x5000;
+        session.memory.alloc_counter = 0;
+        session.runtime.running = true;
+    }
     session.runtime.step_mode = false;
+    session.runtime.waiting_input = false;
 
     let mut vm = session.vm.take().unwrap();
-    setup_vm(&mut vm, session);
+    if !is_resume {
+        setup_vm(&mut vm, session);
+    } else {
+        vm.resume();
+    }
 
     let ret = vm.run(session);
 
@@ -505,6 +514,10 @@ pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
         session.runtime.error = vm.get_error().to_string();
         session.runtime.running = false;
         -1
+    } else if session.runtime.waiting_input {
+        // 等待用户输入，不是错误也不是完成
+        session.vm = Some(vm);
+        return 2;
     } else {
         session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
         session.runtime.running = false;
@@ -541,11 +554,17 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
         vm.pause();
 
         let ret;
+        session.runtime.waiting_input = false;
         loop {
             match vm.step(session) {
                 crate::vm::vm::StepResult::Paused => {
                     session.runtime.current_line = vm.get_current_line();
                     ret = 0;
+                    break;
+                }
+                crate::vm::vm::StepResult::WaitingInput => {
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = 2;
                     break;
                 }
                 crate::vm::vm::StepResult::Finished => {
@@ -567,12 +586,18 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
         ret
     } else {
         vm.resume();
+        session.runtime.waiting_input = false;
         let ret;
         loop {
             match vm.step(session) {
                 crate::vm::vm::StepResult::Paused => {
                     session.runtime.current_line = vm.get_current_line();
                     ret = 0;
+                    break;
+                }
+                crate::vm::vm::StepResult::WaitingInput => {
+                    session.runtime.current_line = vm.get_current_line();
+                    ret = 2;
                     break;
                 }
                 _ if vm.was_step_event_hit() => {
@@ -732,6 +757,7 @@ pub unsafe extern "C" fn cide_set_input(s: *mut Session, input: *const c_char) {
     let session = &mut *s;
     session.runtime.input_lines.clear();
     session.runtime.input_index = 0;
+    session.runtime.input_char_offset = 0;
     let input_str = match cstr_to_str(input) {
         Some(v) => v,
         None => return,
@@ -739,6 +765,36 @@ pub unsafe extern "C" fn cide_set_input(s: *mut Session, input: *const c_char) {
     for line in input_str.lines() {
         session.runtime.input_lines.push(line.trim_end_matches('\r').to_string());
     }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cide_is_waiting_input(s: *mut Session) -> c_int {
+    if s.is_null() {
+        return 0;
+    }
+    if (*s).runtime.waiting_input {
+        1
+    } else {
+        0
+    }
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn cide_provide_input_line(s: *mut Session, line: *const c_char) -> c_int {
+    if s.is_null() {
+        return -1;
+    }
+    let session = &mut *s;
+    let line_str = match cstr_to_str(line) {
+        Some(v) => v,
+        None => return -1,
+    };
+    session.runtime.input_lines.push(line_str.to_string());
+    session.runtime.waiting_input = false;
+    if let Some(ref mut vm) = session.vm {
+        vm.resume();
+    }
+    0
 }
 
 #[no_mangle]
