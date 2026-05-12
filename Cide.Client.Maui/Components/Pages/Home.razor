@@ -30,6 +30,45 @@
                           IsDarkTheme="@VM.IsDarkMode" />
     </div>
 
+    <!-- 符号快捷栏（移动端键盘弹出时显示） -->
+    <div class="symbol-bar" id="symbol-bar">
+        <div class="symbol-scroll">
+            <button class="symbol-btn symbol-pair" tabindex="-1" @onclick='() => InsertPair("{", "}")'>{ }</button>
+            <button class="symbol-btn symbol-pair" tabindex="-1" @onclick='() => InsertPair("(", ")")'>( )</button>
+            <button class="symbol-btn symbol-pair" tabindex="-1" @onclick='() => InsertPair("[", "]")'>[ ]</button>
+            <button class="symbol-btn symbol-pair" tabindex="-1" @onclick='() => InsertPair("\"", "\"")'>" "</button>
+            <button class="symbol-btn symbol-pair" tabindex="-1" @onclick="InsertQuotePair">&#39; &#39;</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate(";")'>;</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("#")'>#</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("->")'>-></button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("&")'>&amp;</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("*")'>*</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("=")'>=</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("==")'>==</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("!=")'>!=</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("<")'>&lt;</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate(">")'>&gt;</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("+")'>+</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("-")'>-</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("/")'>/</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("%")'>%</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("&&")'>&amp;&amp;</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("||")'>||</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("!")'>!</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("|")'>|</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("^")'>^</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate("~")'>~</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate(",")'>,</button>
+            <button class="symbol-btn" tabindex="-1" @onclick='() => InsertTemplate(".")'>.</button>
+            <div class="symbol-divider"></div>
+            <button class="symbol-btn symbol-action" tabindex="-1" @onclick='() => MoveCursor(-1)'>←</button>
+            <button class="symbol-btn symbol-action" tabindex="-1" @onclick='() => MoveCursor(1)'>→</button>
+            <button class="symbol-btn symbol-action" tabindex="-1" @onclick='() => InsertTemplate("    ")'>Tab</button>
+            <button class="symbol-btn symbol-action" tabindex="-1" @onclick="Undo">↩</button>
+            <button class="symbol-btn symbol-action" tabindex="-1" @onclick="Redo">↪</button>
+        </div>
+    </div>
+
     <!-- 模板快捷栏 -->
     <div class="template-bar">
         <div class="template-scroll">
@@ -40,13 +79,7 @@
         </div>
     </div>
 
-    <!-- 程序输入数据（供 scanf 使用） -->
-    <div class="input-section">
-        <div class="input-label">输入数据（每行一个值，供 scanf）</div>
-        <textarea class="input-textarea" @bind="VM.InputText" rows="2"></textarea>
-    </div>
-
-    <div class="bottom-panel">
+    <div class="bottom-panel @(VM.IsWaitingInput ? "floating-top" : "")">
         <div class="tab-bar"
              @ontouchstart="OnTouchStart"
              @ontouchmove="OnTouchMove"
@@ -61,6 +94,14 @@
                 <div class="output-pane">
                     <pre class="console-output">@(VM.ConsoleOutput ?? "等待执行...")</pre>
                     <button class="btn-copy" @onclick="CopyOutputAsync">📋 复制</button>
+                    @if (VM.IsWaitingInput)
+                    {
+                        <div class="inline-input-row">
+                            <span class="inline-input-prompt">➜</span>
+                            <input type="text" class="inline-input" @bind="VM.PendingInputText" @onkeydown="OnInputKeyDown" autofocus />
+                            <button class="inline-input-btn" @onclick="SubmitInput">发送</button>
+                        </div>
+                    }
                 </div>
             }
             else if (VM.SelectedTabIndex == 1)
@@ -432,9 +473,43 @@
     {
         if (_editor is not null)
         {
-            await _editor.InsertTemplate(code + "\n");
+            await _editor.InsertTemplate(code);
         }
     }
+
+    private async Task InsertPair(string open, string close)
+    {
+        if (_editor is not null)
+        {
+            await _editor.InsertPair(open, close);
+        }
+    }
+
+    private async Task MoveCursor(int offset)
+    {
+        if (_editor is not null)
+        {
+            await _editor.MoveCursor(offset);
+        }
+    }
+
+    private async Task Undo()
+    {
+        if (_editor is not null)
+        {
+            await _editor.Undo();
+        }
+    }
+
+    private async Task Redo()
+    {
+        if (_editor is not null)
+        {
+            await _editor.Redo();
+        }
+    }
+
+    private async Task InsertQuotePair() => await InsertPair("'", "'");
 
     private void OnBreakpointToggled(int line)
     {
@@ -455,6 +530,19 @@
     {
         if (string.IsNullOrEmpty(VM.ConsoleOutput)) return;
         await Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(VM.ConsoleOutput);
+    }
+
+    private void SubmitInput()
+    {
+        VM.SubmitInteractiveInputCommand.Execute(null);
+    }
+
+    private void OnInputKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            SubmitInput();
+        }
     }
 
     private void ToggleTheme() => VM.IsDarkMode = !VM.IsDarkMode;
