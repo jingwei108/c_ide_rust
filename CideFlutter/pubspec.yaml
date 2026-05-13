@@ -1,0 +1,39 @@
+name: cide
+description: C IDE - A cross-platform C programming IDE with Flutter
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.7.0 <4.0.0'
+  flutter: '>=3.29.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Code Editor
+  re_editor:
+    path: packages/re_editor
+
+  # State Management
+  flutter_riverpod:
+    path: packages/flutter_riverpod
+
+  # Rust Bridge (Dart side)
+  flutter_rust_bridge:
+    path: packages/flutter_rust_bridge
+
+  # Rust Builder (for Android/iOS/macOS/Linux automated builds)
+  # On Windows, enable Developer Mode for symlink support, or manually copy DLL
+  cide_native:
+    path: rust_builder
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  # flutter_lints temporarily removed due to offline development
+  # flutter_lints:
+  #   path: packages/flutter_lints
+
+flutter:
+  uses-material-design: true
