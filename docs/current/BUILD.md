@@ -2,7 +2,7 @@
 
 本文档说明项目的构建流程、脚本用法和环境要求。
 
-> **迁移说明**：后端已从 C++/CMake 迁移至 Rust/Cargo。旧版 CMake 构建文档见 `BUILD_SCRIPTS.md`（已废弃）。
+> **迁移说明**：前端已从 .NET MAUI 迁移至 Flutter。旧版 MAUI 构建文档见 `archive/BUILD_SCRIPTS.md`（已归档）。
 
 ---
 
@@ -13,7 +13,7 @@
 | Rust | 1.95.0+ | Native 后端（`cide_native`） |
 | Cargo | 随 Rust 安装 | Rust 包管理 |
 | cargo-ndk | 最新 | Android `.so` 交叉编译 |
-| .NET SDK | 10.0+ | C# 前端编译 |
+| Flutter SDK | 3.24+ | 跨平台前端 |
 | Android NDK | 27+ | Android Native 后端交叉编译（可选） |
 | adb | 随 Android SDK | Android 设备安装调试（可选） |
 
@@ -39,20 +39,20 @@ $env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
 
 | 脚本 | 功能 | 适用场景 |
 |:---|:---|:---|
-| [`scripts/build.py`](../scripts/build.py) | 构建 Native 后端 + MAUI 前端 | 日常开发编译 |
-| [`scripts/build_release.py`](../scripts/build_release.py) | Release 构建（Desktop AOT + Android Trim） | 发布打包 |
-| [`scripts/test_mobile.py`](../scripts/test_mobile.py) | 移动端完整流水线：构建 → 安装 → 启动 → 日志 | MAUI Android 真机/模拟器测试 |
+| [`scripts/build_flutter.py`](../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端 | 日常开发编译 |
+| [`scripts/build_release.py`](../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
+| [`scripts/test_mobile.py`](../scripts/test_mobile.py) | 移动端完整流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
 
 ---
 
-## `scripts/build.py` — 日常构建
+## `scripts/build_flutter.py` — 日常构建
 
 ### 功能
 
 1. **Native 后端（Rust）**：`cargo build [--release]` 编译 `cide_native.dll` / `.so`
-2. **桌面端前端（MAUI Windows）**：`dotnet publish` 打包 `Cide.Client.Maui`
-3. **移动端前端（MAUI）**：`dotnet publish` 打包 `Cide.Client.Maui` APK
-4. 自动将 Native DLL/.so 复制到正确位置
+2. **桌面端前端（Flutter Windows）**：`flutter build windows` + 自动复制 DLL
+3. **移动端前端（Flutter Android）**：`flutter build apk`（自动集成 `.so`）
+4. **FRB 代码生成**：必要时运行 `flutter_rust_bridge_codegen generate`
 
 ### 参数
 
@@ -62,28 +62,25 @@ $env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
 | `-t`, `--target` | `Desktop` / `Android` / `All` | `Desktop` | 构建目标平台 |
 | `--clean` | flag | 关闭 | 清理所有构建产物 |
 | `--run` | flag | 关闭 | 构建完成后运行桌面端应用（仅 Desktop） |
-| `--test` | flag | 关闭 | 构建前运行 `cargo test` 和 `cargo clippy` |
+| `--offline` | flag | 关闭 | 离线构建（不下载 pub 依赖） |
 
 ### 使用示例
 
 ```bash
 # 桌面端 Debug 构建（默认）
-python scripts/build.py
+python scripts/build_flutter.py
 
 # 桌面端 Release 构建，构建完成后直接运行
-python scripts/build.py -c Release --run
+python scripts/build_flutter.py -c Release --run
 
 # 清理并重新构建桌面端
-python scripts/build.py --clean -t Desktop
-
-# 构建前运行测试和 clippy
-python scripts/build.py --test -t Desktop
+python scripts/build_flutter.py --clean -t Desktop
 
 # Android 端完整构建（NDK .so + APK）
-python scripts/build.py -t Android
+python scripts/build_flutter.py -t Android
 
-# 同时构建桌面端和 Android 端
-python scripts/build.py -t All
+# 离线构建（无网络环境）
+python scripts/build_flutter.py --offline
 ```
 
 ---
@@ -92,8 +89,8 @@ python scripts/build.py -t All
 
 ### 功能
 
-- **Desktop**：Rust Release + MAUI Windows（单文件自包含）
-- **Android**：Rust Release NDK 交叉编译 + MAUI AOT + Trim + r8
+- **Desktop**：Rust Release + Flutter Windows Release
+- **Android**：Rust Release NDK 交叉编译 + Flutter APK Release
 
 ### 参数
 
@@ -121,10 +118,10 @@ python scripts/build_release.py --clean
 
 ### 功能
 
-专注于 **MAUI Android** 真机/模拟器的快速测试循环：
+专注于 **Flutter Android** 真机/模拟器的快速测试循环：
 
 ```
-Native .so 编译 → APK 打包 → 设备安装 → 应用启动 → Logcat 日志抓取
+Native .so 编译 → Flutter APK 打包 → 设备安装 → 应用启动 → Logcat 日志抓取
 ```
 
 ### 参数
@@ -191,13 +188,16 @@ cargo build                    # Debug
 # Release: native/target/release/cide_native.dll
 # Debug:   native/target/debug/cide_native.dll
 
-# 2. 前端
-dotnet publish Cide.Client.Maui/Cide.Client.Maui.csproj `
-    -f net10.0-windows10.0.19041.0 `
-    -c Release -o dist/desktop --self-contained false
+# 2. 复制 DLL 到 Flutter 项目
+Copy-Item native/target/release/cide_native.dll CideFlutter/rust_builder/windows/ -Force
 
-# 3. 运行
-dist/desktop/Cide.Client.Maui.exe
+# 3. 前端（Flutter）
+cd CideFlutter
+flutter pub get --offline
+flutter build windows --debug
+
+# 4. 运行
+flutter run -d windows
 ```
 
 ### Android 端
@@ -216,21 +216,17 @@ cargo ndk -t armv7-linux-androideabi -o target/android build --release
 # native/target/android/arm64-v8a/libcide_native.so
 # native/target/android/armeabi-v7a/libcide_native.so
 
-# 2. 复制 .so 到 Maui 项目
-Copy-Item native/target/android/arm64-v8a/libcide_native.so   Cide.Client.Maui/lib/arm64-v8a/   -Force
-Copy-Item native/target/android/armeabi-v7a/libcide_native.so Cide.Client.Maui/lib/armeabi-v7a/ -Force
+# 2. 前端（Flutter）
+cd CideFlutter
+flutter pub get --offline
+flutter build apk --release
 
-# 3. 构建 APK
-dotnet publish Cide.Client.Maui/Cide.Client.Maui.csproj `
-    -f net10.0-android -c Release `
-    -p:AndroidPackageFormat=apk -o dist/android
+# 3. 安装并启动
+adb install -r "build/app/outputs/flutter-apk/app-release.apk"
+adb shell monkey -p com.example.cide_flutter -c android.intent.category.LAUNCHER 1
 
-# 4. 安装并启动
-adb install -r "dist/android/com.cide.app-Signed.apk"
-adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
-
-# 5. 查看日志
-adb logcat --pid=$(adb shell pidof com.cide.app)
+# 4. 查看日志
+adb logcat --pid=$(adb shell pidof com.example.cide_flutter)
 ```
 
 ### 运行测试
@@ -241,8 +237,9 @@ cd native
 cargo test
 cargo clippy
 
-# C# 前端测试
-dotnet test
+# Flutter 前端测试
+cd CideFlutter
+flutter test
 ```
 
 ---
@@ -283,3 +280,10 @@ adb devices
 - **华为/荣耀**：设置 → 安全 → 更多安全设置 → 外部来源应用下载
 - **OPPO/一加/realme**：设置 → 密码与安全 → 系统安全 → 外部来源应用
 - **vivo/iQOO**：设置 → 安全与隐私 → 更多安全设置 → 安装未知应用
+
+### Q5: Flutter 构建报错 "Unable to find suitable Visual Studio"
+
+确保安装了 "Desktop development with C++" 工作负载，或设置：
+```powershell
+$env:FLUTTER_ROOT = "C:\Your\Path\To\flutter"
+```

@@ -391,6 +391,7 @@ impl BytecodeGen {
         }
     }
 
+    #[allow(dead_code)]
     fn elem_size(&self, ty: &Type) -> i32 {
         match ty.base_kind {
             TypeKind::Void => 4,
