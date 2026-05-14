@@ -71,6 +71,10 @@ pub struct AlgorithmMatch {
 pub struct VisEvent {
     pub ty: i32,
     pub line: i32,
+    pub extra0: i32,
+    pub extra1: i32,
+    pub extra2: i32,
+    pub context: String,
 }
 
 #[frb]
@@ -101,6 +105,13 @@ pub struct TraceEntry {
     pub operation: String,
 }
 
+#[frb]
+#[derive(Debug, Clone)]
+pub struct StructField {
+    pub name: String,
+    pub offset: i32,
+}
+
 // ========== 转换辅助函数 ==========
 
 fn convert_diagnostic(d: crate::session::Diagnostic) -> Diagnostic {
@@ -128,7 +139,7 @@ fn convert_algorithm_match(m: crate::session::AlgorithmMatch) -> AlgorithmMatch 
         confidence: m.confidence,
         suggestion: m.suggestion,
         line: m.line,
-        vis_events: m.vis_events.into_iter().map(|(line, ty, _)| VisEvent { line, ty }).collect(),
+        vis_events: m.vis_events.into_iter().map(|(line, ty, ctx)| VisEvent { line, ty, extra0: 0, extra1: 0, extra2: 0, context: ctx }).collect(),
     }
 }
 
@@ -288,7 +299,14 @@ pub fn provide_input_line(line: String) {
 pub fn get_vis_events() -> Vec<VisEvent> {
     crate::flutter_bridge::get_vis_events()
         .into_iter()
-        .map(|v| VisEvent { line: v.line, ty: v.ty })
+        .map(|v| VisEvent {
+            line: v.line,
+            ty: v.ty,
+            extra0: v.extra[0],
+            extra1: v.extra[1],
+            extra2: v.extra[2],
+            context: String::new(),
+        })
         .collect()
 }
 
@@ -298,8 +316,16 @@ pub fn clear_vis_events() {
 }
 
 #[frb]
-pub fn readMemory(addr: u32, count: u32) -> Vec<i32> {
+pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
     crate::flutter_bridge::read_memory(addr, count)
+}
+
+#[frb]
+pub fn get_struct_fields(name: String) -> Vec<StructField> {
+    crate::flutter_bridge::get_struct_fields(name)
+        .into_iter()
+        .map(|(n, offset)| StructField { name: n, offset })
+        .collect()
 }
 
 #[frb]
