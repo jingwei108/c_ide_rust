@@ -1791,44 +1791,99 @@ class _ArrayVisualizerState extends State<_ArrayVisualizer> {
   }
 }
 
-class _ArrayBarChart extends StatelessWidget {
+class _ArrayBarChart extends StatefulWidget {
   final List<int> data;
   final bool isDark;
 
   const _ArrayBarChart({required this.data, required this.isDark});
 
   @override
+  State<_ArrayBarChart> createState() => _ArrayBarChartState();
+}
+
+class _ArrayBarChartState extends State<_ArrayBarChart> {
+  final Set<int> _flashIndices = {};
+
+  @override
+  void didUpdateWidget(covariant _ArrayBarChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.data.length != oldWidget.data.length) {
+      _flashIndices.clear();
+      return;
+    }
+    final changed = <int>{};
+    for (var i = 0; i < widget.data.length; i++) {
+      if (i < oldWidget.data.length && widget.data[i] != oldWidget.data[i]) {
+        changed.add(i);
+      }
+    }
+    if (changed.isNotEmpty) {
+      setState(() {
+        _flashIndices.addAll(changed);
+      });
+      Future.delayed(const Duration(milliseconds: 500), () {
+        if (mounted) {
+          setState(() {
+            for (final i in changed) {
+              _flashIndices.remove(i);
+            }
+          });
+        }
+      });
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final maxVal = data.map((v) => v.abs()).reduce((a, b) => a > b ? a : b).clamp(1, 999999);
-    final barHeight = 120.0;
+    final maxVal = widget.data.map((v) => v.abs()).reduce((a, b) => a > b ? a : b).clamp(1, 999999);
+    const barHeight = 120.0;
 
     return SizedBox(
       height: barHeight + 24,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        itemCount: data.length,
+        itemCount: widget.data.length,
         separatorBuilder: (_, __) => const SizedBox(width: 4),
         itemBuilder: (context, index) {
-          final val = data[index];
+          final val = widget.data[index];
           final ratio = val.abs() / maxVal;
           final height = (ratio * barHeight).clamp(4.0, barHeight);
           final isNegative = val < 0;
+          final isFlashing = _flashIndices.contains(index);
+
+          Color barColor;
+          if (isFlashing) {
+            barColor = Colors.amber;
+          } else if (isNegative) {
+            barColor = Colors.redAccent.withValues(alpha: 0.7);
+          } else {
+            barColor = Colors.blueAccent.withValues(alpha: 0.7);
+          }
 
           return Column(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Container(
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: 24,
                 height: height,
                 decoration: BoxDecoration(
-                  color: isNegative ? Colors.redAccent.withValues(alpha: 0.7) : Colors.blueAccent.withValues(alpha: 0.7),
+                  color: barColor,
                   borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                  boxShadow: isFlashing
+                      ? [BoxShadow(color: Colors.amber.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2)]
+                      : null,
                 ),
               ),
               const SizedBox(height: 4),
               Text(
                 '$val',
-                style: TextStyle(fontSize: 10, color: isDark ? Colors.grey[400] : Colors.grey[700], fontFamily: 'monospace'),
+                style: TextStyle(
+                  fontSize: 10,
+                  color: widget.isDark ? Colors.grey[400] : Colors.grey[700],
+                  fontFamily: 'monospace',
+                  fontWeight: isFlashing ? FontWeight.bold : FontWeight.normal,
+                ),
               ),
               Text(
                 '[$index]',
