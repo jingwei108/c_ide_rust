@@ -213,10 +213,8 @@ fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
         Stmt::Expr { expr, .. } => {
             walk_expr(expr, f, loop_depth, func_name);
         }
-        Stmt::Return { value, .. } => {
-            if let Some(v) = value {
-                walk_expr(v, f, loop_depth, func_name);
-            }
+        Stmt::Return { value: Some(v), .. } => {
+            walk_expr(v, f, loop_depth, func_name);
         }
         Stmt::Switch { cond, body, .. } => {
             walk_expr(cond, f, loop_depth, func_name);
@@ -291,10 +289,9 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             }
 
             // 检测 shift 模式：arr[j+1] = arr[j] 或类似的后移操作
-            if matches!(op, AssignOp::Assign) {
-                if s.contains('[') && expr_to_string(right).contains('[') {
-                    f.has_shift_pattern = true;
-                }
+            if matches!(op, AssignOp::Assign)
+                && s.contains('[') && expr_to_string(right).contains('[') {
+                f.has_shift_pattern = true;
             }
         }
         Expr::Ternary { cond, then_branch, else_branch, .. } => {
@@ -305,10 +302,8 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
         Expr::Cast { expr: e, .. } => {
             walk_expr(e, f, loop_depth, func_name);
         }
-        Expr::Sizeof { operand, .. } => {
-            if let Some(e) = operand {
-                walk_expr(e, f, loop_depth, func_name);
-            }
+        Expr::Sizeof { operand: Some(e), .. } => {
+            walk_expr(e, f, loop_depth, func_name);
         }
         Expr::InitList { elements, .. } => {
             for e in elements {
@@ -319,7 +314,7 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
     }
 }
 
-fn check_compare_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32) {
+fn check_compare_expr(expr: &Expr, f: &mut FuncFeatures, _loop_depth: i32) {
     match expr {
         Expr::Binary { op, left, right, loc, .. } => {
             if is_comparison_op(op) {
@@ -337,36 +332,34 @@ fn check_compare_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32) {
                     f.compare_lines.push((loc.line, 1, ctx));
                 }
             }
-            check_compare_expr(left, f, loop_depth);
-            check_compare_expr(right, f, loop_depth);
+            check_compare_expr(left, f, _loop_depth);
+            check_compare_expr(right, f, _loop_depth);
         }
         Expr::Unary { operand, .. } => {
-            check_compare_expr(operand, f, loop_depth);
+            check_compare_expr(operand, f, _loop_depth);
         }
         Expr::Call { args, .. } => {
             for a in args {
-                check_compare_expr(a, f, loop_depth);
+                check_compare_expr(a, f, _loop_depth);
             }
         }
         Expr::Index { array, index, .. } => {
-            check_compare_expr(array, f, loop_depth);
-            check_compare_expr(index, f, loop_depth);
+            check_compare_expr(array, f, _loop_depth);
+            check_compare_expr(index, f, _loop_depth);
         }
         Expr::Member { object, .. } => {
-            check_compare_expr(object, f, loop_depth);
+            check_compare_expr(object, f, _loop_depth);
         }
         Expr::Ternary { cond, then_branch, else_branch, .. } => {
-            check_compare_expr(cond, f, loop_depth);
-            check_compare_expr(then_branch, f, loop_depth);
-            check_compare_expr(else_branch, f, loop_depth);
+            check_compare_expr(cond, f, _loop_depth);
+            check_compare_expr(then_branch, f, _loop_depth);
+            check_compare_expr(else_branch, f, _loop_depth);
         }
         Expr::Cast { expr: e, .. } => {
-            check_compare_expr(e, f, loop_depth);
+            check_compare_expr(e, f, _loop_depth);
         }
-        Expr::Sizeof { operand, .. } => {
-            if let Some(e) = operand {
-                check_compare_expr(e, f, loop_depth);
-            }
+        Expr::Sizeof { operand: Some(e), .. } => {
+            check_compare_expr(e, f, _loop_depth);
         }
         _ => {}
     }

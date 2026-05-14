@@ -23,7 +23,7 @@
 
 **排除标准**：
 1. 会分散初学者注意力的细节（如 printf 的格式化字符串）
-2. 增加编译器复杂度但教学价值低（如 float 精度问题、char 编码问题）
+2. 增加编译器复杂度但教学价值低（如 double 精度问题）
 3. 可以用现有语法等价表达的（如 break/continue 可用 return 替代）
 4. 在 WASM 沙盒中无意义的（如 #include、文件 I/O）
 
@@ -289,10 +289,10 @@ arr[1] = 2;
 ```
 
 **设计决策**：
-- **参数是字节数**：`malloc(10 * 4)` 而不是 `malloc(10 * sizeof(int))`
-  - 原因：sizeof 增加了编译器复杂度；教学场景固定 int = 4 字节
-- **宿主管理堆分配**：`malloc` 是宿主导入函数，宿主记录分配元数据（用于内存泄漏检测）
-- **不支持 realloc**：简化初始实现
+- **参数是字节数**：`malloc(10 * 4)` 或 `malloc(10 * sizeof(int))`
+  - `sizeof(int)` 和 `sizeof(struct S)` 已支持，帮助学生理解类型大小
+- **宿主管理堆分配**：`malloc` / `realloc` / `free` 是宿主导入函数，宿主记录分配元数据（用于内存泄漏检测）
+- **`realloc` 已支持**：完整支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
 
 ---
 
@@ -302,14 +302,14 @@ arr[1] = 2;
 
 | 特性 | 排除理由 | 遇到时的错误提示 |
 |:---|:---|:---|
-| `float` / `double` | 教学以整数为主；避免精度问题分散注意力 | "教学子集暂只支持 `int` 类型，小数运算建议用整数模拟或后续学习" |
-| `char` / `char*` / 字符串 | ✅ **已支持**：char 按 i32 存储，字符串通过 Data Segment 注入 | — |
+| `double` | 教学以整数和 float 为主；double 增加复杂度且教学价值有限 | "教学子集暂不支持 `double` 类型，请使用 `float` 代替" |
+| `char` / `char*` / 字符串 | ✅ **已支持**：char 按 i32 存储，字符串通过 Data Segment 注入；支持 `strlen`/`strcpy`/`strcmp`/`strcat` | — |
 | `break` / `continue` | ✅ **已支持**：循环控制的核心语法 | — |
 | `goto` | 教学上不鼓励使用；增加控制流图复杂度 | "暂不支持 `goto`" |
 | `do...while` | ✅ **已支持**：至少执行一次的循环 | — |
 | `switch` / `case` / `default` | ✅ **已支持**：多分支选择，支持 fallthrough | — |
 | 预处理 (`#include`) | WASM 沙盒中无意义 | "解释器模式下无需 `#include`，直接编写代码即可" |
-| 指针运算 (`p++` / `p+i`) | 极易混淆数组索引和指针运算；教学子集禁用 | "教学子集不支持指针运算，请使用数组索引 `arr[i]` 代替" |
+| `union` / `bitfield` | 进阶特性，初学者不需要 | "暂不支持该特性" |
 | 多维数组 | ✅ **已支持**：二维数组声明、嵌套初始化、索引访问、函数参数传递 | — |
 | `sizeof` | ✅ **已支持**：编译期常量，所有标量/指针返回 4 | — |
 | 逗号分隔的多变量声明 (`int a, b;`) | ✅ **已支持**：`int a = 1, b = 2;` | — |
@@ -317,7 +317,8 @@ arr[1] = 2;
 | `typedef` | ✅ **已支持**：类型别名，提升代码可读性 | — |
 | `enum` | ✅ **已支持**：编译期常量，底层为 int | — |
 | `union` / `bitfield` | 进阶特性，初学者不需要 | "暂不支持该特性" |
-| `extern` / `static` / `const` / `volatile` | 存储类和类型修饰符，增加复杂度 | "暂不支持存储类修饰符" |
+| `extern` / `static` / `volatile` / `restrict` | 存储类和类型修饰符，增加复杂度 | "暂不支持存储类修饰符" |
+| `const` | ✅ **已支持**：直接变量 `const` 语义，阻止赋值和自增/自减 | — |
 
 ### 3.2 隐式转换与编译器警告
 
@@ -434,7 +435,7 @@ int main() {
 
 ## 6. 编译器实现工作量评估
 
-基于 wasm3 + WASM CodeGen 架构：
+基于 Rust + CideVM 自定义字节码架构：
 
 ### 6.1 各模块代码量估算
 
@@ -444,10 +445,10 @@ int main() {
 | Parser（递归下降） | ~600 行 | 🟡 中 | 表达式优先级、语句解析、函数定义 |
 | AST 节点定义 | ~200 行 | 🟢 低 | ~20 种 AST 节点类型 |
 | TypeChecker | ~400 行 | 🟡 中 | 类型推导、类型兼容性检查 |
-| **WASM CodeGen** | **~800 行** | **🔴 高** | **栈机代码生成、内存布局、控制流** |
+| **BytecodeGen** | **~1200 行** | **🔴 高** | **栈机代码生成、内存布局、控制流、指针步长、float 指令** |
 | Source Map | ~100 行 | 🟢 低 | 指令偏移 → 源码位置映射 |
 | 内置函数（print_int 等） | ~50 行 | 🟢 低 | 宿主导入的辅助函数 |
-| **合计** | **~3500 行** | | |
+| **合计** | **~4000 行** | | |
 
 ### 6.2 降低风险的策略
 
@@ -457,10 +458,9 @@ int main() {
 
 | 策略 | 说明 | 效果 |
 |:---|:---|:---|
-| **Phase 1 缩小子集** | 去掉 struct 和 malloc，只保留：变量+数组+函数+指针+if/while/for | 减少 ~30% CodeGen 工作量 |
-| **WAT 文本格式** | 先生成人类可读的 WAT，用 `wat2wasm` 工具转换 | 避免手写 WASM 二进制编码，快速验证 |
-| **复用 VisualBinaryTree 经验** | Parser/TypeChecker 逻辑可参考其 C# 解释器实现 | 减少设计时间 |
-| **分阶段验证** | 每增加一个语法特性，立即用 wasm3 加载验证 | 早发现错误 |
+| **Phase 1 缩小子集** | 先实现变量+数组+函数+指针+if/while/for | 减少 ~30% CodeGen 工作量 |
+| **Rust 枚举 AST** | 用 enum 替代 C++ 多态类层次 | 减少内存管理错误，Borrow Checker 保障安全 |
+| **端到端测试驱动** | 每增加一个语法特性，立即添加 E2E 测试 | 早发现错误，防止回归 |
 
 ---
 
@@ -515,11 +515,19 @@ int main() { return 0; }
 - [x] **多维数组** — 已支持声明、嵌套初始化列表、索引访问、函数参数传递（如 `int[][3]`）
 - [x] **结构体初始化**（`struct Node n = {10, &a};`）— 已支持完整/部分初始化，含指针字段
 - [x] **函数前向声明** — 已支持 `int foo(int);` 原型声明，实现可放在调用者之后
-- [x] **字符串库函数** — 已支持 `strlen` / `strcpy` / `strcmp`（宿主导入函数）
-- [x] **显式类型转换（Cast）** — 已支持 `(int*)p`、`(char*)arr` 等标量/指针间转换
+- [x] **字符串库函数** — 已支持 `strlen` / `strcpy` / `strcmp` / `strcat`（宿主导入函数）
+- [x] **显式类型转换（Cast）** — 已支持 `(int*)p`、`(char*)arr`、`(float)a` 等标量/指针间转换
 - [x] **预处理器（宏定义）** — 已支持 `#define` 简单常量替换
-- [ ] 函数指针
-- [ ] 浮点运算（float/double）
+- [x] **位运算** — 已支持 `& | ^ ~ << >>`
+- [x] **三目运算符** — 已支持 `? :`
+- [x] **指针算术** — 已支持 `p++` / `p+i` / `p-q`，自动按 pointee 大小缩放
+- [x] **`const` 语义** — 已支持直接变量 `const`，阻止赋值和自增/自减
+- [x] **`NULL` 关键字** — 已支持，`NULL` 被解析为 `(void*)0`
+- [x] **新增宿主函数** — `getchar`/`putchar`/`rand`/`srand`/`memset`/`exit`/`strcat`/`atoi`
+- [x] **`fprintf`/`realloc`/`qsort`** — 已支持
+- [x] **函数指针基础** — 已支持函数名作为参数传递（如 `qsort(..., cmp)`）
+- [ ] 函数指针完整支持（声明变量、赋值）
+- [ ] `double` 类型
 
 ---
 
@@ -543,23 +551,25 @@ int main() { return 0; }
 
 3. **学生第一次接触这个特性时会困惑吗？**
    - `int a, b;` → 可能困惑（为什么可以一行两个？）→ **排除**
-   - `p++` vs `arr[i++]` → 极易混淆 → **排除指针运算**
+   - `p++` vs `arr[i++]` → 需要理解步长缩放，但已支持并带教学提示 → **保留**
 
 ### 最终推荐的 Cide-C 子集（Phase 1 ~ 3 完整版）
 
 ```
-数据类型：int、char、unsigned、int*、char*、int[]、char[]、struct、enum
-类型系统：typedef、sizeof
+数据类型：int、char、float、unsigned、int*、char*、float*、int[]、char[]、struct、enum
+类型系统：typedef、sizeof、const
 语句：变量声明、赋值、if/else、while、do...while、for、switch/case/default、
        break、continue、return、块作用域
-表达式：算术、比较、逻辑、赋值、数组索引、函数调用、&、*、struct访问、
-        ++/--、字符串字面量
-函数：定义/调用/递归
-内存：malloc/free（简化版）
-I/O：printf、scanf、print_int
+表达式：算术、比较、逻辑、位运算、赋值、三目运算符、数组索引、函数调用、&、*、
+        struct访问、++/--、字符串字面量、sizeof、显式类型转换
+函数：定义/调用/递归/前向声明
+内存：malloc/free/realloc
+I/O：printf、scanf、fprintf、getchar、putchar
+字符串：strlen、strcpy、strcmp、strcat、atoi
+其他：rand/srand/memset/exit/qsort
 
-不支持：float/double、预处理、指针运算、标准库（除 printf/scanf/malloc/free）、
-       extern/static/const/union/bitfield
+不支持：double、union/bitfield、goto、文件I/O、extern/static/volatile/restrict、
+       完整预处理器（仅 #define 常量宏）
 ```
 
 这个范围覆盖了 C 语言的核心教学价值（变量、控制流、函数、指针、内存、字符串、类型系统），

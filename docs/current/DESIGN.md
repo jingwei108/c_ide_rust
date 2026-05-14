@@ -1,7 +1,7 @@
 ﻿# C IDE 项目设计文档
 
 > 一款面向教学场景的移动端 C 语言子集 IDE
-> 核心技术：.NET MAUI Blazor Hybrid 前端 + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
+> 核心技术：Flutter 前端（Android + Desktop Windows） + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
 
 ---
 
@@ -39,16 +39,16 @@
 
 | 平台 | 优先级 | 技术方案 |
 |------|--------|---------|
-| Android (手机/平板) | P0 | .NET MAUI Blazor Hybrid + Rust `.so` + P/Invoke |
-| Windows Desktop | P1 | MAUI Blazor Hybrid + WinUI3 |
+| Android (手机/平板) | P0 | Flutter + Rust `.so` + flutter_rust_bridge |
+| Windows Desktop | P1 | Flutter + Rust `.dll` + flutter_rust_bridge |
 | iOS | P2 | 后续考虑 |
 
 ### 1.3 技术栈
 
 | 层级 | 技术 | 说明 |
 |------|------|------|
-| 前端 UI | .NET MAUI Blazor Hybrid（Android + Windows Desktop） | 跨平台，统一 UI |
-| 前端渲染 | SkiaSharp（跨平台） | **放弃 OpenGL**，避免移动端闪退 |
+| 前端 UI | Flutter（Android + Windows Desktop） | 跨平台，统一 UI |
+| 前端渲染 | Flutter CustomPainter + Widget | 算法可视化、内存映射 Canvas |
 | 后端核心 | Rust 1.95 | 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机 |
 | 通信 | C API (`extern "C"`) | 统一 P/Invoke（Android/Desktop） |
 | 构建 | Cargo + dotnet + PowerShell | 与参考项目保持一致 |
@@ -58,7 +58,7 @@
 | 来源 | 关键经验 | 本项目应用 |
 |------|---------|-----------|
 | **VisualBinaryTree.Desktop** | C 子集解释器（Lexer/Parser/AST/TypeChecker/VM）、C API 边界设计、双模式执行（编译/解释） | 参考其 C 子集范围和编译器分层设计；后端最终采用自研 CideVM |
-| **2048** | MAUI Android + 浏览器入口、Canvas + 动画、CancelAll+Snap 防闪退模式、Android 启动画面 workaround | **放弃 OpenGL** 用 Canvas；动画并发处理；触控手势；移动端适配 |
+| **2048** | MAUI Android + Canvas + 动画 | 触控手势、移动端适配参考 |
 
 ---
 
@@ -68,7 +68,7 @@
 
 ```
 +-----------------------------------------------------------------------------+
-|                     C# MAUI 前端 (Android / Desktop)                     |
+|                     Flutter 前端 (Android / Desktop)                      |
 |  +-------------+  +-------------+  +-------------------------------------+  |
 |  | CodeEditor  |  | MemoryView  |  | KnowledgeCard / QuickFixPanel       |  |
 |  |  代码编辑器  |  |  内存视图    |  | 知识卡片 / 一键修复面板               |  |
@@ -79,7 +79,7 @@
 |  +-------------+  +-------------+  +-------------------------------------+  |
 +-----------------------------------------------------------------------------+
                                     |
-                                    v P/Invoke (统一 C API)
+                                    v flutter_rust_bridge v2 (SSE codec)
 +-----------------------------------------------------------------------------+
 |                        Rust 后端 (Native DLL / .so)                          |
 |                                                                             |
@@ -134,12 +134,15 @@
 
 ```
 c-ide/
-├── build.ps1                          # 一键构建脚本
-├── README.md
+├── scripts/
+│   ├── build.py                       # 日常构建脚本
+│   ├── build_flutter.py               # Flutter 构建脚本
+│   ├── build_release.py               # Release 发布构建
+│   └── test_mobile.py                 # 移动端测试流水线
 ├── native/                            # Rust 后端
 │   ├── Cargo.toml
 │   ├── include/
-│   │   └── cide_capi.h               # C API 头文件（供 C# P/Invoke 参考）
+│   │   └── cide_capi.h               # C API 头文件
 │   ├── src/
 │   │   ├── compiler/                  # C 子集 → 字节码编译器
 │   │   │   ├── lexer.rs
@@ -152,55 +155,41 @@ c-ide/
 │   │   │   ├── opcode.rs
 │   │   │   ├── instruction.rs
 │   │   │   └── host_funcs.rs
-│   │   ├── diagnostics/               # 诊断系统
-│   │   │   └── error_codes.rs
-│   │   ├── capi/
-│   │   │   └── mod.rs                # C API 桥接层
-│   │   └── session.rs                # Session 状态管理
+│   │   ├── diagnostics/               # 诊断与自动修复系统
+│   │   │   ├── error_codes.rs
+│   │   │   └── error_catalog.rs
+│   │   ├── capi/                      # C API 桥接层
+│   │   │   └── mod.rs
+│   │   ├── api/                       # flutter_rust_bridge API
+│   │   │   └── cide.rs
+│   │   └── session.rs                 # Session 状态管理
 │   └── tests/                         # 测试套件
 │       ├── end_to_end_test.rs
 │       ├── end_to_end_extra_test.rs
 │       └── compile_pipeline_test.rs
-├── Cide.Client.Maui/                  # MAUI 跨平台前端（Android + Windows Desktop）
-│   ├── Core/
-│   │   ├── CompilerService.cs
-│   │   ├── NativeMethods.cs
-│   │   ├── Diagnostics/
-│   │   │   ├── ErrorCatalog.cs
-│   │   │   ├── KnowledgeBase.cs
-│   │   │   └── QuickFixEngine.cs
-│   │   ├── OcrCorrection/
-│   │   │   ├── OcrConfusionMap.cs
-│   │   │   └── CompilerDrivenCorrector.cs
-│   │   └── Responsive/
-│   │       └── Breakpoints.cs
-│   ├── Views/
-│   │   ├── MainWindow.axaml
-│   │   ├── CodeEditor.axaml
-│   │   ├── MemoryCanvas.axaml.cs
-│   │   ├── PointerCanvas.axaml.cs
-│   │   ├── ErrorPanel.axaml
-│   │   ├── KnowledgeCard.axaml
-│   │   ├── ConsoleOutput.axaml
-│   │   └── layouts/                   # 响应式布局
-│   │       ├── PhonePortraitLayout.axaml
-│   │       ├── PhoneLandscapeLayout.axaml
-│   │       ├── TabletPortraitLayout.axaml
-│   │       └── TabletLandscapeLayout.axaml
-│   └── ViewModels/
-│       ├── MainViewModel.cs
-│       └── ResponsiveLayoutViewModel.cs
-
+├── CideFlutter/                       # Flutter 跨平台前端（Android + Desktop）
+│   ├── lib/
+│   │   ├── main.dart
+│   │   ├── src/
+│   │   │   ├── rust/                  # FRB 生成的桥接代码
+│   │   │   ├── screens/               # 页面
+│   │   │   ├── widgets/               # 自定义组件（编辑器、Canvas）
+│   │   │   ├── providers/             # Riverpod 状态管理
+│   │   │   └── services/              # 业务逻辑（编译、诊断、修复）
+│   │   └── assets/                    # 知识卡片等资源
+│   └── rust_builder/                  # FRB Rust 构建配置
+├── Cide.Client.Maui/                  # 旧 MAUI 前端（已归档，仅保留）
+│   └── lib/
 └── docs/
-    ├── DESIGN.md
-    ├── C_SUBSET_SPEC.md
-    ├── CUSTOM_VM_DESIGN.md
-    ├── UX_DIAGNOSTICS_DESIGN.md
-    ├── MOBILE_TABLET_ADAPTATION.md
-    ├── ARCHIVE_OCR_IMPORT_DESIGN.md
-    ├── ALGORITHM_DATASTRUCTURE_DESIGN.md
-    ├── ZERO_INTRUSIVE_VISUALIZATION.md
-    └── INCIDENT_*.md                  # 事故复盘记录
+    ├── current/                         # 当前有效文档
+    │   ├── DESIGN.md
+    │   ├── C_SUBSET_SPEC.md
+    │   ├── ROADMAP.md
+    │   ├── BUILD.md
+    │   ├── MEMORY_SAFETY.md
+    │   └── ...
+    └── archive/                         # 历史归档文档
+        └── ...
 ```
 
 ---
@@ -211,47 +200,65 @@ c-ide/
 
 ```c
 // 数据类型
-int a;                // 唯一标量类型
+int a;                // 32位有符号整数
 int a = 5;
+float f = 3.14;       // 32位浮点数
+char c = 'A';         // 字符（按 i32 存储）
+unsigned u = 5;       // 无符号（语义映射为 int，带提示）
+
 int arr[10];          // 一维数组
-int arr[] = {1,2,3};
+int arr[] = {1,2,3};  // 自动推断大小
+int mat[3][3];        // 多维数组
+char s[] = "hello";   // 字符串/字符数组
+
 int* p;               // 指针
 int* p = &a;
-int* p = malloc(4);   // 动态分配（4 = sizeof(int)）
+int* p = malloc(4);   // 动态分配
+const int MAX = 100;  // 常量（阻止后续赋值）
+
 struct Node {          // 结构体
     int val;
     struct Node* next;
 };
 
+enum Color { Red, Green, Blue };  // 枚举
+typedef int Integer;              // 类型别名
+
 // 语句
 if (cond) { } else { }
 for (int i = 0; i < n; i++) { }   // C99 风格
 while (cond) { }
+do { } while (cond);
+switch (x) { case 1: ... break; default: ... }
 return expr;
 expr;
 { stmt... }           // 块作用域
 
 // 表达式
 + - * / % == != < <= > >= && || !
+& | ^ ~ << >>         // 位运算
 = += -= *= /= %=
+?:                    // 三目运算符
 arr[i]                // 数组索引
 foo(a, b)             // 函数调用
 &a                    // 取地址
 *p                    // 解引用
 node.val / node->val  // 结构体访问（行为一致）
 ++a / a++             // 自增自减
+sizeof(int) / sizeof(struct S)  // sizeof
+(int*)p / (float)a    // 显式类型转换
 ```
 
 ### 3.2 明确不支持
 
 | 特性 | 遇到时的中文提示 |
 |------|---------------|
-| `break` / `continue` | "暂不支持 break，请改用 return 或调整循环条件" |
-| `float` / `double` / `char` | "教学子集暂只支持 int 类型" |
-| 指针运算 (`p++`) | "教学子集不支持指针运算，请使用数组索引 arr[i] 代替" |
-| 预处理 (`#include`) | "解释器模式下无需 #include，直接编写代码即可" |
-| 标准库 (`printf`) | "未定义函数 'printf'，本 IDE 暂不支持标准库函数" |
-| 多维数组 | "暂不支持多维数组，请使用一维数组模拟" |
+| `double` | "教学子集暂不支持 double 类型，请使用 float 代替" |
+| `union` / `bitfield` | "暂不支持该特性" |
+| `goto` | "暂不支持 goto" |
+| 预处理 (`#include` / `#ifdef`) | "解释器模式下无需 #include，直接编写代码即可" |
+| 文件 I/O (`fopen`/`fread`) | "沙盒中不支持文件 I/O" |
+| `volatile` / `restrict` | "暂不支持该特性" |
 
 > 详细规范见 `C_SUBSET_SPEC.md`
 
@@ -446,7 +453,7 @@ int cide_trace_count(CideSession* s);
 void cide_trace_get(CideSession* s, int index, int* line, char* operation, int op_size);
 ```
 
-> 详细 VM 设计见 `CUSTOM_VM_DESIGN.md`
+> VM 设计细节见本章节 4.2 ~ 4.3 节
 
 ---
 
@@ -454,32 +461,22 @@ void cide_trace_get(CideSession* s, int index, int* line, char* operation, int o
 
 ### 5.1 响应式布局
 
-```csharp
-// 断点定义
-public enum LayoutBreakpoint {
-    Compact,     // < 600px  -> 手机
-    Medium,      // 600~1024px -> 小平板
-    Expanded,    // 1024~1280px -> 大平板
-    Wide         // > 1280px -> 桌面
-}
-```
+Flutter 前端基于 `LayoutBuilder` 和 `MediaQuery` 实现多端自适应：
 
 | 设备 | 布局 |
 |------|------|
-| **手机竖屏** | 底部导航 Tab（4 个：代码/运行/内存/错误）+ 全屏页面 |
-| **手机横屏** | 左右分栏：代码 + 输出 |
-| **平板竖屏** | 编辑器全宽 + 底部可视化 Tab |
-| **平板横屏** | **三栏：文件(240px) | 编辑器(自适应) | 可视化(300px)** |
+| **手机竖屏** | 底部导航 Tab + 全屏页面 + 悬浮快捷按钮 |
+| **手机横屏** | 左右分栏：代码 + 输出/可视化 |
+| **平板竖屏** | 编辑器全宽 + 底部可视化面板 |
+| **平板横屏** | **三栏：文件 | 编辑器 | 可视化/调试面板** |
 | **桌面** | 三栏固定 + 最高信息密度 |
 
-### 5.2 触控优化
+### 5.2 编辑器与交互
 
-- 最小触控区域：**48dp**
-- 代码编辑器：增大行高和字体（手机 16px），底部符号工具栏
-- 手势：滑动切换 Tab、长按上下文菜单、双击选中单词
-- 虚拟键盘：弹出时自动滚动到光标、隐藏底部导航
-
-> 详细设计见 `MOBILE_ADAPTATION.md`
+- **编辑器**：`re_editor`（CustomPainter 实现），支持语法高亮、智能缩进、VS-style Enter 格式化
+- **触控优化**：最小触控区域 48dp；底部符号工具栏；手势滑动切换 Tab（60px 阈值）
+- **虚拟键盘适配**：弹出时自动滚动到光标位置
+- **算法可视化**：内存映射 Canvas（256KB 64×4KB 网格）、链表/数组/树可视化
 
 ---
 
@@ -525,15 +522,15 @@ MakeDiagnostic(source) ──→ PopulateStructuredFix(d, source)
     v
 CideDiagnostic (含结构化 fix 数据)
     |
-    v  P/Invoke
-C# Diagnostic (FixKind, ReplaceStartLine/Column, ReplaceEndLine/Column, ReplacementText)
+    v  flutter_rust_bridge
+Dart Diagnostic (fixKind, replaceStartLine/Column, replaceEndLine/Column, replacementText)
     |
     v
-CodeFixService.TryApplyFix()
-    ├── FixKind.ReplaceText → ApplyStructuredReplace()（精确字符级替换）
-    ├── FixKind.InsertText  → ApplyStructuredReplace()（精确字符级插入）
-    ├── FixKind.ManualHint  → 显示修复提示，不自动修改
-    └── fallback → ApplyLegacyFix()（字符串匹配）
+CodeFixService.tryApplyFix()
+    ├── FixKind.replaceText → applyStructuredReplace()（精确字符级替换）
+    ├── FixKind.insertText  → applyStructuredReplace()（精确字符级插入）
+    ├── FixKind.manualHint  → 显示修复提示，不自动修改
+    └── fallback → applyLegacyFix()（字符串匹配）
 ```
 
 **已实现的结构化修复**：
@@ -665,7 +662,7 @@ void bubbleSort(int arr[], int n) {
 - 内存视图最多显示 64 个格子（手机）
 - 快速切换时 CancelAllAnimations() + SnapToFinalState()（参考 2048 防闪退）
 
-> 详细设计见 `MOBILE_TABLET_ADAPTATION.md`
+> 移动端适配细节见 5.1 ~ 5.2 节
 
 ---
 
@@ -678,49 +675,60 @@ void bubbleSort(int arr[], int n) {
 ## 11. 开发阶段
 
 ### Phase 1: 基础架构（✅ 已完成）
-- [x] 项目脚手架：build.ps1, Cargo, .csproj, 目录结构
+- [x] 项目脚手架：Cargo, 目录结构, 构建脚本
 - [x] C API 接口定义：cide_capi.h
-- [x] MAUI 跨平台项目 + Android / Windows 入口 + 响应式布局框架
-- [x] 代码编辑器基础（行号 + 基础高亮 + 触控优化）
-- [x] **最小 wasm3 原型**：加载简单 WASM 模块，P/Invoke 验证全链路
+- [x] Flutter 跨平台项目 + Android / Windows 入口
+- [x] 代码编辑器基础（`re_editor` + 语法高亮 + 触控优化）
+- [x] **Rust 后端骨架**：Session 类型 + C API 桩
 
-### Phase 2: C 子集编译器（✅ 已完成）
+### Phase 2: C 子集编译器 + VM（✅ 已完成）
 - [x] Lexer + Parser + AST + TypeChecker
-- [x] ~~WASM CodeGen~~ → **BytecodeGen**（已迁移到 CideVM 扁平字节码）
+- [x] **BytecodeGen**（CideVM 扁平字节码）
 - [x] CideVM 核心实现（~30 条指令解释器）
 - [x] 虚拟内存管理 + 指针追踪（局部变量映射到线性内存）
 - [x] Source Map 生成 + `StepEvent` 单步指令
+- [x] 安全加固：边界检查、除零捕获、步数熔断、NULL 区陷阱
 
-> 详细完成报告见 `PHASE2_COMPLETION.md`
-> wasm3 → CideVM 迁移记录见 `CUSTOM_VM_DESIGN.md`
-
-### Phase 3: 诊断与可视化（✅ 基础框架已完成，Stage 2 精确诊断增强中）
-- [x] 中文错误消息系统（L1/L2/L3 基础）
-- [x] QuickFix 引擎（语法/语义自动修复）
-- [x] 知识卡片系统（Markdown + 内存 Canvas 图）
-- [x] 零侵入可视化注入引擎（5 种核心算法规则）
-- [x] 内存视图 Canvas + 指针视图 Canvas
+### Phase 3: 诊断与可视化（✅ 已完成）
+- [x] 中文错误消息系统（L1/L2/L3）+ 56+ 错误码中文元数据
+- [x] QuickFix 引擎（结构化自动修复：分号/括号/引号/运算符勘误）
+- [x] 知识卡片系统（JSON + 内存 Canvas 图）
+- [x] 零侵入可视化注入引擎（8 种核心算法规则）
+- [x] 内存视图 Canvas + 指针追踪 + 算法动画
 - [x] **单步调试**：`StepEvent` 指令级暂停，同步执行，零线程风险
-- [ ] **运行时诊断增强**：基础除零/越界/NULL 诊断已实现，精确到变量值的诊断正在 Stage 2 中实现
+- [x] **运行时诊断增强**：精确到变量值的越界/除零/NULL 诊断
 
-### Phase 4: 算法与数据结构（3-4 周）
-- [ ] 算法模式识别系统
-- [ ] 运行时验证（Property-based Testing）
-- [ ] 数据结构专用诊断（断链检测、泄漏检测、递归深度）
-- [ ] 内置可视化函数（vis_array, vis_list, vis_tree）
-- [ ] Starter Code 模板库
+### Phase 4: 算法与数据结构（✅ 已完成）
+- [x] 算法模式识别系统（冒泡/选择/插入/快排/归并/二分/链表遍历/链表反转）
+- [x] 运行时验证（Property-based Testing，自动测试用例验证排序属性）
+- [x] 内存泄漏检测（程序结束时未 free 的堆内存）
+- [x] 数组/链表/树实时可视化
 
-### Phase 5: 移动端优化（2-3 周）
-- [ ] Android 触控手势 + 虚拟键盘适配
-- [ ] 横竖屏切换状态保持
-- [ ] 性能优化（降帧率、简化渲染）
-- [ ] 动画稳定性（CancelAll + Snap 模式）
+### Phase 5: 前端交互与体验（✅ 已完成）
+- [x] Flutter 响应式布局（手机/平板/桌面三态）
+- [x] Android 触控手势 + 虚拟键盘适配
+- [x] 横竖屏切换状态保持
+- [x] 动画稳定性优化
+- [x] VS-style Enter 格式化、Touch swipe tabs、Execution speed slider
+- [x] 教程引导 overlay (`IntroOverlay`)
+- [x] 学习进度追踪系统（编译统计、错误修复、知识卡片、算法验证）
 
-### Phase 6: ~~OCR 导入~~（已移除）
-> OCR 相关代码已清理，该功能不再在路线图内。
+### Phase 6: C 子集 P0/P1/P2 拓展（✅ 已完成）
+- [x] `float` 类型全管线支持（算术/比较/转换/`printf %f`/`scanf %f`）
+- [x] 位运算符 `& | ^ ~ << >>`
+- [x] 三目运算符 `? :`
+- [x] 指针算术（`p++` / `p+i` / `p-q`，自动按 pointee 大小缩放）
+- [x] `const` 语义（阻止赋值和自增/自减）
+- [x] `NULL` 关键字、`char` 字面量、`0x` 十六进制、块注释 `/* */`
+- [x] 复合赋值扩展到数组索引/指针解引用/结构体成员
+- [x] 函数前向声明、显式类型转换（Cast）
+- [x] 新增宿主函数：`getchar`/`putchar`/`rand`/`srand`/`memset`/`exit`/`strcat`/`atoi`
+- [x] `fprintf`/`realloc`/`qsort`
+- [x] 隐式转换提示系统（warning + hint 分级）
 
-### Phase 7: 扩展（后续）
-- [ ] 子集渐进式解锁（break/continue、多维数组、字符串）
+### Phase 7: 扩展与未来
+- [ ] `double` 类型支持
+- [ ] 函数指针完整支持（当前仅基础支持，用于 `qsort` 回调）
 - [ ] 知识图谱系统
 - [ ] 社区贡献算法模板
 
@@ -733,7 +741,7 @@ void bubbleSort(int arr[], int n) {
 | 执行引擎 | **自研 CideVM（替代 wasm3）** | 教学专用：完全可控的单步/诊断/内存可视化；局部变量映射到线性内存支持 `&x` |
 | 编译目标 | **自定义扁平字节码（替代 WASM）** | 只实现教学子集需要的 ~30 条指令；简化编译器和 VM 的耦合 |
 | 可视化方式 | **零侵入自动注入** | 初学者写纯 C，系统自动识别算法 |
-| 渲染引擎 | **SkiaSharp（放弃 OpenGL）** | 参考 2048，避免移动端闪退 |
+| 渲染引擎 | **Flutter CustomPainter + Widget** | 跨平台，算法可视化与内存映射 |
 | 动画稳定性 | **CancelAll + SnapToFinalState** | 参考 2048 修复经验 |
 | 中文支持 | **三级信息 + 运行时值注入** | L1 感知/L2 理解/L3 原理 |
 | 算法修复 | **诊断 + 引导，不代写代码** | 保护学习过程 |

@@ -7,14 +7,7 @@ fn read_cbytes(vm: &CideVM, addr: u32) -> Vec<u8> {
     if start >= mem.len() {
         return Vec::new();
     }
-    let mut bytes = Vec::new();
-    for i in start..mem.len() {
-        if mem[i] == 0 {
-            break;
-        }
-        bytes.push(mem[i]);
-    }
-    bytes
+    mem[start..].iter().take_while(|&&b| b != 0).copied().collect()
 }
 
 fn read_cstring(vm: &CideVM, addr: u32) -> String {
@@ -361,8 +354,8 @@ fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
     }
     let max_copy = mem_size - dest as usize;
     let copy_len = src_bytes.len().min(max_copy.saturating_sub(1));
-    for i in 0..copy_len {
-        vm.store_i8(dest + i as u32, src_bytes[i] as i32, &super::instruction::SourceLoc::default());
+    for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
+        vm.store_i8(dest + i as u32, b as i32, &super::instruction::SourceLoc::default());
     }
     let end = dest as usize + copy_len;
     vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
@@ -490,8 +483,8 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
     let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
     let src_bytes = read_cbytes(vm, src);
     let copy_len = src_bytes.len().min(max_copy);
-    for i in 0..copy_len {
-        vm.store_i8((end + i) as u32, src_bytes[i] as i32, &super::instruction::SourceLoc::default());
+    for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
+        vm.store_i8((end + i) as u32, b as i32, &super::instruction::SourceLoc::default());
     }
     vm.store_i8((end + copy_len) as u32, 0, &super::instruction::SourceLoc::default());
     vm.push(dest as i32);
@@ -699,7 +692,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     // Track new region
     session.memory.regions.push(MemoryRegion {
         addr: new_addr,
-        size: new_size as i32,
+        size: new_size,
         name: String::new(),
         ty: String::new(),
         is_heap: true,
