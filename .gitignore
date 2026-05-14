@@ -111,3 +111,6 @@ node_modules/
 /CideFlutter/packages/**/.dart_tool/
 /CideFlutter/packages/**/build/
 /CideFlutter/packages/**/pubspec.lock
+
+#py
+*.pyc

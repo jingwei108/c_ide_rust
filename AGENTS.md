@@ -189,13 +189,13 @@ docs/                   设计文档、事故报告
 
 ```bash
 # 日常构建（桌面端 Debug）
-python scripts/build.py
+python scripts/build_flutter.py
 
 # 构建并运行桌面端 Release
-python scripts/build.py -c Release --run
+python scripts/build_flutter.py -c Release --run
 
 # Android 完整构建（.so + APK）
-python scripts/build.py -t Android
+python scripts/build_flutter.py -t Android
 
 # 构建 + 安装 + 启动 + 日志（移动端完整流水线）
 python scripts/test_mobile.py --install --run --logcat
@@ -203,22 +203,11 @@ python scripts/test_mobile.py --install --run --logcat
 # Release 发布构建
 python scripts/build_release.py
 
-# --- Flutter 前端构建 ---
-
-# Flutter 桌面端 Debug（手动 Rust + 复制 DLL，适用于未开开发者模式）
-python scripts/build_flutter.py
-
-# Flutter 桌面端 Release
-python scripts/build_flutter.py -c Release
-
-# Flutter Android APK
-python scripts/build_flutter.py -t Android
+# 构建前运行测试和 lint
+python scripts/build_flutter.py --test
 
 # Flutter 离线构建（无网络环境）
 python scripts/build_flutter.py --offline
-
-# Flutter 构建并运行桌面端
-python scripts/build_flutter.py --run
 
 # Flutter 清理构建产物
 python scripts/build_flutter.py --clean
@@ -231,20 +220,22 @@ cd native && cargo build --release
 
 # 构建 Android .so (arm64-v8a + armeabi-v7a)
 cd native
-cargo ndk -t aarch64-linux-android -o target/android build --release
-cargo ndk -t armv7-linux-androideabi -o target/android build --release
-
-# 构建并运行桌面端 (.NET MAUI)
-dotnet run --project Cide.Client.Maui/Cide.Client.Maui.csproj --framework net10.0-windows10.0.19041.0 --configuration Debug
-
-# 构建移动端 (.NET MAUI)
-dotnet build Cide.Client.Maui/Cide.Client.Maui.csproj --framework net10.0-android
+cargo ndk -t aarch64-linux-android --platform 21 build --release
+cargo ndk -t armv7-linux-androideabi --platform 21 build --release
 
 # 构建并运行 Flutter 桌面端（手动命令）
 cd CideFlutter
 flutter pub get --offline
 flutter build windows --debug
 flutter run -d windows
+
+# 构建 Flutter Android APK（手动命令）
+cd CideFlutter
+flutter build apk --release
+
+# 安装并启动（手动命令）
+adb install -r "build/app/outputs/flutter-apk/app-release.apk"
+adb shell monkey -p com.example.cide -c android.intent.category.LAUNCHER 1
 ```
 
 ## 调试技巧

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-C IDE Mobile Test Script
-Builds native .so libraries, packages the Android APK, and optionally
-installs / runs / captures logs on a connected device or emulator.
+Cide Mobile Test Script
+Builds Flutter Android APK and optionally installs / runs / captures logs.
 
 Usage:
     python scripts/test_mobile.py                    # Full build (native + APK)
@@ -31,12 +30,12 @@ from build_utils import (
     get_project_root,
 )
 
-PACKAGE_NAME = "com.cide.app"
+PACKAGE_NAME = "com.example.cide"
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Mobile test pipeline for MAUI Android."
+        description="Mobile test pipeline for Flutter Android."
     )
     parser.add_argument(
         "-c",
@@ -57,7 +56,9 @@ def parse_args() -> argparse.Namespace:
         "--run", action="store_true", help="Launch app after installation"
     )
     parser.add_argument(
-        "--logcat", action="store_true", help="Capture app logs after launch (Ctrl+C to stop)"
+        "--logcat",
+        action="store_true",
+        help="Capture app logs after launch (Ctrl+C to stop)",
     )
     return parser.parse_args()
 
@@ -90,72 +91,62 @@ def build_native_so(root: Path, configuration: str) -> None:
         run(cargo_args, cwd=native_dir)
 
         profile = "release" if configuration == "Release" else "debug"
-        so_source = root / "native" / "target" / rust_target / profile / "libcide_native.so"
+        so_source = (
+            root / "native" / "target" / rust_target / profile / "libcide_native.so"
+        )
         if so_source.exists():
             so_dest_dir = root / "native" / "target" / "android" / abi
             so_dest_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(so_source, so_dest_dir / "libcide_native.so")
             success(f"Copied libcide_native.so ({abi}) -> native/target/android/{abi}/")
-
-            maui_lib_dir = root / "Cide.Client.Maui" / "lib" / abi
-            maui_lib_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(so_source, maui_lib_dir / "libcide_native.so")
-            success(f"Copied libcide_native.so ({abi}) -> Cide.Client.Maui/lib/{abi}/")
         else:
             warn(f"libcide_native.so not found for {abi} at {so_source}")
 
 
-def build_apk(root: Path, configuration: str) -> Path:
-    header("Building MAUI Android APK")
-    android_dir = root / "dist" / "android"
+def find_flutter() -> str:
+    """查找 flutter 可执行文件，支持常见安装路径。"""
+    flutter = shutil.which("flutter")
+    if flutter:
+        return flutter
 
-    # Force clean MAUI obj cache so updated .so files are re-packaged
-    maui_obj_dir = root / "Cide.Client.Maui" / "obj"
-    if maui_obj_dir.exists():
-        warn("Cleaning MAUI build cache to ensure fresh .so packaging...")
-        shutil.rmtree(maui_obj_dir)
-    if android_dir.exists():
-        shutil.rmtree(android_dir)
+    candidates = [
+        Path(r"D:\flutter\bin\flutter.bat"),
+        Path(r"C:\flutter\bin\flutter.bat"),
+        Path(r"D:\tools\flutter\bin\flutter.bat"),
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
 
-    run(["dotnet", "restore", "Cide.slnx"], cwd=root)
-    run(
-        [
-            "dotnet",
-            "publish",
-            "Cide.Client.Maui/Cide.Client.Maui.csproj",
-            "-f",
-            "net10.0-android",
-            "-c",
-            configuration,
-            "-p:AndroidPackageFormat=apk",
-            "-o",
-            str(android_dir),
-            "--self-contained",
-            "false",
-        ],
-        cwd=root,
+    raise FileNotFoundError(
+        "flutter command not found. Please add Flutter to your PATH.\n"
+        "Common location: D:\\flutter\\bin"
     )
 
-    # Locate the signed APK
-    apk_candidates = [
-        android_dir / "com.cide.app-Signed.apk",
-    ]
-    apk = None
-    for c in apk_candidates:
-        if c.exists():
-            apk = c
-            break
-    if apk is None:
-        signed_apks = list(android_dir.glob("*Signed.apk"))
-        if signed_apks:
-            apk = signed_apks[0]
-    if apk is None:
-        apks = list(android_dir.glob("*.apk"))
-        if apks:
-            apk = apks[0]
-    if apk is None:
-        raise FileNotFoundError(f"No APK found in {android_dir}")
 
+def build_apk(root: Path, configuration: str) -> Path:
+    header("Building Flutter Android APK")
+    flutter_dir = root / "CideFlutter"
+    flutter_exe = find_flutter()
+
+    flutter_args = [flutter_exe, "build", "apk"]
+    if configuration == "Release":
+        flutter_args.append("--release")
+    else:
+        flutter_args.append("--debug")
+
+    run(flutter_args, cwd=flutter_dir)
+    success("Flutter Android build completed")
+
+    apk_dir = flutter_dir / "build" / "app" / "outputs" / "flutter-apk"
+    if not apk_dir.exists():
+        raise FileNotFoundError(f"APK output directory not found: {apk_dir}")
+
+    apks = list(apk_dir.glob("*.apk"))
+    if not apks:
+        raise FileNotFoundError(f"No APK found in {apk_dir}")
+
+    apk = apks[0]
     size_mb = round(apk.stat().st_size / (1024 * 1024), 2)
     success(f"APK built: {apk} ({size_mb} MB)")
     return apk
@@ -163,14 +154,14 @@ def build_apk(root: Path, configuration: str) -> Path:
 
 def install_apk(adb: Path, device: str, apk: Path) -> None:
     header("Installing APK")
-    warn("Uninstalling old version to clear WebView cache...")
+    warn("Uninstalling old version to clear cache...")
     run([str(adb), "-s", device, "uninstall", PACKAGE_NAME], check=False)
     run([str(adb), "-s", device, "install", "-d", str(apk)])
     success("APK installed successfully")
 
 
 def launch_app(adb: Path, device: str) -> None:
-    header("Launching C IDE (MAUI)")
+    header("Launching C IDE (Flutter)")
     run(
         [
             str(adb),

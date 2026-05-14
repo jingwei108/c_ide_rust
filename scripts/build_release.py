@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-C IDE Release Build Script
-Builds both Desktop (MAUI Windows) and Android (AOT + Trim) in Release configuration.
-Native backend is built with Rust / cargo / cargo-ndk.
+Cide Release Build Script
+Builds Flutter frontend with Rust backend in Release configuration.
 
 Usage:
     python scripts/build_release.py                    # Build both Desktop and Android
@@ -13,6 +12,7 @@ Usage:
 
 import argparse
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -29,7 +29,7 @@ from build_utils import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Release build for Desktop and/or Android."
+        description="Release build for Flutter Desktop and/or Android."
     )
     parser.add_argument(
         "-t",
@@ -39,7 +39,7 @@ def parse_args() -> argparse.Namespace:
         help="Build target platform (default: All)",
     )
     parser.add_argument(
-        "--clean", action="store_true", help="Clean all build artifacts"
+        "--clean", action="store_true", help="Clean build artifacts"
     )
     return parser.parse_args()
 
@@ -48,12 +48,7 @@ def clean_build(root: Path) -> None:
     header("Cleaning build artifacts")
     dirs = [
         root / "native" / "target" / "android",
-        root / "Cide.Client.Maui" / "bin",
-        root / "Cide.Client.Maui" / "obj",
-        root / "Cide.Client.Shared" / "bin",
-        root / "Cide.Client.Shared" / "obj",
-        root / "Cide.Client.Tests" / "bin",
-        root / "Cide.Client.Tests" / "obj",
+        root / "CideFlutter" / "build",
         root / "dist",
     ]
     for d in dirs:
@@ -62,15 +57,37 @@ def clean_build(root: Path) -> None:
             print(f"Removed {d}")
 
 
-def build_desktop(root: Path) -> None:
-    header("Building Desktop (MAUI Windows)")
-    configuration = "Release"
+def find_flutter() -> str:
+    """查找 flutter 可执行文件，支持常见安装路径。"""
+    flutter = shutil.which("flutter")
+    if flutter:
+        return flutter
 
-    # Native backend (Rust)
+    candidates = [
+        Path(r"D:\flutter\bin\flutter.bat"),
+        Path(r"C:\flutter\bin\flutter.bat"),
+        Path(r"D:\tools\flutter\bin\flutter.bat"),
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+
+    raise FileNotFoundError(
+        "flutter command not found. Please add Flutter to your PATH.\n"
+        "Common location: D:\\flutter\\bin"
+    )
+
+
+def build_desktop(root: Path) -> None:
+    header("Building Desktop Release (Flutter Windows)")
+    flutter_dir = root / "CideFlutter"
+    flutter_exe = find_flutter()
+
+    # Build Rust backend in release
     native_dir = root / "native"
     run(["cargo", "build", "--release"], cwd=native_dir)
 
-    # Copy native DLL
+    # Copy DLL to dist
     dll_source = root / "native" / "target" / "release" / "cide_native.dll"
     desktop_dir = root / "dist" / "desktop"
     if dll_source.exists():
@@ -80,44 +97,31 @@ def build_desktop(root: Path) -> None:
     else:
         warn(f"cide_native.dll not found at {dll_source}")
 
-    # Publish Desktop (MAUI Windows)
-    run(["dotnet", "restore", "Cide.slnx"], cwd=root)
-    run(
-        [
-            "dotnet",
-            "publish",
-            "Cide.Client.Maui/Cide.Client.Maui.csproj",
-            "-f",
-            "net10.0-windows10.0.19041.0",
-            "-c",
-            configuration,
-            "-r",
-            "win-x64",
-            "--self-contained",
-            "true",
-            "-o",
-            str(desktop_dir),
-        ],
-        cwd=root,
-    )
+    # Build Flutter Windows release
+    run([flutter_exe, "build", "windows", "--release"], cwd=flutter_dir)
+    success("Flutter Windows release build completed")
 
-    # Report size
-    exe = desktop_dir / "Cide.Client.Maui.exe"
-    if exe.exists():
-        size_mb = round(exe.stat().st_size / (1024 * 1024), 2)
-        success(f"Desktop EXE: {size_mb} MB")
-
-    total = sum(f.stat().st_size for f in desktop_dir.rglob("*") if f.is_file())
-    success(f"Desktop publish total: {round(total / (1024 * 1024), 2)} MB")
+    # Report output size
+    build_dir = flutter_dir / "build" / "windows" / "x64" / "runner" / "Release"
+    if build_dir.exists():
+        exes = list(build_dir.glob("*.exe"))
+        if exes:
+            size_mb = round(exes[0].stat().st_size / (1024 * 1024), 2)
+            success(f"Desktop EXE: {exes[0].name} ({size_mb} MB)")
+        total = sum(f.stat().st_size for f in build_dir.rglob("*") if f.is_file())
+        success(f"Desktop publish total: {round(total / (1024 * 1024), 2)} MB")
 
 
 def build_android(root: Path) -> None:
-    header("Building Android (AOT + Trim + r8)")
-    configuration = "Release"
+    header("Building Android Release (Flutter APK)")
+    flutter_dir = root / "CideFlutter"
+    flutter_exe = find_flutter()
 
+    # Build Rust Android .so if NDK available
     ndk_home = find_ndk()
     if ndk_home is None:
-        warn("ANDROID_NDK_HOME not set. Skipping native .so build.")
+        warn("ANDROID_NDK_HOME not set. Skipping manual .so build.")
+        warn("cargokit may still build it during Gradle phase if configured.")
     else:
         abi_map = {
             "arm64-v8a": "aarch64-linux-android",
@@ -144,55 +148,31 @@ def build_android(root: Path) -> None:
                 error(f"Native Android build ({abi}) failed: {e}")
                 raise
 
-            so_source = root / "native" / "target" / rust_target / "release" / "libcide_native.so"
+            so_source = (
+                root / "native" / "target" / rust_target / "release" / "libcide_native.so"
+            )
             if so_source.exists():
                 so_dest_dir = root / "native" / "target" / "android" / abi
                 so_dest_dir.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(so_source, so_dest_dir / "libcide_native.so")
-                success(f"Copied libcide_native.so ({abi}) -> native/target/android/{abi}/")
-
-                maui_lib_dir = root / "Cide.Client.Maui" / "lib" / abi
-                maui_lib_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(so_source, maui_lib_dir / "libcide_native.so")
-                success(f"Copied libcide_native.so ({abi}) -> Cide.Client.Maui/lib/{abi}/")
+                success(
+                    f"Copied libcide_native.so ({abi}) -> native/target/android/{abi}/"
+                )
             else:
                 warn(f"libcide_native.so not found for {abi} at {so_source}")
 
-    # Publish MAUI Android APK
-    android_dir = root / "dist" / "android"
-    run(["dotnet", "restore", "Cide.slnx"], cwd=root)
-    run(
-        [
-            "dotnet",
-            "publish",
-            "Cide.Client.Maui/Cide.Client.Maui.csproj",
-            "-f",
-            "net10.0-android",
-            "-c",
-            configuration,
-            "-p:AndroidPackageFormat=apk",
-            "-o",
-            str(android_dir),
-        ],
-        cwd=root,
-    )
+    # Build Flutter APK release
+    run([flutter_exe, "build", "apk", "--release"], cwd=flutter_dir)
+    success("Flutter Android release build completed")
 
     # Report APK size
-    apk_candidates = [
-        android_dir / "com.cide.app-Signed.apk",
-    ]
-    apk = None
-    for c in apk_candidates:
-        if c.exists():
-            apk = c
-            break
-    if apk is None:
-        signed_apks = list(android_dir.glob("*Signed.apk"))
-        if signed_apks:
-            apk = signed_apks[0]
-    if apk and apk.exists():
-        size_mb = round(apk.stat().st_size / (1024 * 1024), 2)
-        success(f"APK: {apk.name} ({size_mb} MB)")
+    apk_dir = flutter_dir / "build" / "app" / "outputs" / "flutter-apk"
+    if apk_dir.exists():
+        apks = list(apk_dir.glob("*.apk"))
+        if apks:
+            apk = apks[0]
+            size_mb = round(apk.stat().st_size / (1024 * 1024), 2)
+            success(f"APK: {apk.name} ({size_mb} MB)")
 
 
 def main() -> int:
