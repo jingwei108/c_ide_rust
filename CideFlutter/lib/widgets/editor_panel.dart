@@ -5,11 +5,14 @@ import 'package:re_editor/re_editor.dart';
 import 'package:re_highlight/languages/c.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
+import '../models/ide_state.dart';
 import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
 
 class EditorPanel extends ConsumerStatefulWidget {
-  const EditorPanel({super.key});
+  final VoidCallback? onTap;
+
+  const EditorPanel({super.key, this.onTap});
 
   @override
   ConsumerState<EditorPanel> createState() => EditorPanelState();
@@ -17,6 +20,8 @@ class EditorPanel extends ConsumerStatefulWidget {
 
 class EditorPanelState extends ConsumerState<EditorPanel> {
   late CodeLineEditingController _controller;
+  final _focusNode = FocusNode();
+  bool _readOnly = true;
 
   @override
   void initState() {
@@ -65,9 +70,16 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     }
   }
 
+  /// 每次操作后保持焦点和光标可见
+  void _keepActive() {
+    _focusNode.requestFocus();
+    _controller.makeCursorCenterIfInvisible();
+  }
+
   /// 在当前光标位置插入文本
   void insertText(String text) {
     _controller.replaceSelection(text);
+    _keepActive();
   }
 
   /// 插入成对符号，并将光标放在中间
@@ -77,13 +89,20 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     for (var i = 0; i < close.length; i++) {
       _controller.moveCursor(AxisDirection.left);
     }
+    _keepActive();
   }
 
   /// 撤销
-  void undo() => _controller.undo();
+  void undo() {
+    _controller.undo();
+    _keepActive();
+  }
 
   /// 重做
-  void redo() => _controller.redo();
+  void redo() {
+    _controller.redo();
+    _keepActive();
+  }
 
   /// 移动光标
   void moveCursor(int offset) {
@@ -92,6 +111,7 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     for (var i = 0; i < count; i++) {
       _controller.moveCursor(direction);
     }
+    _keepActive();
   }
 
   /// 滚动到指定行（1-based）
@@ -115,7 +135,29 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
   void dispose() {
     _controller.removeListener(_onChanged);
     _controller.dispose();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  /// 编辑器焦点节点，外部可监听焦点变化
+  FocusNode get focusNode => _focusNode;
+
+  /// 设置只读模式（用于拦截/恢复系统键盘）
+  void setReadOnly(bool value) {
+    if (_readOnly == value) return;
+    setState(() => _readOnly = value);
+  }
+
+  /// 退格删除
+  void backspace() {
+    _controller.deleteBackward();
+    _keepActive();
+  }
+
+  /// 插入换行（Enter）
+  void insertNewline() {
+    _controller.applyNewLine();
+    _keepActive();
   }
 
 
@@ -228,27 +270,34 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
           keywordPrompts: _cAutocompletePrompts.whereType<CodeKeywordPrompt>().toList(),
           directPrompts: _cAutocompletePrompts.whereType<CodeFunctionPrompt>().toList(),
         ),
-        child: CodeEditor(
-          controller: _controller,
-          style: CodeEditorStyle(
-            fontSize: 14,
-            fontFamily: 'Consolas',
-            fontFamilyFallback: const ['monospace'],
-            textColor: editorTextColor,
-            backgroundColor: editorBackground,
-            cursorColor: isDark ? Colors.white : Colors.black,
-            cursorWidth: 2,
-            cursorLineColor: cursorLineColor,
-            codeTheme: CodeHighlightTheme(
-              languages: {'c': CodeHighlightThemeMode(mode: langC)},
-              theme: isDark ? atomOneDarkTheme : atomOneLightTheme,
+        child: Listener(
+          onPointerDown: (_) => widget.onTap?.call(),
+          behavior: HitTestBehavior.translucent,
+          child: CodeEditor(
+            controller: _controller,
+            focusNode: _focusNode,
+            readOnly: _readOnly,
+            showCursorWhenReadOnly: true,
+            style: CodeEditorStyle(
+              fontSize: 14,
+              fontFamily: 'Consolas',
+              fontFamilyFallback: const ['monospace'],
+              textColor: editorTextColor,
+              backgroundColor: editorBackground,
+              cursorColor: isDark ? Colors.white : Colors.black,
+              cursorWidth: 2,
+              cursorLineColor: cursorLineColor,
+              codeTheme: CodeHighlightTheme(
+                languages: {'c': CodeHighlightThemeMode(mode: langC)},
+                theme: isDark ? atomOneDarkTheme : atomOneLightTheme,
+              ),
             ),
+            indicatorBuilder: (context, editingController, chunkController, notifier) =>
+                _buildGutter(editingController, notifier, state, isDark),
+            scrollbarBuilder: (context, child, details) =>
+                Scrollbar(controller: details.controller, child: child),
+            sperator: Container(width: 1, color: separatorColor),
           ),
-          indicatorBuilder: (context, editingController, chunkController, notifier) =>
-              _buildGutter(editingController, notifier, state, isDark),
-          scrollbarBuilder: (context, child, details) =>
-              Scrollbar(controller: details.controller, child: child),
-          sperator: Container(width: 1, color: separatorColor),
         ),
       ),
     );
