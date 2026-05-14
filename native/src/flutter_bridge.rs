@@ -3,6 +3,8 @@
 //! 为 Flutter 前端提供类型安全、异步友好的 Rust API。
 //! 现有 C API (`capi/mod.rs`) 完全保留，此模块仅服务于 Flutter 前端。
 
+#![forbid(unsafe_code)]
+
 use std::sync::Mutex;
 
 use crate::session::*;
