@@ -1,7 +1,7 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::session::*;
-use crate::vm::vm::{CideVM, FuncMeta, VMSymbol};
+use crate::vm::vm::CideVM;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::type_checker::TypeChecker;
@@ -10,34 +10,7 @@ use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 use std::slice;
 
-/// Trait to abstract over LexerError, ParseError, and TypeError.
-trait CompileError {
-    fn line(&self) -> i32;
-    fn column(&self) -> i32;
-    fn code(&self) -> i32;
-    fn message(&self) -> &str;
-}
-
-impl CompileError for crate::compiler::lexer::LexerError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
-}
-
-impl CompileError for crate::compiler::parser::ParseError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
-}
-
-impl CompileError for crate::compiler::type_checker::TypeError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
-}
+use crate::engine::compile_pipeline::{push_diagnostics, push_hints, push_warnings, setup_vm};
 
 unsafe fn cstr_to_str(s: *const c_char) -> Option<&'static str> {
     if s.is_null() {
@@ -197,102 +170,6 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
         }
     }
 
-    // Helper: 将编译错误同时填充到 diagnostics 和 errors 字符串
-    fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], source: &str) {
-        let source_lines: Vec<&str> = source.lines().collect();
-        let mut err_str = String::new();
-        for e in errors {
-            let info = crate::diagnostics::error_catalog::lookup_error_info(e.code());
-            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-                crate::diagnostics::error_catalog::generate_fix(e.code(), e.line(), e.column(), e.message(), &source_lines);
-
-            let enriched_msg = if let Some(ref i) = info {
-                format!("{} {} — 错误 E{} (第{}行, 第{}列): {}", i.emoji, i.title, e.code(), e.line(), e.column(), e.message())
-            } else {
-                format!("错误 E{} (第{}行, 第{}列): {}", e.code(), e.line(), e.column(), e.message())
-            };
-
-            session.compile.diagnostics.push(crate::session::Diagnostic {
-                line: e.line(),
-                column: e.column(),
-                error_code: e.code(),
-                severity: 0,
-                message: e.message().to_string(),
-                fix_suggestion: if fix_suggestion.is_empty() {
-                    info.map(|i| i.explanation.to_string()).unwrap_or_default()
-                } else {
-                    fix_suggestion.clone()
-                },
-                fix_kind,
-                replace_start_line: rsl,
-                replace_start_column: rsc,
-                replace_end_line: rel,
-                replace_end_column: rec,
-                replacement_text: rt,
-            });
-            err_str.push_str(&enriched_msg);
-            err_str.push('\n');
-        }
-        session.compile.errors = err_str.clone();
-        session.compile.errors_buffer = err_str;
-    }
-
-    fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], source: &str) {
-        let source_lines: Vec<&str> = source.lines().collect();
-        for w in warnings {
-            let info = crate::diagnostics::error_catalog::lookup_error_info(w.code());
-            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-                crate::diagnostics::error_catalog::generate_fix(w.code(), w.line(), w.column(), w.message(), &source_lines);
-
-            session.compile.diagnostics.push(crate::session::Diagnostic {
-                line: w.line(),
-                column: w.column(),
-                error_code: w.code(),
-                severity: 1,
-                message: w.message().to_string(),
-                fix_suggestion: if fix_suggestion.is_empty() {
-                    info.map(|i| i.explanation.to_string()).unwrap_or_default()
-                } else {
-                    fix_suggestion.clone()
-                },
-                fix_kind,
-                replace_start_line: rsl,
-                replace_start_column: rsc,
-                replace_end_line: rel,
-                replace_end_column: rec,
-                replacement_text: rt,
-            });
-        }
-    }
-
-    fn push_hints<T: CompileError>(session: &mut Session, hints: &[T], source: &str) {
-        let source_lines: Vec<&str> = source.lines().collect();
-        for h in hints {
-            let info = crate::diagnostics::error_catalog::lookup_error_info(h.code());
-            let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-                crate::diagnostics::error_catalog::generate_fix(h.code(), h.line(), h.column(), h.message(), &source_lines);
-
-            session.compile.diagnostics.push(crate::session::Diagnostic {
-                line: h.line(),
-                column: h.column(),
-                error_code: h.code(),
-                severity: 2,
-                message: h.message().to_string(),
-                fix_suggestion: if fix_suggestion.is_empty() {
-                    info.map(|i| i.explanation.to_string()).unwrap_or_default()
-                } else {
-                    fix_suggestion.clone()
-                },
-                fix_kind,
-                replace_start_line: rsl,
-                replace_start_column: rsc,
-                replace_end_line: rel,
-                replace_end_column: rec,
-                replacement_text: rt,
-            });
-        }
-    }
-
     // 1. Lexer
     let (tokens, lex_errors) = Lexer::new(full_source.clone()).tokenize();
     if !lex_errors.is_empty() {
@@ -383,6 +260,10 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
         session.compile.struct_fields.insert(name, converted);
     }
 
+    // 算法模式识别
+    session.compile.algorithm_matches =
+        crate::compiler::algorithm_detector::detect_algorithms(&program);
+
     session.compile.compiled = true;
     session.compile.errors.clear();
     session.compile.errors_buffer.clear();
@@ -428,53 +309,6 @@ pub unsafe extern "C" fn cide_get_compile_errors_buf(
     slice.copy_from_slice(&session.compile.errors.as_bytes()[..copy_len]);
     *buf.add(copy_len) = 0;
     copy_len as c_int
-}
-
-unsafe fn setup_vm(vm: &mut CideVM, session: &Session) {
-    vm.reset();
-    vm.load_program(session.compile.bytecode.clone());
-    vm.set_globals(&session.compile.globals_init);
-    vm.set_max_steps(10_000_000);
-
-    for (name, meta) in &session.compile.func_table {
-        if let Some(&idx) = session.compile.func_index.get(name) {
-            vm.register_function(idx as u32, FuncMeta {
-                ip: meta.ip,
-                arg_count: meta.arg_count,
-                local_count: meta.local_count,
-            });
-            vm.register_function_name(idx as u32, name.clone());
-        }
-    }
-
-    let symbols: Vec<VMSymbol> = session.compile.symbols.iter().map(|s| VMSymbol {
-        name: s.name.clone(),
-        addr: s.addr,
-        is_local: s.is_local,
-        ty: s.ty.clone(),
-        scope_depth: s.scope_depth,
-    }).collect();
-    vm.set_symbols(symbols);
-
-    let mut vis_lines = Vec::new();
-    for m in &session.compile.algorithm_matches {
-        for &(line, ty, _) in &m.vis_events {
-            vis_lines.push((line, ty));
-        }
-    }
-    vm.set_vis_event_lines(vis_lines);
-
-    let mem = vm.get_memory();
-    let mem_size = vm.get_memory_size() as usize;
-    for &(addr, ref str) in &session.compile.string_data {
-        let a = addr as usize;
-        let bytes = str.as_bytes();
-        if a + bytes.len() < mem_size {
-            let dst = slice::from_raw_parts_mut(mem.add(a), bytes.len() + 1);
-            dst[..bytes.len()].copy_from_slice(bytes);
-            dst[bytes.len()] = 0;
-        }
-    }
 }
 
 #[no_mangle]

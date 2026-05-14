@@ -4,18 +4,20 @@
 
 Cide 是一个跨平台 C 语言 IDE，包含：
 
-- **前端**：.NET MAUI (Android + Desktop Windows)
+- **前端**：Flutter (Android + Desktop Windows) — 使用 `re_editor` 编辑器 + `flutter_riverpod` 状态管理
 - **后端**：共享 Rust native 编译器/VM (`cide_native`)
 - **编译管线**：Lexer → Parser → TypeChecker → BytecodeGen → CideVM
+- **桥接**：flutter_rust_bridge v2 (`native/src/api/cide.rs` → `CideFlutter/lib/src/rust`)
 
 ## 技术栈
 
 | 层级 | 技术 |
 |------|------|
-| Android | .NET 10 MAUI BlazorWebView + CodeMirror6 |
-| Desktop | .NET 10 MAUI BlazorWebView + WinUI3 |
+| Android | Flutter + `re_editor` + CustomPainter 可视化 |
+| Desktop | Flutter + `re_editor` + CustomPainter 可视化 |
 | Native | **Rust 1.95.0**, Cargo, cdylib/staticlib/rlib |
 | VM | 自定义字节码解释器，256KB 线性内存 |
+| Bridge | flutter_rust_bridge v2.12.0 (SSE codec) |
 
 ## 关键目录
 
@@ -23,8 +25,10 @@ Cide 是一个跨平台 C 语言 IDE，包含：
 native/src/compiler/    Lexer, Parser, TypeChecker, BytecodeGen, AST (Rust)
 native/src/vm/          CideVM 字节码解释器 (Rust)
 native/src/capi/        C API (P/Invoke / JNI 接口) (Rust)
+native/src/api/         FRB API (flutter_rust_bridge) (Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议 (Rust)
-Cide.Client.Maui/       MAUI 跨平台前端 (Android + Desktop Windows)
+CideFlutter/            Flutter 跨平台前端 (Android + Desktop Windows)
+Cide.Client.Maui/       MAUI 前端（维护中，Flutter 为主）
 Cide.Client.Shared/     共享 ViewModel / 服务
 docs/                   设计文档、事故报告
 ```
@@ -47,6 +51,8 @@ docs/                   设计文档、事故报告
 | Phase 6 | 全面审查：编译警告清理 + 安全加固 + 测试覆盖拓展 | ✅ 完成 |
 | Phase 7 | Desktop 内存泄漏修复 + Maui scanf 输入 + sizeof/scanf 子集拓展 | ✅ 完成 |
 | Phase 8 | `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ 诊断系统拓展 | ✅ 完成 |
+| Phase 9 | Flutter 前端从零搭建：IDE 界面 + 编辑器 + 调试面板 + 算法可视化 | ✅ 完成 |
+| Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
 
 ## 编码约定
 
@@ -57,7 +63,14 @@ docs/                   设计文档、事故报告
 - 错误处理：不 panic，收集到 `Vec<Error>` 后统一返回
 - Borrow checker 冲突解决模式：先 clone 数据再调用需要 `&mut self` 的方法
 
-### C# (frontend)
+### Dart / Flutter (frontend)
+- 状态管理：`flutter_riverpod` (`StateNotifier` + `StateNotifierProvider`)
+- 编辑器：`re_editor`（CustomPainter 实现），非 CodeMirror
+- Rust 调用通过 `flutter_rust_bridge`：`rust.compile()` / `rust.stepNext()` 等
+- UI 线程：`Future.delayed` / `async-await`，无需显式主线程切换
+- 自定义组件：算法验证、内存映射、链表可视化、教程引导等均为 CustomPainter / Widget 实现
+
+### C# (frontend) — 维护中
 - ViewModel 使用 `ObservableObject` / `INotifyPropertyChanged`
 - Native 调用通过 P/Invoke：`[DllImport("cide_native")]`
 - UI 更新必须在主线程：`MainThread.InvokeOnMainThreadAsync()`
@@ -126,6 +139,17 @@ docs/                   设计文档、事故报告
   - `realloc(ptr, new_size)`：完整支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
   - `qsort(base, nmemb, size, compar)`：支持用户自定义比较函数，通过 `vm.call_user_function` 在 host 上下文中调用用户函数
 - **函数指针基础支持**：TypeChecker 将函数名识别为 `int`（函数索引）；BytecodeGen 生成 `PushConst func_idx`；支持将函数名作为参数传递（如 `qsort(..., cmp)`）
+- **算法可视化事件 FRB 集成**：`VisEvent` 扩展 `context` 字段保留比较上下文（如 `arr[i]:arr[i+1]`）；Flutter 算法面板支持展开查看关键比较事件列表
+- **内存映射 Canvas 组件**：256KB 内存以 64×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet
+- **VS-style Enter 格式化**：`re_editor` 拦截 Enter 键，自动补充分号、大括号配对、智能缩进
+- **教程引导 overlay**：`IntroOverlay` 组件支持多步骤引导，带跳过/下一步按钮
+- **Touch swipe tabs**：底部和悬浮面板支持水平滑动手势（60px 阈值）切换 Tab
+- **Execution speed slider**：单步模式下支持 0–500ms 执行速度调节
+- **学习进度追踪系统**：
+  - `LearningProgress` 数据模型：编译次数、成功/失败率、错误码统计、修复统计、知识卡片阅读、算法验证通过率、连续活跃天数 streak
+  - `SharedPreferences` 本地持久化
+  - Flutter「学习进度」面板：5 个维度卡片（连续活跃、编译统计、错误修复、知识卡片、算法验证）+ 线性进度条 + 重置按钮
+  - 自动追踪：编译后更新错误统计、修复后记录、算法验证后记录、查看知识卡片后记录
 - **TypeChecker 指针关系运算（2026-05-10）**：`< <= > >=` 拒绝指针比较 → 允许同类型指针（含数组退化）间比较
 - **Lexer UTF-8 安全加固（2026-05-10）**：`peek()`/`advance()` 使用 `as_bytes()[i] as char` → 改用 `source[pos..].chars().nth()` 和 `char.len_utf8()`，正确跳过多字节 UTF-8 字符（如中文注释）
 - **BytecodeGen 错误消息勘误（2026-05-10）**：`gen_member_addr` 中"全局结构体暂不支持" → 改为"未声明的结构体变量"（该分支实际处理的是变量未找到）
@@ -173,6 +197,26 @@ python scripts/test_mobile.py --install --run --logcat
 # Release 发布构建
 python scripts/build_release.py
 
+# --- Flutter 前端构建 ---
+
+# Flutter 桌面端 Debug（手动 Rust + 复制 DLL，适用于未开开发者模式）
+python scripts/build_flutter.py
+
+# Flutter 桌面端 Release
+python scripts/build_flutter.py -c Release
+
+# Flutter Android APK
+python scripts/build_flutter.py -t Android
+
+# Flutter 离线构建（无网络环境）
+python scripts/build_flutter.py --offline
+
+# Flutter 构建并运行桌面端
+python scripts/build_flutter.py --run
+
+# Flutter 清理构建产物
+python scripts/build_flutter.py --clean
+
 # --- 手动命令（脚本不可用时的备选） ---
 
 # 构建 native DLL (Release Desktop)
@@ -184,11 +228,17 @@ cd native
 cargo ndk -t aarch64-linux-android -o target/android build --release
 cargo ndk -t armv7-linux-androideabi -o target/android build --release
 
-# 构建并运行桌面端
+# 构建并运行桌面端 (.NET MAUI)
 dotnet run --project Cide.Client.Maui/Cide.Client.Maui.csproj --framework net10.0-windows10.0.19041.0 --configuration Debug
 
-# 构建移动端 (需要 Android SDK)
+# 构建移动端 (.NET MAUI)
 dotnet build Cide.Client.Maui/Cide.Client.Maui.csproj --framework net10.0-android
+
+# 构建并运行 Flutter 桌面端（手动命令）
+cd CideFlutter
+flutter pub get --offline
+flutter build windows --debug
+flutter run -d windows
 ```
 
 ## 调试技巧

@@ -141,7 +141,6 @@ name = "cide_native"
 version = "0.1.0"
 dependencies = [
  "flutter_rust_bridge",
- "once_cell",
  "serde",
  "serde_json",
 ]

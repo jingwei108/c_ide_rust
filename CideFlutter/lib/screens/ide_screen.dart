@@ -7,6 +7,9 @@ import '../models/panel_item.dart';
 import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/editor_panel.dart';
+import '../widgets/linked_list_visualizer.dart';
+import '../widgets/intro_overlay.dart';
+import '../widgets/memory_map_visualizer.dart';
 
 class IdeScreen extends ConsumerStatefulWidget {
   const IdeScreen({super.key});
@@ -43,18 +46,27 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
     return Scaffold(
       backgroundColor: scaffoldBg,
       body: SafeArea(
-        child: Column(
+        child: Stack(
           children: [
-            _buildToolbar(state, notifier, isDark),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: EditorPanel(key: _editorKey),
-              ),
+            Column(
+              children: [
+                _buildToolbar(state, notifier, isDark),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: EditorPanel(key: _editorKey),
+                  ),
+                ),
+                _buildSymbolBar(),
+                _buildTemplateBar(state, notifier),
+                _buildBottomPanel(state, notifier, isDark),
+              ],
             ),
-            _buildSymbolBar(),
-            _buildTemplateBar(state, notifier),
-            _buildBottomPanel(state, notifier, isDark),
+            if (state.showIntro)
+              IntroOverlay(
+                isDark: isDark,
+                onDone: notifier.hideIntro,
+              ),
           ],
         ),
       ),
@@ -106,9 +118,40 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          // 执行速度滑块
+          if (state.isStepMode)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.speed, size: 14, color: Colors.grey),
+                const SizedBox(width: 4),
+                SizedBox(
+                  width: 80,
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 2,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                      overlayShape: SliderComponentShape.noOverlay,
+                    ),
+                    child: Slider(
+                      value: state.executionSpeed.toDouble(),
+                      min: 0,
+                      max: 500,
+                      divisions: 10,
+                      label: '${state.executionSpeed}ms',
+                      onChanged: (v) => notifier.setExecutionSpeed(v.toInt()),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           _ToolButton(
             icon: isDark ? Icons.light_mode : Icons.dark_mode,
             onPressed: () => ref.read(themeProvider.notifier).toggle(),
+          ),
+          _ToolButton(
+            icon: Icons.help_outline,
+            onPressed: notifier.showIntro,
           ),
           if (state.output.isNotEmpty)
             _ToolButton(
@@ -279,9 +322,21 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
                 ],
               ),
             ),
-            // 内容区域
+            // 内容区域（支持水平滑动切换标签）
             Expanded(
-              child: _buildBottomTabContent(state, notifier, isDark),
+              child: GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  const threshold = 300.0;
+                  final dx = details.velocity.pixelsPerSecond.dx;
+                  if (dx > threshold && state.bottomActiveIndex > 0) {
+                    notifier.selectBottomTab(state.bottomActiveIndex - 1);
+                  } else if (dx < -threshold &&
+                      state.bottomActiveIndex < state.bottomSlots.length - 1) {
+                    notifier.selectBottomTab(state.bottomActiveIndex + 1);
+                  }
+                },
+                child: _buildBottomTabContent(state, notifier, isDark),
+              ),
             ),
           ],
         ),
@@ -324,6 +379,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
         return _buildWatchTab(state, isDark);
       case 'callstack':
         return _buildCallstackTab(state, isDark);
+      case 'progress':
+        return _buildProgressTab(state, isDark);
       default:
         return const SizedBox.shrink();
     }
@@ -422,9 +479,21 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
               ],
             ),
           ),
-          // 内容区域
+          // 内容区域（支持水平滑动切换标签）
           Expanded(
-            child: _buildFloatingTabContent(state, notifier, isDark),
+            child: GestureDetector(
+              onHorizontalDragEnd: (details) {
+                const threshold = 300.0;
+                final dx = details.velocity.pixelsPerSecond.dx;
+                if (dx > threshold && state.floatingActiveIndex > 0) {
+                  notifier.selectFloatingTab(state.floatingActiveIndex - 1);
+                } else if (dx < -threshold &&
+                    state.floatingActiveIndex < state.floatingSlots.length - 1) {
+                  notifier.selectFloatingTab(state.floatingActiveIndex + 1);
+                }
+              },
+              child: _buildFloatingTabContent(state, notifier, isDark),
+            ),
           ),
         ],
       ),
@@ -455,6 +524,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
         return _buildWatchTab(state, isDark);
       case 'callstack':
         return _buildCallstackTab(state, isDark);
+      case 'progress':
+        return _buildProgressTab(state, isDark);
       default:
         return const SizedBox.shrink();
     }
@@ -615,6 +686,43 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
                     ],
                   ),
                 ],
+                // 应用修复按钮
+                if (diag.fixKind == 1 || diag.fixKind == 2 || diag.fixSuggestion.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final msg = await notifier.applyFix(diag);
+                          if (!context.mounted) return;
+                          if (msg != null) {
+                            _editorKey.currentState?.setText(state.source);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+                            );
+                            // 修复后重新编译
+                            await notifier.compile();
+                          } else {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('💡 修复提示（第${diag.line}行）：${diag.fixSuggestion}\n请手动修改代码。'),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.auto_fix_high, size: 14),
+                        label: const Text('应用修复', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -627,38 +735,162 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
     if (state.algorithmMatches.isEmpty) {
       return const Center(child: Text('未检测到算法模式', style: TextStyle(color: Colors.grey)));
     }
-    return ListView.builder(
-      itemCount: state.algorithmMatches.length,
-      itemBuilder: (context, index) {
-        final match = state.algorithmMatches[index];
-        return Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
+    return StatefulBuilder(
+      builder: (context, setState) {
+        final validationResults = <int, AlgorithmValidationResult>{};
+        final validating = <int, bool>{};
+        final expandedVis = <int, bool>{};
+        return ListView.builder(
+          itemCount: state.algorithmMatches.length,
+          itemBuilder: (context, index) {
+            final match = state.algorithmMatches[index];
+            final result = validationResults[index];
+            final isValidating = validating[index] ?? false;
+            final isVisExpanded = expandedVis[index] ?? false;
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: Text(
-                      match.displayName.isEmpty ? match.name : match.displayName,
-                      style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                    ),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          match.displayName.isEmpty ? match.name : match.displayName,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      Text('置信度 ${match.confidence}%', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    ],
                   ),
-                  Text('置信度 ${match.confidence}%', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  if (match.suggestion.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(match.suggestion, style: TextStyle(fontSize: 12, color: Colors.grey[400])),
+                    ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: isValidating
+                            ? null
+                            : () async {
+                                setState(() => validating[index] = true);
+                                final notifier = ref.read(ideProvider.notifier);
+                                final res = await notifier.validateAlgorithm(match);
+                                setState(() {
+                                  validating[index] = false;
+                                  validationResults[index] = res;
+                                });
+                              },
+                        icon: isValidating
+                            ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                            : const Icon(Icons.search, size: 14),
+                        label: const Text('验证算法', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                      if (match.visEvents.isNotEmpty)
+                        TextButton.icon(
+                          onPressed: () => setState(() => expandedVis[index] = !isVisExpanded),
+                          icon: Icon(
+                            isVisExpanded ? Icons.visibility_off : Icons.visibility,
+                            size: 14,
+                          ),
+                          label: Text(
+                            isVisExpanded ? '收起事件' : '可视化事件 (${match.visEvents.length})',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                    ],
+                  ),
+                  if (result != null)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: result.passed ? Colors.green.withValues(alpha: 0.1) : Colors.red.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            result.passed ? Icons.check_circle : Icons.error,
+                            size: 16,
+                            color: result.passed ? Colors.green : Colors.red,
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              result.message,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: result.passed ? Colors.green[300] : Colors.red[300],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (isVisExpanded && match.visEvents.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 6),
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF2A2A2C) : const Color(0xFFF5F5F7),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '关键比较事件',
+                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                          ),
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 4,
+                            children: match.visEvents.asMap().entries.map((entry) {
+                              final i = entry.key;
+                              final ev = entry.value;
+                              return Tooltip(
+                                message: '第 ${ev.line} 行: ${ev.context}',
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blueAccent.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.3)),
+                                  ),
+                                  child: Text(
+                                    '${i + 1}. ${ev.context}',
+                                    style: const TextStyle(fontSize: 11, color: Colors.blueAccent),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
-              if (match.suggestion.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(match.suggestion, style: TextStyle(fontSize: 12, color: Colors.grey[400])),
-                ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
@@ -685,13 +917,144 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
       itemCount: cards.length,
       itemBuilder: (context, index) {
         final card = cards[index];
+        Future.microtask(() => ref.read(ideProvider.notifier).recordKnowledgeCardView(card.id));
         return _KnowledgeCardItem(card: card, isDark: isDark);
       },
     );
   }
 
   Widget _buildPointerVisTab(IdeState state, bool isDark) {
-    return const Center(child: Text('指针视图（待实现）', style: TextStyle(color: Colors.grey)));
+    return FutureBuilder<List<rust.VariableSnapshot>>(
+      future: rust.getVariables(),
+      builder: (context, snapshot) {
+        final vars = snapshot.data ?? [];
+        const nullTrapEnd = 64;
+        const linearMemorySize = 256 * 1024;
+        final pointers = vars.where((v) {
+          final val = v.value;
+          return v.tyName.contains('*') &&
+              val > nullTrapEnd &&
+              val < linearMemorySize;
+        }).toList();
+
+        // 查找链表头节点（struct Node* 类型）
+        final headVars = pointers.where((v) {
+          return v.tyName.toLowerCase().contains('struct') &&
+              v.tyName.toLowerCase().contains('node');
+        }).toList();
+
+        if (pointers.isEmpty && headVars.isEmpty) {
+          return const Center(child: Text('未检测到指针变量', style: TextStyle(color: Colors.grey)));
+        }
+
+        return Column(
+          children: [
+            // 链表可视化区域
+            if (headVars.isNotEmpty)
+              FutureBuilder<List<rust.VisEvent>>(
+                future: rust.getVisEvents(),
+                builder: (context, visSnapshot) {
+                  final visEvents = visSnapshot.data ?? [];
+                  return SizedBox(
+                    height: 120,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      itemCount: headVars.length,
+                      itemBuilder: (context, idx) {
+                        final hv = headVars[idx];
+                        return Container(
+                          margin: const EdgeInsets.only(right: 16),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 4),
+                                child: Text(
+                                  '${hv.name} (${hv.tyName})',
+                                  style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
+                                ),
+                              ),
+                              Expanded(
+                                child: LinkedListVisualizer(
+                                  headAddr: hv.value,
+                                  structName: 'Node',
+                                  visEvents: visEvents,
+                                  isDark: isDark,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            // 指针列表
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.all(12),
+                itemCount: pointers.length,
+                itemBuilder: (context, index) {
+                  final p = pointers[index];
+                  String targetName = '';
+                  final targetAddr = p.value;
+                  for (final v in vars) {
+                    if (v.addr == targetAddr) {
+                      targetName = v.name;
+                      break;
+                    }
+                  }
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border(
+                        bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.arrow_forward, size: 16, color: Colors.blueAccent),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p.name,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontFamily: 'monospace',
+                                  color: isDark ? const Color(0xffd4d4d4) : const Color(0xff333333),
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '0x${p.addr.toRadixString(16).toUpperCase().padLeft(4, '0')} → 0x${targetAddr.toRadixString(16).toUpperCase().padLeft(4, '0')} ${targetName.isNotEmpty ? '($targetName)' : ''}',
+                                style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.blueAccent.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(p.tyName, style: const TextStyle(fontSize: 10, color: Colors.blueAccent, fontFamily: 'monospace')),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   Widget _buildArrayVisTab(IdeState state, bool isDark) {
@@ -857,44 +1220,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
         if (regions.isEmpty) {
           return const Center(child: Text('无内存信息', style: TextStyle(color: Colors.grey)));
         }
-        return ListView.builder(
-          itemCount: regions.length,
-          itemBuilder: (context, index) {
-            final r = regions[index];
-            return ListTile(
-              dense: true,
-              title: Row(
-                children: [
-                  Text(
-                    '0x${r.addr.toRadixString(16).toUpperCase().padLeft(4, '0')}',
-                    style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      r.name.isEmpty ? '(匿名)' : r.name,
-                      style: const TextStyle(fontSize: 13),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                ],
-              ),
-              subtitle: Text('${r.size}B · ${r.ty}', style: const TextStyle(fontSize: 11, color: Colors.grey)),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (r.isHeap)
-                    const Text('堆', style: TextStyle(fontSize: 10, color: Colors.orangeAccent)),
-                  if (r.isFreed)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 4),
-                      child: Text('已释放', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
+        return MemoryMapVisualizer(regions: regions, isDark: isDark);
       },
     );
   }
@@ -967,6 +1293,96 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
           },
         );
       },
+    );
+  }
+
+  Widget _buildProgressTab(IdeState state, bool isDark) {
+    final progress = state.learningProgress;
+    final totalCards = KnowledgeCard.all.length;
+    final viewedCards = progress.viewedKnowledgeCards.length;
+    final cardProgress = totalCards == 0 ? 0.0 : viewedCards / totalCards;
+
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 连续活跃天数
+          _ProgressCard(
+            title: '🔥 连续活跃',
+            value: '${progress.streakDays} 天',
+            subtitle: progress.lastActiveDate.isEmpty ? '开始你的学习之旅吧' : '最后活跃: ${progress.lastActiveDate}',
+            icon: Icons.local_fire_department,
+            color: Colors.orangeAccent,
+          ),
+          const SizedBox(height: 12),
+          // 编译统计
+          _ProgressCard(
+            title: '📝 编译统计',
+            value: '${progress.totalCompiles} 次',
+            subtitle: '成功 ${progress.successfulCompiles} · 失败 ${progress.failedCompiles} · 成功率 ${(progress.successRate * 100).toStringAsFixed(1)}%',
+            icon: Icons.code,
+            color: Colors.blueAccent,
+          ),
+          const SizedBox(height: 12),
+          // 错误修复
+          _ProgressCard(
+            title: '🛠️ 错误修复',
+            value: '${progress.totalErrorsFixed} / ${progress.totalErrorsEncountered}',
+            subtitle: '已修复 / 遇到',
+            icon: Icons.build,
+            color: Colors.green,
+          ),
+          const SizedBox(height: 12),
+          // 知识卡片
+          _ProgressCard(
+            title: '📚 知识卡片',
+            value: '$viewedCards / $totalCards',
+            subtitle: '已阅读 / 总数',
+            icon: Icons.menu_book,
+            color: Colors.purpleAccent,
+            progress: cardProgress,
+          ),
+          const SizedBox(height: 12),
+          // 算法验证
+          _ProgressCard(
+            title: '🔍 算法验证',
+            value: '${(progress.algorithmOverallPassRate * 100).toStringAsFixed(1)}%',
+            subtitle: progress.algorithmValidationsTotal.isEmpty
+                ? '暂无验证记录'
+                : progress.algorithmValidationsTotal.entries.map((e) {
+                    final passed = progress.algorithmValidationsPassed[e.key] ?? 0;
+                    return '${e.key}: $passed/${e.value}';
+                  }).join(' · '),
+            icon: Icons.auto_fix_high,
+            color: Colors.teal,
+          ),
+          const SizedBox(height: 24),
+          // 重置按钮
+          Center(
+            child: TextButton.icon(
+              onPressed: () async {
+                final confirmed = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('重置学习进度'),
+                    content: const Text('确定要清除所有学习进度数据吗？此操作不可恢复。'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                      TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('确定')),
+                    ],
+                  ),
+                );
+                if (confirmed == true) {
+                  await ref.read(ideProvider.notifier).resetProgress();
+                }
+              },
+              icon: const Icon(Icons.restore, size: 16),
+              label: const Text('重置进度', style: TextStyle(fontSize: 12)),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -1448,6 +1864,85 @@ class _TemplateChip extends StatelessWidget {
           label,
           style: const TextStyle(fontSize: 12, color: Colors.green),
         ),
+      ),
+    );
+  }
+}
+
+/// 学习进度卡片组件
+class _ProgressCard extends StatelessWidget {
+  final String title;
+  final String value;
+  final String subtitle;
+  final IconData icon;
+  final Color color;
+  final double? progress;
+
+  const _ProgressCard({
+    required this.title,
+    required this.value,
+    required this.subtitle,
+    required this.icon,
+    required this.color,
+    this.progress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xff2a2a2a) : const Color(0xfff8f8f8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 18, color: color),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : Colors.black87,
+                  ),
+                ),
+              ),
+              Text(
+                value,
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: TextStyle(fontSize: 11, color: Colors.grey[500], height: 1.4),
+          ),
+          if (progress != null) ...[
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: progress,
+                backgroundColor: color.withValues(alpha: 0.1),
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+                minHeight: 6,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
