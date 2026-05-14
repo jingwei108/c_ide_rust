@@ -12,16 +12,16 @@ dependencies:
     sdk: flutter
 
   # Code Editor
-  re_editor:
-    path: packages/re_editor
+  re_editor: ^0.8.0
 
   # State Management
-  flutter_riverpod:
-    path: packages/flutter_riverpod
+  flutter_riverpod: ^3.3.2-dev.2
 
   # Rust Bridge (Dart side)
-  flutter_rust_bridge:
-    path: packages/flutter_rust_bridge
+  flutter_rust_bridge: ^2.12.0
+
+  # Local persistence
+  shared_preferences: ^2.5.0
 
   # Rust Builder (for Android/iOS/macOS/Linux automated builds)
   # On Windows, enable Developer Mode for symlink support, or manually copy DLL
@@ -31,9 +31,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  # flutter_lints temporarily removed due to offline development
-  # flutter_lints:
-  #   path: packages/flutter_lints
+  flutter_lints: ^5.0.0
 
 flutter:
   uses-material-design: true

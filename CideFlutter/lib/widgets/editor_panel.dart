@@ -22,12 +22,47 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
   void initState() {
     super.initState();
     final source = ref.read(ideProvider).source;
-    _controller = CodeLineEditingController.fromText(source);
+    _controller = CodeLineEditingController.fromText(
+      source,
+      const CodeLineOptions(indentSize: 4),
+    );
+    _lastLineCount = _controller.lineCount;
     _controller.addListener(_onChanged);
   }
 
+  int _lastLineCount = 0;
+
   void _onChanged() {
     ref.read(ideProvider.notifier).updateSource(_controller.text);
+
+    // VS 风格 Enter 格式化：检测换行，对前一行补分号
+    final currentLineCount = _controller.lineCount;
+    if (currentLineCount > _lastLineCount && _lastLineCount > 0) {
+      // 行数增加，说明发生了换行
+      final lineIndex = _controller.selection.startIndex - 1;
+      if (lineIndex >= 0 && lineIndex < _controller.lineCount) {
+        _tryAppendSemicolon(lineIndex);
+      }
+    }
+    _lastLineCount = currentLineCount;
+  }
+
+  void _tryAppendSemicolon(int lineIndex) {
+    final lineText = _controller.codeLines[lineIndex].text;
+    final trimmed = lineText.trimRight();
+    if (trimmed.isEmpty) return;
+    if (trimmed.endsWith(';') || trimmed.endsWith('{') || trimmed.endsWith('}')) return;
+    if (trimmed.startsWith('//') || trimmed.startsWith('/*') || trimmed.startsWith('*')) return;
+    if (trimmed.startsWith('#')) return;
+    final needsSemicolon = RegExp(
+      r'^(\s*(int|char|float|double|void|struct|enum|typedef|return|break|continue|printf|scanf|malloc|free|memcpy|memset|strlen|strcpy|strcmp|atoi|rand|srand|exit|getchar|putchar|fprintf|realloc|qsort)\b|.*[a-zA-Z_]\w*\s*=|.*\)\s*$)',
+    );
+    if (needsSemicolon.hasMatch(trimmed)) {
+      final newLine = '$trimmed;';
+      // 替换整行内容
+      _controller.selectLine(lineIndex);
+      _controller.replaceSelection(newLine);
+    }
   }
 
   /// 在当前光标位置插入文本
@@ -68,12 +103,22 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     }
   }
 
+  /// 设置编辑器文本（用于应用修复后同步）
+  void setText(String text) {
+    if (_controller.text == text) return;
+    _controller.removeListener(_onChanged);
+    _controller.text = text;
+    _controller.addListener(_onChanged);
+  }
+
   @override
   void dispose() {
     _controller.removeListener(_onChanged);
     _controller.dispose();
     super.dispose();
   }
+
+
 
   /// C 语言关键字和常用函数自动补全提示
   static final List<CodePrompt> _cAutocompletePrompts = [

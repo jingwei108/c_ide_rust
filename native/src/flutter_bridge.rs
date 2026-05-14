@@ -6,7 +6,6 @@
 use std::sync::Mutex;
 
 use crate::session::*;
-use crate::vm::vm::CideVM;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::type_checker::TypeChecker;
@@ -14,41 +13,11 @@ use crate::compiler::bytecode_gen::BytecodeGen;
 
 // ========== 全局 Session ==========
 
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 
-static SESSION: Lazy<Mutex<Session>> = Lazy::new(|| {
+static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| {
     Mutex::new(Session::default())
 });
-
-// ========== 编译错误 trait（与 capi 共享逻辑） ==========
-
-trait CompileError {
-    fn line(&self) -> i32;
-    fn column(&self) -> i32;
-    fn code(&self) -> i32;
-    fn message(&self) -> &str;
-}
-
-impl CompileError for crate::compiler::lexer::LexerError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
-}
-
-impl CompileError for crate::compiler::parser::ParseError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
-}
-
-impl CompileError for crate::compiler::type_checker::TypeError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
-}
 
 // ========== 公开数据结构 ==========
 
@@ -85,177 +54,18 @@ pub enum StepStatus {
 
 // ========== 辅助函数 ==========
 
-fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], source: &str) {
-    let source_lines: Vec<&str> = source.lines().collect();
-    let mut err_str = String::new();
-    for e in errors {
-        let info = crate::diagnostics::error_catalog::lookup_error_info(e.code());
-        let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-            crate::diagnostics::error_catalog::generate_fix(
-                e.code(), e.line(), e.column(), e.message(), &source_lines,
-            );
+use crate::engine::compile_pipeline::{push_diagnostics, push_hints, push_warnings, setup_vm};
 
-        let enriched_msg = if let Some(ref i) = info {
-            format!(
-                "{} {} — 错误 E{} (第{}行, 第{}列): {}",
-                i.emoji, i.title, e.code(), e.line(), e.column(), e.message()
-            )
-        } else {
-            format!(
-                "错误 E{} (第{}行, 第{}列): {}",
-                e.code(), e.line(), e.column(), e.message()
-            )
-        };
-
-        session.compile.diagnostics.push(Diagnostic {
-            line: e.line(),
-            column: e.column(),
-            error_code: e.code(),
-            severity: 0,
-            message: e.message().to_string(),
-            fix_suggestion: if fix_suggestion.is_empty() {
-                info.map(|i| i.explanation.to_string()).unwrap_or_default()
-            } else {
-                fix_suggestion.clone()
-            },
-            fix_kind,
-            replace_start_line: rsl,
-            replace_start_column: rsc,
-            replace_end_line: rel,
-            replace_end_column: rec,
-            replacement_text: rt,
-        });
-        err_str.push_str(&enriched_msg);
-        err_str.push('\n');
-    }
-    session.compile.errors = err_str.clone();
-    session.compile.errors_buffer = err_str;
-}
-
-fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], source: &str) {
-    let source_lines: Vec<&str> = source.lines().collect();
-    for w in warnings {
-        let info = crate::diagnostics::error_catalog::lookup_error_info(w.code());
-        let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-            crate::diagnostics::error_catalog::generate_fix(
-                w.code(), w.line(), w.column(), w.message(), &source_lines,
-            );
-
-        session.compile.diagnostics.push(Diagnostic {
-            line: w.line(),
-            column: w.column(),
-            error_code: w.code(),
-            severity: 1,
-            message: w.message().to_string(),
-            fix_suggestion: if fix_suggestion.is_empty() {
-                info.map(|i| i.explanation.to_string()).unwrap_or_default()
-            } else {
-                fix_suggestion.clone()
-            },
-            fix_kind,
-            replace_start_line: rsl,
-            replace_start_column: rsc,
-            replace_end_line: rel,
-            replace_end_column: rec,
-            replacement_text: rt,
-        });
-    }
-}
-
-fn push_hints<T: CompileError>(session: &mut Session, hints: &[T], source: &str) {
-    let source_lines: Vec<&str> = source.lines().collect();
-    for h in hints {
-        let info = crate::diagnostics::error_catalog::lookup_error_info(h.code());
-        let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-            crate::diagnostics::error_catalog::generate_fix(
-                h.code(), h.line(), h.column(), h.message(), &source_lines,
-            );
-
-        session.compile.diagnostics.push(Diagnostic {
-            line: h.line(),
-            column: h.column(),
-            error_code: h.code(),
-            severity: 2,
-            message: h.message().to_string(),
-            fix_suggestion: if fix_suggestion.is_empty() {
-                info.map(|i| i.explanation.to_string()).unwrap_or_default()
-            } else {
-                fix_suggestion.clone()
-            },
-            fix_kind,
-            replace_start_line: rsl,
-            replace_start_column: rsc,
-            replace_end_line: rel,
-            replace_end_column: rec,
-            replacement_text: rt,
-        });
-    }
-}
-
-fn setup_vm(vm: &mut CideVM, session: &Session) {
-    use crate::vm::vm::{FuncMeta, VMSymbol};
-    use std::slice;
-
-    vm.reset();
-    vm.load_program(session.compile.bytecode.clone());
-    vm.set_globals(&session.compile.globals_init);
-    vm.set_max_steps(10_000_000);
-
-    for (name, meta) in &session.compile.func_table {
-        if let Some(&idx) = session.compile.func_index.get(name) {
-            vm.register_function(idx as u32, FuncMeta {
-                ip: meta.ip,
-                arg_count: meta.arg_count,
-                local_count: meta.local_count,
-            });
-            vm.register_function_name(idx as u32, name.clone());
-        }
-    }
-
-    let symbols: Vec<VMSymbol> = session.compile.symbols.iter().map(|s| VMSymbol {
-        name: s.name.clone(),
-        addr: s.addr,
-        is_local: s.is_local,
-        ty: s.ty.clone(),
-        scope_depth: s.scope_depth,
-    }).collect();
-    vm.set_symbols(symbols);
-
-    let mut vis_lines = Vec::new();
-    for m in &session.compile.algorithm_matches {
-        for &(line, ty, _) in &m.vis_events {
-            vis_lines.push((line, ty));
-        }
-    }
-    vm.set_vis_event_lines(vis_lines);
-
-    // 写入字符串数据到 VM 内存
-    let mem = vm.get_memory();
-    let mem_size = vm.get_memory_size() as usize;
-    for &(addr, ref str) in &session.compile.string_data {
-        let a = addr as usize;
-        let bytes = str.as_bytes();
-        if a + bytes.len() < mem_size {
-            unsafe {
-                let dst = slice::from_raw_parts_mut(mem.add(a), bytes.len() + 1);
-                dst[..bytes.len()].copy_from_slice(bytes);
-                dst[bytes.len()] = 0;
-            }
-        }
-    }
-}
-
-fn collect_algorithm_matches(_session: &mut Session, _program: &crate::compiler::ast::ProgramNode) {
-    // 算法模式识别暂不可用（algorithm_detector 模块不存在）
-    // TODO: 如需算法检测，需在 compiler 模块中添加 algorithm_detector
-    _session.compile.algorithm_matches.clear();
+fn collect_algorithm_matches(session: &mut Session, program: &crate::compiler::ast::ProgramNode) {
+    session.compile.algorithm_matches =
+        crate::compiler::algorithm_detector::detect_algorithms(program);
 }
 
 // ========== 公开 API ==========
 
 /// 设置源码并编译
 pub fn compile(source: String) -> CompileResult {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
 
     // 清空编译状态
     session.compile.bytecode.clear();
@@ -417,7 +227,7 @@ pub fn compile(source: String) -> CompileResult {
 
 /// 全速运行已编译的程序
 pub fn run_code() -> RunResult {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
 
     if !session.compile.compiled {
         return RunResult {
@@ -485,7 +295,7 @@ pub fn run_code() -> RunResult {
 
 /// 单步执行
 pub fn step_next() -> StepResult {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
 
     if !session.compile.compiled {
         return StepResult {
@@ -617,55 +427,55 @@ pub fn step_next() -> StepResult {
 
 /// 获取诊断信息
 pub fn get_diagnostics() -> Vec<Diagnostic> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.compile.diagnostics.clone()
 }
 
 /// 获取算法匹配
 pub fn get_algorithm_matches() -> Vec<AlgorithmMatch> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.compile.algorithm_matches.clone()
 }
 
 /// 获取变量列表
 pub fn get_variables() -> Vec<VariableSnapshot> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.variable_snapshot.clone()
 }
 
 /// 获取内存区域
 pub fn get_memory_regions() -> Vec<MemoryRegion> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.memory.regions.clone()
 }
 
 /// 获取调用栈
 pub fn get_callstack() -> Vec<TraceEntry> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.trace.clone()
 }
 
 /// 获取输出
 pub fn get_output() -> String {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.output_lines.join("\n")
 }
 
 /// 获取当前行
 pub fn get_current_line() -> i32 {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.current_line
 }
 
 /// 是否等待输入
 pub fn is_waiting_input() -> bool {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.waiting_input
 }
 
 /// 添加断点
 pub fn add_breakpoint(line: i32) {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut vm) = session.vm {
         vm.add_breakpoint(line);
     }
@@ -673,7 +483,7 @@ pub fn add_breakpoint(line: i32) {
 
 /// 清除所有断点
 pub fn clear_breakpoints() {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut vm) = session.vm {
         vm.clear_breakpoints();
     }
@@ -681,7 +491,7 @@ pub fn clear_breakpoints() {
 
 /// 设置输入（用于 scanf）
 pub fn set_input(input: String) {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.input_lines = input
         .lines()
         .map(|l| l.trim_end_matches('\r').to_string())
@@ -692,7 +502,7 @@ pub fn set_input(input: String) {
 
 /// 提供单行输入（恢复执行）
 pub fn provide_input_line(line: String) {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.input_lines.push(line);
     session.runtime.waiting_input = false;
     if let Some(ref mut vm) = session.vm {
@@ -702,19 +512,19 @@ pub fn provide_input_line(line: String) {
 
 /// 获取可视化事件
 pub fn get_vis_events() -> Vec<VisEvent> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.vis_event_cache.clone()
 }
 
 /// 清除可视化事件
 pub fn clear_vis_events() {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     session.runtime.vis_event_cache.clear();
 }
 
 /// 读取 VM 内存（按 i32 数组返回）
 pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
-    let session = SESSION.lock().unwrap();
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref vm) = session.vm {
         let mem = vm.memory_ref();
         let mut result = Vec::new();
@@ -734,8 +544,14 @@ pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
     }
 }
 
+/// 获取结构体字段定义（字段名, 偏移量）
+pub fn get_struct_fields(name: String) -> Vec<(String, i32)> {
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    session.compile.struct_fields.get(&name).cloned().unwrap_or_default()
+}
+
 /// 重置会话
 pub fn reset_session() {
-    let mut session = SESSION.lock().unwrap();
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     *session = Session::default();
 }

@@ -88,7 +88,61 @@
 - [x] **Flutter 工具修复** — patch `flutter_plugins.dart` 跳过 Windows symlink 限制（Developer Mode）
 - [x] **Rust API 扩展** — 新增 `read_memory(addr, count)`，支持从 VM 内存按 i32 读取数组元素
 
-### 1.4 验证结果
+### 1.4 依赖管理改造（path → pub.dev）
+
+**背景**：原 `pubspec.yaml` 所有非 SDK 依赖均通过 `path: packages/xxx` 引用，注释标注 "offline development"。`packages/` 目录包含 6 个包的完整源码（~25MB），且 `re_highlight` 存在隐蔽漏洞——`re_editor` 内部引用的是 pub.dev 版本而非本地 path，纯离线环境会构建失败。
+
+**改造动作**：
+1. 修改 `pubspec.yaml`：将 `re_editor`、`flutter_riverpod`、`flutter_rust_bridge` 改为 `^` 版本约束；恢复 `flutter_lints: ^5.0.0`
+2. 将 `packages/` 中的 4 个包复制到本地 Pub Cache（`~/AppData/Local/Pub/Cache/hosted/pub.dev/`），模拟 hosted 依赖
+3. 删除 `CideFlutter/packages/` 目录（释放 ~25MB 仓库空间）
+4. 删除旧 `pubspec.lock`，重新执行 `flutter pub get --offline`
+
+**改造结果**：
+
+| 检查项 | 结果 |
+|--------|------|
+| `flutter pub get --offline` | ✅ 74 个依赖全部解析，无缺失 |
+| `pubspec.lock` | ✅ 生成，`source: hosted` 指向 pub.dev |
+| `package_config.json` | ✅ `re_editor`/`flutter_riverpod`/`flutter_rust_bridge` 均指向 Pub Cache |
+| `flutter analyze lib/` | ✅ 0 错误、0 警告 |
+| `packages/` 目录 | ✅ 已删除 |
+
+**已知限制**：
+- `rust_builder/crgokit/build_tool/` 的 Dart 代码缺少 `github`、`http`、`ed25519_edwards` 等依赖，导致 `flutter analyze` 全局扫描时报告 70+ 错误。但这些错误**仅属于 cargokit 构建工具**，不影响主应用 `lib/` 编译与运行
+- 当前环境无法联网，Pub Cache 中的包为手动复制注入；后续如需升级版本，需在有网络环境下运行 `flutter pub get`
+
+**回滚方案**（如需恢复 path 依赖）：
+```bash
+cd CideFlutter
+# 1. 恢复 packages/（从 git 历史或备份）
+git checkout HEAD -- packages/
+# 2. 恢复 pubspec.yaml
+git checkout HEAD -- pubspec.yaml
+# 3. 重新解析
+flutter pub get --offline
+```
+
+### 1.5 构建脚本用法
+
+新增 `scripts/build_flutter.py`，统一封装 Flutter + Rust 的构建流程。
+
+| 命令 | 场景 |
+|------|------|
+| `python scripts/build_flutter.py` | 桌面端 Debug（完整流程：Rust DLL → 复制 → Flutter Build） |
+| `python scripts/build_flutter.py -c Release --run` | 桌面端 Release，构建后自动运行 |
+| `python scripts/build_flutter.py -t Android --offline` | Android APK（离线环境） |
+| `python scripts/build_flutter.py --clean --offline` | 清理后重新构建 |
+| `python scripts/build_flutter.py --skip-rust` | 跳过手动 Rust 构建（开发者模式已启用，cargokit 自动处理） |
+
+**脚本设计要点**：
+- 自动探测 Flutter（支持 `PATH` 和常见 Windows 路径 `D:\flutter\bin`）
+- 离线兼容：`--offline` 适配无网络环境
+- 开发者模式未启用时：自动 `cargo build` 生成 DLL 并复制到 Flutter 输出目录
+- Android NDK 自动探测：复用 `build_utils.find_ndk()`
+- 输出统一彩色格式，与现有 `build.py` / `build_release.py` 保持一致
+
+### 1.6 验证结果
 
 | 检查项 | 命令 | 结果 |
 |--------|------|------|
@@ -96,7 +150,8 @@
 | Dart 静态分析 | `flutter analyze lib/` | ✅ 0 错误 0 警告 |
 | Dart 单元测试 | `flutter test` | ✅ 通过 |
 | Windows 桌面构建 | `flutter build windows` | ⚠️ 因 flutter_tools snapshot 重新编译超时（已 patch symlink，首次需 10~15min） |
-| Android Gradle 构建 | `./gradlew tasks` | ✅ 通过（本地 Gradle + 阿里云镜像 + NDK 27） |
+| Android Gradle 构建 | `./gradlew tasks` | ✅ 通过 |
+| Android APK 构建 | `flutter build apk` | ✅ `app-release.apk` 22.4MB（armv7/arm64/x86_64） |
 | Rust DLL 构建 | `cargo build --release` | ✅ `cide_native.dll` 生成成功 |
 
 ---
@@ -165,8 +220,8 @@ cd CideFlutter && flutter run -d windows
 - [ ] **键盘快捷键**：F5 运行、F10 单步、F9 断点等
 
 ### P3 — 工程化
-- [x] **Android 构建环境修复**：本地 Gradle + 阿里云镜像 + NDK 配置，Gradle 构建验证通过
-- [ ] **Android 端到端 APK 构建**：运行 `flutter build apk` 完成完整构建（需 flutter_tools snapshot 首次编译）
+- [x] **Android 构建环境修复**：本地 Gradle + 阿里云镜像 + NDK 配置
+- [x] **Android 端到端 APK 构建**：`flutter build apk` 成功，输出 `app-release.apk` (22.4MB)，支持 armv7/arm64/x86_64
 - [ ] **Windows 开发者模式集成**：启用后验证 `rust_builder` 自动构建
 - [ ] **CI/CD 流水线**：在 `.github/workflows/` 中添加 Flutter 构建步骤
 

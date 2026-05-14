@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -827863851;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -1740651986;
 
 // Section: executor
 
@@ -374,6 +374,40 @@ fn wire__crate__api__cide__get_output_impl(
         },
     )
 }
+fn wire__crate__api__cide__get_struct_fields_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "get_struct_fields",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_name = <String>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok =
+                        Result::<_, ()>::Ok(crate::api::cide::get_struct_fields(api_name))?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__cide__get_variables_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -569,7 +603,7 @@ fn wire__crate__api__cide__provide_input_line_impl(
         },
     )
 }
-fn wire__crate__api__cide__readMemory_impl(
+fn wire__crate__api__cide__read_memory_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
     rust_vec_len_: i32,
@@ -577,7 +611,7 @@ fn wire__crate__api__cide__readMemory_impl(
 ) {
     FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
-            debug_name: "readMemory",
+            debug_name: "read_memory",
             port: Some(port_),
             mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
         },
@@ -597,7 +631,7 @@ fn wire__crate__api__cide__readMemory_impl(
             move |context| {
                 transform_result_sse::<_, ()>((move || {
                     let output_ok =
-                        Result::<_, ()>::Ok(crate::api::cide::readMemory(api_addr, api_count))?;
+                        Result::<_, ()>::Ok(crate::api::cide::read_memory(api_addr, api_count))?;
                     Ok(output_ok)
                 })())
             }
@@ -891,6 +925,18 @@ impl SseDecode for Vec<u8> {
     }
 }
 
+impl SseDecode for Vec<crate::api::cide::StructField> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::api::cide::StructField>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::api::cide::TraceEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1006,6 +1052,18 @@ impl SseDecode for crate::api::cide::StepStatus {
     }
 }
 
+impl SseDecode for crate::api::cide::StructField {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_offset = <i32>::sse_decode(deserializer);
+        return crate::api::cide::StructField {
+            name: var_name,
+            offset: var_offset,
+        };
+    }
+}
+
 impl SseDecode for crate::api::cide::TraceEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1060,9 +1118,17 @@ impl SseDecode for crate::api::cide::VisEvent {
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         let mut var_ty = <i32>::sse_decode(deserializer);
         let mut var_line = <i32>::sse_decode(deserializer);
+        let mut var_extra0 = <i32>::sse_decode(deserializer);
+        let mut var_extra1 = <i32>::sse_decode(deserializer);
+        let mut var_extra2 = <i32>::sse_decode(deserializer);
+        let mut var_context = <String>::sse_decode(deserializer);
         return crate::api::cide::VisEvent {
             ty: var_ty,
             line: var_line,
+            extra0: var_extra0,
+            extra1: var_extra1,
+            extra2: var_extra2,
+            context: var_context,
         };
     }
 }
@@ -1086,16 +1152,17 @@ fn pde_ffi_dispatcher_primary_impl(
         8 => wire__crate__api__cide__get_diagnostics_impl(port, ptr, rust_vec_len, data_len),
         9 => wire__crate__api__cide__get_memory_regions_impl(port, ptr, rust_vec_len, data_len),
         10 => wire__crate__api__cide__get_output_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__cide__get_variables_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__cide__get_vis_events_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__cide__is_waiting_input_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__cide__provide_input_line_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__cide__readMemory_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__cide__reset_session_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__cide__run_code_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__cide__set_input_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__cide__step_next_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__cide__get_struct_fields_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__cide__get_variables_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__cide__get_vis_events_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__cide__is_waiting_input_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__cide__provide_input_line_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__cide__read_memory_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__cide__reset_session_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__cide__run_code_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__cide__set_input_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__cide__step_next_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1108,7 +1175,7 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        13 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -1277,6 +1344,24 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::cide::StepStatus>
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::api::cide::StructField {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.offset.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::api::cide::StructField {}
+impl flutter_rust_bridge::IntoIntoDart<crate::api::cide::StructField>
+    for crate::api::cide::StructField
+{
+    fn into_into_dart(self) -> crate::api::cide::StructField {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::api::cide::TraceEntry {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1324,6 +1409,10 @@ impl flutter_rust_bridge::IntoDart for crate::api::cide::VisEvent {
         [
             self.ty.into_into_dart().into_dart(),
             self.line.into_into_dart().into_dart(),
+            self.extra0.into_into_dart().into_dart(),
+            self.extra1.into_into_dart().into_dart(),
+            self.extra2.into_into_dart().into_dart(),
+            self.context.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -1446,6 +1535,16 @@ impl SseEncode for Vec<u8> {
     }
 }
 
+impl SseEncode for Vec<crate::api::cide::StructField> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::api::cide::StructField>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::api::cide::TraceEntry> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1536,6 +1635,14 @@ impl SseEncode for crate::api::cide::StepStatus {
     }
 }
 
+impl SseEncode for crate::api::cide::StructField {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <i32>::sse_encode(self.offset, serializer);
+    }
+}
+
 impl SseEncode for crate::api::cide::TraceEntry {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -1579,6 +1686,10 @@ impl SseEncode for crate::api::cide::VisEvent {
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.ty, serializer);
         <i32>::sse_encode(self.line, serializer);
+        <i32>::sse_encode(self.extra0, serializer);
+        <i32>::sse_encode(self.extra1, serializer);
+        <i32>::sse_encode(self.extra2, serializer);
+        <String>::sse_encode(self.context, serializer);
     }
 }
 
