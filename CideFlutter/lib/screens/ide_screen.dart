@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/code_template.dart';
 import '../models/ide_state.dart';
 import '../models/panel_item.dart';
 import '../providers/ide_provider.dart';
+import '../providers/theme_provider.dart';
 import '../widgets/draggable_panel_tab.dart';
 import '../widgets/editor_panel.dart';
 import '../widgets/height_resizable_panel.dart';
@@ -18,7 +20,7 @@ import '../widgets/memory_tab.dart';
 import '../widgets/output_tab.dart';
 import '../widgets/pointer_vis_tab.dart';
 import '../widgets/progress_tab.dart';
-import '../widgets/symbol_bar.dart';
+import '../widgets/custom_keyboard.dart';
 import '../widgets/template_bar.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/variables_tab.dart';
@@ -34,11 +36,41 @@ class IdeScreen extends ConsumerStatefulWidget {
 class _IdeScreenState extends ConsumerState<IdeScreen> {
   final _editorKey = GlobalKey<EditorPanelState>();
   final _inputController = TextEditingController();
+  bool _showKeyboard = false;
+  bool _isSystemKeyboardActive = false;
 
   @override
   void dispose() {
     _inputController.dispose();
     super.dispose();
+  }
+
+  /// 显示自定义键盘
+  void _openKeyboard() {
+    if (!_showKeyboard) {
+      setState(() => _showKeyboard = true);
+    }
+  }
+
+  /// 隐藏自定义键盘
+  void _closeKeyboard() {
+    if (_showKeyboard) {
+      setState(() => _showKeyboard = false);
+    }
+  }
+
+  /// 切换到系统键盘（用于中文输入）
+  void _showSystemKeyboard() {
+    setState(() => _isSystemKeyboardActive = true);
+    _editorKey.currentState?.setReadOnly(false);
+    SystemChannels.textInput.invokeMethod('TextInput.show');
+  }
+
+  /// 切换回自定义键盘（英文/代码输入模式）
+  void _showCustomKeyboard() {
+    SystemChannels.textInput.invokeMethod('TextInput.hide');
+    setState(() => _isSystemKeyboardActive = false);
+    _editorKey.currentState?.setReadOnly(true);
   }
 
   void _insertText(String text) => _editorKey.currentState?.insertText(text);
@@ -47,6 +79,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
   void _redo() => _editorKey.currentState?.redo();
   void _moveCursor(int offset) => _editorKey.currentState?.moveCursor(offset);
   void _scrollToLine(int line) => _editorKey.currentState?.scrollToLine(line);
+  void _backspace() => _editorKey.currentState?.backspace();
+  void _insertNewline() => _editorKey.currentState?.insertNewline();
 
   @override
   Widget build(BuildContext context) {
@@ -55,8 +89,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
     final isDark = ref.watch(themeProvider) == ThemeMode.dark;
 
     final scaffoldBg = isDark ? const Color(0xff121212) : const Color(0xfff5f5f5);
+    final showCustomKeyboard = _showKeyboard && !_isSystemKeyboardActive;
 
     return Scaffold(
+      resizeToAvoidBottomInset: false,
       backgroundColor: scaffoldBg,
       body: SafeArea(
         child: Stack(
@@ -67,14 +103,51 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: EditorPanel(key: _editorKey),
+                    child: EditorPanel(
+                      key: _editorKey,
+                      onTap: _openKeyboard,
+                    ),
                   ),
                 ),
-                _buildSymbolBar(),
                 _buildTemplateBar(state, notifier),
                 _buildBottomPanel(state, notifier, isDark),
               ],
             ),
+            // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
+            if (showCustomKeyboard)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: FocusScope(
+                  canRequestFocus: false,
+                  child: CustomKeyboard(
+                    onInsertText: _insertText,
+                    onInsertPair: _insertPair,
+                    onMoveCursor: _moveCursor,
+                    onBackspace: _backspace,
+                    onEnter: _insertNewline,
+                    onTab: () => _insertText('    '),
+                    onUndo: _undo,
+                    onRedo: _redo,
+                    onDone: _closeKeyboard,
+                    onToggleSystemKeyboard: _showSystemKeyboard,
+                    isSystemKeyboardActive: false,
+                  ),
+                ),
+              ),
+            // 系统键盘激活时，提供一个悬浮按钮可切回自定义键盘
+            if (_isSystemKeyboardActive)
+              Positioned(
+                right: 16,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                child: FloatingActionButton(
+                  mini: true,
+                  backgroundColor: Colors.blueAccent,
+                  onPressed: _showCustomKeyboard,
+                  child: const Text('英', style: TextStyle(fontSize: 14, color: Colors.white)),
+                ),
+              ),
             if (state.showIntro)
               IntroOverlay(
                 isDark: isDark,
@@ -96,18 +169,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
       notifier: notifier,
       isDark: isDark,
       onToggleTheme: () => ref.read(themeProvider.notifier).toggle(),
-    );
-  }
-
-  // ========== 符号快捷栏 ==========
-
-  Widget _buildSymbolBar() {
-    return SymbolBar(
-      onInsertPair: _insertPair,
-      onInsertText: _insertText,
-      onMoveCursor: _moveCursor,
-      onUndo: _undo,
-      onRedo: _redo,
     );
   }
 
@@ -464,8 +525,3 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
 // ========== 知识卡片组件 ==========
 
 // ========== 小型组件 ==========
-
-
-}
-
-

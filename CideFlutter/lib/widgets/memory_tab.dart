@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
-import '../visualizers/memory_map_visualizer.dart';
+import 'memory_map_visualizer.dart';
 
 class MemoryTab extends StatelessWidget {
   final bool isDark;

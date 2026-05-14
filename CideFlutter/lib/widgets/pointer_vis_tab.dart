@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
-import '../visualizers/linked_list_visualizer.dart';
+import 'linked_list_visualizer.dart';
 
 class PointerVisTab extends StatelessWidget {
   final bool isDark;
