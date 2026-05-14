@@ -6,10 +6,6 @@
 use std::sync::Mutex;
 
 use crate::session::*;
-use crate::compiler::lexer::Lexer;
-use crate::compiler::parser::Parser;
-use crate::compiler::type_checker::TypeChecker;
-use crate::compiler::bytecode_gen::BytecodeGen;
 
 // ========== 全局 Session ==========
 
@@ -54,33 +50,13 @@ pub enum StepStatus {
 
 // ========== 辅助函数 ==========
 
-use crate::engine::compile_pipeline::{push_diagnostics, push_hints, push_warnings, setup_vm};
-
-fn collect_algorithm_matches(session: &mut Session, program: &crate::compiler::ast::ProgramNode) {
-    session.compile.algorithm_matches =
-        crate::compiler::algorithm_detector::detect_algorithms(program);
-}
+use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
 
 // ========== 公开 API ==========
 
 /// 设置源码并编译
 pub fn compile(source: String) -> CompileResult {
     let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-
-    // 清空编译状态
-    session.compile.bytecode.clear();
-    session.compile.globals_init.clear();
-    session.compile.diagnostics.clear();
-    session.compile.source_map.clear();
-    session.compile.func_table.clear();
-    session.compile.func_index.clear();
-    session.compile.string_data.clear();
-    session.compile.symbols.clear();
-    session.compile.algorithm_matches.clear();
-    session.compile.struct_fields.clear();
-    session.compile.errors.clear();
-    session.compile.errors_buffer.clear();
-    session.compile.compiled = false;
 
     // 设置编译单元
     session.compile.compile_units.clear();
@@ -98,125 +74,14 @@ pub fn compile(source: String) -> CompileResult {
         }
     }
 
-    // 1. Lexer
-    let (tokens, lex_errors) = Lexer::new(full_source.clone()).tokenize();
-    if !lex_errors.is_empty() {
-        push_diagnostics(&mut session, &lex_errors, &full_source);
+    // 运行编译管线
+    if run_compile_pipeline(&mut session, &full_source).is_err() {
         return CompileResult {
             success: false,
             diagnostics: session.compile.diagnostics.clone(),
             algorithm_matches: Vec::new(),
         };
     }
-
-    // 2. Parser
-    let (maybe_program, parse_errors) = Parser::new(tokens).parse();
-    if !parse_errors.is_empty() {
-        push_diagnostics(&mut session, &parse_errors, &full_source);
-        return CompileResult {
-            success: false,
-            diagnostics: session.compile.diagnostics.clone(),
-            algorithm_matches: Vec::new(),
-        };
-    }
-
-    let mut program = match maybe_program {
-        Some(p) => p,
-        None => {
-            session.compile.errors = "解析失败：无法生成 AST".to_string();
-            session.compile.errors_buffer = session.compile.errors.clone();
-            return CompileResult {
-                success: false,
-                diagnostics: session.compile.diagnostics.clone(),
-                algorithm_matches: Vec::new(),
-            };
-        }
-    };
-
-    // 3. TypeChecker
-    let (type_errors, type_warnings, type_hints) = TypeChecker::new().check(&mut program);
-    if !type_errors.is_empty() {
-        push_diagnostics(&mut session, &type_errors, &full_source);
-        return CompileResult {
-            success: false,
-            diagnostics: session.compile.diagnostics.clone(),
-            algorithm_matches: Vec::new(),
-        };
-    }
-    if !type_warnings.is_empty() {
-        push_warnings(&mut session, &type_warnings, &full_source);
-    }
-    if !type_hints.is_empty() {
-        push_hints(&mut session, &type_hints, &full_source);
-    }
-
-    // 4. BytecodeGen
-    let gen = BytecodeGen::new();
-    let output = match gen.generate(&mut program) {
-        Ok(o) => o,
-        Err(gen_errors) => {
-            let mut err_str = String::new();
-            for e in &gen_errors {
-                err_str.push_str(&format!("生成错误: {}\n", e));
-            }
-            session.compile.errors = err_str.clone();
-            session.compile.errors_buffer = err_str;
-            return CompileResult {
-                success: false,
-                diagnostics: session.compile.diagnostics.clone(),
-                algorithm_matches: Vec::new(),
-            };
-        }
-    };
-
-    // 填充编译结果
-    session.compile.bytecode = output.code;
-    session.compile.globals_init = output.globals_init;
-    session.compile.source_map = output
-        .source_map
-        .into_iter()
-        .map(|(ip, loc)| (ip, crate::compiler::ast::SourceLoc { line: loc.line, column: loc.column }))
-        .collect();
-    session.compile.func_index = output.func_index;
-
-    for (name, meta) in output.func_table {
-        session.compile.func_table.insert(
-            name,
-            FuncMeta {
-                ip: meta.ip,
-                arg_count: meta.arg_count,
-                local_count: meta.local_count,
-            },
-        );
-    }
-
-    session.compile.string_data = output.string_data;
-
-    for sym in output.symbols {
-        session.compile.symbols.push(Symbol {
-            name: sym.name,
-            addr: sym.addr,
-            is_local: sym.is_local,
-            ty: sym.ty,
-            scope_depth: sym.scope_depth,
-        });
-    }
-
-    for (name, fields) in output.struct_defs {
-        let converted: Vec<(String, i32)> = fields
-            .into_iter()
-            .enumerate()
-            .map(|(i, f)| (f.name, i as i32 * 4))
-            .collect();
-        session.compile.struct_fields.insert(name, converted);
-    }
-
-    // 算法模式识别
-    collect_algorithm_matches(&mut session, &program);
-
-    session.compile.compiled = true;
-    session.compile.errors.clear();
-    session.compile.errors_buffer.clear();
 
     CompileResult {
         success: true,

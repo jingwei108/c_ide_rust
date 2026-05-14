@@ -3016,3 +3016,48 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out, vec!["1 2 0", "4 0 1"]);
 }
+
+
+#[test]
+fn test_e2e_struct_array_copy() {
+    let src = r#"
+#include <stdio.h>
+typedef struct { int id; int score; } Student;
+int main() {
+    Student s[2];
+    s[0].id = 1; s[0].score = 10;
+    s[1].id = 2; s[1].score = 20;
+    s[0] = s[1];
+    printf("%d %d\n", s[0].id, s[0].score);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["2 20"]);
+}
+
+#[test]
+fn test_e2e_struct_local_copy() {
+    let src = r#"
+#include <stdio.h>
+typedef struct { int id; int score; } Student;
+int main() {
+    Student a;
+    a.id = 1; a.score = 10;
+    Student b;
+    b = a;
+    printf("%d %d\n", b.id, b.score);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["1 10"]);
+}

@@ -51,6 +51,7 @@ docs/                   设计文档、事故报告
 | Phase 8 | `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ 诊断系统拓展 | ✅ 完成 |
 | Phase 9 | Flutter 前端从零搭建：IDE 界面 + 编辑器 + 调试面板 + 算法可视化 | ✅ 完成 |
 | Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
+| Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 44 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
 
 ## 编码约定
 
@@ -166,6 +167,17 @@ docs/                   设计文档、事故报告
   - 新增可自动修复场景：缺少 `"`（E1002）、缺少 `}`/`)/`]`（E2006/E2007/E2008）、`|`→`||` / `&`→`&&`（E1004）、`<=`→`<`（W3051）、条件内 `=`→`==`（W3050）等
   - 前端 `CodeFixService` 增加 `InsertText` 支持及更多 fallback 修复模式（`->`→`.`、补 `return 0;` 等）
   - 新增 11 张知识卡片 JSON（Desktop + Maui 双端资源同步）：覆盖缺少分号/括号/引号、变量未声明、scanf 取地址、结构体成员访问、右值赋值、缺少返回值等高频错误
+- **代码审查修复（2026-05-14）**：
+  - `cide_session_load` 丢失 VM 状态：`setup_vm()` 恢复 bytecode/函数表/断点，会话保存→加载→运行链路可用
+  - `call_user_function` Trap 时错误取栈顶值：拆分 `Finished`/`Trap` match 分支，Trap 返回 `None`
+  - Hex 字面量 `0x80000000` 被误判溢出：阈值从 `i32::MAX` 放宽为 `u32::MAX`
+  - 算法检测仅返回首个匹配：`detect_in_func` 改为返回 `Vec<AlgorithmMatch>`
+  - `call_user_function` 内部断点干扰 `run()`：保存/清空/恢复 breakpoints，host 回调不受用户断点影响
+  - `Type::is_scalar()` 不含 `Float`：与 `TypeChecker` 版本对齐，加入 `Float`
+  - If 语句跳转标记 `end_jump` 命名混淆：重命名为 `skip_else_jump`
+  - `malloc(0)` 无教学提示：向 `output_lines` 推送 `W3057` 警告，说明实现定义行为
+  - 编译管线 DRY 重构：提取 `run_compile_pipeline()` 消除 `flutter_bridge.rs` 与 `capi/mod.rs` 的 ~100 行重复
+  - Host Function ID 统一常量：新建 `vm/host_func_id.rs`，防止编译期与运行期 ID 不匹配
 - **C 子集 P0 拓展（2026-05-10）**：
   - `NULL` 关键字：`int *p = NULL;` 现在编译通过，`NULL` 被解析为 `(void*)0`
   - 新增 8 个宿主函数：`getchar`/`putchar`/`rand`/`srand`/`memset`/`exit`/`strcat`/`atoi`

@@ -1,0 +1,132 @@
+import 'package:flutter/material.dart';
+import '../models/ide_state.dart';
+import '../providers/ide_provider.dart';
+
+class DiagnosticsTab extends StatelessWidget {
+  final IdeState state;
+  final IdeNotifier notifier;
+  final bool isDark;
+  final void Function(int line) onScrollToLine;
+  final void Function(String source) onUpdateSource;
+
+  const DiagnosticsTab({
+    super.key,
+    required this.state,
+    required this.notifier,
+    required this.isDark,
+    required this.onScrollToLine,
+    required this.onUpdateSource,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (state.diagnostics.isEmpty) {
+      return const Center(child: Text('无诊断信息', style: TextStyle(color: Colors.grey)));
+    }
+    return ListView.builder(
+      itemCount: state.diagnostics.length,
+      itemBuilder: (context, index) {
+        final diag = state.diagnostics[index];
+        final isError = diag.severity == 0;
+        return InkWell(
+          onTap: () {
+            notifier.highlightLine(diag.line);
+            onScrollToLine(diag.line);
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: isError ? Colors.redAccent.withValues(alpha: 0.2) : Colors.orangeAccent.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        isError ? '错误' : '警告',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: isError ? Colors.redAccent : Colors.orangeAccent,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('第 ${diag.line} 行', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                    if (diag.errorCode > 0)
+                      Text(' [${diag.errorCode}]', style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  diag.message,
+                  style: TextStyle(fontSize: 13, color: isDark ? const Color(0xffd4d4d4) : const Color(0xff333333)),
+                ),
+                if (diag.fixSuggestion.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      const Text('💡 ', style: TextStyle(fontSize: 12)),
+                      Expanded(
+                        child: Text(
+                          diag.fixSuggestion,
+                          style: TextStyle(fontSize: 12, color: Colors.grey[400]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+                // 应用修复按钮
+                if (diag.fixKind == 1 || diag.fixKind == 2 || diag.fixSuggestion.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () async {
+                          final msg = await notifier.applyFix(diag);
+                          if (!context.mounted) return;
+                          if (msg != null) {
+                            onUpdateSource(state.source);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
+                            );
+                            // 修复后重新编译
+                            await notifier.compile();
+                          } else {
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('💡 修复提示（第${diag.line}行）：${diag.fixSuggestion}\n请手动修改代码。'),
+                                duration: const Duration(seconds: 3),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.auto_fix_high, size: 14),
+                        label: const Text('应用修复', style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}

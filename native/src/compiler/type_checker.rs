@@ -28,6 +28,7 @@ struct StructSymbol {
     fields: Vec<(Type, String)>,
 }
 
+#[derive(Default)]
 pub struct TypeChecker {
     errors: Vec<TypeError>,
     warnings: Vec<TypeError>,
@@ -64,26 +65,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     }
 }
 
-impl Default for TypeChecker {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl TypeChecker {
-    pub fn new() -> Self {
-        Self {
-            errors: Vec::new(),
-            warnings: Vec::new(),
-            hints: Vec::new(),
-            funcs: HashMap::new(),
-            structs: HashMap::new(),
-            scopes: Vec::new(),
-            current_func_return: Type::void(),
-            loop_depth: 0,
-            switch_depth: 0,
-        }
-    }
 
     pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
         // Pass 1: Register structs

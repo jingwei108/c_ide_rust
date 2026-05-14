@@ -535,7 +535,7 @@ impl BytecodeGen {
                 let else_jump = self.current_ip();
                 self.emit(OpCode::JumpIfZero, 0, loc);
                 self.gen_stmt(then_stmt);
-                let end_jump = self.current_ip();
+                let skip_else_jump = self.current_ip();
                 self.emit(OpCode::Jump, 0, loc);
                 let else_ip = self.current_ip();
                 self.patch_jump(else_jump, else_ip);
@@ -543,7 +543,7 @@ impl BytecodeGen {
                     self.gen_stmt(e);
                 }
                 let end_ip = self.current_ip();
-                self.patch_jump(end_jump, end_ip);
+                self.patch_jump(skip_else_jump, end_ip);
             }
             Stmt::While { cond, body, loc } => {
                 let start_ip = self.current_ip();
@@ -1064,35 +1064,35 @@ impl BytecodeGen {
                         _ => name.as_str(),
                     };
                     let host_id = match host_name {
-                        "__cide_output" => 0,
-                        "__cide_step" => 1,
-                        "malloc" => 2,
-                        "free" => 3,
-                        "__cide_printf_0" => 10,
-                        "__cide_printf_1" => 11,
-                        "__cide_printf_n" => 15,
-                        "__cide_scanf_n" => 21,
-                        "strlen" => 30,
-                        "strcpy" => 31,
-                        "strcmp" => 32,
-                        "getchar" => 33,
-                        "putchar" => 34,
-                        "rand" => 35,
-                        "srand" => 36,
-                        "memset" => 37,
-                        "exit" => 38,
-                        "strcat" => 39,
-                        "atoi" => 40,
-                        "fprintf" => 50,
-                        "realloc" => 51,
-                        "qsort" => 52,
+                        "__cide_output" => crate::vm::host_func_id::OUTPUT,
+                        "__cide_step" => crate::vm::host_func_id::STEP,
+                        "malloc" => crate::vm::host_func_id::MALLOC,
+                        "free" => crate::vm::host_func_id::FREE,
+                        "__cide_printf_0" => crate::vm::host_func_id::PRINTF_0,
+                        "__cide_printf_1" => crate::vm::host_func_id::PRINTF_1,
+                        "__cide_printf_n" => crate::vm::host_func_id::PRINTF_N,
+                        "__cide_scanf_n" => crate::vm::host_func_id::SCANF_N,
+                        "strlen" => crate::vm::host_func_id::STRLEN,
+                        "strcpy" => crate::vm::host_func_id::STRCPY,
+                        "strcmp" => crate::vm::host_func_id::STRCMP,
+                        "getchar" => crate::vm::host_func_id::GETCHAR,
+                        "putchar" => crate::vm::host_func_id::PUTCHAR,
+                        "rand" => crate::vm::host_func_id::RAND,
+                        "srand" => crate::vm::host_func_id::SRAND,
+                        "memset" => crate::vm::host_func_id::MEMSET,
+                        "exit" => crate::vm::host_func_id::EXIT,
+                        "strcat" => crate::vm::host_func_id::STRCAT,
+                        "atoi" => crate::vm::host_func_id::ATOI,
+                        "fprintf" => crate::vm::host_func_id::FPRINTF,
+                        "realloc" => crate::vm::host_func_id::REALLOC,
+                        "qsort" => crate::vm::host_func_id::QSORT,
                         _ => {
                             self.report_error(&format!("未定义的函数 '{}'", name), &loc);
                             self.emit(OpCode::PushConst, 0, &loc);
                             return;
                         }
                     };
-                    self.emit(OpCode::CallHost, host_id, &loc);
+                    self.emit(OpCode::CallHost, host_id as i32, &loc);
                 }
             }
             Expr::Index { array, index, ty, .. } => {

@@ -232,6 +232,7 @@ impl CideVM {
         let saved_step_event_hit = self.step_event_hit;
         let saved_current_line = self.current_line;
         let saved_vis_event_queue = std::mem::take(&mut self.vis_event_queue);
+        let saved_breakpoints = std::mem::take(&mut self.breakpoints);
         let start_step = self.step_count;
 
         // Setup call frame
@@ -269,9 +270,12 @@ impl CideVM {
             }
             let step_result = self.step(session);
             match step_result {
-                StepResult::Finished | StepResult::Trap => {
-                    result = if !self.stack.is_empty() { self.stack.pop() } else { Some(0) };
+                StepResult::Finished => {
+                    result = self.stack.pop();
                     break;
+                }
+                StepResult::Trap => {
+                    break; // result stays None
                 }
                 StepResult::Paused => {
                     self.paused = false;
@@ -293,6 +297,7 @@ impl CideVM {
         self.step_event_hit = saved_step_event_hit;
         self.current_line = saved_current_line;
         self.vis_event_queue = saved_vis_event_queue;
+        self.breakpoints = saved_breakpoints;
 
         result
     }

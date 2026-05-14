@@ -15,19 +15,21 @@ use crate::session::AlgorithmMatch;
 pub fn detect_algorithms(program: &ProgramNode) -> Vec<AlgorithmMatch> {
     let mut matches = Vec::new();
     for func in &program.funcs {
-        if let Some(m) = detect_in_func(func) {
-            matches.push(m);
-        }
+        matches.extend(detect_in_func(func));
     }
     matches
 }
 
-fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
-    let body = func.body.as_ref()?;
+fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
+    let body = match func.body.as_ref() {
+        Some(b) => b,
+        None => return Vec::new(),
+    };
     let features = extract_features(body);
 
-    // 基于函数名和结构特征进行匹配
+    // 基于函数名和结构特征进行匹配（收集所有匹配）
     let name_lower = func.name.to_lowercase();
+    let mut matches = Vec::new();
 
     // 冒泡排序
     if name_lower.contains("bubble")
@@ -37,7 +39,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
             && features.loop_depth >= 2
             && features.has_adjacent_index_compare)
     {
-        return Some(build_match(
+        matches.push(build_match(
             "bubble_sort",
             "冒泡排序",
             &func.name,
@@ -54,7 +56,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
             && features.loop_depth >= 2
             && !features.has_swap_in_inner_loop)
     {
-        return Some(build_match(
+        matches.push(build_match(
             "selection_sort",
             "选择排序",
             &func.name,
@@ -70,7 +72,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
             && features.loop_depth >= 2
             && !features.has_swap)
     {
-        return Some(build_match(
+        matches.push(build_match(
             "insertion_sort",
             "插入排序",
             &func.name,
@@ -85,7 +87,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
             && features.has_partition_pattern
             && features.has_nested_loops)
     {
-        return Some(build_match(
+        matches.push(build_match(
             "quick_sort",
             "快速排序",
             &func.name,
@@ -100,7 +102,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
             && features.has_merge_pattern
             && !features.has_partition_pattern)
     {
-        return Some(build_match(
+        matches.push(build_match(
             "merge_sort",
             "归并排序",
             &func.name,
@@ -116,7 +118,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
             && features.has_mid_calculation
             && features.has_left_right_update)
     {
-        return Some(build_match(
+        matches.push(build_match(
             "binary_search",
             "二分查找",
             &func.name,
@@ -125,7 +127,7 @@ fn detect_in_func(func: &FuncDecl) -> Option<AlgorithmMatch> {
         ));
     }
 
-    None
+    matches
 }
 
 // ============================================================================
