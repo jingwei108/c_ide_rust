@@ -2,7 +2,7 @@
 
 本文档说明项目的构建流程、脚本用法和环境要求。
 
-> **迁移说明**：前端已从 .NET MAUI 迁移至 Flutter。旧版 MAUI 构建文档见 `archive/BUILD_SCRIPTS.md`（已归档）。
+> **迁移说明**：前端已从 .NET MAUI 迁移至 Flutter。旧版 MAUI 构建文档见 [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md)（已归档）。
 
 ---
 
@@ -42,6 +42,8 @@ $env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
 | [`scripts/build_flutter.py`](../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端 | 日常开发编译 |
 | [`scripts/build_release.py`](../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
 | [`scripts/test_mobile.py`](../scripts/test_mobile.py) | 移动端完整流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
+
+> 旧版 MAUI 构建脚本已归档至 [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md)。
 
 ---
 
@@ -128,11 +130,11 @@ Native .so 编译 → Flutter APK 打包 → 设备安装 → 应用启动 → L
 
 | 参数 | 类型 | 默认值 | 说明 |
 |:---|:---|:---|:---|
-| `-Configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
-| `-SkipNativeBuild` | Switch | 关闭 | 跳过 NDK `.so` 编译，仅重新打包 APK |
-| `-Install` | Switch | 关闭 | APK 构建完成后自动安装到设备 |
-| `-Run` | Switch | 关闭 | 安装后自动启动应用 |
-| `-Logcat` | Switch | 关闭 | 启动后实时抓取应用日志（`Ctrl+C` 停止） |
+| `-c`, `--configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
+| `--skip-native-build` | flag | 关闭 | 跳过 NDK `.so` 编译，仅重新打包 APK |
+| `--install` | flag | 关闭 | APK 构建完成后自动安装到设备 |
+| `--run` | flag | 关闭 | 安装后自动启动应用 |
+| `--logcat` | flag | 关闭 | 启动后实时抓取应用日志（`Ctrl+C` 停止） |
 
 ### 使用示例
 
@@ -223,10 +225,10 @@ flutter build apk --release
 
 # 3. 安装并启动
 adb install -r "build/app/outputs/flutter-apk/app-release.apk"
-adb shell monkey -p com.example.cide_flutter -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.example.cide -c android.intent.category.LAUNCHER 1
 
 # 4. 查看日志
-adb logcat --pid=$(adb shell pidof com.example.cide_flutter)
+adb logcat --pid=$(adb shell pidof com.example.cide)
 ```
 
 ### 运行测试

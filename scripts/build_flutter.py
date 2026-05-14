@@ -28,6 +28,7 @@ from build_utils import (
     error,
     find_ndk,
     header,
+    info,
     run,
     success,
     warn,
@@ -70,6 +71,11 @@ def parse_args() -> argparse.Namespace:
         "--skip-rust",
         action="store_true",
         help="Skip manual Rust build (let cargokit handle it via flutter build)",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run cargo test and clippy before build",
     )
     return parser.parse_args()
 
@@ -238,11 +244,6 @@ def build_flutter_android(
             info(f"APK output: {apks[0]}")
 
 
-def info(text: str) -> None:
-    """辅助：信息提示（黄色前缀）。"""
-    print(f"  ℹ {text}")
-
-
 def main() -> int:
     args = parse_args()
     root = get_project_root()
@@ -250,6 +251,16 @@ def main() -> int:
     try:
         if args.clean:
             clean_build(root)
+
+        if args.test:
+            header("Running Rust tests and lints")
+            native_dir = root / "native"
+            print("Running cargo test...")
+            run(["cargo", "test"], cwd=native_dir)
+            success("cargo test passed")
+            print("Running cargo clippy...")
+            run(["cargo", "clippy"], cwd=native_dir)
+            success("cargo clippy passed")
 
         flutter_exe = find_flutter()
         success(f"Flutter found: {flutter_exe}")
