@@ -28,8 +28,6 @@ native/src/capi/        C API (P/Invoke / JNI 接口) (Rust)
 native/src/api/         FRB API (flutter_rust_bridge) (Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议 (Rust)
 CideFlutter/            Flutter 跨平台前端 (Android + Desktop Windows)
-Cide.Client.Maui/       MAUI 前端（维护中，Flutter 为主）
-Cide.Client.Shared/     共享 ViewModel / 服务
 docs/                   设计文档、事故报告
 ```
 
@@ -45,11 +43,11 @@ docs/                   设计文档、事故报告
 | Phase 2d | TypeChecker | ✅ 完成 |
 | Phase 2e | BytecodeGen | ✅ 完成 |
 | Phase 2f | C API `cide_compile_all` 接线 | ✅ 完成 |
-| Phase 3 | C# 前端端到端测试（Desktop / Android 编译通过） | ✅ 完成 |
+| Phase 3 | C# 前端端到端测试（已下线，Flutter 替代） | ✅ 完成 |
 | Phase 4 | Android 目标构建（cargo-ndk） | ✅ 完成 |
 | Phase 5 | 清理遗留 C++ / CMake 文件 | ✅ 完成 |
 | Phase 6 | 全面审查：编译警告清理 + 安全加固 + 测试覆盖拓展 | ✅ 完成 |
-| Phase 7 | Desktop 内存泄漏修复 + Maui scanf 输入 + sizeof/scanf 子集拓展 | ✅ 完成 |
+| Phase 7 | Desktop 内存泄漏修复 + sizeof/scanf 子集拓展 | ✅ 完成 |
 | Phase 8 | `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ 诊断系统拓展 | ✅ 完成 |
 | Phase 9 | Flutter 前端从零搭建：IDE 界面 + 编辑器 + 调试面板 + 算法可视化 | ✅ 完成 |
 | Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
@@ -70,11 +68,7 @@ docs/                   设计文档、事故报告
 - UI 线程：`Future.delayed` / `async-await`，无需显式主线程切换
 - 自定义组件：算法验证、内存映射、链表可视化、教程引导等均为 CustomPainter / Widget 实现
 
-### C# (frontend) — 维护中
-- ViewModel 使用 `ObservableObject` / `INotifyPropertyChanged`
-- Native 调用通过 P/Invoke：`[DllImport("cide_native")]`
-- UI 更新必须在主线程：`MainThread.InvokeOnMainThreadAsync()`
-- 取消令牌必须正确 Dispose：`cts?.Cancel(); cts?.Dispose(); cts = null;`
+
 
 ## 已知限制
 
