@@ -16,7 +16,7 @@ fn compile_source(source: &str) -> Result<cide_native::compiler::bytecode_gen::C
 
     let mut program = maybe_program.ok_or("Parser returned None")?;
 
-    let (type_errors, _warnings, _hints) = TypeChecker::new().check(&mut program);
+    let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);
     if !type_errors.is_empty() {
         return Err(format!("Type errors: {:?}", type_errors));
     }
@@ -192,7 +192,7 @@ int main() {
     let (tokens, _lex_errors) = Lexer::new(src.to_string()).tokenize();
     let (maybe_program, _parse_errors) = Parser::new(tokens).parse();
     let mut program = maybe_program.unwrap();
-    let (type_errors, _warnings, _hints) = TypeChecker::new().check(&mut program);
+    let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);
     assert!(!type_errors.is_empty(), "Expected type error for string assigned to int");
 }
 
@@ -206,7 +206,7 @@ int main() {
     let (tokens, _lex_errors) = Lexer::new(src.to_string()).tokenize();
     let (maybe_program, _parse_errors) = Parser::new(tokens).parse();
     let mut program = maybe_program.unwrap();
-    let (type_errors, _warnings, _hints) = TypeChecker::new().check(&mut program);
+    let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);
     assert!(!type_errors.is_empty(), "Expected type error for undeclared variable");
 }
 

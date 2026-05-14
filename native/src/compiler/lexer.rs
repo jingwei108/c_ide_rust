@@ -261,7 +261,7 @@ impl Lexer {
             // Convert hex to decimal string so parser can parse it
             let hex_str = &text[2..];
             if let Ok(val) = u64::from_str_radix(hex_str, 16) {
-                if val > i32::MAX as u64 {
+                if val > u32::MAX as u64 {
                     self.errors.push(LexerError {
                         message: format!("十六进制数值 0x{} 超出 int 范围", hex_str),
                         line: self.line,

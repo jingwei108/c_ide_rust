@@ -1,3 +1,4 @@
+use super::host_func_id;
 use super::vm::CideVM;
 use crate::session::{MemoryRegion, Session};
 
@@ -17,29 +18,29 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
 
 pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
     match id {
-        0 => host_output(vm, session),
-        1 => host_step(vm, session),
-        2 => host_malloc(vm, session),
-        3 => host_free(vm, session),
-        10 => host_printf_0(vm, session),
-        11 => host_printf_1(vm, session),
-        12 => host_printf_2(vm, session),
-        15 => host_printf_n(vm, session),
-        21 => host_scanf_n(vm, session),
-        30 => host_strlen(vm, session),
-        31 => host_strcpy(vm, session),
-        32 => host_strcmp(vm, session),
-        33 => host_getchar(vm, session),
-        34 => host_putchar(vm, session),
-        35 => host_rand(vm, session),
-        36 => host_srand(vm, session),
-        37 => host_memset(vm, session),
-        38 => host_exit(vm, session),
-        39 => host_strcat(vm, session),
-        40 => host_atoi(vm, session),
-        50 => host_fprintf_n(vm, session),
-        51 => host_realloc(vm, session),
-        52 => host_qsort(vm, session),
+        host_func_id::OUTPUT => host_output(vm, session),
+        host_func_id::STEP => host_step(vm, session),
+        host_func_id::MALLOC => host_malloc(vm, session),
+        host_func_id::FREE => host_free(vm, session),
+        host_func_id::PRINTF_0 => host_printf_0(vm, session),
+        host_func_id::PRINTF_1 => host_printf_1(vm, session),
+        host_func_id::PRINTF_2 => host_printf_2(vm, session),
+        host_func_id::PRINTF_N => host_printf_n(vm, session),
+        host_func_id::SCANF_N => host_scanf_n(vm, session),
+        host_func_id::STRLEN => host_strlen(vm, session),
+        host_func_id::STRCPY => host_strcpy(vm, session),
+        host_func_id::STRCMP => host_strcmp(vm, session),
+        host_func_id::GETCHAR => host_getchar(vm, session),
+        host_func_id::PUTCHAR => host_putchar(vm, session),
+        host_func_id::RAND => host_rand(vm, session),
+        host_func_id::SRAND => host_srand(vm, session),
+        host_func_id::MEMSET => host_memset(vm, session),
+        host_func_id::EXIT => host_exit(vm, session),
+        host_func_id::STRCAT => host_strcat(vm, session),
+        host_func_id::ATOI => host_atoi(vm, session),
+        host_func_id::FPRINTF => host_fprintf_n(vm, session),
+        host_func_id::REALLOC => host_realloc(vm, session),
+        host_func_id::QSORT => host_qsort(vm, session),
         _ => {}
     }
 }
@@ -60,7 +61,12 @@ fn host_step(vm: &mut CideVM, session: &mut Session) {
 
 fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     let size = vm.pop();
-    if size <= 0 {
+    if size == 0 {
+        session.runtime.output_lines.push("[warning] malloc(0) 返回 NULL。在 C 标准中，malloc(0) 的行为是实现定义的，可能返回 NULL 也可能返回一个不可解引用的非空指针。".to_string());
+        vm.push(0);
+        return;
+    }
+    if size < 0 {
         vm.push(0);
         return;
     }

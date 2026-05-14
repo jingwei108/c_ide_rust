@@ -2,31 +2,35 @@
 
 use crate::session::*;
 use crate::vm::vm::CideVM;
-use crate::compiler::lexer::Lexer;
-use crate::compiler::parser::Parser;
-use crate::compiler::type_checker::TypeChecker;
-use crate::compiler::bytecode_gen::BytecodeGen;
 use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 use std::slice;
 
-use crate::engine::compile_pipeline::{push_diagnostics, push_hints, push_warnings, setup_vm};
+use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
 
-unsafe fn cstr_to_str(s: *const c_char) -> Option<&'static str> {
+/// 将 C 字符串指针安全转换为 Rust &str。
+///
+/// 内部完成 null 检查，可作为 safe 函数调用。
+fn cstr_to_str(s: *const c_char) -> Option<&'static str> {
     if s.is_null() {
         return None;
     }
-    CStr::from_ptr(s).to_str().ok()
+    unsafe { CStr::from_ptr(s).to_str().ok() }
 }
 
-unsafe fn write_str(dst: *mut c_char, dst_size: c_int, src: &str) {
+/// 将 Rust 字符串安全写入 C 缓冲区（带 null 终止符）。
+///
+/// 内部完成 null 检查和边界截断，可作为 safe 函数调用。
+fn write_str(dst: *mut c_char, dst_size: c_int, src: &str) {
     if dst.is_null() || dst_size <= 0 {
         return;
     }
     let len = src.len().min((dst_size - 1) as usize);
-    let slice = slice::from_raw_parts_mut(dst as *mut u8, len);
-    slice.copy_from_slice(&src.as_bytes()[..len]);
-    *dst.add(len) = 0;
+    unsafe {
+        let slice = slice::from_raw_parts_mut(dst as *mut u8, len);
+        slice.copy_from_slice(&src.as_bytes()[..len]);
+        *dst.add(len) = 0;
+    }
 }
 
 #[no_mangle]
@@ -86,7 +90,11 @@ pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_c
                     session.compile = snapshot.compile;
                     session.runtime = snapshot.runtime;
                     session.memory = snapshot.memory;
-                    session.vm = Some(CideVM::default());
+                    let mut vm = CideVM::default();
+                    if session.compile.compiled {
+                        setup_vm(&mut vm, session);
+                    }
+                    session.vm = Some(vm);
                     0
                 }
                 Err(_) => -1,
@@ -146,21 +154,6 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     }
     let session = &mut *s;
 
-    // 清空之前的编译状态
-    session.compile.bytecode.clear();
-    session.compile.globals_init.clear();
-    session.compile.diagnostics.clear();
-    session.compile.source_map.clear();
-    session.compile.func_table.clear();
-    session.compile.func_index.clear();
-    session.compile.string_data.clear();
-    session.compile.symbols.clear();
-    session.compile.algorithm_matches.clear();
-    session.compile.struct_fields.clear();
-    session.compile.errors.clear();
-    session.compile.errors_buffer.clear();
-    session.compile.compiled = false;
-
     // 拼接所有编译单元（避免末尾多余换行导致行号偏移）
     let mut full_source = String::new();
     for unit in &session.compile.compile_units {
@@ -170,103 +163,10 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
         }
     }
 
-    // 1. Lexer
-    let (tokens, lex_errors) = Lexer::new(full_source.clone()).tokenize();
-    if !lex_errors.is_empty() {
-        push_diagnostics(session, &lex_errors, &full_source);
+    // 运行编译管线
+    if run_compile_pipeline(session, &full_source).is_err() {
         return -1;
     }
-
-    // 2. Parser
-    let (maybe_program, parse_errors) = Parser::new(tokens).parse();
-    if !parse_errors.is_empty() {
-        push_diagnostics(session, &parse_errors, &full_source);
-        return -1;
-    }
-
-    let mut program = match maybe_program {
-        Some(p) => p,
-        None => {
-            session.compile.errors = "解析失败：无法生成 AST".to_string();
-            session.compile.errors_buffer = session.compile.errors.clone();
-            return -1;
-        }
-    };
-
-    // 3. TypeChecker
-    let (type_errors, type_warnings, type_hints) = TypeChecker::new().check(&mut program);
-    if !type_errors.is_empty() {
-        push_diagnostics(session, &type_errors, &full_source);
-        return -1;
-    }
-    if !type_warnings.is_empty() {
-        push_warnings(session, &type_warnings, &full_source);
-    }
-    if !type_hints.is_empty() {
-        push_hints(session, &type_hints, &full_source);
-    }
-
-    // 4. BytecodeGen
-    let gen = BytecodeGen::new();
-    let output = match gen.generate(&mut program) {
-        Ok(o) => o,
-        Err(gen_errors) => {
-            let mut err_str = String::new();
-            for e in &gen_errors {
-                err_str.push_str(&format!("生成错误: {}\n", e));
-            }
-            session.compile.errors = err_str.clone();
-            session.compile.errors_buffer = err_str;
-            return -1;
-        }
-    };
-
-    // 填充编译结果
-    session.compile.bytecode = output.code;
-    session.compile.globals_init = output.globals_init;
-    session.compile.source_map = output.source_map.into_iter()
-        .map(|(ip, loc)| (ip, crate::compiler::ast::SourceLoc { line: loc.line, column: loc.column }))
-        .collect();
-    session.compile.func_index = output.func_index;
-
-    // func_table 转换：bytecode_gen::FuncMeta -> session::FuncMeta
-    for (name, meta) in output.func_table {
-        session.compile.func_table.insert(name, crate::session::FuncMeta {
-            ip: meta.ip,
-            arg_count: meta.arg_count,
-            local_count: meta.local_count,
-        });
-    }
-
-    session.compile.string_data = output.string_data;
-
-    // symbols 转换：VMSymbol -> Symbol
-    for sym in output.symbols {
-        session.compile.symbols.push(crate::session::Symbol {
-            name: sym.name,
-            addr: sym.addr,
-            is_local: sym.is_local,
-            ty: sym.ty,
-            scope_depth: sym.scope_depth,
-        });
-    }
-
-    // struct_fields 转换
-    for (name, fields) in output.struct_defs {
-        let converted: Vec<(String, i32)> = fields.into_iter()
-            .enumerate()
-            .map(|(i, f)| (f.name, i as i32 * 4))
-            .collect();
-        session.compile.struct_fields.insert(name, converted);
-    }
-
-    // 算法模式识别
-    session.compile.algorithm_matches =
-        crate::compiler::algorithm_detector::detect_algorithms(&program);
-
-    session.compile.compiled = true;
-    session.compile.errors.clear();
-    session.compile.errors_buffer.clear();
     0
 }
 

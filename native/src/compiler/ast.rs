@@ -65,7 +65,7 @@ impl Type {
     }
 
     pub fn is_scalar(&self) -> bool {
-        matches!(self.kind, TypeKind::Int | TypeKind::Char)
+        matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)
     }
     pub fn is_pointer(&self) -> bool {
         matches!(self.kind, TypeKind::Pointer)
