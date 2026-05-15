@@ -8,6 +8,8 @@ import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/draggable_panel_tab.dart';
 import '../widgets/editor_panel.dart';
+import '../widgets/floating_orb_widget.dart';
+import '../widgets/floating_panel_popup.dart';
 import '../widgets/height_resizable_panel.dart';
 import '../widgets/intro_overlay.dart';
 import '../widgets/panel_drag_data.dart';
@@ -38,9 +40,45 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
   final _inputController = TextEditingController();
   bool _showKeyboard = false;
   bool _isSystemKeyboardActive = false;
+  OverlayEntry? _orbOverlayEntry;
+  OverlayEntry? _panelOverlayEntry;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _insertOrbOverlay();
+    });
+  }
+
+  void _insertOrbOverlay() {
+    if (!mounted) return;
+    final overlay = Overlay.of(context);
+    _orbOverlayEntry = OverlayEntry(
+      builder: (context) => _buildOrbOverlay(),
+    );
+    overlay.insert(_orbOverlayEntry!);
+  }
+
+  void _insertPanelOverlay(String panelId) {
+    _removePanelOverlay();
+    if (!mounted) return;
+    final overlay = Overlay.of(context);
+    _panelOverlayEntry = OverlayEntry(
+      builder: (context) => _buildPanelOverlay(panelId),
+    );
+    overlay.insert(_panelOverlayEntry!);
+  }
+
+  void _removePanelOverlay() {
+    _panelOverlayEntry?.remove();
+    _panelOverlayEntry = null;
+  }
 
   @override
   void dispose() {
+    _orbOverlayEntry?.remove();
+    _panelOverlayEntry?.remove();
     _inputController.dispose();
     super.dispose();
   }
@@ -94,70 +132,73 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       backgroundColor: scaffoldBg,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            Column(
+      body: Stack(
+        children: [
+          SafeArea(
+            child: Stack(
               children: [
-                _buildToolbar(state, notifier, isDark),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: EditorPanel(
-                      key: _editorKey,
-                      onTap: _openKeyboard,
+                Column(
+                  children: [
+                    _buildToolbar(state, notifier, isDark),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: EditorPanel(
+                          key: _editorKey,
+                          onTap: _openKeyboard,
+                        ),
+                      ),
+                    ),
+                    _buildTemplateBar(state, notifier),
+                    _buildBottomPanel(state, notifier, isDark),
+                  ],
+                ),
+                // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
+                if (showCustomKeyboard)
+                  Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: FocusScope(
+                      canRequestFocus: false,
+                      child: CustomKeyboard(
+                        onInsertText: _insertText,
+                        onInsertPair: _insertPair,
+                        onMoveCursor: _moveCursor,
+                        onBackspace: _backspace,
+                        onEnter: _insertNewline,
+                        onTab: () => _insertText('    '),
+                        onUndo: _undo,
+                        onRedo: _redo,
+                        onDone: _closeKeyboard,
+                        onToggleSystemKeyboard: _showSystemKeyboard,
+                        isSystemKeyboardActive: false,
+                      ),
                     ),
                   ),
-                ),
-                _buildTemplateBar(state, notifier),
-                _buildBottomPanel(state, notifier, isDark),
+                // 系统键盘激活时，提供一个悬浮按钮可切回自定义键盘
+                if (_isSystemKeyboardActive)
+                  Positioned(
+                    right: 16,
+                    bottom: MediaQuery.of(context).viewInsets.bottom + 16,
+                    child: FloatingActionButton(
+                      mini: true,
+                      backgroundColor: Colors.blueAccent,
+                      onPressed: _showCustomKeyboard,
+                      child: const Text('英', style: TextStyle(fontSize: 14, color: Colors.white)),
+                    ),
+                  ),
+                if (state.showIntro)
+                  IntroOverlay(
+                    isDark: isDark,
+                    onDone: notifier.hideIntro,
+                  ),
               ],
             ),
-            // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
-            if (showCustomKeyboard)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: FocusScope(
-                  canRequestFocus: false,
-                  child: CustomKeyboard(
-                    onInsertText: _insertText,
-                    onInsertPair: _insertPair,
-                    onMoveCursor: _moveCursor,
-                    onBackspace: _backspace,
-                    onEnter: _insertNewline,
-                    onTab: () => _insertText('    '),
-                    onUndo: _undo,
-                    onRedo: _redo,
-                    onDone: _closeKeyboard,
-                    onToggleSystemKeyboard: _showSystemKeyboard,
-                    isSystemKeyboardActive: false,
-                  ),
-                ),
-              ),
-            // 系统键盘激活时，提供一个悬浮按钮可切回自定义键盘
-            if (_isSystemKeyboardActive)
-              Positioned(
-                right: 16,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-                child: FloatingActionButton(
-                  mini: true,
-                  backgroundColor: Colors.blueAccent,
-                  onPressed: _showCustomKeyboard,
-                  child: const Text('英', style: TextStyle(fontSize: 14, color: Colors.white)),
-                ),
-              ),
-            if (state.showIntro)
-              IntroOverlay(
-                isDark: isDark,
-                onDone: notifier.hideIntro,
-              ),
-          ],
-        ),
+          ),
+          // 悬浮球通过 OverlayEntry 渲染，不放在 body Stack 中
+        ],
       ),
-      floatingActionButton: _buildFloatingButton(state, notifier),
-      bottomSheet: state.isFloatingOpen ? _buildFloatingDrawer(state, notifier, isDark) : null,
     );
   }
 
@@ -317,123 +358,47 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
     }
   }
 
-  // ========== 悬浮球 ==========
+  // ========== Overlay 悬浮球与弹窗 ==========
 
-  Widget _buildFloatingButton(IdeState state, IdeNotifier notifier) {
-    return FloatingActionButton(
-      mini: true,
-      backgroundColor: state.isFloatingOpen ? Colors.redAccent : Colors.blueAccent,
-      onPressed: notifier.toggleFloating,
-      child: Icon(state.isFloatingOpen ? Icons.close : Icons.bug_report, size: 20),
+  Widget _buildOrbOverlay() {
+    return Consumer(
+      builder: (context, ref, child) {
+        final state = ref.watch(ideProvider);
+        final notifier = ref.read(ideProvider.notifier);
+        return FloatingOrbWidget(
+          isMenuOpen: state.isFloatingOpen,
+          menuItems: state.floatingSlots,
+          onToggleMenu: notifier.toggleFloating,
+          onSelectPanel: (panelId) {
+            notifier.openFloatingPanel(panelId);
+            _insertPanelOverlay(panelId);
+          },
+          onCloseMenu: notifier.closeFloating,
+        );
+      },
     );
   }
 
-  Widget _buildFloatingDrawer(IdeState state, IdeNotifier notifier, bool isDark) {
-    final panelBg = isDark ? const Color(0xff1e1e1e) : const Color(0xffffffff);
-
-    return Container(
-      height: 320,
-      decoration: BoxDecoration(
-        color: panelBg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.2), blurRadius: 8)],
-      ),
-      child: Column(
-        children: [
-          // 拖拽手柄 + 关闭
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            child: Row(
-              children: [
-                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey, borderRadius: BorderRadius.circular(2))),
-                const Spacer(),
-                Text('调试面板', style: TextStyle(fontSize: 12, color: Colors.grey[600])),
-                const Spacer(),
-                InkWell(
-                  onTap: notifier.closeFloating,
-                  child: const Icon(Icons.close, size: 18, color: Colors.grey),
-                ),
-              ],
-            ),
-          ),
-          // Tab 栏
-          Container(
-            height: 40,
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Row(
-              children: [
-                ...List.generate(state.floatingSlots.length, (index) {
-                  final panelId = state.floatingSlots[index];
-                  final item = PanelItem.fromId(panelId);
-                  if (item == null) return const SizedBox.shrink();
-                  final isActive = state.floatingActiveIndex == index;
-                  return Expanded(
-                    child: DraggablePanelTab(
-                      item: item,
-                      isActive: isActive,
-                      onTap: () => notifier.selectFloatingTab(index),
-                      onDoubleTap: () => notifier.removeFloatingPanel(index),
-                      data: PanelDragData(panelId: panelId, fromLocation: PanelLocation.floating, fromIndex: index),
-                      onAccept: (dragData) {
-                        if (dragData.fromLocation == PanelLocation.floating) {
-                          notifier.swapFloatingPanels(index, dragData.fromIndex);
-                        } else {
-                          notifier.moveToFloating(dragData.panelId);
-                        }
-                      },
-                    ),
-                  );
-                }),
-                // 悬浮球空位 DropTarget
-                if (state.floatingSlots.length < 7)
-                  Expanded(
-                    child: DragTarget<PanelDragData>(
-                      onAcceptWithDetails: (details) {
-                        notifier.moveToFloating(details.data.panelId);
-                      },
-                      builder: (context, candidateData, rejectedData) {
-                        final isHovering = candidateData.isNotEmpty;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isHovering ? Colors.blueAccent.withValues(alpha: 0.2) : null,
-                            borderRadius: BorderRadius.circular(4),
-                            border: isHovering ? Border.all(color: Colors.blueAccent) : null,
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.add, size: 16, color: Colors.grey),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          // 内容区域（支持水平滑动切换标签）
-          Expanded(
-            child: GestureDetector(
-              onHorizontalDragEnd: (details) {
-                const threshold = 300.0;
-                final dx = details.velocity.pixelsPerSecond.dx;
-                if (dx > threshold && state.floatingActiveIndex > 0) {
-                  notifier.selectFloatingTab(state.floatingActiveIndex - 1);
-                } else if (dx < -threshold &&
-                    state.floatingActiveIndex < state.floatingSlots.length - 1) {
-                  notifier.selectFloatingTab(state.floatingActiveIndex + 1);
-                }
-              },
-              child: _buildFloatingTabContent(state, notifier, isDark),
-            ),
-          ),
-        ],
-      ),
+  Widget _buildPanelOverlay(String panelId) {
+    return Consumer(
+      builder: (context, ref, child) {
+        final state = ref.watch(ideProvider);
+        final notifier = ref.read(ideProvider.notifier);
+        final isDark = ref.watch(themeProvider) == ThemeMode.dark;
+        return FloatingPanelPopup(
+          panelId: panelId,
+          isDark: isDark,
+          onClose: () {
+            notifier.closeFloatingPanel();
+            _removePanelOverlay();
+          },
+          child: _buildPanelContentById(panelId, state, notifier, isDark),
+        );
+      },
     );
   }
 
-  Widget _buildFloatingTabContent(IdeState state, IdeNotifier notifier, bool isDark) {
-    if (state.floatingSlots.isEmpty) return const SizedBox.shrink();
-    final panelId = state.floatingSlots[state.floatingActiveIndex.clamp(0, state.floatingSlots.length - 1)];
+  Widget _buildPanelContentById(String panelId, IdeState state, IdeNotifier notifier, bool isDark) {
     switch (panelId) {
       case 'output':
         return _buildOutputTab(state, notifier, isDark);

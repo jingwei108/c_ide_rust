@@ -199,14 +199,27 @@ class IdeNotifier extends Notifier<IdeState> {
     state = state.copyWith(bottomHeight: height.clamp(120, 500));
   }
 
-  /// 切换悬浮球展开/收起
+  /// 切换悬浮球菜单展开/收起
   void toggleFloating() {
     state = state.copyWith(isFloatingOpen: !state.isFloatingOpen);
   }
 
-  /// 关闭悬浮球
+  /// 关闭悬浮球菜单
   void closeFloating() {
     state = state.copyWith(isFloatingOpen: false);
+  }
+
+  /// 打开指定浮动面板弹窗
+  void openFloatingPanel(String panelId) {
+    state = state.copyWith(
+      activeFloatingPanel: panelId,
+      isFloatingOpen: false,
+    );
+  }
+
+  /// 关闭浮动面板弹窗
+  void closeFloatingPanel() {
+    state = state.copyWith(activeFloatingPanel: null);
   }
 
   /// 将面板从当前位置移动到底部

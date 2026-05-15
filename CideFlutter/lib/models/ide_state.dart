@@ -24,6 +24,7 @@ class IdeState {
   final int floatingActiveIndex;
   final double bottomHeight;
   final bool isFloatingOpen;
+  final String? activeFloatingPanel;
   final List<String> watchExpressions;
   final int executionSpeed; // 0~500 ms
   final bool showIntro;
@@ -49,6 +50,7 @@ class IdeState {
     this.floatingActiveIndex = 0,
     this.bottomHeight = 220,
     this.isFloatingOpen = false,
+    this.activeFloatingPanel,
     this.watchExpressions = const [],
     this.executionSpeed = 0,
     this.showIntro = false,
@@ -80,6 +82,7 @@ class IdeState {
     int? floatingActiveIndex,
     double? bottomHeight,
     bool? isFloatingOpen,
+    String? activeFloatingPanel,
     List<String>? watchExpressions,
     int? executionSpeed,
     bool? showIntro,
@@ -106,6 +109,7 @@ class IdeState {
       floatingActiveIndex: floatingActiveIndex ?? this.floatingActiveIndex,
       bottomHeight: bottomHeight ?? this.bottomHeight,
       isFloatingOpen: isFloatingOpen ?? this.isFloatingOpen,
+      activeFloatingPanel: activeFloatingPanel ?? this.activeFloatingPanel,
       watchExpressions: watchExpressions ?? this.watchExpressions,
       executionSpeed: executionSpeed ?? this.executionSpeed,
       showIntro: showIntro ?? this.showIntro,
