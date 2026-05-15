@@ -32,13 +32,25 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
       const CodeLineOptions(indentSize: 4),
     );
     _lastLineCount = _controller.lineCount;
-    _controller.addListener(_onChanged);
+    // 延迟添加 listener，避免 re_editor 初始化 delegate 时立即触发通知，
+    // 导致在 widget tree building 阶段修改 provider
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _controller.addListener(_onChanged);
+      }
+    });
   }
 
   int _lastLineCount = 0;
 
   void _onChanged() {
-    ref.read(ideProvider.notifier).updateSource(_controller.text);
+    // 延迟更新 provider，避免 re_editor 初始化 delegate 时触发 notifyListeners，
+    // 导致在 widget tree building 阶段修改 provider
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(ideProvider.notifier).updateSource(_controller.text);
+      }
+    });
 
     // VS 风格 Enter 格式化：检测换行，对前一行补分号
     final currentLineCount = _controller.lineCount;
@@ -253,12 +265,24 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
         ? Colors.blueAccent.withValues(alpha: 0.3)
         : null;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: editorBackground,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: CodeAutocomplete(
+    // 拦截 warm-up frame 中可能出现的 0/Infinity 高度约束，
+    // 避免 re_editor 的 DefaultCodeLineNumber 触发 assert 崩溃
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxHeight <= 0 || constraints.maxHeight == double.infinity) {
+          return Container(
+            decoration: BoxDecoration(
+              color: editorBackground,
+              borderRadius: BorderRadius.circular(8),
+            ),
+          );
+        }
+        return Container(
+          decoration: BoxDecoration(
+            color: editorBackground,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: CodeAutocomplete(
         viewBuilder: (context, notifier, onSelected) {
           return _AutocompleteListView(
             notifier: notifier,
@@ -301,6 +325,8 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
         ),
       ),
     );
+  },
+);
   }
 
   Widget _buildGutter(
