@@ -1102,23 +1102,34 @@ impl CideVM {
             }
 
             OpCode::TrapBounds => {
-                let sym_idx = inst.operand as usize;
+                let operand = inst.operand;
+                let index = *self.stack.last().unwrap_or(&0);
                 let mut name = "数组".to_string();
                 let mut size = 0;
-                let mut index = 0;
-                if sym_idx < self.symbols.len() {
-                    let sym = &self.symbols[sym_idx];
-                    name = sym.name.clone();
-                    size = sym.ty.array_size;
+                if operand >= 0 {
+                    let sym_idx = operand as usize;
+                    if sym_idx < self.symbols.len() {
+                        let sym = &self.symbols[sym_idx];
+                        name = sym.name.clone();
+                        size = sym.ty.array_size;
+                    }
+                } else {
+                    size = -operand;
                 }
-                if !self.stack.is_empty() {
-                    index = self.pop();
+                if index < 0 || index >= size {
+                    let diag = if operand >= 0 {
+                        format!(
+                            "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
+                            name, index, name, size, size.saturating_sub(1), size.saturating_sub(1)
+                        )
+                    } else {
+                        format!(
+                            "🚫 数组越界：索引 {} 超出了合法范围 0~{}。\n\n💡 原因：数组索引超出了合法范围。",
+                            index, size.saturating_sub(1)
+                        )
+                    };
+                    self.trap(&diag, &inst.loc);
                 }
-                let diag = format!(
-                    "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
-                    name, index, name, size, size.saturating_sub(1), size.saturating_sub(1)
-                );
-                self.trap(&diag, &inst.loc);
             }
         }
 

@@ -1197,30 +1197,12 @@ impl BytecodeGen {
         self.gen_expr(array);
         self.gen_expr(index);
 
-        if bound_size > 0 && sym_idx >= 0 {
-            let idx_temp = self.get_temp_slot(2);
-            self.emit(OpCode::StoreLocal, idx_temp, loc);
-            // check >= 0
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::PushConst, 0, loc);
-            self.emit(OpCode::Ge, 0, loc);
-            self.emit(OpCode::Not, 0, loc);
-            let jump_neg = self.current_ip();
-            self.emit(OpCode::JumpIfZero, 0, loc);
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::TrapBounds, sym_idx, loc);
-            self.patch_jump(jump_neg, self.current_ip());
-            // check < bound
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::PushConst, bound_size, loc);
-            self.emit(OpCode::Lt, 0, loc);
-            self.emit(OpCode::Not, 0, loc);
-            let jump_ok = self.current_ip();
-            self.emit(OpCode::JumpIfZero, 0, loc);
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::TrapBounds, sym_idx, loc);
-            self.patch_jump(jump_ok, self.current_ip());
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
+        if bound_size > 0 {
+            if sym_idx >= 0 {
+                self.emit(OpCode::TrapBounds, sym_idx, loc);
+            } else {
+                self.emit(OpCode::TrapBounds, -bound_size, loc);
+            }
         }
 
         self.emit(OpCode::PushConst, stride, loc);
