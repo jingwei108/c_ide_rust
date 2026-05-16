@@ -851,7 +851,7 @@ pub unsafe extern "C" fn cide_variable_get_type(
         return -1;
     }
     let v = &(&(*s).runtime.variable_snapshot)[index as usize];
-    let type_str = format_type(&v.ty);
+    let type_str = v.ty.to_string();
     write_str(type_buf, type_buf_size, &type_str);
     type_str.len() as c_int
 }
@@ -1077,39 +1077,3 @@ pub unsafe extern "C" fn cide_algorithm_match_vis_event_get(
     write_str(context, context_size, &ev.context);
 }
 
-fn format_type(t: &crate::compiler::ast::Type) -> String {
-    use crate::compiler::ast::TypeKind;
-    match t.kind {
-        TypeKind::Void => "void".to_string(),
-        TypeKind::Int => "int".to_string(),
-        TypeKind::Char => "char".to_string(),
-        TypeKind::Float => "float".to_string(),
-        TypeKind::Pointer => {
-            let base = match t.base_kind {
-                TypeKind::Struct => format!("struct {}", t.name),
-                TypeKind::Char => "char".to_string(),
-                _ => "int".to_string(),
-            };
-            format!("{}*", base)
-        }
-        TypeKind::Array => {
-            let base = match t.base_kind {
-                TypeKind::Struct => format!("struct {}", t.name),
-                TypeKind::Char => "char".to_string(),
-                _ => "int".to_string(),
-            };
-            if !t.dims.is_empty() {
-                let mut s = base;
-                for d in &t.dims {
-                    s.push_str(&format!("[{}]", d));
-                }
-                s
-            } else if t.array_size > 0 {
-                format!("{}[{}]", base, t.array_size)
-            } else {
-                format!("{}[]", base)
-            }
-        }
-        TypeKind::Struct => format!("struct {}", t.name),
-    }
-}
