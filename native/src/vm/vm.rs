@@ -254,8 +254,9 @@ impl CideVM {
         } else {
             format!("func_{}", func_idx)
         };
+        const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
         self.call_stack.push(CallFrame {
-            return_ip: self.code.len(),
+            return_ip: HOST_CALLBACK_SENTINEL,
             locals_base,
             local_count: meta.local_count,
             func_name,
@@ -1042,6 +1043,12 @@ impl CideVM {
                 }
                 let ret_val = self.pop();
                 let frame = self.call_stack.pop().unwrap();
+                const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
+                if frame.return_ip == HOST_CALLBACK_SENTINEL {
+                    self.mem_stack_top = frame.locals_base;
+                    self.push(ret_val);
+                    return StepResult::Finished;
+                }
                 self.ip = frame.return_ip;
                 self.mem_stack_top = frame.locals_base;
                 self.push(ret_val);
@@ -1052,6 +1059,11 @@ impl CideVM {
                     return StepResult::Finished;
                 }
                 let frame = self.call_stack.pop().unwrap();
+                const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
+                if frame.return_ip == HOST_CALLBACK_SENTINEL {
+                    self.mem_stack_top = frame.locals_base;
+                    return StepResult::Finished;
+                }
                 self.ip = frame.return_ip;
                 self.mem_stack_top = frame.locals_base;
             }
