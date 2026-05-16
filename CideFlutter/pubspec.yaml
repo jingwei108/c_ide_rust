@@ -15,7 +15,7 @@ dependencies:
   re_editor: ^0.8.0
 
   # State Management
-  flutter_riverpod: ^3.3.2-dev.2
+  flutter_riverpod: ^3.3.1
 
   # Rust Bridge (Dart side)
   flutter_rust_bridge: ^2.12.0
