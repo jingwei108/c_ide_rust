@@ -268,29 +268,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen> {
                       ),
                     );
                   }),
-                  // 底部空位 DropTarget（拖拽到底部区域上方添加）
-                  Expanded(
-                    flex: 1,
-                    child: DragTarget<PanelDragData>(
-                      onAcceptWithDetails: (details) {
-                        notifier.moveToBottom(details.data.panelId);
-                      },
-                      builder: (context, candidateData, rejectedData) {
-                        final isHovering = candidateData.isNotEmpty;
-                        return Container(
-                          margin: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isHovering ? Colors.blueAccent.withValues(alpha: 0.2) : null,
-                            borderRadius: BorderRadius.circular(4),
-                            border: isHovering ? Border.all(color: Colors.blueAccent) : null,
-                          ),
-                          child: const Center(
-                            child: Icon(Icons.add, size: 16, color: Colors.grey),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+
                 ],
               ),
             ),

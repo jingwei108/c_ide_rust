@@ -21,7 +21,19 @@ class DiagnosticsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state.diagnostics.isEmpty) {
-      return const Center(child: Text('无诊断信息', style: TextStyle(color: Colors.grey)));
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.check_circle_outline, size: 40, color: Colors.grey[500]),
+            const SizedBox(height: 12),
+            Text(
+              '无诊断信息',
+              style: TextStyle(fontSize: 14, color: Colors.grey[500]),
+            ),
+          ],
+        ),
+      );
     }
     return ListView.builder(
       itemCount: state.diagnostics.length,
