@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **键盘弹出时沉浸编辑模式**（Flutter）：
+  - 自定义键盘或系统键盘弹出时，顶部工具栏、模板栏、底部面板通过 `SizeTransition` 平滑收起，编辑器自动拉伸占满剩余空间。
+  - 键盘收起后上下栏自动弹出恢复。
+  - 系统键盘真实可见性通过 `MediaQuery.viewInsets.bottom` 检测，收起后自动同步状态。
+- **编辑器手势优化**（Flutter）：
+  - 点击代码字符处：打开键盘。
+  - 点击空白处（空行、行尾之后、尾部空白区域）：关闭键盘。
+  - 上下滑动（位移 >100px 且垂直方向为主）：关闭键盘。
+  - 长按（>600ms）仍弹出上下文菜单，不受单击/滑动逻辑影响。
+  - 空白检测通过 `addPostFrameCallback` 延迟到 `re_editor` 内部更新光标位置后执行，避免依赖内部私有 API。
+- **Panel drag-and-drop swap logic** (Flutter):
+  - All drag interactions now perform **swap** instead of add/remove/move. Both regions (bottom tabs + floating orb) maintain fixed element counts.
+  - Cross-region swap: `swapBottomWithFloatingItem(bottomPanelId, floatingIndex)` and `swapFloatingWithBottomItem(floatingPanelId, bottomIndex)` in `ide_notifier.dart`.
+  - Item-level `DragTarget` for each floating menu item (`floating_orb_widget.dart`), enabling precise swap with the hovered item.
+  - Hover feedback: blue border + shadow on both bottom tabs and floating menu items when a draggable hovers over them.
+  - Edge detection: dropping on empty padding/orb area shows a SnackBar "未识别到可交换的目标位置".
+  - Same-region filtering: floating menu item `DragTarget` only accepts drags from `PanelLocation.bottom`, preventing accidental same-region swaps.
+- **Floating orb menu direction**: menu now prefers expanding **upward** whenever space allows (`_pos.dy >= menuHeight + 28`), making it easier to drag bottom tabs upward into the menu for swapping.
+
 ### Changed
 - **Flutter bottom panel UI polish**:
   - Output tab empty state now shows `terminal_outlined` icon + "等待执行" text instead of plain text.

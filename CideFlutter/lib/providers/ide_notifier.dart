@@ -222,52 +222,65 @@ class IdeNotifier extends Notifier<IdeState> {
     state = state.copyWith(activeFloatingPanel: null);
   }
 
-  /// 将面板从当前位置移动到底部
-  void moveToBottom(String panelId) {
+  /// 将面板与底部区域交换（跨区域：悬浮球 → 底部）
+  /// 保持两区元素总数不变
+  void swapWithBottom(String panelId) {
     final currentFloating = List<String>.from(state.floatingSlots);
     final currentBottom = List<String>.from(state.bottomSlots);
 
     if (currentBottom.contains(panelId)) return;
 
-    // 底部最多放 3 个
+    // 从悬浮球移除
+    currentFloating.remove(panelId);
+
+    // 如果底部已满，把底部最后一个挤出到悬浮球
+    String? overflow;
     if (currentBottom.length >= 3) {
-      // 底部已满，把底部的最后一个移到悬浮球
-      final overflow = currentBottom.removeLast();
-      if (!currentFloating.contains(overflow)) {
-        currentFloating.add(overflow);
-      }
+      overflow = currentBottom.removeLast();
+      currentFloating.add(overflow);
     }
 
-    currentFloating.remove(panelId);
     currentBottom.add(panelId);
 
     state = state.copyWith(
       bottomSlots: currentBottom,
       floatingSlots: currentFloating,
       bottomActiveIndex: currentBottom.indexOf(panelId).clamp(0, currentBottom.length - 1),
+      floatingActiveIndex: overflow != null
+          ? currentFloating.indexOf(overflow).clamp(0, currentFloating.length - 1)
+          : state.floatingActiveIndex,
+      error: null,
     );
   }
 
-  /// 将面板从当前位置移动到悬浮球
-  void moveToFloating(String panelId) {
+  /// 将面板与悬浮球区域交换（跨区域：底部 → 悬浮球）
+  /// 保持两区元素总数不变
+  void swapWithFloating(String panelId) {
     final currentFloating = List<String>.from(state.floatingSlots);
     final currentBottom = List<String>.from(state.bottomSlots);
 
     if (currentFloating.contains(panelId)) return;
 
-    // 悬浮球最多放 7 个
-    if (currentFloating.length >= 7) {
-      state = state.copyWith(error: '悬浮球承载已达上限（最多7个）');
-      return;
+    // 从底部移除
+    currentBottom.remove(panelId);
+
+    // 如果悬浮球已满，把悬浮球最后一个挤出到底部
+    String? overflow;
+    if (currentFloating.length >= 8) {
+      overflow = currentFloating.removeLast();
+      currentBottom.add(overflow);
     }
 
-    currentBottom.remove(panelId);
     currentFloating.add(panelId);
 
     state = state.copyWith(
       bottomSlots: currentBottom,
       floatingSlots: currentFloating,
       floatingActiveIndex: currentFloating.indexOf(panelId).clamp(0, currentFloating.length - 1),
+      bottomActiveIndex: overflow != null
+          ? currentBottom.indexOf(overflow).clamp(0, currentBottom.length - 1)
+          : state.bottomActiveIndex,
+      error: null,
     );
   }
 
@@ -293,6 +306,52 @@ class IdeNotifier extends Notifier<IdeState> {
     state = state.copyWith(floatingSlots: slots);
   }
 
+  /// 跨区域交换：底部指定面板 ↔ 悬浮球指定位置
+  void swapBottomWithFloatingItem(String bottomPanelId, int floatingIndex) {
+    final currentFloating = List<String>.from(state.floatingSlots);
+    final currentBottom = List<String>.from(state.bottomSlots);
+
+    final bottomIndex = currentBottom.indexOf(bottomPanelId);
+    if (bottomIndex == -1) return;
+    if (floatingIndex < 0 || floatingIndex >= currentFloating.length) return;
+
+    final floatingPanelId = currentFloating[floatingIndex];
+
+    currentBottom[bottomIndex] = floatingPanelId;
+    currentFloating[floatingIndex] = bottomPanelId;
+
+    state = state.copyWith(
+      bottomSlots: currentBottom,
+      floatingSlots: currentFloating,
+      bottomActiveIndex: bottomIndex,
+      floatingActiveIndex: floatingIndex,
+      error: null,
+    );
+  }
+
+  /// 跨区域交换：悬浮球指定面板 ↔ 底部指定位置
+  void swapFloatingWithBottomItem(String floatingPanelId, int bottomIndex) {
+    final currentFloating = List<String>.from(state.floatingSlots);
+    final currentBottom = List<String>.from(state.bottomSlots);
+
+    final floatingIndex = currentFloating.indexOf(floatingPanelId);
+    if (floatingIndex == -1) return;
+    if (bottomIndex < 0 || bottomIndex >= currentBottom.length) return;
+
+    final bottomPanelId = currentBottom[bottomIndex];
+
+    currentFloating[floatingIndex] = bottomPanelId;
+    currentBottom[bottomIndex] = floatingPanelId;
+
+    state = state.copyWith(
+      bottomSlots: currentBottom,
+      floatingSlots: currentFloating,
+      bottomActiveIndex: bottomIndex,
+      floatingActiveIndex: floatingIndex,
+      error: null,
+    );
+  }
+
   /// 双击底部面板标题：删除并移到悬浮球
   void removeBottomPanel(int index) {
     final bottom = List<String>.from(state.bottomSlots);
@@ -301,8 +360,8 @@ class IdeNotifier extends Notifier<IdeState> {
 
     final panelId = bottom.removeAt(index);
     if (!floating.contains(panelId)) {
-      if (floating.length >= 7) {
-        state = state.copyWith(error: '悬浮球承载已达上限（最多7个）');
+      if (floating.length >= 8) {
+        state = state.copyWith(error: '悬浮球承载已达上限（最多8个）');
         return;
       }
       floating.add(panelId);

@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// 面板位置
 enum PanelLocation { bottom, floating }
 
-/// 面板元素定义（共 10 个）
+/// 面板元素定义（共 11 个）
 class PanelItem {
   final String id;
   final String label;

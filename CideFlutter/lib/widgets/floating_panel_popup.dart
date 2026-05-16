@@ -9,7 +9,6 @@ class FloatingPanelPopup extends StatefulWidget {
   final Widget child;
   final VoidCallback onClose;
   final bool isDark;
-
   const FloatingPanelPopup({
     super.key,
     required this.panelId,
@@ -113,37 +112,37 @@ class _FloatingPanelPopupState extends State<FloatingPanelPopup>
                     // 标题栏
                     Container(
                       height: 44,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      decoration: BoxDecoration(
-                        color: headerBg,
-                        border: Border(
-                          bottom: BorderSide(color: borderColor, width: 1),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: headerBg,
+                          border: Border(
+                            bottom: BorderSide(color: borderColor, width: 1),
+                          ),
                         ),
-                      ),
-                      child: Row(
-                        children: [
-                          if (panelItem != null)
-                            Icon(panelItem.icon, size: 16, color: Colors.blueAccent),
-                          if (panelItem != null) const SizedBox(width: 8),
-                          Text(
-                            title,
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: widget.isDark ? const Color(0xFFE0E0F0) : const Color(0xFF333333),
+                        child: Row(
+                          children: [
+                            if (panelItem != null)
+                              Icon(panelItem.icon, size: 16, color: Colors.blueAccent),
+                            if (panelItem != null) const SizedBox(width: 8),
+                            Text(
+                              title,
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                                color: widget.isDark ? const Color(0xFFE0E0F0) : const Color(0xFF333333),
+                              ),
                             ),
-                          ),
-                          const Spacer(),
-                          InkWell(
-                            onTap: _close,
-                            borderRadius: BorderRadius.circular(12),
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(Icons.close, size: 18, color: Colors.grey),
+                            const Spacer(),
+                            InkWell(
+                              onTap: _close,
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(Icons.close, size: 18, color: Colors.grey),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
                     ),
                     // 内容区域
                     Flexible(

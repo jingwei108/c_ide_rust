@@ -70,7 +70,7 @@ fn test_parser_if_else() {
     let program = program.unwrap();
     let body = program.funcs[0].body.as_ref().unwrap();
     if let Stmt::Block { stmts, .. } = body {
-        if let Stmt::If { cond, then_stmt, else_stmt, .. } = &stmts[0] {
+        if let Stmt::If { cond, then_stmt: _, else_stmt, .. } = &stmts[0] {
             assert!(else_stmt.is_some());
             if let Expr::Literal { value, .. } = cond {
                 assert_eq!(*value, 1);

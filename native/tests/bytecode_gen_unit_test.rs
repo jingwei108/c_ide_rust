@@ -24,7 +24,7 @@ fn test_bytecode_gen_has_main() {
 #[test]
 fn test_bytecode_gen_return_const() {
     let output = generate("int main() { return 42; }");
-    let main_idx = output.func_index["main"];
+    let _main_idx = output.func_index["main"];
     let main_meta = &output.func_table["main"];
     // Find PushConst 42 and Return in the bytecode around main function
     let start_ip = main_meta.ip as usize;
@@ -45,7 +45,7 @@ fn test_bytecode_gen_return_const() {
 #[test]
 fn test_bytecode_gen_local_var() {
     let output = generate("int main() { int x = 10; return x; }");
-    let main_idx = output.func_index["main"];
+    let _main_idx = output.func_index["main"];
     let main_meta = &output.func_table["main"];
     assert!(main_meta.local_count >= 1, "Should have at least 1 local");
 }

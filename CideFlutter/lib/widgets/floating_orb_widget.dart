@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../models/panel_item.dart';
+import 'panel_drag_data.dart';
 
 /// 可拖动发光悬浮球组件
 ///
@@ -16,6 +17,8 @@ class FloatingOrbWidget extends StatefulWidget {
   final VoidCallback onToggleMenu;
   final ValueChanged<String> onSelectPanel;
   final VoidCallback onCloseMenu;
+  final ValueChanged<PanelDragData>? onDragAccept;
+  final void Function(PanelDragData data, int targetIndex)? onSwapWithFloatingItem;
 
   const FloatingOrbWidget({
     super.key,
@@ -24,6 +27,8 @@ class FloatingOrbWidget extends StatefulWidget {
     required this.onToggleMenu,
     required this.onSelectPanel,
     required this.onCloseMenu,
+    this.onDragAccept,
+    this.onSwapWithFloatingItem,
   });
 
   @override
@@ -207,10 +212,34 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
 
   // ========== 菜单方向 ==========
 
+  /// 根据菜单项文字长度动态计算菜单宽度
+  double _calcMenuWidth(List<PanelItem> items) {
+    const textStyle = TextStyle(
+      color: Color(0xFFE0E0F0),
+      fontSize: 13,
+      fontWeight: FontWeight.w500,
+    );
+    double maxTextWidth = 0;
+    for (final item in items) {
+      final tp = TextPainter(
+        text: TextSpan(text: item.label, style: textStyle),
+        textDirection: TextDirection.ltr,
+      );
+      tp.layout();
+      if (tp.width > maxTextWidth) maxTextWidth = tp.width;
+    }
+    // icon(16) + SizedBox(10) + 左右padding(14*2) + 余量(8)
+    return 16 + 10 + maxTextWidth + 28 + 8;
+  }
+
   bool get _menuGoesUp {
-    final size = MediaQuery.of(context).size;
-    final centerY = _pos.dy + _orbSize / 2;
-    return centerY > size.height / 2;
+    final items = widget.menuItems
+        .map((id) => PanelItem.fromId(id))
+        .whereType<PanelItem>()
+        .toList();
+    final menuHeight = items.length * _menuItemHeight + 16;
+    // 优先向上展开，上方空间足够（菜单高度 + 间距8 + 安全余量20）才向上
+    return _pos.dy >= menuHeight + 28;
   }
 
   // ========== 构建 ==========
@@ -229,21 +258,21 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
       }
     }
 
-    // 菜单在水平方向尽量居中于球体，但不出界
-    final menuWidth = 148.0;
-    double menuLeft = _pos.dx + (_orbSize - menuWidth) / 2;
-    final maxMenuLeft = (size.width - menuWidth - 8.0).clamp(8.0, double.infinity);
-    menuLeft = menuLeft.clamp(8.0, maxMenuLeft);
-
-    // 计算菜单高度
+    // 计算菜单项列表
     final items = widget.menuItems
         .map((id) => PanelItem.fromId(id))
         .whereType<PanelItem>()
         .toList();
     final menuHeight = items.length * _menuItemHeight + 16;
 
-    // 菜单方向判断
-    final menuGoesUp = _pos.dy + _orbSize / 2 > size.height / 2;
+    // 菜单在水平方向尽量居中于球体，但不出界
+    final menuWidth = _calcMenuWidth(items);
+    double menuLeft = _pos.dx + (_orbSize - menuWidth) / 2;
+    final maxMenuLeft = (size.width - menuWidth - 8.0).clamp(8.0, double.infinity);
+    menuLeft = menuLeft.clamp(8.0, maxMenuLeft);
+
+    // 菜单方向判断：优先向上展开，空间不够才向下
+    final menuGoesUp = _menuGoesUp;
 
     // 菜单垂直位置
     double? menuTop;
@@ -254,12 +283,7 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
       menuTop = _pos.dy + _orbSize + 8;
     }
 
-    // 边界保护：向上展开时如果上方空间不够，改为向下
-    if (menuGoesUp && _pos.dy < menuHeight + 20) {
-      menuBottom = null;
-      menuTop = _pos.dy + _orbSize + 8;
-    }
-    // 向下展开时如果下方空间不够，改为向上
+    // 边界保护：向下展开时如果下方空间也不够（极端情况），强制向上
     if (!menuGoesUp && _pos.dy + _orbSize + menuHeight + 20 > size.height) {
       menuTop = null;
       menuBottom = size.height - _pos.dy + 8;
@@ -270,11 +294,12 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
       children: [
         // 菜单（条件构建：关闭时不渲染，避免退出动画叠加闪烁）
         if (widget.isMenuOpen) ...[
-          // 点击遮罩
+          // 点击遮罩（translucent 让拖拽事件穿透到底层 DragTarget）
           Positioned.fill(
             child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
               onTap: widget.onCloseMenu,
-              child: Container(color: Colors.transparent),
+              child: const SizedBox.expand(),
             ),
           ),
           // 菜单面板
@@ -284,21 +309,71 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
             left: menuLeft,
             top: menuTop,
             bottom: menuBottom,
-            child: _buildMenu(items),
+            child: DragTarget<PanelDragData>(
+              onWillAcceptWithDetails: (details) {
+                // 仅接受来自底部 Tab 的跨区域拖拽（padding 区域兜底）
+                final accept = details.data.fromLocation == PanelLocation.bottom;
+                debugPrint('[MenuDragTarget] onWillAccept: ${details.data.panelId}, from=${details.data.fromLocation}, accept=$accept');
+                return accept;
+              },
+              onAcceptWithDetails: (details) {
+                debugPrint('[MenuDragTarget] onAccept: ${details.data.panelId}');
+                widget.onDragAccept?.call(details.data);
+              },
+              onLeave: (data) {
+                debugPrint('[MenuDragTarget] onLeave: ${data?.panelId}');
+              },
+              builder: (context, candidateData, rejectedData) {
+                final isHovering = candidateData.isNotEmpty;
+                if (isHovering) debugPrint('[MenuDragTarget] isHovering=true, count=${candidateData.length}');
+                return _buildMenu(items, isHovering: isHovering);
+              },
+            ),
           ),
         ],
 
         // 发光球体（Listener 绕过手势竞技场，不会被编辑器/ScrollView 打断）
         Positioned(
-          left: _pos.dx,
-          top: _pos.dy,
-          child: Listener(
-            onPointerDown: _onPointerDown,
-            onPointerMove: _onPointerMove,
-            onPointerUp: _onPointerUp,
-            onPointerCancel: _onPointerCancel,
-            behavior: HitTestBehavior.translucent,
-            child: _buildOrb(),
+          left: _pos.dx - 16,
+          top: _pos.dy - 16,
+          child: DragTarget<PanelDragData>(
+            onWillAcceptWithDetails: (details) {
+              // 仅接受来自底部 Tab 的跨区域拖拽
+              final accept = details.data.fromLocation == PanelLocation.bottom;
+              debugPrint('[OrbDragTarget] onWillAccept: ${details.data.panelId}, accept=$accept');
+              return accept;
+            },
+            onAcceptWithDetails: (details) {
+              debugPrint('[OrbDragTarget] onAccept: ${details.data.panelId}');
+              widget.onDragAccept?.call(details.data);
+            },
+            onLeave: (data) {
+              debugPrint('[OrbDragTarget] onLeave: ${data?.panelId}');
+            },
+            builder: (context, candidateData, rejectedData) {
+              final isHovering = candidateData.isNotEmpty;
+              if (isHovering) debugPrint('[OrbDragTarget] isHovering=true');
+              return SizedBox(
+                width: 96,
+                height: 96,
+                child: Center(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: isHovering ? Border.all(color: Colors.blueAccent, width: 3) : null,
+                    ),
+                    child: Listener(
+                      onPointerDown: _onPointerDown,
+                      onPointerMove: _onPointerMove,
+                      onPointerUp: _onPointerUp,
+                      onPointerCancel: _onPointerCancel,
+                      behavior: HitTestBehavior.translucent,
+                      child: _buildOrb(),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
       ],
@@ -319,27 +394,32 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
   }
 
   /// 构建菜单面板
-  Widget _buildMenu(List<PanelItem> items) {
+  Widget _buildMenu(List<PanelItem> items, {bool isHovering = false}) {
     return Material(
       color: Colors.transparent,
       child: Container(
-        width: 148,
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          color: const Color(0xFF2D2D48).withValues(alpha: 0.96),
+          color: isHovering
+              ? const Color(0xFF3D4D68).withValues(alpha: 0.98)
+              : const Color(0xFF2D2D48).withValues(alpha: 0.96),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: const Color(0xFF88AAFF).withValues(alpha: 0.15),
-            width: 1,
+            color: isHovering
+                ? Colors.blueAccent.withValues(alpha: 0.8)
+                : const Color(0xFF88AAFF).withValues(alpha: 0.15),
+            width: isHovering ? 2 : 1,
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.35),
-              blurRadius: 16,
-              spreadRadius: 2,
-              offset: const Offset(0, 4),
-            ),
-          ],
+          boxShadow: isHovering
+              ? [BoxShadow(color: Colors.blueAccent.withValues(alpha: 0.3), blurRadius: 12, spreadRadius: 3)]
+              : [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 16,
+                    spreadRadius: 2,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -354,7 +434,7 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
   }
 
   Widget _buildMenuItem(PanelItem item, int index, int total) {
-    return AnimatedBuilder(
+    final menuItem = AnimatedBuilder(
       animation: _menuController,
       builder: (context, child) {
         final stagger = index * 0.05;
@@ -378,19 +458,103 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
             children: [
               Icon(item.icon, size: 16, color: const Color(0xFFAAAADD)),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  item.label,
-                  style: const TextStyle(
-                    color: Color(0xFFE0E0F0),
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+              Text(
+                item.label,
+                style: const TextStyle(
+                  color: Color(0xFFE0E0F0),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
         ),
+      ),
+    );
+
+    return Draggable<PanelDragData>(
+      data: PanelDragData(
+        panelId: item.id,
+        fromLocation: PanelLocation.floating,
+        fromIndex: index,
+      ),
+      dragAnchorStrategy: (draggable, context, position) {
+        final renderBox = context.findRenderObject() as RenderBox?;
+        if (renderBox != null) {
+          final size = renderBox.size;
+          debugPrint('[FloatingDrag] size=$size, offset=${Offset(size.width / 2, size.height / 2)}, position=$position');
+          return Offset(size.width / 2, size.height / 2);
+        }
+        debugPrint('[FloatingDrag] renderBox is null');
+        return Offset.zero;
+      },
+      feedback: Material(
+        color: Colors.transparent,
+        elevation: 8,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2D2D48).withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: Colors.blueAccent.withValues(alpha: 0.6), width: 1),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 12, spreadRadius: 2),
+            ],
+          ),
+          child: Row(
+            children: [
+              Icon(item.icon, size: 16, color: const Color(0xFFAAAADD)),
+              const SizedBox(width: 10),
+              Text(
+                item.label,
+                style: const TextStyle(
+                  color: Color(0xFFE0E0F0),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      childWhenDragging: Opacity(opacity: 0.5, child: menuItem),
+      child: DragTarget<PanelDragData>(
+        onWillAcceptWithDetails: (details) {
+          // 仅接受来自底部 Tab 的跨区域拖拽
+          final accept = details.data.fromLocation == PanelLocation.bottom;
+          debugPrint('[MenuItemDragTarget#$index] onWillAccept: ${details.data.panelId}, accept=$accept');
+          return accept;
+        },
+        onAcceptWithDetails: (details) {
+          debugPrint('[MenuItemDragTarget#$index] onAccept: ${details.data.panelId}');
+          widget.onSwapWithFloatingItem?.call(details.data, index);
+        },
+        onLeave: (data) {
+          debugPrint('[MenuItemDragTarget#$index] onLeave: ${data?.panelId}');
+        },
+        builder: (context, candidateData, rejectedData) {
+          final isHovering = candidateData.isNotEmpty;
+          if (isHovering) debugPrint('[MenuItemDragTarget#$index] isHovering=true');
+          return Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(8),
+              border: isHovering
+                  ? Border.all(color: Colors.blueAccent.withValues(alpha: 0.6), width: 1.5)
+                  : null,
+              boxShadow: isHovering
+                  ? [
+                      BoxShadow(
+                        color: Colors.blueAccent.withValues(alpha: 0.2),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            child: menuItem,
+          );
+        },
       ),
     );
   }

@@ -319,12 +319,97 @@ release {
 - 仅作用于 release build type，对 debug 无影响
 - 混淆压缩 Java/Kotlin 插件层代码，移除无用资源
 
-### 验证方式
+---
 
-```bash
-# Rust so 是否已剥离符号
-readelf -s native/target/release/libcide_native.so | head
+## 2026-05-16 沉浸编辑模式与手势优化
 
-# 是否还能看到函数名
-strings native/target/release/libcide_native.so | grep cide_
+### 问题背景
+- 键盘弹出时，顶部工具栏、模板栏、底部面板仍然占用大量屏幕空间，编辑器可编辑区域被严重压缩
+- 用户希望在键盘弹出时自动收起上下栏，腾出最大空间给编辑器
+- 需要在编辑器空白处点击或滑动来收起键盘，上下栏自动恢复
+
+### 沉浸编辑模式
+
+键盘（自定义键盘或系统键盘）弹出时，通过 `SizeTransition` 动画平滑收起上下栏：
+
+| 栏位 | 动画方向 | 说明 |
+|------|----------|------|
+| 顶部工具栏 (`Toolbar`) | `axisAlignment: -1`（从上往下收起） | 运行控制、主题切换等 |
+| 模板栏 (`TemplateBar`) | `axisAlignment: 1`（从下往上收起） | 代码模板快捷插入 |
+| 底部面板 (`BottomPanel`) | `axisAlignment: 1`（从下往上收起） | 输出/诊断/算法等标签页 |
+
+实现要点：
+- `_IdeScreenState` 混入 `SingleTickerProviderStateMixin`，使用 `_barsAnimationController` 驱动动画
+- 动画目标值在 `build()` 中通过 `_syncBarsAnimation()` 同步：`1.0`=显示，`0.0`=隐藏
+- 系统键盘真实可见性通过 `MediaQuery.of(context).viewInsets.bottom > 50` 检测
+- 系统键盘被系统收起（如返回键）后，自动同步 `_isSystemKeyboardActive = false`
+
+```dart
+// ide_screen.dart
+SizeTransition(
+  sizeFactor: _barsAnimation,
+  axisAlignment: -1, // 或 1
+  child: _buildToolbar(...),
+)
 ```
+
+### 编辑器手势交互
+
+在 `EditorPanel` 的 `Listener` 中处理三种手势：
+
+| 手势 | 行为 |
+|------|------|
+| 点击代码字符处 | 打开键盘 |
+| 点击空白处（空行/行尾/尾部空白） | 关闭键盘 |
+| 上下滑动（\|dy\| > 100px 且垂直为主） | 关闭键盘 |
+| 长按（>600ms） | 弹出上下文菜单（不受单击逻辑影响） |
+
+**空白检测实现**（避免依赖 `re_editor` 内部私有 API）：
+
+不再使用 `_editorKey` → `selectWord` / `setPositionAt` 的方案（行为不稳定，易误判标点/空白）。改为延迟到 `re_editor` 内部更新光标位置后，读取公开 API `CodeLineEditingController.selection` 判断：
+
+```dart
+// editor_panel.dart - onPointerUp
+WidgetBinding.instance.addPostFrameCallback((_) {
+  final sel = _controller.selection;
+  final lineText = _controller.codeLines[sel.baseIndex].text;
+  final offset = sel.baseOffset;
+  final isBlank = lineText.trim().isEmpty ||
+      offset >= lineText.length ||
+      offset >= lineText.trimRight().length;
+  if (isBlank) {
+    widget.onBlankTap?.call(); // 关闭键盘
+  } else {
+    widget.onTap?.call();      // 打开键盘
+  }
+});
+```
+
+**长按与单击共存**：
+- `onPointerUp` 中**先保存 `wasShortPress = _longPressTimer != null`，再立即 `_cancelLongPress()`**
+- 这样即使后续空白检测耗时较长，600ms 的长按计时器也已经被安全取消，不会误触发长按菜单
+- 滑动检测使用独立的 `_swipeStart` 字段，不受 `_checkLongPressMove` 取消长按的影响
+
+### 修复单击变长按的 Bug
+
+**根因**：旧代码中 `_cancelLongPress()` 在 `_isBlankAt()` 之后执行。`_isBlankAt` 内部调用 `setPositionAt` 可能耗时较长或触发 `re_editor` 内部 rebuild，如果在执行期间 600ms 计时器到期，`_showContextMenu` 就会触发，导致用户的一次单击被错误识别为长按。
+
+**修复**：调整 `onPointerUp` 执行顺序，先立即取消计时器，再做任何可能耗时的操作：
+
+```dart
+onPointerUp: (event) {
+  final wasShortPress = _longPressTimer != null;
+  _cancelLongPress(); // ← 立即取消，避免耗时操作导致误触发
+  // ... 滑动检测 ...
+  // ... 空白检测 ...
+}
+```
+
+### 最终效果
+
+- ✅ 键盘弹出时上下栏平滑收起，编辑器自动拉伸占满空间
+- ✅ 键盘收起后上下栏自动弹出恢复
+- ✅ 点击代码处打开键盘，点击空白处关闭键盘
+- ✅ 上下滑动关闭键盘
+- ✅ 长按不受影响，仍正常弹出上下文菜单
+- ✅ 无单击变长按的误触
