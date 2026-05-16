@@ -647,6 +647,28 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
 
     let (old_addr, old_size) = old_region.unwrap();
     let aligned_new_size = ((new_size as u32) + 3) & !3;
+    let aligned_old_size = ((old_size as u32) + 3) & !3;
+
+    // In-place shrink: old block is at the end of heap
+    if aligned_new_size <= aligned_old_size && old_addr + aligned_old_size == session.memory.heap_offset {
+        for r in &mut session.memory.regions {
+            if r.addr == old_addr && !r.is_freed {
+                r.size = new_size;
+                break;
+            }
+        }
+        let shrink_by = aligned_old_size - aligned_new_size;
+        if shrink_by > 0 {
+            session.memory.heap_offset -= shrink_by;
+            session.memory.free_list.push(crate::session::FreeBlock {
+                addr: session.memory.heap_offset,
+                size: shrink_by as i32,
+            });
+            merge_free_list(&mut session.memory.free_list);
+        }
+        vm.push(old_addr as i32);
+        return;
+    }
 
     // Allocate new memory
     let mut new_addr = 0u32;
@@ -701,25 +723,11 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     for r in &mut session.memory.regions {
         if r.addr == old_addr && !r.is_freed {
             r.is_freed = true;
-            let aligned_old_size = ((old_size as u32) + 3) & !3;
             session.memory.free_list.push(crate::session::FreeBlock {
                 addr: r.addr,
                 size: aligned_old_size as i32,
             });
-            session.memory.free_list.sort_by_key(|b| b.addr);
-            let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-            for block in session.memory.free_list.drain(..) {
-                if let Some(last) = merged.last_mut() {
-                    if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                        last.size += block.size;
-                    } else {
-                        merged.push(block);
-                    }
-                } else {
-                    merged.push(block);
-                }
-            }
-            session.memory.free_list = merged;
+            merge_free_list(&mut session.memory.free_list);
             break;
         }
     }

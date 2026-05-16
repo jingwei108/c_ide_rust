@@ -3107,3 +3107,27 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out[0], "10 20 100 200 300");
 }
+
+
+#[test]
+fn test_e2e_realloc_in_place_shrink() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(16);
+    p[0] = 1; p[1] = 2; p[2] = 3; p[3] = 4;
+    int old_addr = (int)p;
+    p = (int*)realloc(p, 8);
+    int new_addr = (int)p;
+    printf("%d %d %d %d\n", old_addr == new_addr, p[0], p[1], p[2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "1 1 2 3");
+}
