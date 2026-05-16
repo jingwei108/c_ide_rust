@@ -158,38 +158,42 @@ void _onPointerMove(PointerMoveEvent event) {
 
 ---
 
-## 第四阶段：吸附动画 listener 泄漏修复 + 坐标系陷阱二次确认
+## 第四阶段：吸附动画 listener 泄漏修复 + build 位置保护陷阱
 
-### 问题 A：中间位置松手时球体先跳到右下再跳到左边
-- **初判**：`_snapToEdge()` 每次调用都创建新的 `Animation` 并 `addListener`，旧 listener 未清理
-- **实际根因（逐帧分析后）**：`PointerEvent.position` 是局部坐标，`_pos` 是全局坐标，混用导致拖动过程中 `_pos` 计算错误，球体跳到右下角
+### 问题 A：listener 泄漏（已修复）
+- **根因**：`_snapToEdge()` 每次调用都创建新的 `Animation` 并 `addListener`，旧 listener 未清理
+- **修复**：`initState` 中只注册一次 listener，`_snapToEdge` 仅更新起止坐标
+
+### 问题 B：中间松手时球体跳到右下角（真正根因）
+- **初判**：`PointerEvent.position` 局部坐标与 `_pos` 全局坐标混用
+- **逐帧日志分析后**：拖动日志正常，吸附动画 `t=1.086` 时 `_pos.dx=-2.3`（easeOutBack 正常 overshoot）
+- **真正根因**：`build` 中的位置保护检测到 `_pos.dx < 0`，瞬间将 `_pos` 重置到默认右下角！
 - **表现**：
   - 图1：手指按下，球体在中间
-  - 图2：拖动中球体跳到右下角（灰色触摸点仍在，说明手指未抬起）
-  - 图3~5：松手后正常向左吸附
-- **修复**：位置更新改用 `event.delta`（全局位移），判定仍用局部坐标
+  - 图2：吸附动画 overshoot 到负数，`build` 保护触发重置 → 球体跳到右下角
+  - 图3~5：动画反弹回正常值，球体向左吸附
 
-### 修复：单一 listener + 缓存起止点
-在 `initState` 中只注册一次 listener，`_snapToEdge` 仅更新起止坐标：
+### 修复
+1. **`build` 位置保护去敏** — 不再检查 `_pos.dx/dy < 0`，只在未初始化时修正
+2. **`_onSnapTick` 末尾 clamp** — 动画结束后将 `_pos` 限制在屏幕内
 
 ```dart
-@override
-void initState() {
-  super.initState();
-  _snapController = AnimationController(vsync: this, duration: const Duration(milliseconds: 350));
-  _snapController.addListener(_onSnapTick);
+// build：只初始化时修正，不拦截 overshoot
+if (!_initialized) {
+  _pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
+  _initialized = true;
 }
 
+// _onSnapTick：动画完成后 clamp 到屏幕内
 void _onSnapTick() {
   final t = Curves.easeOutBack.transform(_snapController.value);
-  setState(() => _pos = Offset.lerp(_snapBegin, _snapTarget, t)!);
-}
-
-void _snapToEdge() {
-  // ... 计算 targetX, targetY
-  _snapBegin = _pos;   // 缓存动画起点
-  _snapTarget = Offset(targetX, targetY);
-  _snapController.forward(from: 0);
+  final newPos = Offset.lerp(_snapBegin, _snapTarget, t)!;
+  final size = MediaQuery.of(context).size;
+  final clamped = Offset(
+    newPos.dx.clamp(0.0, size.width - _orbSize),
+    newPos.dy.clamp(0.0, size.height - _orbSize),
+  );
+  setState(() => _pos = clamped);
 }
 ```
 
