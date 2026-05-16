@@ -91,8 +91,11 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
     // 在 didChangeDependencies 中初始化位置（context 已完全挂载，MediaQuery 数据可靠）
     if (!_initialized) {
       final size = MediaQuery.of(context).size;
-      _pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
-      _initialized = true;
+      // 移动端首次构建时 size 可能尚未就绪，需校验有效性
+      if (size.width > 0 && size.height > 0) {
+        _pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
+        _initialized = true;
+      }
     }
   }
 
@@ -219,8 +222,11 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
     // 保护：只在未初始化时修正 _pos（吸附动画 easeOutBack overshoot 时 _pos 可能短暂为负，
     // 如果此时重置会导致视觉跳变，故不再检查 _pos.dx/dy < 0）
     if (!_initialized) {
-      _pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
-      _initialized = true;
+      // 移动端首次构建时 size 可能尚未就绪，需校验有效性
+      if (size.width > 0 && size.height > 0) {
+        _pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
+        _initialized = true;
+      }
     }
 
     // 菜单在水平方向尽量居中于球体，但不出界
