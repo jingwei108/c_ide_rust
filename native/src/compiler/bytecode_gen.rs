@@ -1482,7 +1482,7 @@ fn compute_stride(arr_type: &Type, elem_size: i32) -> i32 {
     if !arr_type.is_array() || arr_type.dims.is_empty() { return elem_size; }
     let mut stride = elem_size;
     for i in 1..arr_type.dims.len() {
-        stride *= if arr_type.dims[i] > 0 { arr_type.dims[i] } else { 1 };
+        stride *= if arr_type.dims[i] > 0 { arr_type.dims[i] } else { 0 };
     }
     stride
 }
