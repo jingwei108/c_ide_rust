@@ -549,9 +549,8 @@ fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     let max_write = mem_size - ptr as usize;
     let write_len = (size as usize).min(max_write);
     let byte_val = (value & 0xFF) as u8;
-    for i in 0..write_len {
-        vm.store_i8(ptr + i as u32, byte_val as i32, &super::instruction::SourceLoc::default());
-    }
+    let mem = vm.memory_ref_mut();
+    mem[ptr as usize..ptr as usize + write_len].fill(byte_val);
     vm.push(ptr as i32);
 }
 

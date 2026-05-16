@@ -335,6 +335,10 @@ impl CideVM {
         &self.memory
     }
 
+    pub fn memory_ref_mut(&mut self) -> &mut [u8] {
+        &mut self.memory
+    }
+
     pub fn get_memory_size(&self) -> u32 {
         MEM_SIZE
     }
