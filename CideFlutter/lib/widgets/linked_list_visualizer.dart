@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/api/types.dart' as rust;
 
 /// 链表节点数据
 class _NodeData {

@@ -100,13 +100,26 @@ impl Parser {
             column: err_column,
             code: code as i32,
         });
+        // 自动恢复：根据缺失的闭合符号推断恢复集合，减少级联错误
+        let recovery = match ty {
+            TokenType::RParen => &[TokenType::RParen, TokenType::Semicolon][..],
+            TokenType::RBrace => &[TokenType::RBrace, TokenType::Semicolon][..],
+            TokenType::RBracket => &[TokenType::RBracket, TokenType::Semicolon][..],
+            _ => &[TokenType::Semicolon][..],
+        };
+        self.synchronize(recovery);
         self.peek(0)
     }
 
-    fn synchronize(&mut self) {
+    /// 通用同步：跳过 token 直到遇到恢复集合中的 token 或语句边界。
+    fn synchronize(&mut self, recovery_set: &[TokenType]) {
         while !self.is_at_end() {
+            let current = self.current().ty;
+            if recovery_set.contains(&current) {
+                return;
+            }
             if self.previous().ty == TokenType::Semicolon { return; }
-            match self.current().ty {
+            match current {
                 TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float |
                 TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
                 TokenType::Return | TokenType::Break | TokenType::Continue |
@@ -487,7 +500,13 @@ impl Parser {
                 let checkpoint = self.pos;
                 let stmt = self.parse_expr_stmt();
                 if self.pos == checkpoint {
-                    self.synchronize();
+                    self.synchronize(&[
+                        TokenType::Semicolon, TokenType::RBrace,
+                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float,
+                        TokenType::If, TokenType::While, TokenType::Do, TokenType::For,
+                        TokenType::Return, TokenType::Break, TokenType::Continue,
+                        TokenType::Struct, TokenType::Switch, TokenType::Typedef,
+                    ]);
                 }
                 stmt
             }

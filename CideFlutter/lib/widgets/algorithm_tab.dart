@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/api/types.dart' as rust;
 import '../models/algorithm_validation.dart';
 import '../providers/ide_provider.dart';
 

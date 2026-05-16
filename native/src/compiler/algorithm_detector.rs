@@ -9,7 +9,7 @@
 //! - 二分查找 (binary_search)
 
 use crate::compiler::ast::*;
-use crate::session::AlgorithmMatch;
+use crate::session::{AlgorithmMatch, VisEvent};
 
 /// 检测程序中的所有算法模式
 pub fn detect_algorithms(program: &ProgramNode) -> Vec<AlgorithmMatch> {
@@ -511,6 +511,16 @@ fn build_match(
         confidence: 85,
         suggestion,
         line,
-        vis_events: compare_lines.to_vec(),
+        vis_events: compare_lines
+            .iter()
+            .map(|&(line, ty, ref ctx)| VisEvent {
+                line,
+                ty,
+                extra0: 0,
+                extra1: 0,
+                extra2: 0,
+                context: ctx.clone(),
+            })
+            .collect(),
     }
 }

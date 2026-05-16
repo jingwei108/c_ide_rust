@@ -17,39 +17,6 @@ static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| {
     Mutex::new(Session::default())
 });
 
-// ========== 公开数据结构 ==========
-
-#[derive(Debug, Clone)]
-pub struct CompileResult {
-    pub success: bool,
-    pub diagnostics: Vec<Diagnostic>,
-    pub algorithm_matches: Vec<AlgorithmMatch>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RunResult {
-    pub success: bool,
-    pub output: String,
-    pub waiting_input: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct StepResult {
-    pub status: StepStatus,
-    pub current_line: i32,
-    pub output: String,
-    pub waiting_input: bool,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StepStatus {
-    Paused,
-    WaitingInput,
-    Finished,
-    Trap,
-}
-
 // ========== 辅助函数 ==========
 
 use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
@@ -353,6 +320,17 @@ pub fn clear_breakpoints() {
     let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(ref mut vm) = session.vm {
         vm.clear_breakpoints();
+    }
+}
+
+/// 批量设置断点（清除后重新添加）
+pub fn set_breakpoints(lines: Vec<i32>) {
+    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(ref mut vm) = session.vm {
+        vm.clear_breakpoints();
+        for line in lines {
+            vm.add_breakpoint(line);
+        }
     }
 }
 

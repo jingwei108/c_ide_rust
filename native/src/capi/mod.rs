@@ -972,9 +972,9 @@ pub unsafe extern "C" fn cide_vis_event_get_ex(
     let e = &(&(*s).runtime.vis_event_cache)[index as usize];
     if !ty.is_null() { *ty = e.ty; }
     if !line.is_null() { *line = e.line; }
-    if !extra0.is_null() { *extra0 = e.extra[0]; }
-    if !extra1.is_null() { *extra1 = e.extra[1]; }
-    if !extra2.is_null() { *extra2 = e.extra[2]; }
+    if !extra0.is_null() { *extra0 = e.extra0; }
+    if !extra1.is_null() { *extra1 = e.extra1; }
+    if !extra2.is_null() { *extra2 = e.extra2; }
 }
 
 #[no_mangle]
@@ -1071,10 +1071,10 @@ pub unsafe extern "C" fn cide_algorithm_match_vis_event_get(
         if !context.is_null() && context_size > 0 { *context = 0; }
         return;
     }
-    let (ev_line, ev_ty, ctx) = &m.vis_events[event_index as usize];
-    if !ty.is_null() { *ty = *ev_ty; }
-    if !line.is_null() { *line = *ev_line; }
-    write_str(context, context_size, ctx);
+    let ev = &m.vis_events[event_index as usize];
+    if !ty.is_null() { *ty = ev.ty; }
+    if !line.is_null() { *line = ev.line; }
+    write_str(context, context_size, &ev.context);
 }
 
 fn format_type(t: &crate::compiler::ast::Type) -> String {

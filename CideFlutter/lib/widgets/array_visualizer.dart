@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/api/types.dart' as rust;
 
 class ArrayVisualizer extends StatefulWidget {
   final String name;

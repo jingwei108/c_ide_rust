@@ -141,8 +141,8 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
 
     let mut vis_lines = Vec::new();
     for m in &session.compile.algorithm_matches {
-        for &(line, ty, _) in &m.vis_events {
-            vis_lines.push((line, ty));
+        for ev in &m.vis_events {
+            vis_lines.push((ev.line, ev.ty));
         }
     }
     vm.set_vis_event_lines(vis_lines);

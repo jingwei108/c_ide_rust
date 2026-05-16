@@ -1063,7 +1063,10 @@ impl CideVM {
                         self.vis_event_queue.push(VisEvent {
                             ty,
                             line: inst.operand,
-                            extra: [0, 0, 0],
+                            extra0: 0,
+                            extra1: 0,
+                            extra2: 0,
+                            context: String::new(),
                         });
                     }
                 }

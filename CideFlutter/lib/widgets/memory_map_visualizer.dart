@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/api/types.dart' as rust;
 
 /// 内存区域类型颜色
 class _MemoryColors {

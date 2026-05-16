@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/api/types.dart' as rust;
 import '../models/algorithm_validation.dart';
 import '../models/ide_state.dart';
 import '../models/knowledge_card.dart';
@@ -167,18 +167,14 @@ class IdeNotifier extends Notifier<IdeState> {
     state = state.copyWith(clearError: true);
   }
 
-  void toggleBreakpoint(int line) {
+  Future<void> toggleBreakpoint(int line) async {
     final newBreakpoints = Set<int>.from(state.breakpoints);
     if (newBreakpoints.contains(line)) {
       newBreakpoints.remove(line);
-      rust.clearBreakpoints();
-      for (final bp in newBreakpoints) {
-        rust.addBreakpoint(line: bp);
-      }
     } else {
       newBreakpoints.add(line);
-      rust.addBreakpoint(line: line);
     }
+    await rust.setBreakpoints(lines: newBreakpoints.toList());
     state = state.copyWith(breakpoints: newBreakpoints);
   }
 

@@ -1,4 +1,4 @@
-import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/api/types.dart' as rust;
 import 'knowledge_card.dart';
 import 'learning_progress.dart';
 
