@@ -71,6 +71,7 @@ pub struct CideVM {
     snapshot_vars: HashMap<String, i32>,
     finished: bool,
     exit_code: i32,
+    qsort_depth: i32,
 }
 
 impl Default for CideVM {
@@ -106,6 +107,7 @@ impl CideVM {
             snapshot_vars: HashMap::new(),
             finished: false,
             exit_code: 0,
+            qsort_depth: 0,
         }
     }
 
@@ -338,6 +340,14 @@ impl CideVM {
 
     pub fn memory_ref_mut(&mut self) -> &mut [u8] {
         &mut self.memory
+    }
+
+    pub fn qsort_depth(&self) -> i32 {
+        self.qsort_depth
+    }
+
+    pub fn set_qsort_depth(&mut self, depth: i32) {
+        self.qsort_depth = depth;
     }
 
     pub fn get_memory_size(&self) -> u32 {

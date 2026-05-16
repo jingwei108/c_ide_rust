@@ -745,11 +745,18 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     vm.push(new_addr as i32);
 }
 
+const MAX_QSORT_DEPTH: i32 = 8;
+
 fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     let base = vm.pop() as u32;
     let nmemb = vm.pop() as usize;
     let size = vm.pop() as usize;
     let compar = vm.pop() as u32;
+
+    if vm.qsort_depth() >= MAX_QSORT_DEPTH {
+        session.runtime.output_lines.push("[qsort] 嵌套深度超过限制，防止栈溢出".to_string());
+        return;
+    }
 
     if nmemb <= 1 || size == 0 || base == 0 {
         return;
@@ -759,6 +766,8 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     if base as usize + nmemb * size > mem_size {
         return;
     }
+
+    vm.set_qsort_depth(vm.qsort_depth() + 1);
 
     let mut indices: Vec<usize> = (0..nmemb).collect();
     const MAX_COMPARE_STEPS: i32 = 1000;
@@ -802,4 +811,5 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
             vm.store_i8((dst_start + j) as u32, temp[src_start + j] as i32, &super::instruction::SourceLoc::default());
         }
     }
+    vm.set_qsort_depth(vm.qsort_depth() - 1);
 }
