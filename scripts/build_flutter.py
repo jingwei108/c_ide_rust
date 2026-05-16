@@ -161,6 +161,7 @@ def build_flutter_desktop(
     flutter_args = [flutter_exe, "build", "windows"]
     if configuration == "Release":
         flutter_args.append("--release")
+        flutter_args.extend(["--obfuscate", "--split-debug-info=symbols/"])
     else:
         flutter_args.append("--debug")
 
@@ -230,6 +231,7 @@ def build_flutter_android(
     flutter_args = [flutter_exe, "build", "apk"]
     if configuration == "Release":
         flutter_args.append("--release")
+        flutter_args.extend(["--obfuscate", "--split-debug-info=symbols/"])
     else:
         flutter_args.append("--debug")
 
