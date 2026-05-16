@@ -89,6 +89,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `char` array initialization using `StoreMemByte` instead of `StoreLocal`.
 - Implicit cast hint system with severity levels (warning vs hint).
 - UTF-8 safety in Lexer (`chars().nth()` instead of `as_bytes()[i] as char`).
+- `printf`/`fprintf` format modifiers (`%6d`, `%.2f`, `%ld`) no longer cause stack unbalance.
+- Comma-separated multi-variable array declarations (`int a[10], b[20];`) now preserve per-variable dimensions.
+- `unsigned char` no longer incorrectly mapped to `unsigned int`.
+- `cide_get_runtime_error` dangling pointer: now uses buffer snapshot pattern.
+- `call_user_function` return_ip semantic fix: uses `HOST_CALLBACK_SENTINEL` instead of `code.len()`.
+- `session.rs` removed misleading `#![forbid(unsafe_code)]`.
+
+### Changed
+- `host_memset` now uses slice `.fill()` instead of per-byte `store_i8` for large blocks.
+- `host_realloc` supports in-place shrink when the old block is at heap boundary.
+- `RuntimeState::output()` replaces 13 repeated `output_lines.join("\n")` calls in `flutter_bridge.rs`.
+
+### Refactored
+- `Expr::loc()`/`ty()`/`set_ty()` deduplicated with `macro_rules! expr_field!`.
+- `merge_free_list()` extracted to eliminate duplication between `host_free` and `host_realloc`.
+- `push_one()` unifies `push_diagnostics`/`push_warnings`/`push_hints`.
+- `TypeChecker::visit_call()` split into 19 `check_builtin_xxx()` methods + `check_user_func()`.
+- `format_type()` in `capi/mod.rs` removed; uses `Type::to_string()` instead.
+- FRB duplicate data structures unified: `VisEvent`/`AlgorithmMatch`/`CompileResult`/`RunResult`/`StepResult`/`StepStatus` now single-source in `session.rs`, re-exported by `api/cide.rs`.
+- `flutter_bridge.rs` breakpoint API batchified: `setBreakpoints(Vec<i32>)` replaces N+1 FFI calls.
 
 ### Security
 - `compile_pipeline.rs` unsafe string write bounds validated.
