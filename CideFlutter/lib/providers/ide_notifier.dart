@@ -685,9 +685,69 @@ class IdeNotifier extends Notifier<IdeState> {
     }
   }
 
+  String _replaceMainSafely(String code) {
+    // Build a mask marking characters inside comments or string literals
+    final mask = List<bool>.filled(code.length, false);
+    int i = 0;
+    while (i < code.length) {
+      if (i + 1 < code.length && code[i] == '/' && code[i + 1] == '/') {
+        while (i < code.length && code[i] != '\n') {
+          mask[i] = true;
+          i++;
+        }
+      } else if (i + 1 < code.length && code[i] == '/' && code[i + 1] == '*') {
+        mask[i] = true;
+        i++;
+        mask[i] = true;
+        i++;
+        while (i + 1 < code.length && !(code[i] == '*' && code[i + 1] == '/')) {
+          mask[i] = true;
+          i++;
+        }
+        if (i < code.length) {
+          mask[i] = true;
+          i++;
+        }
+        if (i < code.length) {
+          mask[i] = true;
+          i++;
+        }
+      } else if (code[i] == '"') {
+        mask[i] = true;
+        i++;
+        while (i < code.length && code[i] != '"') {
+          if (code[i] == '\\' && i + 1 < code.length) {
+            mask[i] = true;
+            i++;
+            mask[i] = true;
+            i++;
+          } else {
+            mask[i] = true;
+            i++;
+          }
+        }
+        if (i < code.length) {
+          mask[i] = true;
+          i++;
+        }
+      } else {
+        i++;
+      }
+    }
+
+    final pattern = RegExp(r'(?<!\w)int\s+main\s*\(');
+    return code.replaceAllMapped(pattern, (match) {
+      final start = match.start;
+      if (start >= 0 && start < mask.length && !mask[start]) {
+        return 'int __cide_original_main(';
+      }
+      return match.group(0)!;
+    });
+  }
+
   String _buildHarness(String sourceCode, String funcName, String algorithmName, AlgorithmTestCase tc) {
-    // 替换学生的 main() 以便注入我们自己的 main
-    final modifiedSource = sourceCode.replaceAll(RegExp(r'(?<!\w)int\s+main\s*\('), 'int __cide_original_main(');
+    // 替换学生的 main() 以便注入我们自己的 main，但跳过注释和字符串中的匹配
+    final modifiedSource = _replaceMainSafely(sourceCode);
     final sb = StringBuffer();
     sb.writeln(modifiedSource);
     sb.writeln();
