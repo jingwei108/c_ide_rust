@@ -1,5 +1,3 @@
-#![forbid(unsafe_code)]
-
 use crate::compiler::ast::{SourceLoc, Type};
 use crate::vm::instruction::Instruction;
 use crate::vm::vm::CideVM;
