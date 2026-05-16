@@ -238,7 +238,6 @@ void _onSnapTick() {
 ### 渲染
 1. **不要描边/圆环** — `SweepGradient stroke` 在 Flutter 中效果很假，全部用 `MaskFilter.blur` + 径向渐变实现弥散发光
 2. **Flutter 的 blur 是渲染瓶颈** — 每层 blur 都有性能开销，移动端控制在 10 层以内
-3. **高光要大而弥散** — blur 20~30 才能模拟液体内部大范围折射，blur 5~8 只会像白点贴图
 4. **自发光 > 被照亮** — 球体本身应该是光源，不要用深色基底+高光，而是用亮色半透明叠加
 5. **菲涅尔边缘** — 径向渐变的边缘 stop 可以比中间更亮，模拟玻璃边缘反光
 6. **流动感 = 变形 + 摆动 + 拖尾** — 纯圆周运动不够，要加入长短轴变形、半径摆动、相位拖尾
@@ -266,3 +265,42 @@ void _onSnapTick() {
 | 动态 | 仅缩放 | 缩放+变形+摆动+脉动+闪烁 |
 | 手势 | GestureDetector（被竞争打断） | Listener（绕过竞技场） |
 | 吸附 | 多 listener 泄漏跳变 | 单一 listener 平滑 |
+
+---
+
+## 第五阶段：移动端初始化时 Size.zero 导致球体定位到屏幕外（2026-05-16）
+
+### 问题
+移动端（ColorOS 16 / Android）悬浮球完全不可见，桌面端正常。
+
+### 根因
+`didChangeDependencies()` 中初始化 `_pos` 时，`MediaQuery.of(context).size` 在移动端首次构建阶段可能返回 `Size.zero`。
+
+```dart
+// 错误代码（size = Size.zero 时）
+_pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
+// => Offset(0 - 64 - 16, 0) = Offset(-80, 0)  // 屏幕左侧外部
+_initialized = true;  // build 兜底保护失效
+```
+
+桌面端窗口尺寸在 `didChangeDependencies` 时已就绪，不受影响。
+
+### 修复
+两处初始化增加 `size` 有效性校验：
+
+```dart
+if (!_initialized) {
+  final size = MediaQuery.of(context).size;
+  if (size.width > 0 && size.height > 0) {  // 新增校验
+    _pos = Offset(size.width - _orbSize - 16, size.height * 0.62);
+    _initialized = true;
+  }
+}
+```
+
+- `didChangeDependencies()` 中：size 无效时不初始化
+- `build()` 兜底保护中：size 有效且未初始化时才修正
+- 吸附动画 overshoot 不受干扰（`_initialized` 已为 true，不会进入分支）
+
+### 修复文件
+`CideFlutter/lib/widgets/floating_orb_widget.dart`
