@@ -38,7 +38,7 @@ pub struct LexerError {
 }
 
 pub struct Lexer {
-    source: String,
+    chars: Vec<char>,
     errors: Vec<LexerError>,
     pos: usize,
     line: i32,
@@ -63,7 +63,7 @@ impl Lexer {
             column: 0,
         }]);
         Self {
-            source,
+            chars: source.chars().collect(),
             errors: Vec::new(),
             pos: 0,
             line: 1,
@@ -93,7 +93,7 @@ impl Lexer {
     fn next_token(&mut self) -> Token {
         self.skip_whitespace();
 
-        if self.pos >= self.source.len() {
+        if self.pos >= self.chars.len() {
             return self.make_token(TokenType::Eof, "");
         }
 
@@ -226,7 +226,7 @@ impl Lexer {
 
     fn identifier_or_keyword(&mut self) -> Token {
         let start = self.pos;
-        while self.pos < self.source.len() {
+        while self.pos < self.chars.len() {
             let c = self.peek(0);
             if c.is_ascii_alphanumeric() || c == '_' {
                 self.advance();
@@ -234,9 +234,9 @@ impl Lexer {
                 break;
             }
         }
-        let text = &self.source[start..self.pos];
-        let ty = keyword_type(text).unwrap_or(TokenType::Identifier);
-        self.make_token(ty, text)
+        let text: String = self.chars[start..self.pos].iter().collect();
+        let ty = keyword_type(&text).unwrap_or(TokenType::Identifier);
+        self.make_token(ty, &text)
     }
 
     fn number(&mut self) -> Token {
@@ -245,7 +245,7 @@ impl Lexer {
             self.advance(); // '0'
             self.advance(); // 'x' or 'X'
             let hex_start = self.pos;
-            while self.pos < self.source.len() && self.peek(0).is_ascii_hexdigit() {
+            while self.pos < self.chars.len() && self.peek(0).is_ascii_hexdigit() {
                 self.advance();
             }
             if self.pos == hex_start {
@@ -257,7 +257,7 @@ impl Lexer {
                 });
                 return self.make_token(TokenType::Unknown, "0x");
             }
-            let text = &self.source[start..self.pos];
+            let text: String = self.chars[start..self.pos].iter().collect();
             // Convert hex to decimal string so parser can parse it
             let hex_str = &text[2..];
             if let Ok(val) = u64::from_str_radix(hex_str, 16) {
@@ -272,29 +272,29 @@ impl Lexer {
                 }
                 return self.make_token(TokenType::Number, &val.to_string());
             }
-            return self.make_token(TokenType::Number, text);
+            return self.make_token(TokenType::Number, &text);
         }
-        while self.pos < self.source.len() && self.peek(0).is_ascii_digit() {
+        while self.pos < self.chars.len() && self.peek(0).is_ascii_digit() {
             self.advance();
         }
         // check for float literal (e.g. 3.14)
         if self.peek(0) == '.' && self.peek(1).is_ascii_digit() {
             self.advance(); // '.'
-            while self.pos < self.source.len() && self.peek(0).is_ascii_digit() {
+            while self.pos < self.chars.len() && self.peek(0).is_ascii_digit() {
                 self.advance();
             }
-            let text = &self.source[start..self.pos];
-            return self.make_token(TokenType::FloatLiteral, text);
+            let text: String = self.chars[start..self.pos].iter().collect();
+            return self.make_token(TokenType::FloatLiteral, &text);
         }
-        let text = &self.source[start..self.pos];
-        self.make_token(TokenType::Number, text)
+        let text: String = self.chars[start..self.pos].iter().collect();
+        self.make_token(TokenType::Number, &text)
     }
 
     fn string_literal(&mut self) -> Token {
         let start = self.pos;
         self.advance(); // consume opening "
         let mut value = String::new();
-        while self.pos < self.source.len() && self.peek(0) != '"' {
+        while self.pos < self.chars.len() && self.peek(0) != '"' {
             if self.peek(0) == '\n' {
                 self.errors.push(LexerError {
                     message: "字符串不能跨行".to_string(),
@@ -304,8 +304,8 @@ impl Lexer {
                 });
                 break;
             }
-            if self.peek(0) == '\\' && self.pos + 1 < self.source.len() {
-                let next = self.source.as_bytes()[self.pos + 1] as char;
+            if self.peek(0) == '\\' && self.pos + 1 < self.chars.len() {
+                let next = self.chars[self.pos + 1];
                 match next {
                     'n' => value.push('\n'),
                     't' => value.push('\t'),
@@ -322,8 +322,8 @@ impl Lexer {
                         let h1 = self.peek(2);
                         let h2 = self.peek(3);
                         if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() {
-                            let hex = &self.source[self.pos + 2..self.pos + 4];
-                            if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                            let hex: String = self.chars[self.pos + 2..self.pos + 4].iter().collect();
+                            if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                                 value.push(byte as char);
                             }
                             self.advance();
@@ -343,7 +343,7 @@ impl Lexer {
                 value.push(c);
             }
         }
-        if self.pos >= self.source.len() || self.peek(0) != '"' {
+        if self.pos >= self.chars.len() || self.peek(0) != '"' {
             self.errors.push(LexerError {
                 message: "字符串未闭合".to_string(),
                 line: self.line,
@@ -353,13 +353,14 @@ impl Lexer {
         } else {
             self.advance(); // consume closing "
         }
-        let mut tok = self.make_token(TokenType::String, &self.source[start..self.pos]);
+        let text: String = self.chars[start..self.pos].iter().collect();
+        let mut tok = self.make_token(TokenType::String, &text);
         tok.text = value;
         tok
     }
 
     fn skip_whitespace(&mut self) {
-        while self.pos < self.source.len() {
+        while self.pos < self.chars.len() {
             let c = self.peek(0);
             if c.is_ascii_whitespace() {
                 self.advance();
@@ -370,7 +371,7 @@ impl Lexer {
     }
 
     fn skip_comment(&mut self) {
-        while self.pos < self.source.len() && self.peek(0) != '\n' {
+        while self.pos < self.chars.len() && self.peek(0) != '\n' {
             self.advance();
         }
     }
@@ -378,7 +379,7 @@ impl Lexer {
     fn skip_block_comment(&mut self) {
         self.advance(); // '/'
         self.advance(); // '*'
-        while self.pos < self.source.len() {
+        while self.pos < self.chars.len() {
             if self.peek(0) == '*' && self.peek(1) == '/' {
                 self.advance();
                 self.advance();
@@ -399,7 +400,7 @@ impl Lexer {
         self.advance(); // consume opening '
         let mut value = 0i32;
         let mut valid = true;
-        if self.pos < self.source.len() && self.peek(0) == '\'' {
+        if self.pos < self.chars.len() && self.peek(0) == '\'' {
             self.errors.push(LexerError {
                 message: "空字符字面量".to_string(),
                 line: self.line,
@@ -407,8 +408,8 @@ impl Lexer {
                 code: ErrorCode::E1001_UnknownChar as i32,
             });
             valid = false;
-        } else if self.pos < self.source.len() && self.peek(0) == '\\' && self.pos + 1 < self.source.len() {
-            let next = self.source.as_bytes()[self.pos + 1] as char;
+        } else if self.pos < self.chars.len() && self.peek(0) == '\\' && self.pos + 1 < self.chars.len() {
+            let next = self.chars[self.pos + 1];
             value = match next {
                 'n' => '\n' as i32,
                 't' => '\t' as i32,
@@ -424,8 +425,8 @@ impl Lexer {
                     let h1 = self.peek(2);
                     let h2 = self.peek(3);
                     if h1.is_ascii_hexdigit() && h2.is_ascii_hexdigit() {
-                        let hex = &self.source[self.pos + 2..self.pos + 4];
-                        u8::from_str_radix(hex, 16).unwrap_or(0) as i32
+                        let hex: String = self.chars[self.pos + 2..self.pos + 4].iter().collect();
+                        u8::from_str_radix(&hex, 16).unwrap_or(0) as i32
                     } else {
                         self.errors.push(LexerError {
                             message: "字符字面量十六进制转义格式错误".to_string(),
@@ -454,7 +455,7 @@ impl Lexer {
                 self.advance();
                 self.advance();
             }
-        } else if self.pos < self.source.len() {
+        } else if self.pos < self.chars.len() {
             value = self.peek(0) as i32;
             self.advance();
         } else {
@@ -466,7 +467,7 @@ impl Lexer {
             });
             valid = false;
         }
-        if self.pos < self.source.len() && self.peek(0) == '\'' {
+        if self.pos < self.chars.len() && self.peek(0) == '\'' {
             self.advance();
         } else {
             self.errors.push(LexerError {
@@ -477,7 +478,8 @@ impl Lexer {
             });
             valid = false;
         }
-        let mut tok = self.make_token(TokenType::CharLiteral, &self.source[start..self.pos]);
+        let text: String = self.chars[start..self.pos].iter().collect();
+        let mut tok = self.make_token(TokenType::CharLiteral, &text);
         if valid {
             tok.text = value.to_string();
         }
@@ -488,35 +490,35 @@ impl Lexer {
         self.advance(); // consume '#'
         self.skip_whitespace();
 
-        if self.source[self.pos..].starts_with("define") {
+        if self.chars[self.pos..].starts_with(&['d', 'e', 'f', 'i', 'n', 'e']) {
             self.pos += 6;
             self.column += 6;
             self.parse_define_directive();
             return;
         }
 
-        while self.pos < self.source.len() && self.peek(0) != '\n' {
+        while self.pos < self.chars.len() && self.peek(0) != '\n' {
             self.advance();
         }
     }
 
     fn parse_define_directive(&mut self) {
         self.skip_whitespace();
-        if self.pos >= self.source.len() || !(self.peek(0).is_ascii_alphabetic() || self.peek(0) == '_') {
+        if self.pos >= self.chars.len() || !(self.peek(0).is_ascii_alphabetic() || self.peek(0) == '_') {
             self.errors.push(LexerError {
                 message: "#define 后预期宏名称".to_string(),
                 line: self.line,
                 column: self.column,
                 code: ErrorCode::E1005_InvalidDefine as i32,
             });
-            while self.pos < self.source.len() && self.peek(0) != '\n' {
+            while self.pos < self.chars.len() && self.peek(0) != '\n' {
                 self.advance();
             }
             return;
         }
 
         let name_start = self.pos;
-        while self.pos < self.source.len() {
+        while self.pos < self.chars.len() {
             let c = self.peek(0);
             if c.is_ascii_alphanumeric() || c == '_' {
                 self.advance();
@@ -524,15 +526,15 @@ impl Lexer {
                 break;
             }
         }
-        let name = self.source[name_start..self.pos].to_string();
+        let name: String = self.chars[name_start..self.pos].iter().collect();
 
         self.skip_whitespace();
 
         let body_start = self.pos;
-        while self.pos < self.source.len() && self.peek(0) != '\n' {
+        while self.pos < self.chars.len() && self.peek(0) != '\n' {
             self.advance();
         }
-        let body = self.source[body_start..self.pos].to_string();
+        let body: String = self.chars[body_start..self.pos].iter().collect();
 
         let (body_tokens, _) = Lexer::new(body).tokenize();
         let mut macros = HashMap::new();
@@ -560,19 +562,19 @@ impl Lexer {
     }
 
     fn peek(&self, offset: usize) -> char {
-        if self.pos >= self.source.len() {
+        if self.pos >= self.chars.len() {
             '\0'
         } else {
-            self.source[self.pos..].chars().nth(offset).unwrap_or('\0')
+            self.chars.get(self.pos + offset).copied().unwrap_or('\0')
         }
     }
 
     fn advance(&mut self) -> char {
-        if self.pos >= self.source.len() {
+        if self.pos >= self.chars.len() {
             return '\0';
         }
-        let c = self.source[self.pos..].chars().next().unwrap_or('\0');
-        self.pos += c.len_utf8();
+        let c = self.chars.get(self.pos).copied().unwrap_or('\0');
+        self.pos += 1;
         if c == '\n' {
             self.line += 1;
             self.column = 1;
@@ -596,7 +598,7 @@ impl Lexer {
             ty,
             text: text.to_string(),
             line: self.line,
-            column: self.column - text.len() as i32,
+            column: self.column - text.chars().count() as i32,
         }
     }
 }
@@ -632,3 +634,4 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         _          => None,
     }
 }
+

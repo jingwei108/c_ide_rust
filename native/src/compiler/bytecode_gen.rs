@@ -422,35 +422,34 @@ impl BytecodeGen {
                 for s in stmts { self.gen_stmt(s); }
             }
             Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
-                let elem_count = if var_type.is_array() || var_type.is_struct() {
-                    let sz = (self.type_size(var_type) + 3) / 4;
-                    if sz < 1 { 1 } else { sz }
-                } else { 1 };
-
-                let mut emit_one = |n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
+                let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
+                    let elem_count = if vty.is_array() || vty.is_struct() {
+                        let sz = (self.type_size(vty) + 3) / 4;
+                        if sz < 1 { 1 } else { sz }
+                    } else { 1 };
                     let local_idx = self.next_local_idx;
                     self.next_local_idx += elem_count;
                     self.local_indices.insert(n.to_string(), local_idx);
-                    self.local_types.insert(n.to_string(), var_type.clone());
+                    self.local_types.insert(n.to_string(), vty.clone());
                     self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
                     self.symbols.push(VMSymbol {
                         name: n.to_string(),
                         addr: local_idx as u32 * 4,
                         is_local: true,
-                        ty: var_type.clone(),
+                        ty: vty.clone(),
                         scope_depth: 1,
                     });
                     if let Some(ref mut e) = init {
-                        if var_type.is_array() && matches!(e, Expr::InitList { .. }) {
+                        if vty.is_array() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let values = flatten_init_list(elements);
-                                if var_type.base_kind == TypeKind::Char {
+                                if vty.base_kind == TypeKind::Char {
                                     let base_temp = self.get_temp_slot(0);
                                     self.emit(OpCode::GetFrameBase, 0, loc);
                                     self.emit(OpCode::PushConst, local_idx * 4, loc);
                                     self.emit(OpCode::Add, 0, loc);
                                     self.emit(OpCode::StoreLocal, base_temp, loc);
-                                    let byte_count = var_type.array_size as usize;
+                                    let byte_count = vty.array_size as usize;
                                     for i in 0..byte_count {
                                         self.emit(OpCode::LoadLocal, base_temp, loc);
                                         self.emit(OpCode::PushConst, i as i32, loc);
@@ -466,14 +465,14 @@ impl BytecodeGen {
                                     }
                                 }
                             }
-                        } else if var_type.is_struct() && matches!(e, Expr::InitList { .. }) {
+                        } else if vty.is_struct() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::GetFrameBase, 0, loc);
                                 self.emit(OpCode::PushConst, local_idx * 4, loc);
                                 self.emit(OpCode::Add, 0, loc);
                                 self.emit(OpCode::StoreLocal, base_temp, loc);
-                                let fields = self.struct_defs.get(&var_type.name).cloned().unwrap_or_default();
+                                let fields = self.struct_defs.get(&vty.name).cloned().unwrap_or_default();
                                 for (i, elem) in elements.iter_mut().enumerate() {
                                     if i >= elem_count as usize || i >= fields.len() { break; }
                                     let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
@@ -486,16 +485,16 @@ impl BytecodeGen {
                                     self.emit(OpCode::StoreMem, 0, loc);
                                 }
                             }
-                        } else if var_type.is_struct() {
+                        } else if vty.is_struct() {
                             self.gen_struct_copy_to_local(local_idx, e, loc);
-                        } else if var_type.is_array() && matches!(e, Expr::StringLiteral { .. }) {
+                        } else if vty.is_array() && matches!(e, Expr::StringLiteral { .. }) {
                             if let Expr::StringLiteral { ref value, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::GetFrameBase, 0, loc);
                                 self.emit(OpCode::PushConst, local_idx * 4, loc);
                                 self.emit(OpCode::Add, 0, loc);
                                 self.emit(OpCode::StoreLocal, base_temp, loc);
-                                let byte_count = var_type.array_size as usize;
+                                let byte_count = vty.array_size as usize;
                                 for i in 0..byte_count {
                                     self.emit(OpCode::LoadLocal, base_temp, loc);
                                     self.emit(OpCode::PushConst, i as i32, loc);
@@ -507,7 +506,7 @@ impl BytecodeGen {
                             }
                         } else {
                             self.gen_expr(e);
-                            if var_type.kind == TypeKind::Float && e.ty().kind != TypeKind::Float {
+                            if vty.kind == TypeKind::Float && e.ty().kind != TypeKind::Float {
                                 self.emit(OpCode::CastI2F, 0, loc);
                             }
                             self.emit(OpCode::StoreLocal, local_idx, loc);
@@ -519,9 +518,9 @@ impl BytecodeGen {
                         }
                     }
                 };
-                emit_one(name, init, loc);
-                for (ename, einit) in extra_vars.iter_mut() {
-                    emit_one(ename, einit, loc);
+                emit_one(var_type, name, init, loc);
+                for (ety, ename, einit) in extra_vars.iter_mut() {
+                    emit_one(ety, ename, einit, loc);
                 }
             }
             Stmt::Expr { expr, .. } => {

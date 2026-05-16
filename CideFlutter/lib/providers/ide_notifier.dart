@@ -154,8 +154,8 @@ class IdeNotifier extends Notifier<IdeState> {
     }
   }
 
-  void reset() {
-    rust.resetSession();
+  Future<void> reset() async {
+    await rust.resetSession();
     state = const IdeState();
   }
 

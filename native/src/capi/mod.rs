@@ -450,16 +450,22 @@ pub unsafe extern "C" fn cide_breakpoint_clear(s: *mut Session) {
     }
 }
 
+/// # 安全性
+/// 返回的指针仅在下次调用 `cide_run` / `cide_step_next` / `cide_compile` 之前有效。
+/// 调用方应立即复制数据，不要长期保存此指针。
 #[no_mangle]
 pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_char {
     if s.is_null() {
         return ptr::null();
     }
-    let session = &*s;
+    let session = &mut *s;
     if session.runtime.error.is_empty() {
         return ptr::null();
     }
-    session.runtime.error.as_ptr() as *const c_char
+    if session.runtime.error_buffer != session.runtime.error {
+        session.runtime.error_buffer = session.runtime.error.clone();
+    }
+    session.runtime.error_buffer.as_ptr() as *const c_char
 }
 
 #[no_mangle]

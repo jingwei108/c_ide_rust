@@ -16,6 +16,145 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/// 跳过 printf 格式字符串中的修饰符（宽度、精度、长度等），返回真正的格式字母列表。
+/// 例如 "%6d" 返回 ['d']，"%.2f" 返回 ['f']，"%%" 不返回任何内容。
+fn parse_format_specs(fmt: &str) -> Vec<char> {
+    let mut specs = Vec::new();
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    chars.next(); // 跳过 %%
+                } else {
+                    // 跳过 flags
+                    while let Some(&c) = chars.peek() {
+                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 width（数字或 *）
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_digit() || c == '*' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 precision（. 后跟数字或 *）
+                    if let Some(&'.') = chars.peek() {
+                        chars.next();
+                        while let Some(&c) = chars.peek() {
+                            if c.is_ascii_digit() || c == '*' {
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    // 跳过长度修饰符（l, ll, h, hh, L, z, j, t）
+                    if let Some(&c) = chars.peek() {
+                        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
+                            chars.next();
+                            if let Some(&c2) = chars.peek() {
+                                if (c == 'l' && c2 == 'l') || (c == 'h' && c2 == 'h') {
+                                    chars.next();
+                                }
+                            }
+                        }
+                    }
+                    // 真正的格式字母
+                    if let Some(&spec) = chars.peek() {
+                        specs.push(spec);
+                        chars.next();
+                    }
+                }
+            }
+        }
+    }
+    specs
+}
+
+/// 根据格式字符串和参数列表生成 printf 输出。
+/// 会正确跳过宽度/精度/长度修饰符，只根据格式字母消费参数。
+fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
+    let mut out = String::new();
+    let mut used = 0;
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if used < args.len() && ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    out.push('%');
+                    chars.next();
+                } else {
+                    // 跳过 flags
+                    while let Some(&c) = chars.peek() {
+                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 width
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_digit() || c == '*' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 precision
+                    if let Some(&'.') = chars.peek() {
+                        chars.next();
+                        while let Some(&c) = chars.peek() {
+                            if c.is_ascii_digit() || c == '*' {
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    // 跳过长度修饰符
+                    if let Some(&c) = chars.peek() {
+                        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
+                            chars.next();
+                            if let Some(&c2) = chars.peek() {
+                                if (c == 'l' && c2 == 'l') || (c == 'h' && c2 == 'h') {
+                                    chars.next();
+                                }
+                            }
+                        }
+                    }
+                    // 真正的格式字母
+                    if let Some(&spec) = chars.peek() {
+                        let arg = args[used];
+                        match spec {
+                            'd' | 'i' => out.push_str(&arg.to_string()),
+                            'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
+                            's' => {
+                                let s = read_cstring(vm, arg as u32);
+                                out.push_str(&s);
+                            }
+                            'c' => out.push(arg as u8 as char),
+                            _ => { out.push(ch); out.push(spec); }
+                        }
+                        chars.next();
+                        used += 1;
+                    }
+                }
+            } else {
+                out.push(ch);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
     match id {
         host_func_id::OUTPUT => host_output(vm, session),
@@ -126,6 +265,23 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     vm.push(addr as i32);
 }
 
+fn merge_free_list(free_list: &mut Vec<crate::session::FreeBlock>) {
+    free_list.sort_by_key(|b| b.addr);
+    let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
+    for block in free_list.drain(..) {
+        if let Some(last) = merged.last_mut() {
+            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
+                last.size += block.size;
+            } else {
+                merged.push(block);
+            }
+        } else {
+            merged.push(block);
+        }
+    }
+    *free_list = merged;
+}
+
 fn host_free(vm: &mut CideVM, session: &mut Session) {
     let addr = vm.pop() as u32;
     for r in &mut session.memory.regions {
@@ -136,20 +292,7 @@ fn host_free(vm: &mut CideVM, session: &mut Session) {
                 addr: r.addr,
                 size: aligned_size as i32,
             });
-            session.memory.free_list.sort_by_key(|b| b.addr);
-            let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-            for block in session.memory.free_list.drain(..) {
-                if let Some(last) = merged.last_mut() {
-                    if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                        last.size += block.size;
-                    } else {
-                        merged.push(block);
-                    }
-                } else {
-                    merged.push(block);
-                }
-            }
-            session.memory.free_list = merged;
+            merge_free_list(&mut session.memory.free_list);
             break;
         }
     }
@@ -230,77 +373,20 @@ fn host_printf_2(vm: &mut CideVM, session: &mut Session) {
 fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    // count specifiers excluding %%
-    let mut spec_count = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    chars.next();
-                } else {
-                    spec_count += 1;
-                    chars.next();
-                }
-            }
-        }
-    }
-    let mut args = Vec::with_capacity(spec_count);
-    for _ in 0..spec_count {
+    let specs = parse_format_specs(&fmt);
+    let mut args = Vec::with_capacity(specs.len());
+    for _ in 0..specs.len() {
         args.push(vm.pop());
     }
-    let mut out = String::new();
-    let mut used = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if used < spec_count && ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    out.push('%');
-                    chars.next();
-                } else {
-                    let arg = args[used];
-                    match next {
-                        'd' => out.push_str(&arg.to_string()),
-                        'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
-                        's' => {
-                            let s = read_cstring(vm, arg as u32);
-                            out.push_str(&s);
-                        }
-                        'c' => out.push(arg as u8 as char),
-                        _ => { out.push(ch); out.push(next); }
-                    }
-                    chars.next();
-                    used += 1;
-                }
-            } else {
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
+    let out = format_printf_string(vm, &fmt, &args);
     session.runtime.output_lines.push(out);
 }
 
 fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    // 扫描格式字符串，记录每个 % 格式符的类型（跳过 %%）
-    let mut spec_types = Vec::new();
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    chars.next();
-                } else {
-                    spec_types.push(next);
-                    chars.next();
-                }
-            }
-        }
-    }
+    // 扫描格式字符串，记录每个 % 格式符的类型（跳过 %% 和修饰符）
+    let spec_types = parse_format_specs(&fmt);
     // 按数量 pop 指针参数
     let mut ptrs = Vec::with_capacity(spec_types.len());
     for _ in 0..spec_types.len() {
@@ -507,55 +593,12 @@ fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
     let _stream = vm.pop();
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    let mut spec_count = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    chars.next();
-                } else {
-                    spec_count += 1;
-                    chars.next();
-                }
-            }
-        }
-    }
-    let mut args = Vec::with_capacity(spec_count);
-    for _ in 0..spec_count {
+    let specs = parse_format_specs(&fmt);
+    let mut args = Vec::with_capacity(specs.len());
+    for _ in 0..specs.len() {
         args.push(vm.pop());
     }
-    let mut out = String::new();
-    let mut used = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if used < spec_count && ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    out.push('%');
-                    chars.next();
-                } else {
-                    let arg = args[used];
-                    match next {
-                        'd' => out.push_str(&arg.to_string()),
-                        'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
-                        's' => {
-                            let s = read_cstring(vm, arg as u32);
-                            out.push_str(&s);
-                        }
-                        'c' => out.push(arg as u8 as char),
-                        _ => { out.push(ch); out.push(next); }
-                    }
-                    chars.next();
-                    used += 1;
-                }
-            } else {
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
+    let out = format_printf_string(vm, &fmt, &args);
     session.runtime.output_lines.push(out);
 }
 
@@ -574,20 +617,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                         addr: r.addr,
                         size: aligned_size as i32,
                     });
-                    session.memory.free_list.sort_by_key(|b| b.addr);
-                    let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-                    for block in session.memory.free_list.drain(..) {
-                        if let Some(last) = merged.last_mut() {
-                            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                                last.size += block.size;
-                            } else {
-                                merged.push(block);
-                            }
-                        } else {
-                            merged.push(block);
-                        }
-                    }
-                    session.memory.free_list = merged;
+                    merge_free_list(&mut session.memory.free_list);
                     break;
                 }
             }

@@ -44,16 +44,38 @@ impl CompileError for crate::compiler::type_checker::TypeError {
 
 // ========== 诊断推送 ==========
 
+fn push_one<T: CompileError>(session: &mut Session, item: &T, severity: i32, source_lines: &[&str]) {
+    let info = crate::diagnostics::error_catalog::lookup_error_info(item.code());
+    let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
+        crate::diagnostics::error_catalog::generate_fix(
+            item.code(), item.line(), item.column(), item.message(), source_lines,
+        );
+
+    session.compile.diagnostics.push(Diagnostic {
+        line: item.line(),
+        column: item.column(),
+        error_code: item.code(),
+        severity,
+        message: item.message().to_string(),
+        fix_suggestion: if fix_suggestion.is_empty() {
+            info.map(|i| i.explanation.to_string()).unwrap_or_default()
+        } else {
+            fix_suggestion.clone()
+        },
+        fix_kind,
+        replace_start_line: rsl,
+        replace_start_column: rsc,
+        replace_end_line: rel,
+        replace_end_column: rec,
+        replacement_text: rt,
+    });
+}
+
 pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], source: &str) {
     let source_lines: Vec<&str> = source.lines().collect();
     let mut err_str = String::new();
     for e in errors {
         let info = crate::diagnostics::error_catalog::lookup_error_info(e.code());
-        let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-            crate::diagnostics::error_catalog::generate_fix(
-                e.code(), e.line(), e.column(), e.message(), &source_lines,
-            );
-
         let enriched_msg = if let Some(ref i) = info {
             format!(
                 "{} {} — 错误 E{} (第{}行, 第{}列): {}",
@@ -65,25 +87,7 @@ pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], so
                 e.code(), e.line(), e.column(), e.message()
             )
         };
-
-        session.compile.diagnostics.push(Diagnostic {
-            line: e.line(),
-            column: e.column(),
-            error_code: e.code(),
-            severity: 0,
-            message: e.message().to_string(),
-            fix_suggestion: if fix_suggestion.is_empty() {
-                info.map(|i| i.explanation.to_string()).unwrap_or_default()
-            } else {
-                fix_suggestion.clone()
-            },
-            fix_kind,
-            replace_start_line: rsl,
-            replace_start_column: rsc,
-            replace_end_line: rel,
-            replace_end_column: rec,
-            replacement_text: rt,
-        });
+        push_one(session, e, 0, &source_lines);
         err_str.push_str(&enriched_msg);
         err_str.push('\n');
     }
@@ -94,60 +98,14 @@ pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], so
 pub fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], source: &str) {
     let source_lines: Vec<&str> = source.lines().collect();
     for w in warnings {
-        let info = crate::diagnostics::error_catalog::lookup_error_info(w.code());
-        let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-            crate::diagnostics::error_catalog::generate_fix(
-                w.code(), w.line(), w.column(), w.message(), &source_lines,
-            );
-
-        session.compile.diagnostics.push(Diagnostic {
-            line: w.line(),
-            column: w.column(),
-            error_code: w.code(),
-            severity: 1,
-            message: w.message().to_string(),
-            fix_suggestion: if fix_suggestion.is_empty() {
-                info.map(|i| i.explanation.to_string()).unwrap_or_default()
-            } else {
-                fix_suggestion.clone()
-            },
-            fix_kind,
-            replace_start_line: rsl,
-            replace_start_column: rsc,
-            replace_end_line: rel,
-            replace_end_column: rec,
-            replacement_text: rt,
-        });
+        push_one(session, w, 1, &source_lines);
     }
 }
 
 pub fn push_hints<T: CompileError>(session: &mut Session, hints: &[T], source: &str) {
     let source_lines: Vec<&str> = source.lines().collect();
     for h in hints {
-        let info = crate::diagnostics::error_catalog::lookup_error_info(h.code());
-        let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-            crate::diagnostics::error_catalog::generate_fix(
-                h.code(), h.line(), h.column(), h.message(), &source_lines,
-            );
-
-        session.compile.diagnostics.push(Diagnostic {
-            line: h.line(),
-            column: h.column(),
-            error_code: h.code(),
-            severity: 2,
-            message: h.message().to_string(),
-            fix_suggestion: if fix_suggestion.is_empty() {
-                info.map(|i| i.explanation.to_string()).unwrap_or_default()
-            } else {
-                fix_suggestion.clone()
-            },
-            fix_kind,
-            replace_start_line: rsl,
-            replace_start_column: rsc,
-            replace_end_line: rel,
-            replace_end_column: rec,
-            replacement_text: rt,
-        });
+        push_one(session, h, 2, &source_lines);
     }
 }
 

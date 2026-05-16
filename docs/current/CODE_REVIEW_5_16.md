@@ -22,7 +22,7 @@ Cide 是一个跨平台 C 语言教学 IDE，架构如下：
 
 ## 二、错误勘误
 
-### 🔴 2.1 `printf` 格式化不支持宽度/精度修饰符（如 `%6d`, `%.2f`）— 栈不平衡
+### 🔴 2.1 `printf` 格式化不支持宽度/精度修饰符（如 `%6d`, `%.2f`）— 栈不平衡 ✅ **已修复**
 
 **文件**: `native/src/vm/host_funcs.rs:230-283`（`host_printf_n`）及 `506-560`（`host_fprintf_n`）
 
@@ -43,7 +43,7 @@ Cide 是一个跨平台 C 语言教学 IDE，架构如下：
 
 ---
 
-### 🔴 2.2 逗号分隔多变量声明中维度信息丢失
+### 🔴 2.2 逗号分隔多变量声明中维度信息丢失 ✅ **已修复**
 
 **文件**: `native/src/compiler/parser.rs:239-258`
 
@@ -70,7 +70,7 @@ while self.match_token(TokenType::Comma) {
 
 ---
 
-### 🔴 2.3 `unsigned char` 被错误映射为 `unsigned int`
+### 🔴 2.3 `unsigned char` 被错误映射为 `unsigned int` ✅ **已修复**
 
 **文件**: `native/src/compiler/parser.rs:366`
 
@@ -114,7 +114,7 @@ self.call_stack.push(CallFrame {
 
 ---
 
-### 🟡 2.6 `cide_get_runtime_error` 返回悬垂指针风险
+### 🟡 2.6 `cide_get_runtime_error` 返回悬垂指针风险 ✅ **已修复**
 
 **文件**: `native/src/capi/mod.rs:454-463`
 
@@ -159,7 +159,7 @@ let result = vm.call_user_function(session, compar, &[addr_a, addr_b], MAX_COMPA
 
 ---
 
-### 🟢 2.9 `Lexer::make_token` 的 `column` 计算对多字节字符不准确
+### 🟢 2.9 `Lexer::make_token` 的 `column` 计算对多字节字符不准确 ✅ **已修复**
 
 **文件**: `native/src/compiler/lexer.rs:594-601`
 
@@ -210,7 +210,7 @@ fn make_token(&self, ty: TokenType, text: &str) -> Token {
 
 ---
 
-### 🔴 2.13 Flutter: `reset()` 调用未 `await`
+### 🔴 2.13 Flutter: `reset()` 调用未 `await` ✅ **已修复**
 
 **文件**: `CideFlutter/lib/providers/ide_notifier.dart:157-160`
 
@@ -263,7 +263,7 @@ flutter_riverpod: ^3.3.2-dev.2
 
 ## 三、代码优化建议
 
-### 🟡 3.1 `host_free` / `host_realloc` 中 free_list 合并逻辑重复
+### 🟡 3.1 `host_free` / `host_realloc` 中 free_list 合并逻辑重复 ✅ **已修复**
 
 **文件**: `native/src/vm/host_funcs.rs:129-156, 562-709`
 
@@ -302,7 +302,7 @@ struct ExprInner { loc: SourceLoc, ty: Type, kind: ExprKind }
 
 ---
 
-### 🟡 3.3 `push_diagnostics` / `push_warnings` / `push_hints` 三个函数结构几乎相同
+### 🟡 3.3 `push_diagnostics` / `push_warnings` / `push_hints` 三个函数结构几乎相同 ✅ **已修复**
 
 **文件**: `native/src/engine/compile_pipeline.rs:47-152`
 
@@ -330,7 +330,7 @@ struct ExprInner { loc: SourceLoc, ty: Type, kind: ExprKind }
 
 ---
 
-### 🟡 3.6 Lexer `peek()` 每次调用 O(n) 扫描
+### 🟡 3.6 Lexer `peek()` 每次调用 O(n) 扫描 ✅ **已修复**
 
 **文件**: `native/src/compiler/lexer.rs:562-568`
 

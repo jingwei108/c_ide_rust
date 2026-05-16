@@ -436,20 +436,20 @@ impl TypeChecker {
                     }
                 }
                 self.declare_var(name, var_type, false);
-                for (ename, einit) in extra_vars.iter_mut() {
+                for (ety, ename, einit) in extra_vars.iter_mut() {
                     if let Some(ref mut init_expr) = einit {
-                        if var_type.is_array() {
-                            self.check_array_initializer(var_type, init_expr, loc);
-                        } else if var_type.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
-                            self.check_struct_initializer(var_type, init_expr, loc);
+                        if ety.is_array() {
+                            self.check_array_initializer(ety, init_expr, loc);
+                        } else if ety.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
+                            self.check_struct_initializer(ety, init_expr, loc);
                         } else {
                             let init_type = self.resolve_expr_type(init_expr);
-                            if !self.check_assignable(var_type, &init_type, loc) {
-                                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
+                            if !self.check_assignable(ety, &init_type, loc) {
+                                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, ety), loc, ErrorCode::E3004_TypeMismatch);
                             }
                         }
                     }
-                    self.declare_var(ename, var_type, false);
+                    self.declare_var(ename, ety, false);
                 }
             }
             Stmt::Expr { expr, .. } => { self.resolve_expr_type(expr); }

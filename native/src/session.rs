@@ -98,6 +98,7 @@ pub struct VisEvent {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeState {
     pub error: String,
+    pub error_buffer: String,
     pub output_lines: Vec<String>,
     pub running: bool,
     pub trace: Vec<TraceEntry>,

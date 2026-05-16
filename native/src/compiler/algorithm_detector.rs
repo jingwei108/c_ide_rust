@@ -206,7 +206,7 @@ fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             if let Some(e) = init {
                 walk_expr(e, f, loop_depth, func_name);
             }
-            for (_, e2) in extra_vars {
+            for (_, _, e2) in extra_vars {
                 if let Some(e) = e2 {
                     walk_expr(e, f, loop_depth, func_name);
                 }
