@@ -404,25 +404,51 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     }
     let line = session.runtime.input_lines[session.runtime.input_index].clone();
     session.runtime.input_index += 1;
-    let tokens: Vec<&str> = line.split_whitespace().collect();
+    let chars: Vec<char> = line.chars().collect();
+    let mut pos = 0usize;
     // 依次解析并写入各指针地址
     for (i, spec) in spec_types.iter().enumerate() {
-        if i >= tokens.len() {
-            break;
-        }
         let ptr = ptrs[i];
         match spec {
             'd' => {
-                let value: i32 = tokens[i].parse().unwrap_or(0);
+                // 跳过前导空白
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' || chars[pos] == '-' {
+                    pos += 1;
+                }
+                while pos < chars.len() && chars[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                let value: i32 = token.parse().unwrap_or(0);
                 vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
             }
             'f' => {
-                let value: f32 = tokens[i].parse().unwrap_or(0.0);
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' || chars[pos] == '-' {
+                    pos += 1;
+                }
+                while pos < chars.len() && (chars[pos].is_ascii_digit() || chars[pos] == '.') {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                let value: f32 = token.parse().unwrap_or(0.0);
                 vm.store_i32(ptr, value.to_bits() as i32, &super::instruction::SourceLoc::default());
             }
             'c' => {
-                let ch = tokens[i].chars().next().unwrap_or('\0');
+                // 标准 C: %c 不跳过空白
+                if pos >= chars.len() { break; }
+                let ch = chars[pos];
                 vm.store_i8(ptr, ch as i32, &super::instruction::SourceLoc::default());
+                pos += 1;
             }
             _ => {}
         }
