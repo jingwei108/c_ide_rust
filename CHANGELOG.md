@@ -93,18 +93,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Comma-separated multi-variable array declarations (`int a[10], b[20];`) now preserve per-variable dimensions.
 - `unsigned char` no longer incorrectly mapped to `unsigned int`.
 - `cide_get_runtime_error` dangling pointer: now uses buffer snapshot pattern.
-- `call_user_function` return_ip semantic fix: uses `HOST_CALLBACK_SENTINEL` instead of `code.len()`.
+- `call_user_function` return_ip uses `HOST_CALLBACK_SENTINEL` instead of `code.len()`.
 - `session.rs` removed misleading `#![forbid(unsafe_code)]`.
 - `host_realloc` in-place shrink when old block is at heap boundary.
-- `call_user_function` return_ip uses `HOST_CALLBACK_SENTINEL` instead of `code.len()`.
+- `host_qsort` recursion depth limited to `MAX_QSORT_DEPTH = 8`, preventing stack overflow from indirect recursive qsort calls.
 - `host_scanf` `%c` no longer skips whitespace (matches standard C semantics).
 - `compute_stride` zero-dimension fallback fixed: `dims[i] == 0` now produces stride 0 instead of 1.
 - Algorithm validation regex no longer matches `int main(` inside string literals or comments.
+- `flutter_riverpod` upgraded from `^3.3.2-dev.2` to stable `^3.3.1`.
 
 ### Changed
 - `host_memset` now uses slice `.fill()` instead of per-byte `store_i8` for large blocks.
 - `host_realloc` supports in-place shrink when the old block is at heap boundary.
 - `RuntimeState::output()` replaces 13 repeated `output_lines.join("\n")` calls in `flutter_bridge.rs`.
+- `TrapBounds` VM instruction now performs full bounds check in a single instruction (was ~15 instructions via manual `Ge`/`Lt`/`JumpIfZero` chain). `gen_index` bytecode shrunk by ~73%.
+- `host_memset` now uses slice `.fill()` instead of per-byte `store_i8` for large blocks.
 
 ### Refactored
 - `Expr::loc()`/`ty()`/`set_ty()` deduplicated with `macro_rules! expr_field!`.
@@ -116,6 +119,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `OpCode::from_u8` auto-generated via `define_opcode!` macro, eliminating manual repr/match maintenance.
 - `Lexer::new` takes `&str` instead of `String`, removing `.to_string()` clones in compile pipeline and all tests.
 - `flutter_bridge.rs` breakpoint API batchified: `setBreakpoints(Vec<i32>)` replaces N+1 FFI calls.
+- `api/cide.rs` now re-exports FRB types from `session.rs`, eliminating duplicate struct definitions between `flutter_bridge.rs` and `api/cide.rs`.
 
 ### Security
 - `compile_pipeline.rs` unsafe string write bounds validated.
