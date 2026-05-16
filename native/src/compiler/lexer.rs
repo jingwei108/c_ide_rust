@@ -47,7 +47,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
-    pub fn new(source: String) -> Self {
+    pub fn new(source: &str) -> Self {
         let mut macros = HashMap::new();
         // Predefine common stdio macros for fprintf compatibility
         macros.insert("stdout".to_string(), vec![Token {
@@ -536,7 +536,7 @@ impl Lexer {
         }
         let body: String = self.chars[body_start..self.pos].iter().collect();
 
-        let (body_tokens, _) = Lexer::new(body).tokenize();
+        let (body_tokens, _) = Lexer::new(&body).tokenize();
         let mut macros = HashMap::new();
         macros.insert(name, body_tokens.into_iter().filter(|t| t.ty != TokenType::Eof).collect());
         self.macros.extend(macros);

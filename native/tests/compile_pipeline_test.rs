@@ -4,7 +4,7 @@ use cide_native::compiler::type_checker::TypeChecker;
 use cide_native::compiler::bytecode_gen::BytecodeGen;
 
 fn compile_source(source: &str) -> Result<cide_native::compiler::bytecode_gen::CompileOutput, String> {
-    let (tokens, lex_errors) = Lexer::new(source.to_string()).tokenize();
+    let (tokens, lex_errors) = Lexer::new(source).tokenize();
     if !lex_errors.is_empty() {
         return Err(format!("Lexer errors: {:?}", lex_errors));
     }
@@ -189,7 +189,7 @@ int main() {
     return 0;
 }
 "#;
-    let (tokens, _lex_errors) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _lex_errors) = Lexer::new(src).tokenize();
     let (maybe_program, _parse_errors) = Parser::new(tokens).parse();
     let mut program = maybe_program.unwrap();
     let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);
@@ -203,7 +203,7 @@ int main() {
     return unknown_var;
 }
 "#;
-    let (tokens, _lex_errors) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _lex_errors) = Lexer::new(src).tokenize();
     let (maybe_program, _parse_errors) = Parser::new(tokens).parse();
     let mut program = maybe_program.unwrap();
     let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);

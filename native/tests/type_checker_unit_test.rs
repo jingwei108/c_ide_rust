@@ -3,7 +3,7 @@ use cide_native::compiler::parser::Parser;
 use cide_native::compiler::type_checker::TypeChecker;
 
 fn type_check(src: &str) -> (Vec<cide_native::compiler::type_checker::TypeError>, Vec<cide_native::compiler::type_checker::TypeError>, Vec<cide_native::compiler::type_checker::TypeError>) {
-    let (tokens, _) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _) = Lexer::new(src).tokenize();
     let (maybe_program, parse_errors) = Parser::new(tokens).parse();
     assert!(parse_errors.is_empty(), "Parse errors: {:?}", parse_errors);
     let mut program = maybe_program.unwrap();

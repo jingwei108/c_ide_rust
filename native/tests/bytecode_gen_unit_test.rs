@@ -5,7 +5,7 @@ use cide_native::compiler::bytecode_gen::BytecodeGen;
 use cide_native::vm::opcode::OpCode;
 
 fn generate(src: &str) -> cide_native::compiler::bytecode_gen::CompileOutput {
-    let (tokens, _) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _) = Lexer::new(src).tokenize();
     let (maybe_program, parse_errors) = Parser::new(tokens).parse();
     assert!(parse_errors.is_empty(), "Parse errors: {:?}", parse_errors);
     let mut program = maybe_program.unwrap();

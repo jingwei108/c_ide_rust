@@ -3,7 +3,7 @@ use cide_native::compiler::parser::Parser;
 use cide_native::compiler::ast::{Expr, Stmt, BinaryOp};
 
 fn parse(src: &str) -> (Option<cide_native::compiler::ast::ProgramNode>, Vec<cide_native::compiler::parser::ParseError>) {
-    let (tokens, _) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _) = Lexer::new(src).tokenize();
     Parser::new(tokens).parse()
 }
 

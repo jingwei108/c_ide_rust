@@ -199,7 +199,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.compiled = false;
 
     // 1. Lexer
-    let (tokens, lex_errors) = Lexer::new(full_source.to_string()).tokenize();
+    let (tokens, lex_errors) = Lexer::new(full_source).tokenize();
     if !lex_errors.is_empty() {
         push_diagnostics(session, &lex_errors, full_source);
         return Err("词法错误".to_string());

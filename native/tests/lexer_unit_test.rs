@@ -1,7 +1,7 @@
 use cide_native::compiler::lexer::{Lexer, TokenType};
 
 fn tokenize(src: &str) -> Vec<(TokenType, String)> {
-    let (tokens, errors) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, errors) = Lexer::new(src).tokenize();
     assert!(errors.is_empty(), "Lexer errors: {:?}", errors);
     tokens.into_iter().map(|t| (t.ty, t.text)).collect()
 }
@@ -94,7 +94,7 @@ fn test_lexer_keywords() {
 
 #[test]
 fn test_lexer_error_unknown_char() {
-    let (_, errors) = Lexer::new("int @ x;".to_string()).tokenize();
+    let (_, errors) = Lexer::new("int @ x;").tokenize();
     assert!(!errors.is_empty(), "Expected lexer error for unknown char @");
     assert!(errors[0].message.contains("无法识别") || errors[0].message.contains("未知"), "Expected Chinese error message, got: {}", errors[0].message);
 }
@@ -102,7 +102,7 @@ fn test_lexer_error_unknown_char() {
 #[test]
 fn test_lexer_multiline() {
     let src = "int a = 1;\nint b = 2;";
-    let (tokens, _) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _) = Lexer::new(src).tokenize();
     // check line numbers of some tokens
     assert_eq!(tokens[0].line, 1); // int
     assert_eq!(tokens[5].line, 2); // int on second line
