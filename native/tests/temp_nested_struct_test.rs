@@ -27,10 +27,10 @@ int main() {
     return 0;
 }
 "#;
-    let (tokens, _lex_errors) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _lex_errors) = Lexer::new(src).tokenize();
     let (maybe_program, _parse_errors) = Parser::new(tokens).parse();
     let mut program = maybe_program.unwrap();
-    let (type_errors, _warnings, _hints) = TypeChecker::new().check(&mut program);
+    let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);
     for e in &type_errors {
         eprintln!("TypeError: {:?}", e);
     }

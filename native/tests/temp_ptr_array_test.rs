@@ -8,7 +8,7 @@ fn find_expr<'a>(stmt: &'a Stmt, pred: &dyn Fn(&Expr) -> bool) -> Option<&'a Exp
         Stmt::Expr { expr, .. } => find_expr_in_expr(expr, pred),
         Stmt::VarDecl { init, extra_vars, .. } => {
             if let Some(e) = init.as_ref().and_then(|e| find_expr_in_expr(e, pred)) { return Some(e); }
-            for (_, e) in extra_vars {
+            for (_, _, e) in extra_vars {
                 if let Some(e) = e.as_ref().and_then(|e| find_expr_in_expr(e, pred)) { return Some(e); }
             }
             None
@@ -96,10 +96,10 @@ int main() {
     return 0;
 }
 "#;
-    let (tokens, _lex_errors) = Lexer::new(src.to_string()).tokenize();
+    let (tokens, _lex_errors) = Lexer::new(src).tokenize();
     let (maybe_program, _parse_errors) = Parser::new(tokens).parse();
     let mut program = maybe_program.unwrap();
-    let (type_errors, _warnings, _hints) = TypeChecker::new().check(&mut program);
+    let (type_errors, _warnings, _hints) = TypeChecker::default().check(&mut program);
     for e in &type_errors {
         eprintln!("TypeError: {:?}", e);
     }
