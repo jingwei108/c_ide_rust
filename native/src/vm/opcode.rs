@@ -1,6 +1,23 @@
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum OpCode {
+macro_rules! define_opcode {
+    ($( $name:ident = $value:expr ),* $(,)?) => {
+        #[repr(u8)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+        pub enum OpCode {
+            $( $name = $value ),*
+        }
+
+        impl OpCode {
+            pub fn from_u8(value: u8) -> Option<Self> {
+                match value {
+                    $( $value => Some(OpCode::$name), )*
+                    _ => None,
+                }
+            }
+        }
+    };
+}
+
+define_opcode! {
     Nop = 0,
     PushConst = 1,
     LoadLocal = 2,
@@ -30,12 +47,6 @@ pub enum OpCode {
     And = 26,
     Or = 27,
     Not = 28,
-    BitAnd = 38,
-    BitOr = 39,
-    BitXor = 40,
-    BitNot = 41,
-    Shl = 42,
-    Shr = 43,
     Jump = 29,
     JumpIfZero = 30,
     JumpIfNotZero = 31,
@@ -45,6 +56,12 @@ pub enum OpCode {
     RetVoid = 35,
     StepEvent = 36,
     TrapBounds = 37,
+    BitAnd = 38,
+    BitOr = 39,
+    BitXor = 40,
+    BitNot = 41,
+    Shl = 42,
+    Shr = 43,
     PushConstF = 50,
     AddF = 51,
     SubF = 52,
@@ -59,70 +76,4 @@ pub enum OpCode {
     LeF = 61,
     GtF = 62,
     GeF = 63,
-}
-
-impl OpCode {
-    pub fn from_u8(value: u8) -> Option<Self> {
-        match value {
-            0 => Some(OpCode::Nop),
-            1 => Some(OpCode::PushConst),
-            2 => Some(OpCode::LoadLocal),
-            3 => Some(OpCode::StoreLocal),
-            4 => Some(OpCode::LoadGlobal),
-            5 => Some(OpCode::StoreGlobal),
-            6 => Some(OpCode::GetFrameBase),
-            7 => Some(OpCode::Pop),
-            8 => Some(OpCode::Dup),
-            9 => Some(OpCode::Swap),
-            10 => Some(OpCode::LoadMem),
-            11 => Some(OpCode::StoreMem),
-            12 => Some(OpCode::LoadMemByte),
-            13 => Some(OpCode::StoreMemByte),
-            14 => Some(OpCode::Add),
-            15 => Some(OpCode::Sub),
-            16 => Some(OpCode::Mul),
-            17 => Some(OpCode::Div),
-            18 => Some(OpCode::Mod),
-            19 => Some(OpCode::Neg),
-            20 => Some(OpCode::Eq),
-            21 => Some(OpCode::Ne),
-            22 => Some(OpCode::Lt),
-            23 => Some(OpCode::Le),
-            24 => Some(OpCode::Gt),
-            25 => Some(OpCode::Ge),
-            26 => Some(OpCode::And),
-            27 => Some(OpCode::Or),
-            28 => Some(OpCode::Not),
-            38 => Some(OpCode::BitAnd),
-            39 => Some(OpCode::BitOr),
-            40 => Some(OpCode::BitXor),
-            41 => Some(OpCode::BitNot),
-            42 => Some(OpCode::Shl),
-            43 => Some(OpCode::Shr),
-            50 => Some(OpCode::PushConstF),
-            51 => Some(OpCode::AddF),
-            52 => Some(OpCode::SubF),
-            53 => Some(OpCode::MulF),
-            54 => Some(OpCode::DivF),
-            55 => Some(OpCode::NegF),
-            56 => Some(OpCode::CastI2F),
-            57 => Some(OpCode::CastF2I),
-            58 => Some(OpCode::EqF),
-            59 => Some(OpCode::NeF),
-            60 => Some(OpCode::LtF),
-            61 => Some(OpCode::LeF),
-            62 => Some(OpCode::GtF),
-            63 => Some(OpCode::GeF),
-            29 => Some(OpCode::Jump),
-            30 => Some(OpCode::JumpIfZero),
-            31 => Some(OpCode::JumpIfNotZero),
-            32 => Some(OpCode::Call),
-            33 => Some(OpCode::CallHost),
-            34 => Some(OpCode::Ret),
-            35 => Some(OpCode::RetVoid),
-            36 => Some(OpCode::StepEvent),
-            37 => Some(OpCode::TrapBounds),
-            _ => None,
-        }
-    }
 }
