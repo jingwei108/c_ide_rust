@@ -3016,3 +3016,118 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out, vec!["1 2 0", "4 0 1"]);
 }
+
+
+#[test]
+fn test_e2e_struct_array_copy() {
+    let src = r#"
+#include <stdio.h>
+typedef struct { int id; int score; } Student;
+int main() {
+    Student s[2];
+    s[0].id = 1; s[0].score = 10;
+    s[1].id = 2; s[1].score = 20;
+    s[0] = s[1];
+    printf("%d %d\n", s[0].id, s[0].score);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["2 20"]);
+}
+
+#[test]
+fn test_e2e_struct_local_copy() {
+    let src = r#"
+#include <stdio.h>
+typedef struct { int id; int score; } Student;
+int main() {
+    Student a;
+    a.id = 1; a.score = 10;
+    Student b;
+    b = a;
+    printf("%d %d\n", b.id, b.score);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out, vec!["1 10"]);
+}
+
+#[test]
+fn test_e2e_printf_format_modifiers() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 42;
+    float b = 3.14159;
+    printf("Result: %6d\n", a);
+    printf("Pi: %.2f\n", b);
+    printf("Long: %ld\n", a);
+    printf("Mixed: %6d %.2f %ld\n", a, b, a);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    // 宽度/精度/长度修饰符当前被忽略（不填充、不截断），但不应导致栈不平衡
+    assert_eq!(out[0], "Result: 42");
+    assert_eq!(out[1], "Pi: 3.141590");
+    assert_eq!(out[2], "Long: 42");
+    assert_eq!(out[3], "Mixed: 42 3.141590 42");
+}
+
+#[test]
+fn test_e2e_multi_array_var_decl_dims() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a[2], b[3];
+    a[0] = 10; a[1] = 20;
+    b[0] = 100; b[1] = 200; b[2] = 300;
+    printf("%d %d %d %d %d\n", a[0], a[1], b[0], b[1], b[2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "10 20 100 200 300");
+}
+
+
+#[test]
+fn test_e2e_realloc_in_place_shrink() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(16);
+    p[0] = 1; p[1] = 2; p[2] = 3; p[3] = 4;
+    int old_addr = (int)p;
+    p = (int*)realloc(p, 8);
+    int new_addr = (int)p;
+    printf("%d %d %d %d\n", old_addr == new_addr, p[0], p[1], p[2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "1 1 2 3");
+}

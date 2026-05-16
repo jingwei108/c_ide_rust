@@ -100,13 +100,26 @@ impl Parser {
             column: err_column,
             code: code as i32,
         });
+        // 自动恢复：根据缺失的闭合符号推断恢复集合，减少级联错误
+        let recovery = match ty {
+            TokenType::RParen => &[TokenType::RParen, TokenType::Semicolon][..],
+            TokenType::RBrace => &[TokenType::RBrace, TokenType::Semicolon][..],
+            TokenType::RBracket => &[TokenType::RBracket, TokenType::Semicolon][..],
+            _ => &[TokenType::Semicolon][..],
+        };
+        self.synchronize(recovery);
         self.peek(0)
     }
 
-    fn synchronize(&mut self) {
+    /// 通用同步：跳过 token 直到遇到恢复集合中的 token 或语句边界。
+    fn synchronize(&mut self, recovery_set: &[TokenType]) {
         while !self.is_at_end() {
+            let current = self.current().ty;
+            if recovery_set.contains(&current) {
+                return;
+            }
             if self.previous().ty == TokenType::Semicolon { return; }
-            match self.current().ty {
+            match current {
                 TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float |
                 TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
                 TokenType::Return | TokenType::Break | TokenType::Continue |
@@ -219,7 +232,8 @@ impl Parser {
 
     fn parse_global_var_or_func(&mut self, program: &mut ProgramNode) {
         let checkpoint = self.pos;
-        let (ty, _name) = self.parse_type_and_name();
+        let base_type = self.parse_base_type();
+        let (ty, _name) = self.parse_declarator(&base_type);
         let name_tok = self.previous().clone();
         if self.check(TokenType::LParen) {
             self.pos = checkpoint;
@@ -237,13 +251,8 @@ impl Parser {
                 ty: ty.clone(), name: name_tok.text, init,
             });
             while self.match_token(TokenType::Comma) {
-                let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-                while self.match_token(TokenType::LBracket) {
-                    if self.check(TokenType::Number) {
-                        self.advance();
-                    }
-                    self.consume(TokenType::RBracket, "预期 ']'");
-                }
+                let (extra_ty, _) = self.parse_declarator(&base_type);
+                let extra_name_tok = self.previous().clone();
                 let extra_init = if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
@@ -253,7 +262,7 @@ impl Parser {
                 } else { None };
                 program.globals.push(GlobalDecl {
                     loc: SourceLoc { line: extra_name_tok.line, column: extra_name_tok.column },
-                    ty: ty.clone(), name: extra_name_tok.text, init: extra_init,
+                    ty: extra_ty, name: extra_name_tok.text, init: extra_init,
                 });
             }
             self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
@@ -363,7 +372,7 @@ impl Parser {
         } else if self.match_token(TokenType::Float) {
             Type::float()
         } else if self.match_token(TokenType::Char) {
-            if is_unsigned { Type::unsigned_int() } else { Type::char() }
+            if is_unsigned { Type { kind: TypeKind::Char, is_unsigned: true, ..Type::char() } } else { Type::char() }
         } else if self.match_token(TokenType::Struct) {
             if self.check(TokenType::Identifier) {
                 let name_tok = self.advance().clone();
@@ -412,13 +421,9 @@ impl Parser {
         t
     }
 
-    fn parse_type_and_name(&mut self) -> (Type, String) {
-        let base_type = self.parse_base_type();
-
+    fn parse_declarator(&mut self, base_type: &Type) -> (Type, String) {
         let is_ptr = self.match_token(TokenType::Star);
-
         let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-
         let mut dims = Vec::new();
         while self.match_token(TokenType::LBracket) {
             if self.check(TokenType::Number) {
@@ -437,9 +442,8 @@ impl Parser {
             }
             self.consume(TokenType::RBracket, "预期 ']'");
         }
-
         if is_ptr {
-            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name.clone(), base_kind: base_type.kind, is_const: base_type.is_const, is_unsigned: base_type.is_unsigned, ..Type::default() };
+            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name.clone(), base_kind: base_type.kind.clone(), is_const: base_type.is_const, is_unsigned: base_type.is_unsigned, ..Type::default() };
             if !dims.is_empty() {
                 let has_unknown = dims.iter().any(|&d| d <= 0);
                 let total = if has_unknown { 0 } else { dims.iter().product() };
@@ -447,14 +451,17 @@ impl Parser {
             }
             return (ptr_type, name_tok.text);
         }
-
         if !dims.is_empty() {
             let has_unknown = dims.iter().any(|&d| d <= 0);
             let total = if has_unknown { 0 } else { dims.iter().product() };
-            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind, dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
+            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind.clone(), dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
         }
+        (base_type.clone(), name_tok.text)
+    }
 
-        (base_type, name_tok.text)
+    fn parse_type_and_name(&mut self) -> (Type, String) {
+        let base_type = self.parse_base_type();
+        self.parse_declarator(&base_type)
     }
 
     fn parse_param_list(&mut self) -> Vec<Param> {
@@ -493,7 +500,13 @@ impl Parser {
                 let checkpoint = self.pos;
                 let stmt = self.parse_expr_stmt();
                 if self.pos == checkpoint {
-                    self.synchronize();
+                    self.synchronize(&[
+                        TokenType::Semicolon, TokenType::RBrace,
+                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float,
+                        TokenType::If, TokenType::While, TokenType::Do, TokenType::For,
+                        TokenType::Return, TokenType::Break, TokenType::Continue,
+                        TokenType::Struct, TokenType::Switch, TokenType::Typedef,
+                    ]);
                 }
                 stmt
             }
@@ -517,7 +530,8 @@ impl Parser {
 
     fn parse_var_decl_stmt(&mut self) -> Stmt {
         let loc = self.current().clone();
-        let (var_type, name) = self.parse_type_and_name();
+        let base_type = self.parse_base_type();
+        let (var_type, name) = self.parse_declarator(&base_type);
         let init = if self.match_token(TokenType::Assign) {
             if self.check(TokenType::LBrace) {
                 Some(self.parse_init_list())
@@ -528,15 +542,7 @@ impl Parser {
 
         let mut extra_vars = Vec::new();
         while self.match_token(TokenType::Comma) {
-            let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-            // 消费逗号分隔变量声明中的数组维度（如 int a[10], b[20];）
-            // 这些变量共享第一个变量的 base_type，维度信息暂由第一个变量决定
-            while self.match_token(TokenType::LBracket) {
-                if self.check(TokenType::Number) {
-                    self.advance();
-                }
-                self.consume(TokenType::RBracket, "预期 ']'");
-            }
+            let (extra_ty, extra_name) = self.parse_declarator(&base_type);
             let extra_init = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
@@ -544,7 +550,7 @@ impl Parser {
                     Some(self.parse_expression())
                 }
             } else { None };
-            extra_vars.push((extra_name_tok.text, extra_init));
+            extra_vars.push((extra_ty, extra_name, extra_init));
         }
 
         self.consume(TokenType::Semicolon, "变量声明后预期 ';'");
@@ -607,7 +613,8 @@ impl Parser {
 
         let init: Option<Box<Stmt>> = if self.is_type_token() {
             let var_loc = self.current().clone();
-            let (var_type, name) = self.parse_type_and_name();
+            let base_type = self.parse_base_type();
+            let (var_type, name) = self.parse_declarator(&base_type);
             let init_expr = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
@@ -617,13 +624,7 @@ impl Parser {
             } else { None };
             let mut extra_vars = Vec::new();
             while self.match_token(TokenType::Comma) {
-                let extra_name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-                while self.match_token(TokenType::LBracket) {
-                    if self.check(TokenType::Number) {
-                        self.advance();
-                    }
-                    self.consume(TokenType::RBracket, "预期 ']'");
-                }
+                let (extra_ty, extra_name) = self.parse_declarator(&base_type);
                 let extra_init = if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
@@ -631,7 +632,7 @@ impl Parser {
                         Some(self.parse_expression())
                     }
                 } else { None };
-                extra_vars.push((extra_name_tok.text, extra_init));
+                extra_vars.push((extra_ty, extra_name, extra_init));
             }
             Some(Box::new(Stmt::VarDecl {
                 var_type, name, init: init_expr, extra_vars,

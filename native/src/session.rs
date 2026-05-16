@@ -1,6 +1,7 @@
 use crate::compiler::ast::{SourceLoc, Type};
 use crate::vm::instruction::Instruction;
 use crate::vm::vm::CideVM;
+use flutter_rust_bridge::frb;
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -9,6 +10,7 @@ pub struct CompileUnit {
     pub source: String,
 }
 
+#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diagnostic {
     pub line: i32,
@@ -42,6 +44,7 @@ pub struct Symbol {
     pub scope_depth: i32,
 }
 
+#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlgorithmMatch {
     pub name: String,
@@ -50,7 +53,7 @@ pub struct AlgorithmMatch {
     pub confidence: i32,
     pub suggestion: String,
     pub line: i32,
-    pub vis_events: Vec<(i32, i32, String)>,
+    pub vis_events: Vec<VisEvent>,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
@@ -71,6 +74,7 @@ pub struct CompileState {
     pub struct_fields: HashMap<String, Vec<(String, i32)>>,
 }
 
+#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceEntry {
     pub line: i32,
@@ -86,16 +90,21 @@ pub struct VariableSnapshot {
     pub value: i32,
 }
 
+#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VisEvent {
     pub ty: i32,
     pub line: i32,
-    pub extra: [i32; 3],
+    pub extra0: i32,
+    pub extra1: i32,
+    pub extra2: i32,
+    pub context: String,
 }
 
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeState {
     pub error: String,
+    pub error_buffer: String,
     pub output_lines: Vec<String>,
     pub running: bool,
     pub trace: Vec<TraceEntry>,
@@ -111,6 +120,13 @@ pub struct RuntimeState {
     pub waiting_input: bool,
 }
 
+impl RuntimeState {
+    pub fn output(&self) -> String {
+        self.output_lines.join("\n")
+    }
+}
+
+#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryRegion {
     pub addr: u32,
@@ -133,6 +149,41 @@ pub struct MemoryState {
     pub free_list: Vec<FreeBlock>,
     pub heap_offset: u32,
     pub alloc_counter: i32,
+}
+
+#[frb]
+#[derive(Debug, Clone)]
+pub struct CompileResult {
+    pub success: bool,
+    pub diagnostics: Vec<Diagnostic>,
+    pub algorithm_matches: Vec<AlgorithmMatch>,
+}
+
+#[frb]
+#[derive(Debug, Clone)]
+pub struct RunResult {
+    pub success: bool,
+    pub output: String,
+    pub waiting_input: bool,
+    pub error: Option<String>,
+}
+
+#[frb]
+#[derive(Debug, Clone)]
+pub struct StepResult {
+    pub status: StepStatus,
+    pub current_line: i32,
+    pub output: String,
+    pub waiting_input: bool,
+}
+
+#[frb]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StepStatus {
+    Paused,
+    WaitingInput,
+    Finished,
+    Trap,
 }
 
 pub struct Session {

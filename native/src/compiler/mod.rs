@@ -1,3 +1,6 @@
+#![forbid(unsafe_code)]
+
+pub mod algorithm_detector;
 pub mod ast;
 pub mod bytecode_gen;
 pub mod lexer;

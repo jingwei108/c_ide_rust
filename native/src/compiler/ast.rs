@@ -65,7 +65,7 @@ impl Type {
     }
 
     pub fn is_scalar(&self) -> bool {
-        matches!(self.kind, TypeKind::Int | TypeKind::Char)
+        matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)
     }
     pub fn is_pointer(&self) -> bool {
         matches!(self.kind, TypeKind::Pointer)
@@ -205,60 +205,36 @@ pub enum Expr {
     InitList { elements: Vec<Expr>, loc: SourceLoc, ty: Type },
 }
 
+macro_rules! expr_field {
+    ($self:expr, $field:ident) => {
+        match $self {
+            Expr::Binary { $field, .. } => $field,
+            Expr::Unary { $field, .. } => $field,
+            Expr::Literal { $field, .. } => $field,
+            Expr::FloatLiteral { $field, .. } => $field,
+            Expr::StringLiteral { $field, .. } => $field,
+            Expr::Identifier { $field, .. } => $field,
+            Expr::Call { $field, .. } => $field,
+            Expr::Index { $field, .. } => $field,
+            Expr::Member { $field, .. } => $field,
+            Expr::Assign { $field, .. } => $field,
+            Expr::Ternary { $field, .. } => $field,
+            Expr::Sizeof { $field, .. } => $field,
+            Expr::Cast { $field, .. } => $field,
+            Expr::InitList { $field, .. } => $field,
+        }
+    };
+}
+
 impl Expr {
     pub fn loc(&self) -> &SourceLoc {
-        match self {
-            Expr::Binary { loc, .. } => loc,
-            Expr::Unary { loc, .. } => loc,
-            Expr::Literal { loc, .. } => loc,
-            Expr::FloatLiteral { loc, .. } => loc,
-            Expr::StringLiteral { loc, .. } => loc,
-            Expr::Identifier { loc, .. } => loc,
-            Expr::Call { loc, .. } => loc,
-            Expr::Index { loc, .. } => loc,
-            Expr::Member { loc, .. } => loc,
-            Expr::Assign { loc, .. } => loc,
-            Expr::Ternary { loc, .. } => loc,
-            Expr::Sizeof { loc, .. } => loc,
-            Expr::Cast { loc, .. } => loc,
-            Expr::InitList { loc, .. } => loc,
-        }
+        expr_field!(self, loc)
     }
     pub fn ty(&self) -> &Type {
-        match self {
-            Expr::Binary { ty, .. } => ty,
-            Expr::Unary { ty, .. } => ty,
-            Expr::Literal { ty, .. } => ty,
-            Expr::FloatLiteral { ty, .. } => ty,
-            Expr::StringLiteral { ty, .. } => ty,
-            Expr::Identifier { ty, .. } => ty,
-            Expr::Call { ty, .. } => ty,
-            Expr::Index { ty, .. } => ty,
-            Expr::Member { ty, .. } => ty,
-            Expr::Assign { ty, .. } => ty,
-            Expr::Ternary { ty, .. } => ty,
-            Expr::Sizeof { ty, .. } => ty,
-            Expr::Cast { ty, .. } => ty,
-            Expr::InitList { ty, .. } => ty,
-        }
+        expr_field!(self, ty)
     }
     pub fn set_ty(&mut self, new_ty: Type) {
-        match self {
-            Expr::Binary { ty, .. } => *ty = new_ty,
-            Expr::Unary { ty, .. } => *ty = new_ty,
-            Expr::Literal { ty, .. } => *ty = new_ty,
-            Expr::FloatLiteral { ty, .. } => *ty = new_ty,
-            Expr::StringLiteral { ty, .. } => *ty = new_ty,
-            Expr::Identifier { ty, .. } => *ty = new_ty,
-            Expr::Call { ty, .. } => *ty = new_ty,
-            Expr::Index { ty, .. } => *ty = new_ty,
-            Expr::Member { ty, .. } => *ty = new_ty,
-            Expr::Assign { ty, .. } => *ty = new_ty,
-            Expr::Ternary { ty, .. } => *ty = new_ty,
-            Expr::Sizeof { ty, .. } => *ty = new_ty,
-            Expr::Cast { ty, .. } => *ty = new_ty,
-            Expr::InitList { ty, .. } => *ty = new_ty,
-        }
+        *expr_field!(self, ty) = new_ty;
     }
 }
 
@@ -269,7 +245,7 @@ impl Expr {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     Block { stmts: Vec<Stmt>, loc: SourceLoc },
-    VarDecl { var_type: Type, name: String, init: Option<Expr>, extra_vars: Vec<(String, Option<Expr>)>, loc: SourceLoc },
+    VarDecl { var_type: Type, name: String, init: Option<Expr>, extra_vars: Vec<(Type, String, Option<Expr>)>, loc: SourceLoc },
     Expr { expr: Expr, loc: SourceLoc },
     If { cond: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>>, loc: SourceLoc },
     While { cond: Expr, body: Box<Stmt>, loc: SourceLoc },

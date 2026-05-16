@@ -71,6 +71,7 @@ pub struct CideVM {
     snapshot_vars: HashMap<String, i32>,
     finished: bool,
     exit_code: i32,
+    qsort_depth: i32,
 }
 
 impl Default for CideVM {
@@ -106,6 +107,7 @@ impl CideVM {
             snapshot_vars: HashMap::new(),
             finished: false,
             exit_code: 0,
+            qsort_depth: 0,
         }
     }
 
@@ -232,6 +234,7 @@ impl CideVM {
         let saved_step_event_hit = self.step_event_hit;
         let saved_current_line = self.current_line;
         let saved_vis_event_queue = std::mem::take(&mut self.vis_event_queue);
+        let saved_breakpoints = std::mem::take(&mut self.breakpoints);
         let start_step = self.step_count;
 
         // Setup call frame
@@ -253,8 +256,9 @@ impl CideVM {
         } else {
             format!("func_{}", func_idx)
         };
+        const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
         self.call_stack.push(CallFrame {
-            return_ip: self.code.len(),
+            return_ip: HOST_CALLBACK_SENTINEL,
             locals_base,
             local_count: meta.local_count,
             func_name,
@@ -269,9 +273,12 @@ impl CideVM {
             }
             let step_result = self.step(session);
             match step_result {
-                StepResult::Finished | StepResult::Trap => {
-                    result = if !self.stack.is_empty() { self.stack.pop() } else { Some(0) };
+                StepResult::Finished => {
+                    result = self.stack.pop();
                     break;
+                }
+                StepResult::Trap => {
+                    break; // result stays None
                 }
                 StepResult::Paused => {
                     self.paused = false;
@@ -293,6 +300,7 @@ impl CideVM {
         self.step_event_hit = saved_step_event_hit;
         self.current_line = saved_current_line;
         self.vis_event_queue = saved_vis_event_queue;
+        self.breakpoints = saved_breakpoints;
 
         result
     }
@@ -328,6 +336,18 @@ impl CideVM {
 
     pub fn memory_ref(&self) -> &[u8] {
         &self.memory
+    }
+
+    pub fn memory_ref_mut(&mut self) -> &mut [u8] {
+        &mut self.memory
+    }
+
+    pub fn qsort_depth(&self) -> i32 {
+        self.qsort_depth
+    }
+
+    pub fn set_qsort_depth(&mut self, depth: i32) {
+        self.qsort_depth = depth;
     }
 
     pub fn get_memory_size(&self) -> u32 {
@@ -1033,6 +1053,12 @@ impl CideVM {
                 }
                 let ret_val = self.pop();
                 let frame = self.call_stack.pop().unwrap();
+                const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
+                if frame.return_ip == HOST_CALLBACK_SENTINEL {
+                    self.mem_stack_top = frame.locals_base;
+                    self.push(ret_val);
+                    return StepResult::Finished;
+                }
                 self.ip = frame.return_ip;
                 self.mem_stack_top = frame.locals_base;
                 self.push(ret_val);
@@ -1043,6 +1069,11 @@ impl CideVM {
                     return StepResult::Finished;
                 }
                 let frame = self.call_stack.pop().unwrap();
+                const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
+                if frame.return_ip == HOST_CALLBACK_SENTINEL {
+                    self.mem_stack_top = frame.locals_base;
+                    return StepResult::Finished;
+                }
                 self.ip = frame.return_ip;
                 self.mem_stack_top = frame.locals_base;
             }
@@ -1058,7 +1089,10 @@ impl CideVM {
                         self.vis_event_queue.push(VisEvent {
                             ty,
                             line: inst.operand,
-                            extra: [0, 0, 0],
+                            extra0: 0,
+                            extra1: 0,
+                            extra2: 0,
+                            context: String::new(),
                         });
                     }
                 }
@@ -1068,23 +1102,34 @@ impl CideVM {
             }
 
             OpCode::TrapBounds => {
-                let sym_idx = inst.operand as usize;
+                let operand = inst.operand;
+                let index = *self.stack.last().unwrap_or(&0);
                 let mut name = "数组".to_string();
                 let mut size = 0;
-                let mut index = 0;
-                if sym_idx < self.symbols.len() {
-                    let sym = &self.symbols[sym_idx];
-                    name = sym.name.clone();
-                    size = sym.ty.array_size;
+                if operand >= 0 {
+                    let sym_idx = operand as usize;
+                    if sym_idx < self.symbols.len() {
+                        let sym = &self.symbols[sym_idx];
+                        name = sym.name.clone();
+                        size = sym.ty.array_size;
+                    }
+                } else {
+                    size = -operand;
                 }
-                if !self.stack.is_empty() {
-                    index = self.pop();
+                if index < 0 || index >= size {
+                    let diag = if operand >= 0 {
+                        format!(
+                            "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
+                            name, index, name, size, size.saturating_sub(1), size.saturating_sub(1)
+                        )
+                    } else {
+                        format!(
+                            "🚫 数组越界：索引 {} 超出了合法范围 0~{}。\n\n💡 原因：数组索引超出了合法范围。",
+                            index, size.saturating_sub(1)
+                        )
+                    };
+                    self.trap(&diag, &inst.loc);
                 }
-                let diag = format!(
-                    "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
-                    name, index, name, size, size.saturating_sub(1), size.saturating_sub(1)
-                );
-                self.trap(&diag, &inst.loc);
             }
         }
 

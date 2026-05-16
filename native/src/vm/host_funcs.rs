@@ -1,3 +1,4 @@
+use super::host_func_id;
 use super::vm::CideVM;
 use crate::session::{MemoryRegion, Session};
 
@@ -7,14 +8,7 @@ fn read_cbytes(vm: &CideVM, addr: u32) -> Vec<u8> {
     if start >= mem.len() {
         return Vec::new();
     }
-    let mut bytes = Vec::new();
-    for i in start..mem.len() {
-        if mem[i] == 0 {
-            break;
-        }
-        bytes.push(mem[i]);
-    }
-    bytes
+    mem[start..].iter().take_while(|&&b| b != 0).copied().collect()
 }
 
 fn read_cstring(vm: &CideVM, addr: u32) -> String {
@@ -22,31 +16,170 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/// 跳过 printf 格式字符串中的修饰符（宽度、精度、长度等），返回真正的格式字母列表。
+/// 例如 "%6d" 返回 ['d']，"%.2f" 返回 ['f']，"%%" 不返回任何内容。
+fn parse_format_specs(fmt: &str) -> Vec<char> {
+    let mut specs = Vec::new();
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    chars.next(); // 跳过 %%
+                } else {
+                    // 跳过 flags
+                    while let Some(&c) = chars.peek() {
+                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 width（数字或 *）
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_digit() || c == '*' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 precision（. 后跟数字或 *）
+                    if let Some(&'.') = chars.peek() {
+                        chars.next();
+                        while let Some(&c) = chars.peek() {
+                            if c.is_ascii_digit() || c == '*' {
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    // 跳过长度修饰符（l, ll, h, hh, L, z, j, t）
+                    if let Some(&c) = chars.peek() {
+                        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
+                            chars.next();
+                            if let Some(&c2) = chars.peek() {
+                                if (c == 'l' && c2 == 'l') || (c == 'h' && c2 == 'h') {
+                                    chars.next();
+                                }
+                            }
+                        }
+                    }
+                    // 真正的格式字母
+                    if let Some(&spec) = chars.peek() {
+                        specs.push(spec);
+                        chars.next();
+                    }
+                }
+            }
+        }
+    }
+    specs
+}
+
+/// 根据格式字符串和参数列表生成 printf 输出。
+/// 会正确跳过宽度/精度/长度修饰符，只根据格式字母消费参数。
+fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
+    let mut out = String::new();
+    let mut used = 0;
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if used < args.len() && ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    out.push('%');
+                    chars.next();
+                } else {
+                    // 跳过 flags
+                    while let Some(&c) = chars.peek() {
+                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 width
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_digit() || c == '*' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 precision
+                    if let Some(&'.') = chars.peek() {
+                        chars.next();
+                        while let Some(&c) = chars.peek() {
+                            if c.is_ascii_digit() || c == '*' {
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    // 跳过长度修饰符
+                    if let Some(&c) = chars.peek() {
+                        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
+                            chars.next();
+                            if let Some(&c2) = chars.peek() {
+                                if (c == 'l' && c2 == 'l') || (c == 'h' && c2 == 'h') {
+                                    chars.next();
+                                }
+                            }
+                        }
+                    }
+                    // 真正的格式字母
+                    if let Some(&spec) = chars.peek() {
+                        let arg = args[used];
+                        match spec {
+                            'd' | 'i' => out.push_str(&arg.to_string()),
+                            'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
+                            's' => {
+                                let s = read_cstring(vm, arg as u32);
+                                out.push_str(&s);
+                            }
+                            'c' => out.push(arg as u8 as char),
+                            _ => { out.push(ch); out.push(spec); }
+                        }
+                        chars.next();
+                        used += 1;
+                    }
+                }
+            } else {
+                out.push(ch);
+            }
+        } else {
+            out.push(ch);
+        }
+    }
+    out
+}
+
 pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
     match id {
-        0 => host_output(vm, session),
-        1 => host_step(vm, session),
-        2 => host_malloc(vm, session),
-        3 => host_free(vm, session),
-        10 => host_printf_0(vm, session),
-        11 => host_printf_1(vm, session),
-        12 => host_printf_2(vm, session),
-        15 => host_printf_n(vm, session),
-        21 => host_scanf_n(vm, session),
-        30 => host_strlen(vm, session),
-        31 => host_strcpy(vm, session),
-        32 => host_strcmp(vm, session),
-        33 => host_getchar(vm, session),
-        34 => host_putchar(vm, session),
-        35 => host_rand(vm, session),
-        36 => host_srand(vm, session),
-        37 => host_memset(vm, session),
-        38 => host_exit(vm, session),
-        39 => host_strcat(vm, session),
-        40 => host_atoi(vm, session),
-        50 => host_fprintf_n(vm, session),
-        51 => host_realloc(vm, session),
-        52 => host_qsort(vm, session),
+        host_func_id::OUTPUT => host_output(vm, session),
+        host_func_id::STEP => host_step(vm, session),
+        host_func_id::MALLOC => host_malloc(vm, session),
+        host_func_id::FREE => host_free(vm, session),
+        host_func_id::PRINTF_0 => host_printf_0(vm, session),
+        host_func_id::PRINTF_1 => host_printf_1(vm, session),
+        host_func_id::PRINTF_2 => host_printf_2(vm, session),
+        host_func_id::PRINTF_N => host_printf_n(vm, session),
+        host_func_id::SCANF_N => host_scanf_n(vm, session),
+        host_func_id::STRLEN => host_strlen(vm, session),
+        host_func_id::STRCPY => host_strcpy(vm, session),
+        host_func_id::STRCMP => host_strcmp(vm, session),
+        host_func_id::GETCHAR => host_getchar(vm, session),
+        host_func_id::PUTCHAR => host_putchar(vm, session),
+        host_func_id::RAND => host_rand(vm, session),
+        host_func_id::SRAND => host_srand(vm, session),
+        host_func_id::MEMSET => host_memset(vm, session),
+        host_func_id::EXIT => host_exit(vm, session),
+        host_func_id::STRCAT => host_strcat(vm, session),
+        host_func_id::ATOI => host_atoi(vm, session),
+        host_func_id::FPRINTF => host_fprintf_n(vm, session),
+        host_func_id::REALLOC => host_realloc(vm, session),
+        host_func_id::QSORT => host_qsort(vm, session),
         _ => {}
     }
 }
@@ -67,7 +200,12 @@ fn host_step(vm: &mut CideVM, session: &mut Session) {
 
 fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     let size = vm.pop();
-    if size <= 0 {
+    if size == 0 {
+        session.runtime.output_lines.push("[warning] malloc(0) 返回 NULL。在 C 标准中，malloc(0) 的行为是实现定义的，可能返回 NULL 也可能返回一个不可解引用的非空指针。".to_string());
+        vm.push(0);
+        return;
+    }
+    if size < 0 {
         vm.push(0);
         return;
     }
@@ -127,6 +265,23 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     vm.push(addr as i32);
 }
 
+fn merge_free_list(free_list: &mut Vec<crate::session::FreeBlock>) {
+    free_list.sort_by_key(|b| b.addr);
+    let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
+    for block in free_list.drain(..) {
+        if let Some(last) = merged.last_mut() {
+            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
+                last.size += block.size;
+            } else {
+                merged.push(block);
+            }
+        } else {
+            merged.push(block);
+        }
+    }
+    *free_list = merged;
+}
+
 fn host_free(vm: &mut CideVM, session: &mut Session) {
     let addr = vm.pop() as u32;
     for r in &mut session.memory.regions {
@@ -137,20 +292,7 @@ fn host_free(vm: &mut CideVM, session: &mut Session) {
                 addr: r.addr,
                 size: aligned_size as i32,
             });
-            session.memory.free_list.sort_by_key(|b| b.addr);
-            let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-            for block in session.memory.free_list.drain(..) {
-                if let Some(last) = merged.last_mut() {
-                    if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                        last.size += block.size;
-                    } else {
-                        merged.push(block);
-                    }
-                } else {
-                    merged.push(block);
-                }
-            }
-            session.memory.free_list = merged;
+            merge_free_list(&mut session.memory.free_list);
             break;
         }
     }
@@ -231,77 +373,20 @@ fn host_printf_2(vm: &mut CideVM, session: &mut Session) {
 fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    // count specifiers excluding %%
-    let mut spec_count = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    chars.next();
-                } else {
-                    spec_count += 1;
-                    chars.next();
-                }
-            }
-        }
-    }
-    let mut args = Vec::with_capacity(spec_count);
-    for _ in 0..spec_count {
+    let specs = parse_format_specs(&fmt);
+    let mut args = Vec::with_capacity(specs.len());
+    for _ in 0..specs.len() {
         args.push(vm.pop());
     }
-    let mut out = String::new();
-    let mut used = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if used < spec_count && ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    out.push('%');
-                    chars.next();
-                } else {
-                    let arg = args[used];
-                    match next {
-                        'd' => out.push_str(&arg.to_string()),
-                        'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
-                        's' => {
-                            let s = read_cstring(vm, arg as u32);
-                            out.push_str(&s);
-                        }
-                        'c' => out.push(arg as u8 as char),
-                        _ => { out.push(ch); out.push(next); }
-                    }
-                    chars.next();
-                    used += 1;
-                }
-            } else {
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
+    let out = format_printf_string(vm, &fmt, &args);
     session.runtime.output_lines.push(out);
 }
 
 fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    // 扫描格式字符串，记录每个 % 格式符的类型（跳过 %%）
-    let mut spec_types = Vec::new();
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    chars.next();
-                } else {
-                    spec_types.push(next);
-                    chars.next();
-                }
-            }
-        }
-    }
+    // 扫描格式字符串，记录每个 % 格式符的类型（跳过 %% 和修饰符）
+    let spec_types = parse_format_specs(&fmt);
     // 按数量 pop 指针参数
     let mut ptrs = Vec::with_capacity(spec_types.len());
     for _ in 0..spec_types.len() {
@@ -319,25 +404,51 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     }
     let line = session.runtime.input_lines[session.runtime.input_index].clone();
     session.runtime.input_index += 1;
-    let tokens: Vec<&str> = line.split_whitespace().collect();
+    let chars: Vec<char> = line.chars().collect();
+    let mut pos = 0usize;
     // 依次解析并写入各指针地址
     for (i, spec) in spec_types.iter().enumerate() {
-        if i >= tokens.len() {
-            break;
-        }
         let ptr = ptrs[i];
         match spec {
             'd' => {
-                let value: i32 = tokens[i].parse().unwrap_or(0);
+                // 跳过前导空白
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' || chars[pos] == '-' {
+                    pos += 1;
+                }
+                while pos < chars.len() && chars[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                let value: i32 = token.parse().unwrap_or(0);
                 vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
             }
             'f' => {
-                let value: f32 = tokens[i].parse().unwrap_or(0.0);
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' || chars[pos] == '-' {
+                    pos += 1;
+                }
+                while pos < chars.len() && (chars[pos].is_ascii_digit() || chars[pos] == '.') {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                let value: f32 = token.parse().unwrap_or(0.0);
                 vm.store_i32(ptr, value.to_bits() as i32, &super::instruction::SourceLoc::default());
             }
             'c' => {
-                let ch = tokens[i].chars().next().unwrap_or('\0');
+                // 标准 C: %c 不跳过空白
+                if pos >= chars.len() { break; }
+                let ch = chars[pos];
                 vm.store_i8(ptr, ch as i32, &super::instruction::SourceLoc::default());
+                pos += 1;
             }
             _ => {}
         }
@@ -361,8 +472,8 @@ fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
     }
     let max_copy = mem_size - dest as usize;
     let copy_len = src_bytes.len().min(max_copy.saturating_sub(1));
-    for i in 0..copy_len {
-        vm.store_i8(dest + i as u32, src_bytes[i] as i32, &super::instruction::SourceLoc::default());
+    for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
+        vm.store_i8(dest + i as u32, b as i32, &super::instruction::SourceLoc::default());
     }
     let end = dest as usize + copy_len;
     vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
@@ -464,9 +575,8 @@ fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     let max_write = mem_size - ptr as usize;
     let write_len = (size as usize).min(max_write);
     let byte_val = (value & 0xFF) as u8;
-    for i in 0..write_len {
-        vm.store_i8(ptr + i as u32, byte_val as i32, &super::instruction::SourceLoc::default());
-    }
+    let mem = vm.memory_ref_mut();
+    mem[ptr as usize..ptr as usize + write_len].fill(byte_val);
     vm.push(ptr as i32);
 }
 
@@ -490,8 +600,8 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
     let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
     let src_bytes = read_cbytes(vm, src);
     let copy_len = src_bytes.len().min(max_copy);
-    for i in 0..copy_len {
-        vm.store_i8((end + i) as u32, src_bytes[i] as i32, &super::instruction::SourceLoc::default());
+    for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
+        vm.store_i8((end + i) as u32, b as i32, &super::instruction::SourceLoc::default());
     }
     vm.store_i8((end + copy_len) as u32, 0, &super::instruction::SourceLoc::default());
     vm.push(dest as i32);
@@ -508,55 +618,12 @@ fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
     let _stream = vm.pop();
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    let mut spec_count = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    chars.next();
-                } else {
-                    spec_count += 1;
-                    chars.next();
-                }
-            }
-        }
-    }
-    let mut args = Vec::with_capacity(spec_count);
-    for _ in 0..spec_count {
+    let specs = parse_format_specs(&fmt);
+    let mut args = Vec::with_capacity(specs.len());
+    for _ in 0..specs.len() {
         args.push(vm.pop());
     }
-    let mut out = String::new();
-    let mut used = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if used < spec_count && ch == '%' {
-            if let Some(&next) = chars.peek() {
-                if next == '%' {
-                    out.push('%');
-                    chars.next();
-                } else {
-                    let arg = args[used];
-                    match next {
-                        'd' => out.push_str(&arg.to_string()),
-                        'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
-                        's' => {
-                            let s = read_cstring(vm, arg as u32);
-                            out.push_str(&s);
-                        }
-                        'c' => out.push(arg as u8 as char),
-                        _ => { out.push(ch); out.push(next); }
-                    }
-                    chars.next();
-                    used += 1;
-                }
-            } else {
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
+    let out = format_printf_string(vm, &fmt, &args);
     session.runtime.output_lines.push(out);
 }
 
@@ -575,20 +642,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                         addr: r.addr,
                         size: aligned_size as i32,
                     });
-                    session.memory.free_list.sort_by_key(|b| b.addr);
-                    let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-                    for block in session.memory.free_list.drain(..) {
-                        if let Some(last) = merged.last_mut() {
-                            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                                last.size += block.size;
-                            } else {
-                                merged.push(block);
-                            }
-                        } else {
-                            merged.push(block);
-                        }
-                    }
-                    session.memory.free_list = merged;
+                    merge_free_list(&mut session.memory.free_list);
                     break;
                 }
             }
@@ -619,6 +673,28 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
 
     let (old_addr, old_size) = old_region.unwrap();
     let aligned_new_size = ((new_size as u32) + 3) & !3;
+    let aligned_old_size = ((old_size as u32) + 3) & !3;
+
+    // In-place shrink: old block is at the end of heap
+    if aligned_new_size <= aligned_old_size && old_addr + aligned_old_size == session.memory.heap_offset {
+        for r in &mut session.memory.regions {
+            if r.addr == old_addr && !r.is_freed {
+                r.size = new_size;
+                break;
+            }
+        }
+        let shrink_by = aligned_old_size - aligned_new_size;
+        if shrink_by > 0 {
+            session.memory.heap_offset -= shrink_by;
+            session.memory.free_list.push(crate::session::FreeBlock {
+                addr: session.memory.heap_offset,
+                size: shrink_by as i32,
+            });
+            merge_free_list(&mut session.memory.free_list);
+        }
+        vm.push(old_addr as i32);
+        return;
+    }
 
     // Allocate new memory
     let mut new_addr = 0u32;
@@ -673,25 +749,11 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     for r in &mut session.memory.regions {
         if r.addr == old_addr && !r.is_freed {
             r.is_freed = true;
-            let aligned_old_size = ((old_size as u32) + 3) & !3;
             session.memory.free_list.push(crate::session::FreeBlock {
                 addr: r.addr,
                 size: aligned_old_size as i32,
             });
-            session.memory.free_list.sort_by_key(|b| b.addr);
-            let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-            for block in session.memory.free_list.drain(..) {
-                if let Some(last) = merged.last_mut() {
-                    if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                        last.size += block.size;
-                    } else {
-                        merged.push(block);
-                    }
-                } else {
-                    merged.push(block);
-                }
-            }
-            session.memory.free_list = merged;
+            merge_free_list(&mut session.memory.free_list);
             break;
         }
     }
@@ -699,7 +761,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     // Track new region
     session.memory.regions.push(MemoryRegion {
         addr: new_addr,
-        size: new_size as i32,
+        size: new_size,
         name: String::new(),
         ty: String::new(),
         is_heap: true,
@@ -709,11 +771,18 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     vm.push(new_addr as i32);
 }
 
+const MAX_QSORT_DEPTH: i32 = 8;
+
 fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     let base = vm.pop() as u32;
     let nmemb = vm.pop() as usize;
     let size = vm.pop() as usize;
     let compar = vm.pop() as u32;
+
+    if vm.qsort_depth() >= MAX_QSORT_DEPTH {
+        session.runtime.output_lines.push("[qsort] 嵌套深度超过限制，防止栈溢出".to_string());
+        return;
+    }
 
     if nmemb <= 1 || size == 0 || base == 0 {
         return;
@@ -723,6 +792,8 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     if base as usize + nmemb * size > mem_size {
         return;
     }
+
+    vm.set_qsort_depth(vm.qsort_depth() + 1);
 
     let mut indices: Vec<usize> = (0..nmemb).collect();
     const MAX_COMPARE_STEPS: i32 = 1000;
@@ -766,4 +837,5 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
             vm.store_i8((dst_start + j) as u32, temp[src_start + j] as i32, &super::instruction::SourceLoc::default());
         }
     }
+    vm.set_qsort_depth(vm.qsort_depth() - 1);
 }

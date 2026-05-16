@@ -391,6 +391,7 @@ impl BytecodeGen {
         }
     }
 
+    #[allow(dead_code)]
     fn elem_size(&self, ty: &Type) -> i32 {
         match ty.base_kind {
             TypeKind::Void => 4,
@@ -421,35 +422,34 @@ impl BytecodeGen {
                 for s in stmts { self.gen_stmt(s); }
             }
             Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
-                let elem_count = if var_type.is_array() || var_type.is_struct() {
-                    let sz = (self.type_size(var_type) + 3) / 4;
-                    if sz < 1 { 1 } else { sz }
-                } else { 1 };
-
-                let mut emit_one = |n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
+                let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
+                    let elem_count = if vty.is_array() || vty.is_struct() {
+                        let sz = (self.type_size(vty) + 3) / 4;
+                        if sz < 1 { 1 } else { sz }
+                    } else { 1 };
                     let local_idx = self.next_local_idx;
                     self.next_local_idx += elem_count;
                     self.local_indices.insert(n.to_string(), local_idx);
-                    self.local_types.insert(n.to_string(), var_type.clone());
+                    self.local_types.insert(n.to_string(), vty.clone());
                     self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
                     self.symbols.push(VMSymbol {
                         name: n.to_string(),
                         addr: local_idx as u32 * 4,
                         is_local: true,
-                        ty: var_type.clone(),
+                        ty: vty.clone(),
                         scope_depth: 1,
                     });
                     if let Some(ref mut e) = init {
-                        if var_type.is_array() && matches!(e, Expr::InitList { .. }) {
+                        if vty.is_array() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let values = flatten_init_list(elements);
-                                if var_type.base_kind == TypeKind::Char {
+                                if vty.base_kind == TypeKind::Char {
                                     let base_temp = self.get_temp_slot(0);
                                     self.emit(OpCode::GetFrameBase, 0, loc);
                                     self.emit(OpCode::PushConst, local_idx * 4, loc);
                                     self.emit(OpCode::Add, 0, loc);
                                     self.emit(OpCode::StoreLocal, base_temp, loc);
-                                    let byte_count = var_type.array_size as usize;
+                                    let byte_count = vty.array_size as usize;
                                     for i in 0..byte_count {
                                         self.emit(OpCode::LoadLocal, base_temp, loc);
                                         self.emit(OpCode::PushConst, i as i32, loc);
@@ -465,14 +465,14 @@ impl BytecodeGen {
                                     }
                                 }
                             }
-                        } else if var_type.is_struct() && matches!(e, Expr::InitList { .. }) {
+                        } else if vty.is_struct() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::GetFrameBase, 0, loc);
                                 self.emit(OpCode::PushConst, local_idx * 4, loc);
                                 self.emit(OpCode::Add, 0, loc);
                                 self.emit(OpCode::StoreLocal, base_temp, loc);
-                                let fields = self.struct_defs.get(&var_type.name).cloned().unwrap_or_default();
+                                let fields = self.struct_defs.get(&vty.name).cloned().unwrap_or_default();
                                 for (i, elem) in elements.iter_mut().enumerate() {
                                     if i >= elem_count as usize || i >= fields.len() { break; }
                                     let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
@@ -485,16 +485,16 @@ impl BytecodeGen {
                                     self.emit(OpCode::StoreMem, 0, loc);
                                 }
                             }
-                        } else if var_type.is_struct() {
+                        } else if vty.is_struct() {
                             self.gen_struct_copy_to_local(local_idx, e, loc);
-                        } else if var_type.is_array() && matches!(e, Expr::StringLiteral { .. }) {
+                        } else if vty.is_array() && matches!(e, Expr::StringLiteral { .. }) {
                             if let Expr::StringLiteral { ref value, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::GetFrameBase, 0, loc);
                                 self.emit(OpCode::PushConst, local_idx * 4, loc);
                                 self.emit(OpCode::Add, 0, loc);
                                 self.emit(OpCode::StoreLocal, base_temp, loc);
-                                let byte_count = var_type.array_size as usize;
+                                let byte_count = vty.array_size as usize;
                                 for i in 0..byte_count {
                                     self.emit(OpCode::LoadLocal, base_temp, loc);
                                     self.emit(OpCode::PushConst, i as i32, loc);
@@ -506,7 +506,7 @@ impl BytecodeGen {
                             }
                         } else {
                             self.gen_expr(e);
-                            if var_type.kind == TypeKind::Float && e.ty().kind != TypeKind::Float {
+                            if vty.kind == TypeKind::Float && e.ty().kind != TypeKind::Float {
                                 self.emit(OpCode::CastI2F, 0, loc);
                             }
                             self.emit(OpCode::StoreLocal, local_idx, loc);
@@ -518,9 +518,9 @@ impl BytecodeGen {
                         }
                     }
                 };
-                emit_one(name, init, loc);
-                for (ename, einit) in extra_vars.iter_mut() {
-                    emit_one(ename, einit, loc);
+                emit_one(var_type, name, init, loc);
+                for (ety, ename, einit) in extra_vars.iter_mut() {
+                    emit_one(ety, ename, einit, loc);
                 }
             }
             Stmt::Expr { expr, .. } => {
@@ -534,7 +534,7 @@ impl BytecodeGen {
                 let else_jump = self.current_ip();
                 self.emit(OpCode::JumpIfZero, 0, loc);
                 self.gen_stmt(then_stmt);
-                let end_jump = self.current_ip();
+                let skip_else_jump = self.current_ip();
                 self.emit(OpCode::Jump, 0, loc);
                 let else_ip = self.current_ip();
                 self.patch_jump(else_jump, else_ip);
@@ -542,7 +542,7 @@ impl BytecodeGen {
                     self.gen_stmt(e);
                 }
                 let end_ip = self.current_ip();
-                self.patch_jump(end_jump, end_ip);
+                self.patch_jump(skip_else_jump, end_ip);
             }
             Stmt::While { cond, body, loc } => {
                 let start_ip = self.current_ip();
@@ -1063,35 +1063,35 @@ impl BytecodeGen {
                         _ => name.as_str(),
                     };
                     let host_id = match host_name {
-                        "__cide_output" => 0,
-                        "__cide_step" => 1,
-                        "malloc" => 2,
-                        "free" => 3,
-                        "__cide_printf_0" => 10,
-                        "__cide_printf_1" => 11,
-                        "__cide_printf_n" => 15,
-                        "__cide_scanf_n" => 21,
-                        "strlen" => 30,
-                        "strcpy" => 31,
-                        "strcmp" => 32,
-                        "getchar" => 33,
-                        "putchar" => 34,
-                        "rand" => 35,
-                        "srand" => 36,
-                        "memset" => 37,
-                        "exit" => 38,
-                        "strcat" => 39,
-                        "atoi" => 40,
-                        "fprintf" => 50,
-                        "realloc" => 51,
-                        "qsort" => 52,
+                        "__cide_output" => crate::vm::host_func_id::OUTPUT,
+                        "__cide_step" => crate::vm::host_func_id::STEP,
+                        "malloc" => crate::vm::host_func_id::MALLOC,
+                        "free" => crate::vm::host_func_id::FREE,
+                        "__cide_printf_0" => crate::vm::host_func_id::PRINTF_0,
+                        "__cide_printf_1" => crate::vm::host_func_id::PRINTF_1,
+                        "__cide_printf_n" => crate::vm::host_func_id::PRINTF_N,
+                        "__cide_scanf_n" => crate::vm::host_func_id::SCANF_N,
+                        "strlen" => crate::vm::host_func_id::STRLEN,
+                        "strcpy" => crate::vm::host_func_id::STRCPY,
+                        "strcmp" => crate::vm::host_func_id::STRCMP,
+                        "getchar" => crate::vm::host_func_id::GETCHAR,
+                        "putchar" => crate::vm::host_func_id::PUTCHAR,
+                        "rand" => crate::vm::host_func_id::RAND,
+                        "srand" => crate::vm::host_func_id::SRAND,
+                        "memset" => crate::vm::host_func_id::MEMSET,
+                        "exit" => crate::vm::host_func_id::EXIT,
+                        "strcat" => crate::vm::host_func_id::STRCAT,
+                        "atoi" => crate::vm::host_func_id::ATOI,
+                        "fprintf" => crate::vm::host_func_id::FPRINTF,
+                        "realloc" => crate::vm::host_func_id::REALLOC,
+                        "qsort" => crate::vm::host_func_id::QSORT,
                         _ => {
                             self.report_error(&format!("未定义的函数 '{}'", name), &loc);
                             self.emit(OpCode::PushConst, 0, &loc);
                             return;
                         }
                     };
-                    self.emit(OpCode::CallHost, host_id, &loc);
+                    self.emit(OpCode::CallHost, host_id as i32, &loc);
                 }
             }
             Expr::Index { array, index, ty, .. } => {
@@ -1197,30 +1197,12 @@ impl BytecodeGen {
         self.gen_expr(array);
         self.gen_expr(index);
 
-        if bound_size > 0 && sym_idx >= 0 {
-            let idx_temp = self.get_temp_slot(2);
-            self.emit(OpCode::StoreLocal, idx_temp, loc);
-            // check >= 0
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::PushConst, 0, loc);
-            self.emit(OpCode::Ge, 0, loc);
-            self.emit(OpCode::Not, 0, loc);
-            let jump_neg = self.current_ip();
-            self.emit(OpCode::JumpIfZero, 0, loc);
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::TrapBounds, sym_idx, loc);
-            self.patch_jump(jump_neg, self.current_ip());
-            // check < bound
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::PushConst, bound_size, loc);
-            self.emit(OpCode::Lt, 0, loc);
-            self.emit(OpCode::Not, 0, loc);
-            let jump_ok = self.current_ip();
-            self.emit(OpCode::JumpIfZero, 0, loc);
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
-            self.emit(OpCode::TrapBounds, sym_idx, loc);
-            self.patch_jump(jump_ok, self.current_ip());
-            self.emit(OpCode::LoadLocal, idx_temp, loc);
+        if bound_size > 0 {
+            if sym_idx >= 0 {
+                self.emit(OpCode::TrapBounds, sym_idx, loc);
+            } else {
+                self.emit(OpCode::TrapBounds, -bound_size, loc);
+            }
         }
 
         self.emit(OpCode::PushConst, stride, loc);
@@ -1482,7 +1464,7 @@ fn compute_stride(arr_type: &Type, elem_size: i32) -> i32 {
     if !arr_type.is_array() || arr_type.dims.is_empty() { return elem_size; }
     let mut stride = elem_size;
     for i in 1..arr_type.dims.len() {
-        stride *= if arr_type.dims[i] > 0 { arr_type.dims[i] } else { 1 };
+        stride *= if arr_type.dims[i] > 0 { arr_type.dims[i] } else { 0 };
     }
     stride
 }
