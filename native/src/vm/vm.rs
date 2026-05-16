@@ -147,9 +147,7 @@ impl CideVM {
         self.global_count = globals.len();
         for (i, &v) in globals.iter().enumerate() {
             let addr = GLOBAL_START + (i as u32) * 4;
-            if addr + 4 <= MEM_SIZE {
-                self.write_i32(addr, v);
-            }
+            self.store_i32(addr, v, &SourceLoc::default());
         }
     }
 
@@ -245,11 +243,11 @@ impl CideVM {
         for i in 0..meta.arg_count {
             let arg = if (i as usize) < args.len() { args[i as usize] } else { 0 };
             let arg_addr = (locals_base as u64) + (i as u64) * 4;
-            self.write_i32(arg_addr as u32, arg);
+            self.store_i32(arg_addr as u32, arg, &SourceLoc::default());
         }
         for i in meta.arg_count..meta.local_count {
             let local_addr = (locals_base as u64) + (i as u64) * 4;
-            self.write_i32(local_addr as u32, 0);
+            self.store_i32(local_addr as u32, 0, &SourceLoc::default());
         }
         let func_name = if idx < self.func_names.len() {
             self.func_names[idx].clone()
@@ -444,14 +442,6 @@ impl CideVM {
             return;
         }
         self.memory[addr as usize] = val as u8;
-    }
-
-    fn write_i32(&mut self, addr: u32, val: i32) {
-        if addr as u64 + 4 > MEM_SIZE as u64 {
-            return;
-        }
-        let bytes = val.to_le_bytes();
-        self.memory[addr as usize..addr as usize + 4].copy_from_slice(&bytes);
     }
 
     // --- Error formatting ---
@@ -1015,11 +1005,11 @@ impl CideVM {
                                 for i in (0..meta.arg_count).rev() {
                                     let arg = self.pop();
                                     let arg_addr = (locals_base as u64) + ((meta.arg_count - 1 - i) as u64) * 4;
-                                    self.write_i32(arg_addr as u32, arg);
+                                    self.store_i32(arg_addr as u32, arg, &inst.loc);
                                 }
                                 for i in meta.arg_count..meta.local_count {
                                     let local_addr = (locals_base as u64) + (i as u64) * 4;
-                                    self.write_i32(local_addr as u32, 0);
+                                    self.store_i32(local_addr as u32, 0, &inst.loc);
                                 }
                                 let func_name = if (func_idx as usize) < self.func_names.len() {
                                     self.func_names[func_idx as usize].clone()
