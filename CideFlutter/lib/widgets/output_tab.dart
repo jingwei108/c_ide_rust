@@ -19,15 +19,16 @@ class OutputTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final emptyColor = isDark ? Colors.grey[600] : Colors.grey[400];
     return Column(
       children: [
         Expanded(
           child: Stack(
             children: [
               SingleChildScrollView(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.fromLTRB(12, 12, 44, 12),
                 child: SelectableText(
-                  state.output.isEmpty ? '等待执行...' : state.output,
+                  state.output.isEmpty ? '' : state.output,
                   style: TextStyle(
                     fontFamily: 'Consolas',
                     fontFamilyFallback: const ['monospace'],
@@ -36,22 +37,42 @@ class OutputTab extends StatelessWidget {
                   ),
                 ),
               ),
-              Positioned(
-                top: 4,
-                right: 4,
-                child: IconButton(
-                  icon: const Icon(Icons.copy, size: 16),
-                  tooltip: '复制输出',
-                  onPressed: state.output.isEmpty
-                      ? null
-                      : () {
-                          Clipboard.setData(ClipboardData(text: state.output));
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
-                          );
-                        },
+              if (state.output.isEmpty)
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.terminal_outlined, size: 40, color: emptyColor),
+                      const SizedBox(height: 12),
+                      Text(
+                        '等待执行',
+                        style: TextStyle(fontSize: 14, color: emptyColor),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Material(
+                    color: isDark ? const Color(0xff2a2a2a) : const Color(0xfff0f0f0),
+                    borderRadius: BorderRadius.circular(6),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(6),
+                      onTap: () {
+                        Clipboard.setData(ClipboardData(text: state.output));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已复制到剪贴板'), duration: Duration(seconds: 1)),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(6),
+                        child: Icon(Icons.copy, size: 16, color: isDark ? Colors.grey[400] : Colors.grey[600]),
+                      ),
+                    ),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

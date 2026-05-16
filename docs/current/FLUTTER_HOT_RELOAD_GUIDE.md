@@ -283,7 +283,7 @@ copy target\debug\cide_native.dll ..\CideFlutter\build\windows\x64\runner\Debug\
 
 ```bash
 # 终端 1：桌面端
- flutter run -d windows 
+flutter run -d windows 
 
 # 终端 2：Android 真机
 flutter run -d PKT110

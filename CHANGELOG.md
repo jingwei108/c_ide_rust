@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Flutter bottom panel UI polish**:
+  - Output tab empty state now shows `terminal_outlined` icon + "等待执行" text instead of plain text.
+  - Diagnostics tab empty state now shows `check_circle_outline` icon + "无诊断信息" text.
+  - Algorithm tab empty state now shows `auto_graph_outlined` icon + "未检测到算法模式" text.
+  - Copy button in output tab now has a background container (adapts to dark/light theme) and no longer overlaps text (right padding added to scroll view).
+  - Removed unused "+" button from bottom tab bar.
+
 ### Added
 - Host function ID unified constant module (`vm/host_func_id.rs`) to prevent ID mismatch between compile-time and runtime.
 - Unified compilation pipeline `run_compile_pipeline()` in `engine/compile_pipeline.rs` to eliminate ~100 lines of DRY violation between `flutter_bridge.rs` and `capi/mod.rs`.
