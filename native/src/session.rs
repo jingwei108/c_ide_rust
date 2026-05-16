@@ -122,6 +122,12 @@ pub struct RuntimeState {
     pub waiting_input: bool,
 }
 
+impl RuntimeState {
+    pub fn output(&self) -> String {
+        self.output_lines.join("\n")
+    }
+}
+
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryRegion {

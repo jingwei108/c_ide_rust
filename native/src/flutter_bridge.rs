@@ -101,7 +101,7 @@ pub fn run_code() -> RunResult {
         session.runtime.running = false;
         RunResult {
             success: false,
-            output: session.runtime.output_lines.join("\n"),
+            output: session.runtime.output(),
             waiting_input: false,
             error: Some(session.runtime.error.clone()),
         }
@@ -109,7 +109,7 @@ pub fn run_code() -> RunResult {
         session.vm = Some(vm);
         return RunResult {
             success: true,
-            output: session.runtime.output_lines.join("\n"),
+            output: session.runtime.output(),
             waiting_input: true,
             error: None,
         };
@@ -118,7 +118,7 @@ pub fn run_code() -> RunResult {
         session.runtime.running = false;
         RunResult {
             success: true,
-            output: session.runtime.output_lines.join("\n"),
+            output: session.runtime.output(),
             waiting_input: false,
             error: None,
         }
@@ -167,7 +167,7 @@ pub fn step_next() -> StepResult {
                     break StepResult {
                         status: StepStatus::Paused,
                         current_line: session.runtime.current_line,
-                        output: session.runtime.output_lines.join("\n"),
+                        output: session.runtime.output(),
                         waiting_input: false,
                     };
                 }
@@ -176,7 +176,7 @@ pub fn step_next() -> StepResult {
                     break StepResult {
                         status: StepStatus::WaitingInput,
                         current_line: session.runtime.current_line,
-                        output: session.runtime.output_lines.join("\n"),
+                        output: session.runtime.output(),
                         waiting_input: true,
                     };
                 }
@@ -186,7 +186,7 @@ pub fn step_next() -> StepResult {
                     break StepResult {
                         status: StepStatus::Finished,
                         current_line: session.runtime.current_line,
-                        output: session.runtime.output_lines.join("\n"),
+                        output: session.runtime.output(),
                         waiting_input: false,
                     };
                 }
@@ -197,7 +197,7 @@ pub fn step_next() -> StepResult {
                     break StepResult {
                         status: StepStatus::Trap,
                         current_line: session.runtime.current_line,
-                        output: session.runtime.output_lines.join("\n"),
+                        output: session.runtime.output(),
                         waiting_input: false,
                     };
                 }
@@ -210,7 +210,7 @@ pub fn step_next() -> StepResult {
                 StepResult {
                     status: StepStatus::Paused,
                     current_line: session.runtime.current_line,
-                    output: session.runtime.output_lines.join("\n"),
+                    output: session.runtime.output(),
                     waiting_input: false,
                 }
             }
@@ -219,7 +219,7 @@ pub fn step_next() -> StepResult {
                 StepResult {
                     status: StepStatus::Paused,
                     current_line: session.runtime.current_line,
-                    output: session.runtime.output_lines.join("\n"),
+                    output: session.runtime.output(),
                     waiting_input: false,
                 }
             }
@@ -228,7 +228,7 @@ pub fn step_next() -> StepResult {
                 StepResult {
                     status: StepStatus::WaitingInput,
                     current_line: session.runtime.current_line,
-                    output: session.runtime.output_lines.join("\n"),
+                    output: session.runtime.output(),
                     waiting_input: true,
                 }
             }
@@ -238,7 +238,7 @@ pub fn step_next() -> StepResult {
                 StepResult {
                     status: StepStatus::Finished,
                     current_line: session.runtime.current_line,
-                    output: session.runtime.output_lines.join("\n"),
+                    output: session.runtime.output(),
                     waiting_input: false,
                 }
             }
@@ -249,7 +249,7 @@ pub fn step_next() -> StepResult {
                 StepResult {
                     status: StepStatus::Trap,
                     current_line: session.runtime.current_line,
-                    output: session.runtime.output_lines.join("\n"),
+                    output: session.runtime.output(),
                     waiting_input: false,
                 }
             }
@@ -292,7 +292,7 @@ pub fn get_callstack() -> Vec<TraceEntry> {
 /// 获取输出
 pub fn get_output() -> String {
     let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-    session.runtime.output_lines.join("\n")
+    session.runtime.output()
 }
 
 /// 获取当前行
