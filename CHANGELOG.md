@@ -95,6 +95,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `cide_get_runtime_error` dangling pointer: now uses buffer snapshot pattern.
 - `call_user_function` return_ip semantic fix: uses `HOST_CALLBACK_SENTINEL` instead of `code.len()`.
 - `session.rs` removed misleading `#![forbid(unsafe_code)]`.
+- `host_realloc` in-place shrink when old block is at heap boundary.
+- `call_user_function` return_ip uses `HOST_CALLBACK_SENTINEL` instead of `code.len()`.
+- `host_scanf` `%c` no longer skips whitespace (matches standard C semantics).
+- `compute_stride` zero-dimension fallback fixed: `dims[i] == 0` now produces stride 0 instead of 1.
+- Algorithm validation regex no longer matches `int main(` inside string literals or comments.
 
 ### Changed
 - `host_memset` now uses slice `.fill()` instead of per-byte `store_i8` for large blocks.
@@ -108,6 +113,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TypeChecker::visit_call()` split into 19 `check_builtin_xxx()` methods + `check_user_func()`.
 - `format_type()` in `capi/mod.rs` removed; uses `Type::to_string()` instead.
 - FRB duplicate data structures unified: `VisEvent`/`AlgorithmMatch`/`CompileResult`/`RunResult`/`StepResult`/`StepStatus` now single-source in `session.rs`, re-exported by `api/cide.rs`.
+- `OpCode::from_u8` auto-generated via `define_opcode!` macro, eliminating manual repr/match maintenance.
+- `Lexer::new` takes `&str` instead of `String`, removing `.to_string()` clones in compile pipeline and all tests.
 - `flutter_bridge.rs` breakpoint API batchified: `setBreakpoints(Vec<i32>)` replaces N+1 FFI calls.
 
 ### Security
