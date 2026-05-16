@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,8 +13,15 @@ import '../providers/theme_provider.dart';
 
 class EditorPanel extends ConsumerStatefulWidget {
   final VoidCallback? onTap;
+  final VoidCallback? onBlankTap;
+  final VoidCallback? onDismissKeyboard;
 
-  const EditorPanel({super.key, this.onTap});
+  const EditorPanel({
+    super.key,
+    this.onTap,
+    this.onBlankTap,
+    this.onDismissKeyboard,
+  });
 
   @override
   ConsumerState<EditorPanel> createState() => EditorPanelState();
@@ -21,7 +30,9 @@ class EditorPanel extends ConsumerStatefulWidget {
 class EditorPanelState extends ConsumerState<EditorPanel> {
   late CodeLineEditingController _controller;
   final _focusNode = FocusNode();
+  final _codeEditorKey = GlobalKey();
   bool _readOnly = true;
+  OverlayEntry? _contextMenuOverlay;
 
   @override
   void initState() {
@@ -145,6 +156,8 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
 
   @override
   void dispose() {
+    _hideContextMenu();
+    _cancelLongPress();
     _controller.removeListener(_onChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -158,6 +171,153 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
   void setReadOnly(bool value) {
     if (_readOnly == value) return;
     setState(() => _readOnly = value);
+  }
+
+  // ========== 长按上下文菜单 ==========
+
+  Timer? _longPressTimer;
+  Offset? _longPressStart;
+  Offset? _swipeStart;
+  static const _longPressDuration = Duration(milliseconds: 600);
+  static const _longPressMoveThreshold = 15.0;
+
+  void _startLongPress(Offset position) {
+    _cancelLongPress();
+    _longPressStart = position;
+    _longPressTimer = Timer(_longPressDuration, () {
+      _longPressTimer = null;
+      _longPressStart = null;
+      _showContextMenu(position);
+    });
+  }
+
+  void _checkLongPressMove(Offset position) {
+    if (_longPressStart == null) return;
+    if ((position - _longPressStart!).distance > _longPressMoveThreshold) {
+      _cancelLongPress();
+    }
+  }
+
+  void _cancelLongPress() {
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+    _longPressStart = null;
+  }
+
+  void _hideContextMenu() {
+    _contextMenuOverlay?.remove();
+    _contextMenuOverlay = null;
+  }
+
+  void _selectWordAt(Offset globalPosition) {
+    // CodeEditor 外层是 Stack，findRenderObject 返回 RenderStack，
+    // 需要通过内部私有的 _editorKey 才能拿到 _CodeFieldRender
+    final codeEditorState = _codeEditorKey.currentState;
+    if (codeEditorState == null) return;
+    final internalKey = (codeEditorState as dynamic)._editorKey as GlobalKey?;
+    final renderBox = internalKey?.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+    // selectWord / setPositionAt 内部会自己做 globalToLocal
+    final range = (renderBox as dynamic).selectWord(position: globalPosition) as CodeLineRange?;
+    if (range != null) {
+      _controller.selection = CodeLineSelection.fromRange(range: range);
+      return;
+    }
+    // 空白处：定位光标并选中一个字符/空格
+    final sel = (renderBox as dynamic).setPositionAt(position: globalPosition) as CodeLineSelection?;
+    if (sel != null && sel.isCollapsed) {
+      final index = sel.baseIndex;
+      final offset = sel.baseOffset;
+      final lineText = _controller.codeLines[index].text;
+      if (offset < lineText.length) {
+        _controller.selection = CodeLineSelection(
+          baseIndex: index,
+          baseOffset: offset,
+          extentIndex: index,
+          extentOffset: offset + 1,
+        );
+      } else if (offset > 0) {
+        _controller.selection = CodeLineSelection(
+          baseIndex: index,
+          baseOffset: offset - 1,
+          extentIndex: index,
+          extentOffset: offset,
+        );
+      }
+    }
+  }
+
+  void _showContextMenu(Offset position) {
+    try {
+      _selectWordAt(position);
+    } catch (e, stack) {
+      debugPrint('_selectWordAt error: $e\n$stack');
+    }
+    _hideContextMenu();
+
+    final hasSelection = !_controller.selection.isCollapsed;
+
+    // 获取选区在屏幕上的坐标
+    Offset? selStart;
+    Offset? selEnd;
+    final codeEditorState = _codeEditorKey.currentState;
+    if (codeEditorState != null) {
+      try {
+        final internalKey = (codeEditorState as dynamic)._editorKey as GlobalKey?;
+        final renderBox = internalKey?.currentContext?.findRenderObject() as RenderBox?;
+        if (renderBox != null) {
+          final sel = _controller.selection;
+          selStart = (renderBox as dynamic).calculateTextPositionScreenOffset(
+            CodeLinePosition(index: sel.startIndex, offset: sel.startOffset),
+            false,
+          ) as Offset?;
+          selEnd = (renderBox as dynamic).calculateTextPositionScreenOffset(
+            CodeLinePosition(index: sel.endIndex, offset: sel.endOffset),
+            true,
+          ) as Offset?;
+        }
+      } catch (_) {}
+    }
+
+    // 预估宽度，判断是否需要折行
+    final itemCount = (hasSelection ? 1 : 0) + 3;
+    const estimatedItemWidth = 64.0;
+    const estimatedDividerWidth = 1.0;
+    const horizontalPadding = 32.0;
+    final estimatedWidth = itemCount * estimatedItemWidth + (itemCount - 1) * estimatedDividerWidth + horizontalPadding;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final needsWrap = estimatedWidth > screenWidth - 32;
+
+    final overlay = Overlay.of(context);
+    _contextMenuOverlay = OverlayEntry(
+      builder: (context) => _ContextMenuBar(
+        position: position,
+        selectionStart: selStart,
+        selectionEnd: selEnd,
+        needsWrap: needsWrap,
+        hasSelection: hasSelection,
+        onCopy: hasSelection
+            ? () {
+                _controller.copy();
+                _hideContextMenu();
+              }
+            : null,
+        onPaste: () {
+          _controller.paste();
+          _hideContextMenu();
+        },
+        onSelectAll: () {
+          _controller.selectAll();
+          _hideContextMenu();
+        },
+        onDictionary: () {
+          // TODO: 词典功能待实现
+          _hideContextMenu();
+        },
+        onDismiss: _hideContextMenu,
+      ),
+    );
+    overlay.insert(_contextMenuOverlay!);
   }
 
   /// 退格删除
@@ -295,9 +455,55 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
           directPrompts: _cAutocompletePrompts.whereType<CodeFunctionPrompt>().toList(),
         ),
         child: Listener(
-          onPointerDown: (_) => widget.onTap?.call(),
+          onPointerDown: (event) {
+            _swipeStart = event.position;
+            _startLongPress(event.position);
+          },
+          onPointerMove: (event) => _checkLongPressMove(event.position),
+          onPointerUp: (event) {
+            final wasShortPress = _longPressTimer != null;
+            // 立即取消长按计时器，避免后续操作耗时导致误触发长按
+            _cancelLongPress();
+
+            // 检测上下滑动手势收起键盘（使用独立的 _swipeStart，不受长按取消影响）
+            if (_swipeStart != null && widget.onDismissKeyboard != null) {
+              final dx = event.position.dx - _swipeStart!.dx;
+              final dy = event.position.dy - _swipeStart!.dy;
+              if (dy.abs() > 100 && dy.abs() > dx.abs() * 1.5) {
+                widget.onDismissKeyboard!();
+                _swipeStart = null;
+                return;
+              }
+            }
+            _swipeStart = null;
+
+            // 短按：延迟到 re_editor 内部更新 selection 后再判断空白处
+            if (wasShortPress) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (!mounted) return;
+                final sel = _controller.selection;
+                final index = sel.baseIndex;
+                if (index >= 0 && index < _controller.lineCount) {
+                  final lineText = _controller.codeLines[index].text;
+                  final offset = sel.baseOffset;
+                  // 空行、行尾之后、尾部空白区域 → 空白处
+                  final isBlank = lineText.trim().isEmpty ||
+                      offset >= lineText.length ||
+                      offset >= lineText.trimRight().length;
+                  if (isBlank) {
+                    widget.onBlankTap?.call();
+                  } else {
+                    widget.onTap?.call();
+                  }
+                } else {
+                  widget.onBlankTap?.call();
+                }
+              });
+            }
+          },
           behavior: HitTestBehavior.translucent,
           child: CodeEditor(
+            key: _codeEditorKey,
             controller: _controller,
             focusNode: _focusNode,
             readOnly: _readOnly,
@@ -470,5 +676,203 @@ class _PromptIcon extends StatelessWidget {
       return const Icon(Icons.data_object, size: 14, color: Colors.cyanAccent);
     }
     return const Icon(Icons.text_fields, size: 14, color: Colors.blueAccent);
+  }
+}
+
+/// 长按横向上下文菜单
+class _ContextMenuBar extends StatelessWidget {
+  final Offset position;
+  final Offset? selectionStart;
+  final Offset? selectionEnd;
+  final bool needsWrap;
+  final bool hasSelection;
+  final VoidCallback? onCopy;
+  final VoidCallback? onPaste;
+  final VoidCallback? onSelectAll;
+  final VoidCallback? onDictionary;
+  final VoidCallback onDismiss;
+
+  const _ContextMenuBar({
+    required this.position,
+    this.selectionStart,
+    this.selectionEnd,
+    required this.needsWrap,
+    required this.hasSelection,
+    this.onCopy,
+    this.onPaste,
+    this.onSelectAll,
+    this.onDictionary,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final bgColor = isDark ? const Color(0xFF3A3A3C) : const Color(0xFFD1D1D6);
+    final textColor = isDark ? Colors.white : Colors.black87;
+    final dividerColor = isDark ? Colors.white24 : Colors.black26;
+    final screenSize = MediaQuery.of(context).size;
+    final safeTop = MediaQuery.of(context).padding.top;
+    final safeBottom = MediaQuery.of(context).padding.bottom;
+
+    const singleLineHeight = 44.0;
+    const twoLineHeight = 88.0;
+    final menuHeight = needsWrap ? twoLineHeight : singleLineHeight;
+
+    // 以选区中心为锚点；若无选区坐标则回退到触摸点
+    final selStart = selectionStart;
+    final selEnd = selectionEnd;
+    final centerX = selStart != null && selEnd != null
+        ? (selStart.dx + selEnd.dx) / 2
+        : position.dx;
+    final selectionTop = selStart?.dy ?? position.dy;
+    final selectionBottom = selEnd?.dy ?? position.dy;
+
+    // 优先放选区上方
+    double top = selectionTop - menuHeight - 8;
+    if (top < safeTop + 8) {
+      top = selectionBottom + 8;
+    }
+    // 防止超出底部（如键盘区域）
+    if (top + menuHeight > screenSize.height - safeBottom - 8) {
+      top = selectionTop - menuHeight - 8;
+    }
+
+    // 预估宽度用于居中计算
+    final itemCount = (hasSelection ? 1 : 0) + 3;
+    const estimatedItemWidth = 64.0;
+    const estimatedDividerWidth = 1.0;
+    const horizontalPadding = 32.0;
+    final estimatedWidth = needsWrap
+        ? ((itemCount + 1) ~/ 2) * estimatedItemWidth + (((itemCount + 1) ~/ 2) - 1) * estimatedDividerWidth + horizontalPadding
+        : itemCount * estimatedItemWidth + (itemCount - 1) * estimatedDividerWidth + horizontalPadding;
+
+    double left = centerX - estimatedWidth / 2;
+    if (left < 16) left = 16;
+    if (left + estimatedWidth > screenSize.width - 16) {
+      left = screenSize.width - estimatedWidth - 16;
+    }
+    if (left < 16) left = 16;
+
+    Widget buildMenuRow(List<Widget> items) {
+      return IntrinsicWidth(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: items,
+        ),
+      );
+    }
+
+    List<Widget> buildItems() {
+      final items = <Widget>[];
+      if (onCopy != null) {
+        items.add(_MenuButton(text: '复制', onTap: onCopy!, textColor: textColor));
+        items.add(_MenuDivider(color: dividerColor));
+      }
+      if (onPaste != null) {
+        items.add(_MenuButton(text: '粘贴', onTap: onPaste!, textColor: textColor));
+        items.add(_MenuDivider(color: dividerColor));
+      }
+      if (onSelectAll != null) {
+        items.add(_MenuButton(text: '全选', onTap: onSelectAll!, textColor: textColor));
+        items.add(_MenuDivider(color: dividerColor));
+      }
+      if (onDictionary != null) {
+        items.add(_MenuButton(text: '词典', onTap: onDictionary!, textColor: textColor));
+      }
+      if (items.isNotEmpty && items.last is _MenuDivider) {
+        items.removeLast();
+      }
+      return items;
+    }
+
+    final allItems = buildItems();
+    Widget menuContent;
+    if (needsWrap && allItems.length > 2) {
+      final half = (allItems.length / 2).ceil();
+      menuContent = Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          buildMenuRow(allItems.sublist(0, half)),
+          Container(height: 1, color: dividerColor, margin: const EdgeInsets.symmetric(horizontal: 8)),
+          buildMenuRow(allItems.sublist(half)),
+        ],
+      );
+    } else {
+      menuContent = buildMenuRow(allItems);
+    }
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            onTap: onDismiss,
+            behavior: HitTestBehavior.translucent,
+            child: Container(color: Colors.transparent),
+          ),
+        ),
+        Positioned(
+          left: left,
+          top: top,
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              constraints: BoxConstraints(
+                maxWidth: screenSize.width - 32,
+                minHeight: needsWrap ? 40 : 44,
+              ),
+              decoration: BoxDecoration(
+                color: bgColor,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: menuContent,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MenuButton extends StatelessWidget {
+  final String text;
+  final VoidCallback onTap;
+  final Color textColor;
+
+  const _MenuButton({
+    required this.text,
+    required this.onTap,
+    required this.textColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Text(
+          text,
+          style: TextStyle(color: textColor, fontSize: 14),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuDivider extends StatelessWidget {
+  final Color color;
+
+  const _MenuDivider({required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 20,
+      color: color,
+      margin: const EdgeInsets.symmetric(vertical: 10),
+    );
   }
 }

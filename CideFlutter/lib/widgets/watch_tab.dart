@@ -56,7 +56,16 @@ class WatchTab extends ConsumerWidget {
         // 表达式列表
         Expanded(
           child: watchExpressions.isEmpty
-              ? const Center(child: Text('暂无监视表达式', style: TextStyle(color: Colors.grey)))
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.visibility, size: 40, color: Colors.grey[500]),
+                      const SizedBox(height: 12),
+                      Text('暂无监视表达式', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+                    ],
+                  ),
+                )
               : FutureBuilder<List<rust.VariableSnapshot>>(
                   future: rust.getVariables(),
                   builder: (context, snapshot) {

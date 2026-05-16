@@ -29,7 +29,16 @@ class PointerVisTab extends StatelessWidget {
         }).toList();
 
         if (pointers.isEmpty && headVars.isEmpty) {
-          return const Center(child: Text('未检测到指针变量', style: TextStyle(color: Colors.grey)));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.polyline, size: 40, color: Colors.grey[500]),
+                const SizedBox(height: 12),
+                Text('未检测到指针变量', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+              ],
+            ),
+          );
         }
 
         return Column(

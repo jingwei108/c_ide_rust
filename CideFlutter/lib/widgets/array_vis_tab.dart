@@ -19,7 +19,16 @@ class ArrayVisTab extends StatelessWidget {
         }).toList();
 
         if (arrayVars.isEmpty) {
-          return const Center(child: Text('未检测到数组变量', style: TextStyle(color: Colors.grey)));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.bar_chart, size: 40, color: Colors.grey[500]),
+                const SizedBox(height: 12),
+                Text('未检测到数组变量', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+              ],
+            ),
+          );
         }
 
         return ListView.builder(

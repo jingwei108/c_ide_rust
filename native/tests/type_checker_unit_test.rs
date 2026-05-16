@@ -12,7 +12,7 @@ fn type_check(src: &str) -> (Vec<cide_native::compiler::type_checker::TypeError>
 
 #[test]
 fn test_type_checker_no_errors() {
-    let (errors, warnings, hints) = type_check("int main() { int x = 10; return 0; }");
+    let (errors, _warnings, _hints) = type_check("int main() { int x = 10; return 0; }");
     assert!(errors.is_empty(), "Type errors: {:?}", errors);
 }
 
@@ -69,7 +69,7 @@ fn test_type_checker_array_index() {
 
 #[test]
 fn test_type_checker_float_implicit_cast() {
-    let (errors, warnings, _) = type_check("int main() { float f = 10; return 0; }");
+    let (errors, _warnings, _) = type_check("int main() { float f = 10; return 0; }");
     assert!(errors.is_empty(), "int to float implicit cast should be allowed");
     // Should have a hint but not an error
 }

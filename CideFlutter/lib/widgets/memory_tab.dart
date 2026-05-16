@@ -14,7 +14,16 @@ class MemoryTab extends StatelessWidget {
       builder: (context, snapshot) {
         final regions = snapshot.data ?? [];
         if (regions.isEmpty) {
-          return const Center(child: Text('无内存信息', style: TextStyle(color: Colors.grey)));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.memory, size: 40, color: Colors.grey[500]),
+                const SizedBox(height: 12),
+                Text('无内存信息', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+              ],
+            ),
+          );
         }
         return MemoryMapVisualizer(regions: regions, isDark: isDark);
       },

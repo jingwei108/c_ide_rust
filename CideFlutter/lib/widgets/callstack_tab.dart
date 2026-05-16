@@ -11,7 +11,16 @@ class CallstackTab extends StatelessWidget {
       builder: (context, snapshot) {
         final entries = snapshot.data ?? [];
         if (entries.isEmpty) {
-          return const Center(child: Text('调用栈为空', style: TextStyle(color: Colors.grey)));
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.account_tree, size: 40, color: Colors.grey[500]),
+                const SizedBox(height: 12),
+                Text('调用栈为空', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+              ],
+            ),
+          );
         }
         return ListView.builder(
           itemCount: entries.length,

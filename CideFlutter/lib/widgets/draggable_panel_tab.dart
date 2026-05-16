@@ -7,7 +7,7 @@ class DraggablePanelTab extends StatelessWidget {
   final bool isActive;
   final String? badge;
   final VoidCallback onTap;
-  final VoidCallback onDoubleTap;
+  final VoidCallback? onDoubleTap;
   final PanelDragData data;
   final void Function(PanelDragData) onAccept;
 
@@ -17,7 +17,7 @@ class DraggablePanelTab extends StatelessWidget {
     required this.isActive,
     this.badge,
     required this.onTap,
-    required this.onDoubleTap,
+    this.onDoubleTap,
     required this.data,
     required this.onAccept,
   });
@@ -72,35 +72,65 @@ class DraggablePanelTab extends StatelessWidget {
     );
 
     return DragTarget<PanelDragData>(
-      onAcceptWithDetails: (details) => onAccept(details.data),
+      onWillAcceptWithDetails: (details) {
+        debugPrint('[BottomDragTarget] onWillAccept: ${details.data.panelId}, from=${details.data.fromLocation}');
+        return true;
+      },
+      onAcceptWithDetails: (details) {
+        debugPrint('[BottomDragTarget] onAccept: ${details.data.panelId}');
+        onAccept(details.data);
+      },
+      onLeave: (data) {
+        debugPrint('[BottomDragTarget] onLeave: ${data?.panelId}');
+      },
       builder: (context, candidateData, rejectedData) {
         final isHovering = candidateData.isNotEmpty;
+        if (isHovering) debugPrint('[BottomDragTarget] isHovering=true, count=${candidateData.length}');
         return Draggable<PanelDragData>(
           data: data,
+          dragAnchorStrategy: (draggable, context, position) {
+            final renderBox = context.findRenderObject() as RenderBox?;
+            if (renderBox != null) {
+              final size = renderBox.size;
+              debugPrint('[BottomTabDrag] size=$size, offset=${Offset(size.width / 2, size.height / 2)}');
+              return Offset(size.width / 2, size.height / 2);
+            }
+            debugPrint('[BottomTabDrag] renderBox is null');
+            return Offset.zero;
+          },
           feedback: Material(
             color: Colors.transparent,
+            elevation: 8,
+            borderRadius: BorderRadius.circular(8),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               decoration: BoxDecoration(
-                color: Colors.blueAccent.withValues(alpha: 0.9),
-                borderRadius: BorderRadius.circular(6),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
+                color: Colors.blueAccent.withValues(alpha: 0.95),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
+                boxShadow: [
+                  BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 12, spreadRadius: 2),
+                ],
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(item.icon, size: 14, color: Colors.white),
-                  const SizedBox(width: 4),
-                  Text(item.label, style: const TextStyle(fontSize: 12, color: Colors.white)),
+                  Icon(item.icon, size: 15, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(item.label, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
           ),
-          childWhenDragging: Opacity(opacity: 0.3, child: tab),
+          childWhenDragging: Opacity(opacity: 0.5, child: tab),
           child: Container(
             decoration: BoxDecoration(
-              color: isHovering ? Colors.blueAccent.withValues(alpha: 0.1) : null,
+              color: isHovering ? Colors.blueAccent.withValues(alpha: 0.15) : null,
               borderRadius: BorderRadius.circular(4),
+              border: isHovering ? Border.all(color: Colors.blueAccent.withValues(alpha: 0.5), width: 1.5) : null,
+              boxShadow: isHovering
+                  ? [BoxShadow(color: Colors.blueAccent.withValues(alpha: 0.2), blurRadius: 8, spreadRadius: 1)]
+                  : null,
             ),
             child: tab,
           ),

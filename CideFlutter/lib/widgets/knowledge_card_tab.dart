@@ -13,15 +13,15 @@ class KnowledgeCardTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (cards.isEmpty) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.menu_book, size: 48, color: Colors.grey),
+            Icon(Icons.menu_book, size: 40, color: Colors.grey[500]),
             SizedBox(height: 12),
-            Text('暂无相关知识卡片', style: TextStyle(color: Colors.grey)),
+            Text('暂无相关知识卡片', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
             SizedBox(height: 4),
-            Text('编译出错后将自动匹配对应的知识卡片', style: TextStyle(fontSize: 12, color: Colors.grey)),
+            Text('编译出错后将自动匹配对应的知识卡片', style: TextStyle(fontSize: 12, color: Colors.grey[500])),
           ],
         ),
       );
