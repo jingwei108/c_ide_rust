@@ -372,6 +372,43 @@ impl CideVM {
         MEM_SIZE
     }
 
+    /// 安全写入字节切片到 VM 内存（带 NULL Trap 和边界检查）
+    pub fn write_memory(&mut self, addr: u32, data: &[u8]) -> bool {
+        let end = addr as usize + data.len();
+        if addr < NULL_TRAP_SIZE || end > self.memory.len() {
+            return false;
+        }
+        self.memory[addr as usize..end].copy_from_slice(data);
+        true
+    }
+
+    /// 安全读取字节切片从 VM 内存到外部缓冲区
+    pub fn read_memory_to(&self, addr: u32, buf: &mut [u8]) -> bool {
+        let end = addr as usize + buf.len();
+        if addr < NULL_TRAP_SIZE || end > self.memory.len() {
+            return false;
+        }
+        buf.copy_from_slice(&self.memory[addr as usize..end]);
+        true
+    }
+
+    /// 安全地在 VM 内存内部复制（src → dst），带完整边界检查
+    pub fn copy_memory(&mut self, dst: u32, src: u32, len: usize) -> bool {
+        let dst_end = dst as usize + len;
+        let src_end = src as usize + len;
+        if dst < NULL_TRAP_SIZE
+            || src < NULL_TRAP_SIZE
+            || dst_end > self.memory.len()
+            || src_end > self.memory.len()
+        {
+            return false;
+        }
+        // 用临时 buffer 避免重叠问题
+        let tmp = self.memory[src as usize..src_end].to_vec();
+        self.memory[dst as usize..dst_end].copy_from_slice(&tmp);
+        true
+    }
+
     pub fn get_stack(&self) -> &[u64] {
         &self.stack
     }

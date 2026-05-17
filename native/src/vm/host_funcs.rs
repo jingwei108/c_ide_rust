@@ -203,6 +203,11 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::FPRINTF => host_fprintf_n(vm, session),
         host_func_id::REALLOC => host_realloc(vm, session),
         host_func_id::QSORT => host_qsort(vm, session),
+        host_func_id::FOPEN => host_fopen(vm, session),
+        host_func_id::FREAD => host_fread(vm, session),
+        host_func_id::FWRITE => host_fwrite(vm, session),
+        host_func_id::FCLOSE => host_fclose(vm, session),
+        host_func_id::FEOF => host_feof(vm, session),
         _ => {}
     }
 }
@@ -952,4 +957,108 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
         }
     }
     vm.set_qsort_depth(vm.qsort_depth() - 1);
+}
+
+// ========== VFS File I/O Host Functions ==========
+
+fn host_fopen(vm: &mut CideVM, session: &mut Session) {
+    let mode_addr = vm.pop() as u32;
+    let path_addr = vm.pop() as u32;
+    let mode = read_cstring(vm, mode_addr);
+    let path = read_cstring(vm, path_addr);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let fd = vfs.fopen(&path, &mode, vm, &mut session.memory);
+    session.vfs = vfs;
+    // 在 VM Heap 中分配 4 字节存储 fd，返回 FILE*
+    if fd != 0 {
+        let mut file_ptr = 0u32;
+        let aligned = 4u32;
+        let addr = session.memory.heap_offset;
+        let new_offset = addr as u64 + aligned as u64;
+        if new_offset <= vm.get_memory_size() as u64 && new_offset <= u32::MAX as u64 {
+            session.memory.heap_offset = new_offset as u32;
+            let mut reused = false;
+            for r in &mut session.memory.regions {
+                if r.addr == addr && r.is_freed {
+                    r.is_freed = false;
+                    r.size = 4;
+                    r.name = format!("FILE:{}", path);
+                    reused = true;
+                    break;
+                }
+            }
+            if !reused {
+                session.memory.alloc_counter += 1;
+                session.memory.regions.push(MemoryRegion {
+                    addr,
+                    size: 4,
+                    name: format!("FILE:{}", path),
+                    ty: "int".to_string(),
+                    is_heap: true,
+                    is_freed: false,
+                });
+            }
+            // 写入 fd 到 FILE* 结构体
+            let mem = vm.memory_ref_mut();
+            let a = addr as usize;
+            mem[a..a + 4].copy_from_slice(&(fd as i32).to_le_bytes());
+            file_ptr = addr;
+        }
+        vm.push(file_ptr as u64);
+    } else {
+        vm.push(0);
+    }
+}
+
+fn host_fread(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let nmemb = vm.pop() as usize;
+    let size = vm.pop() as usize;
+    let buf = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let n = vfs.fread(fd, buf, size, nmemb, vm);
+    session.vfs = vfs;
+    vm.push(n as u64);
+}
+
+fn host_fwrite(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let nmemb = vm.pop() as usize;
+    let size = vm.pop() as usize;
+    let buf = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let n = vfs.fwrite(fd, buf, size, nmemb, vm, &mut session.memory);
+    session.vfs = vfs;
+    vm.push(n as u64);
+}
+
+fn host_fclose(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.fclose(fd, &mut session.memory);
+    session.vfs = vfs;
+    vm.push(ret as u64);
+}
+
+fn host_feof(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let ret = session.vfs.feof(fd);
+    vm.push(ret as u64);
+}
+
+/// 从 FILE* 指针（VM Heap 地址）读取 fd 索引
+fn read_fd_from_stream(vm: &CideVM, stream: u32) -> u32 {
+    if stream == 0 {
+        return 0;
+    }
+    let mem = vm.get_memory_slice();
+    let start = stream as usize;
+    if start + 4 > mem.len() {
+        return 0;
+    }
+    i32::from_le_bytes([mem[start], mem[start + 1], mem[start + 2], mem[start + 3]]) as u32
 }

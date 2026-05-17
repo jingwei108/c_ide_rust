@@ -90,9 +90,14 @@ pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_c
                     session.compile = snapshot.compile;
                     session.runtime = snapshot.runtime;
                     session.memory = snapshot.memory;
+                    session.vfs = crate::vm::vfs::VirtualFileSystem::new();
                     let mut vm = CideVM::default();
                     if session.compile.compiled {
                         setup_vm(&mut vm, session);
+                        let mut vfs = std::mem::take(&mut session.vfs);
+                        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
+                        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
+                        session.vfs = vfs;
                     }
                     session.vm = Some(vm);
                     0
@@ -230,6 +235,7 @@ pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
         session.memory.free_list.clear();
         session.memory.heap_offset = 0x5000;
         session.memory.alloc_counter = 0;
+        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
         session.runtime.running = true;
     }
     session.runtime.step_mode = false;
@@ -238,6 +244,10 @@ pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
     let mut vm = session.vm.take().unwrap();
     if !is_resume {
         setup_vm(&mut vm, session);
+        let mut vfs = std::mem::take(&mut session.vfs);
+        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
+        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
+        session.vfs = vfs;
     } else {
         vm.resume();
     }
@@ -280,11 +290,16 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
         session.memory.free_list.clear();
         session.memory.heap_offset = 0x5000;
         session.memory.alloc_counter = 0;
+        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
         session.runtime.step_count = 0;
         session.runtime.step_mode = true;
         session.runtime.running = true;
 
         setup_vm(&mut vm, session);
+        let mut vfs = std::mem::take(&mut session.vfs);
+        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
+        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
+        session.vfs = vfs;
         vm.pause();
 
         let ret;

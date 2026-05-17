@@ -82,6 +82,7 @@ pub fn run_code() -> RunResult {
         session.memory.free_list.clear();
         session.memory.heap_offset = 0x5000;
         session.memory.alloc_counter = 0;
+        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
         session.runtime.running = true;
     }
     session.runtime.step_mode = false;
@@ -90,6 +91,10 @@ pub fn run_code() -> RunResult {
     let mut vm = session.vm.take().unwrap_or_default();
     if !is_resume {
         setup_vm(&mut vm, &session);
+        let mut vfs = std::mem::take(&mut session.vfs);
+        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
+        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
+        session.vfs = vfs;
     } else {
         vm.resume();
     }
@@ -149,11 +154,16 @@ pub fn step_next() -> StepResult {
         session.memory.free_list.clear();
         session.memory.heap_offset = 0x5000;
         session.memory.alloc_counter = 0;
+        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
         session.runtime.step_count = 0;
         session.runtime.step_mode = true;
         session.runtime.running = true;
 
         setup_vm(&mut vm, &session);
+        let mut vfs = std::mem::take(&mut session.vfs);
+        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
+        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
+        session.vfs = vfs;
         vm.pause();
 
         session.runtime.waiting_input = false;

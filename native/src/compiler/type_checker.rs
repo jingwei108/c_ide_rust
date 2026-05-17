@@ -909,6 +909,11 @@ impl TypeChecker {
             "exit" => self.check_builtin_exit(args, loc),
             "strcat" => self.check_builtin_strcat(args, loc),
             "atoi" => self.check_builtin_atoi(args, loc),
+            "fopen" => self.check_builtin_fopen(args, loc),
+            "fread" => self.check_builtin_fread(args, loc),
+            "fwrite" => self.check_builtin_fwrite(args, loc),
+            "fclose" => self.check_builtin_fclose(args, loc),
+            "feof" => self.check_builtin_feof(args, loc),
             "fprintf" => self.check_builtin_fprintf(args, loc),
             "realloc" => self.check_builtin_realloc(args, loc),
             "qsort" => self.check_builtin_qsort(args, loc),
@@ -1305,6 +1310,96 @@ impl TypeChecker {
             }
         }
         Type::void()
+    }
+
+    fn check_builtin_fopen(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("fopen 需要两个参数（路径和模式）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            for (i, arg) in args.iter_mut().enumerate() {
+                let arg_type = self.resolve_expr_type(arg);
+                if !arg_type.is_pointer() && !arg_type.is_array() {
+                    self.report_error(
+                        &format!("fopen 第 {} 个参数必须是字符串", i + 1),
+                        loc,
+                        ErrorCode::E3029_BuiltInArgType,
+                    );
+                }
+            }
+        }
+        Type::pointer(TypeKind::Void, "")
+    }
+
+    fn check_builtin_fread(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 4 {
+            self.report_error("fread 需要四个参数（缓冲区、元素大小、元素数量、文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let buf_type = self.resolve_expr_type(&mut args[0]);
+            if !buf_type.is_pointer() && !buf_type.is_array() {
+                self.report_error("fread 第一个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            for i in 1..3 {
+                let t = self.resolve_expr_type(&mut args[i]);
+                if !self.check_assignable(&Type::int(), &t, loc) {
+                    self.report_error(&format!("fread 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                } else {
+                    insert_implicit_cast(&mut args[i], &Type::int());
+                }
+            }
+            let stream_type = self.resolve_expr_type(&mut args[3]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind, TypeKind::Int) {
+                self.report_error("fread 第四个参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_fwrite(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 4 {
+            self.report_error("fwrite 需要四个参数（缓冲区、元素大小、元素数量、文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let buf_type = self.resolve_expr_type(&mut args[0]);
+            if !buf_type.is_pointer() && !buf_type.is_array() {
+                self.report_error("fwrite 第一个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            for i in 1..3 {
+                let t = self.resolve_expr_type(&mut args[i]);
+                if !self.check_assignable(&Type::int(), &t, loc) {
+                    self.report_error(&format!("fwrite 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                } else {
+                    insert_implicit_cast(&mut args[i], &Type::int());
+                }
+            }
+            let stream_type = self.resolve_expr_type(&mut args[3]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind, TypeKind::Int) {
+                self.report_error("fwrite 第四个参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_fclose(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 1 {
+            self.report_error("fclose 需要一个参数（文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let stream_type = self.resolve_expr_type(&mut args[0]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind, TypeKind::Int) {
+                self.report_error("fclose 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_feof(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 1 {
+            self.report_error("feof 需要一个参数（文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let stream_type = self.resolve_expr_type(&mut args[0]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind, TypeKind::Int) {
+                self.report_error("feof 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
     }
 
     fn check_user_func(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {

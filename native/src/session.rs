@@ -1,5 +1,6 @@
 use crate::compiler::ast::{SourceLoc, Type};
 use crate::vm::instruction::Instruction;
+use crate::vm::vfs::VirtualFileSystem;
 use crate::vm::vm::CideVM;
 use flutter_rust_bridge::frb;
 use std::collections::HashMap;
@@ -195,6 +196,7 @@ pub struct Session {
     pub runtime: RuntimeState,
     pub memory: MemoryState,
     pub vm: Option<CideVM>,
+    pub vfs: VirtualFileSystem,
 }
 
 impl Default for Session {
@@ -204,6 +206,7 @@ impl Default for Session {
             runtime: RuntimeState::default(),
             memory: MemoryState::default(),
             vm: Some(CideVM::default()),
+            vfs: VirtualFileSystem::new(),
         }
     }
 }
