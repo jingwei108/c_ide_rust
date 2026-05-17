@@ -35,6 +35,7 @@ pub struct TypeChecker {
     hints: Vec<TypeError>,
     funcs: HashMap<String, FuncSymbol>,
     structs: HashMap<String, StructSymbol>,
+    unions: HashMap<String, StructSymbol>,
     scopes: Vec<HashMap<String, VarSymbol>>,
     current_func_return: Type,
     loop_depth: i32,
@@ -119,7 +120,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
 impl TypeChecker {
 
     pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
-        // Pass 1: Register structs
+        // Pass 1: Register structs and unions
         for s in &program.structs {
             if self.structs.contains_key(&s.name) {
                 self.report_error(&format!("结构体 '{}' 重复定义", s.name), &s.loc, ErrorCode::E3002_StructRedeclared);
@@ -127,6 +128,14 @@ impl TypeChecker {
             }
             let sym = StructSymbol { fields: s.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect() };
             self.structs.insert(s.name.clone(), sym);
+        }
+        for u in &program.unions {
+            if self.unions.contains_key(&u.name) {
+                self.report_error(&format!("联合体 '{}' 重复定义", u.name), &u.loc, ErrorCode::E3002_StructRedeclared);
+                continue;
+            }
+            let sym = StructSymbol { fields: u.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect() };
+            self.unions.insert(u.name.clone(), sym);
         }
 
         // Pass 2: Register function signatures
@@ -308,6 +317,13 @@ impl TypeChecker {
 
     fn get_struct_field_type(&self, struct_name: &str, field_name: &str) -> Option<Type> {
         let sym = self.structs.get(struct_name)?;
+        for (fty, fname) in &sym.fields {
+            if fname == field_name { return Some(fty.clone()); }
+        }
+        None
+    }
+    fn get_union_field_type(&self, union_name: &str, field_name: &str) -> Option<Type> {
+        let sym = self.unions.get(union_name)?;
         for (fty, fname) in &sym.fields {
             if fname == field_name { return Some(fty.clone()); }
         }
@@ -801,17 +817,25 @@ impl TypeChecker {
             }
             Expr::Member { object, member, loc, ty } => {
                 let obj_type = self.resolve_expr_type(object);
-                let struct_name = if obj_type.is_struct() || (obj_type.is_pointer() && !obj_type.name.is_empty()) {
-                    obj_type.name.clone()
+                let (type_name, is_union) = if obj_type.is_struct() || (obj_type.is_pointer() && !obj_type.name.is_empty() && obj_type.base_kind == TypeKind::Struct) {
+                    (obj_type.name.clone(), false)
+                } else if obj_type.is_union() || (obj_type.is_pointer() && !obj_type.name.is_empty() && obj_type.base_kind == TypeKind::Union) {
+                    (obj_type.name.clone(), true)
                 } else {
-                    self.report_error("'.' 和 '->' 只能用于结构体类型", loc, ErrorCode::E3041_MemberNonStruct);
+                    self.report_error("'.' 和 '->' 只能用于结构体或联合体类型", loc, ErrorCode::E3041_MemberNonStruct);
                     *ty = Type::int();
                     return ty.clone();
                 };
-                if let Some(field_type) = self.get_struct_field_type(&struct_name, member) {
-                    *ty = field_type;
+                let field_type = if is_union {
+                    self.get_union_field_type(&type_name, member)
                 } else {
-                    self.report_error(&format!("结构体 '{}' 没有成员 '{}'", struct_name, member), loc, ErrorCode::E3042_UnknownMember);
+                    self.get_struct_field_type(&type_name, member)
+                };
+                if let Some(ft) = field_type {
+                    *ty = ft;
+                } else {
+                    let kind_str = if is_union { "联合体" } else { "结构体" };
+                    self.report_error(&format!("{} '{}' 没有成员 '{}'", kind_str, type_name, member), loc, ErrorCode::E3042_UnknownMember);
                     *ty = Type::int();
                 }
                 ty.clone()

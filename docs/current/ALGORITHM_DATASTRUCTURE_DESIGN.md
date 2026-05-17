@@ -234,7 +234,7 @@ private:
 
 #### 1.4.1 Property-based Testing 实现
 
-**实现位置**：`Cide.Client.Shared/Core/AlgorithmValidator.cs`
+**实现位置**：`~~Cide.Client.Shared/Core/AlgorithmValidator.cs~~（C# 代码已移除）`
 
 ```csharp
 public static class AlgorithmValidator

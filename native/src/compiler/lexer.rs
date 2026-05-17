@@ -4,7 +4,7 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
-    Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Float, Double,
+    Struct, Union, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Float, Double,
     Null,
     Identifier, Number, FloatLiteral, LongLiteral, CharLiteral, String,
     Plus, Minus, Star, Slash, Percent,
@@ -625,6 +625,7 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         "break"    => Some(TokenType::Break),
         "continue" => Some(TokenType::Continue),
         "struct"   => Some(TokenType::Struct),
+        "union"    => Some(TokenType::Union),
         "sizeof"   => Some(TokenType::Sizeof),
         "switch"   => Some(TokenType::Switch),
         "case"     => Some(TokenType::Case),

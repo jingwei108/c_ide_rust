@@ -297,6 +297,13 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
             .collect();
         session.compile.struct_fields.insert(name, converted);
     }
+    for (name, fields) in output.union_defs {
+        let converted: Vec<(String, i32)> = fields
+            .into_iter()
+            .map(|f| (f.name, 0))
+            .collect();
+        session.compile.struct_fields.insert(name, converted);
+    }
 
     // 算法模式识别
     session.compile.algorithm_matches =

@@ -43,7 +43,7 @@ docs/                   设计文档、事故报告
 | Phase 2d | TypeChecker | ✅ 完成 |
 | Phase 2e | BytecodeGen | ✅ 完成 |
 | Phase 2f | C API `cide_compile_all` 接线 | ✅ 完成 |
-| Phase 3 | C# 前端端到端测试（已下线，Flutter 替代） | ✅ 完成 |
+| Phase 3 | ~~C# 前端~~ → Flutter 前端端到端测试 | ✅ 完成 |
 | Phase 4 | Android 目标构建（cargo-ndk） | ✅ 完成 |
 | Phase 5 | 清理遗留 C++ / CMake 文件 | ✅ 完成 |
 | Phase 6 | 全面审查：编译警告清理 + 安全加固 + 测试覆盖拓展 | ✅ 完成 |
@@ -52,6 +52,7 @@ docs/                   设计文档、事故报告
 | Phase 9 | Flutter 前端从零搭建：IDE 界面 + 编辑器 + 调试面板 + 算法可视化 | ✅ 完成 |
 | Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
 | Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 44 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
+| Phase 12 | `union` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ `sizeof(union U)` | ✅ 完成 |
 
 ## 编码约定
 
@@ -87,7 +88,7 @@ docs/                   设计文档、事故报告
 - **`enum` 局部/全局变量声明** — `enum Color c = GREEN;`（需先声明 enum 类型）
 - **`typedef`** — `typedef int Integer; Integer a = 42;`
 - **`typedef struct`** — `typedef struct { int x; } Point; Point p;`（匿名结构体 + typedef 别名）以及 `typedef struct Vec { int x; } VecAlias;`（命名结构体 + typedef 别名）
-- **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(arr)`、`sizeof(ptr)`
+- **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(union U)`、`sizeof(arr)`、`sizeof(ptr)`
 - **`scanf` 多参数** — `scanf("%d %d %d", &a, &b, &c)`
 - **指针算术** — `p++` / `p--` / `p + i` / `p - i` / `p - q`，自动按 pointee 类型大小缩放（`int*` 步长 4，`char*` 步长 1，`struct*` 步长为结构体大小）
 - **函数前向声明** — `int foo(int);` 原型声明，函数定义可放在调用者之后
@@ -96,6 +97,7 @@ docs/                   设计文档、事故报告
 - **`fprintf`** — `fprintf(stdout, "format", ...)` / `fprintf(stderr, "format", ...)`，stream 参数被忽略，输出行为与 `printf` 相同
 - **`realloc`** — `realloc(ptr, new_size)`，支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
 - **`qsort`** — `qsort(base, nmemb, size, compar)`，支持用户自定义比较函数（通过 VM 调用用户函数）
+- **`union` 类型** — `union U { int i; double d; }; union U u; u.i = 1; u.d = 3.14; printf("%.2f", u.d);`，内存布局为所有字段 offset=0、size=max(fields)，支持成员访问、指针访问（`p->i`）、`sizeof(union U)`
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护
@@ -106,8 +108,6 @@ docs/                   设计文档、事故报告
 - **BytecodeGen char 数组初始化（2026-05-10）**：`char s[] = "hello"` 使用 `StoreLocal`（i32）导致字符间隔 3 字节零 → 改用 `StoreMemByte` 连续存储
 - **移动端内存泄漏**：JS interop 监听器未清理、CTS 未 Dispose、ConsoleOutput 无上限
 - **clippy 警告清零（2026-05-10）**：`Type::to_string` 改为 `Display`、`SourceLoc` clone 清理、`if_same_then_else`、`module_inception` 等 → `cargo clippy` 0 警告
-- **C# 前端单元测试（2026-05-10）**：新建 `Cide.Client.Tests` xUnit 项目，覆盖 Session 创建/编译成功/编译失败路径 → 4 测试通过
-- **Maui VM 释放（2026-05-10）**：`MainViewModel.Dispose()` 添加 `_disposed` 幂等保护；`Home.razor` 页面销毁时调用 `VM.Dispose()`
 - **unsigned 类型提示（2026-05-10）**：Parser 保留 `is_unsigned` 标记；TypeChecker 遇到 `unsigned int x;` 时报告 `W3056` 提示"被映射为 int，暂不支持无符号语义"
 - **`float` 类型支持** — `float x = 3.14;`、`float a = 5;`（隐式 int→float 转换）、算术/比较/复合赋值、强制转换 `(float)`/`(int)`、`printf("%f")` / `scanf("%f")`
 - **函数调用参数隐式转换** — `void foo(float x) {} foo(5);` 自动插入 `(float)` cast；`bar(3.7f)` 传入 int 形参自动截断为 int，并发出 `W3053` 精度丢失警告
@@ -116,11 +116,10 @@ docs/                   设计文档、事故报告
 - **C 子集 P2 拓展（2026-05-10）**：位运算符 `& | ^ ~ << >>` 全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM），新增 2 个 E2E 测试；三目运算符 `? :` 全管线支持，新增 1 个 E2E 测试
 - **BytecodeGen 指针步长修复（2026-05-10）**：`BinaryOp::Add` 指针+整数时硬编码 `PushConst 4` → 改用 `ptr_step_size()`，正确支持 `char*`（步长 1）和 `struct*`（步长为结构体大小）
 - **VM 栈-堆碰撞保护修复（2026-05-10）**：`heap_limit` 闭包在 `setup_vm` 时按值捕获初始 `heap_offset`，后续 `malloc` 修改不反映 → 删除闭包机制，`Call` 指令处直接读取 `session.memory.heap_offset`
-- **TypeChecker 警告透传修复（2026-05-10）**：`W3050`~`W3056` 被 `_type_warnings` 丢弃，前端完全看不到 → 新增 `push_warnings()`，severity 设为 1，C# 前端 `DiagnosticService` 正确渲染为 warning 行
+- **TypeChecker 警告透传修复（2026-05-10）**：`W3050`~`W3056` 被 `_type_warnings` 丢弃，前端完全看不到 → 新增 `push_warnings()`，severity 设为 1，Flutter 前端正确渲染为 warning 行
 - **VM 移位指令越界保护（2026-05-10）**：`Shl`/`Shr` 直接执行 `a << b` 不检查边界 → 添加 `!(0..32).contains(&b)` 检查，越界时 `trap` 报告未定义行为
 - **位运算错误码勘误（2026-05-10）**：位运算报错借用 `E3019_LogicTypeError` → 新增 `E3048_BitOpTypeError` 专用错误码
 - **Session Default 冲突修复（2026-05-10）**：`session.rs` 同时存在 `#[derive(Default)]` 和手动 `impl Default` → 删除派生宏，保留手动实现（`vm: Some(CideVM::default())`）
-- **C# 单元测试假阳性修复（2026-05-10）**：`catch (DllNotFoundException)` 后直接 `return` 导致 DLL 缺失时 3 个测试全部静默通过 → 改为 `Assert.Fail`，并在 `csproj` 中引用 native DLL 确保复制到输出目录
 - **BytecodeGen 缺失 main 保护（2026-05-10）**：`self.func_index["main"]` 在空源码时 panic → 改为 `get("main")` 安全查找，缺失时返回错误"缺少 main 函数入口"
 - **TypeChecker 赋值警告降噪（2026-05-10）**：`W3053_ImplicitScalarConversion` 对 `char->int` 安全提升也报警告 → 只保留 `int->char`（可能截断）的警告；`W3055_VoidPointerCast` 对 `malloc` 返回的 `void*->int*` 也报警告 → 删除（C 标准允许）
 - **隐式转换提示系统（2026-05-10）**：TypeChecker 新增 `hints` 集合（severity=2），对所有被允许的隐式转换分类提示：
@@ -159,14 +158,14 @@ docs/                   设计文档、事故报告
 - **会话保存/加载（2026-05-10）**：`cide_session_save/load` 为桩函数 → 引入 `serde` + `serde_json`，实现 `SessionSnapshot` 序列化/反序列化，保存 compile/runtime/memory 状态
 - **文档同步（2026-05-10）**：`DESIGN.md` / `ROADMAP.md` 仍描述 C++ 后端（CMake/Clang/WasmCodeGen）→ 全面更新为 Rust 后端（Cargo/自定义字节码）
 - **C 头文件同步（2026-05-10）**：`cide_capi.h` 缺失 `E2007`/`E2008`/`E3048`/`W3051`~`W3056` → 补全；注释"分号分隔"改为"换行分隔"
-- **CI/CD 初始化（2026-05-10）**：零 CI/CD → 新增 `.github/workflows/ci.yml`，覆盖 Rust 编译/测试/clippy + C# 编译/测试
+- **CI/CD 初始化（2026-05-10）**：零 CI/CD → 新增 `.github/workflows/ci.yml`，覆盖 Rust 编译/测试/clippy + Flutter 构建
 - **Parser 匿名 struct typedef 支持（2026-05-10）**：`typedef struct { ... } Name;` 和 `typedef struct Name { ... } Alias;` 原报"预期结构体名称"级联错误 → 全面支持，新增 `E1006_UnsupportedFeature` 错误码用于友好提示其他暂不支持语法
 - **诊断与修复系统全面拓展（2026-05-10）**：
   - 新增 `native/src/diagnostics/error_catalog.rs`：为全部 56+ 个错误/警告码提供中文标题、emoji、通俗解释、常见原因
   - `push_diagnostics`/`push_warnings` 统一调用 `error_catalog::generate_fix`，自动生成结构化修复坐标
   - 新增可自动修复场景：缺少 `"`（E1002）、缺少 `}`/`)/`]`（E2006/E2007/E2008）、`|`→`||` / `&`→`&&`（E1004）、`<=`→`<`（W3051）、条件内 `=`→`==`（W3050）等
   - 前端 `CodeFixService` 增加 `InsertText` 支持及更多 fallback 修复模式（`->`→`.`、补 `return 0;` 等）
-  - 新增 11 张知识卡片 JSON（Desktop + Maui 双端资源同步）：覆盖缺少分号/括号/引号、变量未声明、scanf 取地址、结构体成员访问、右值赋值、缺少返回值等高频错误
+  - 新增 11 张知识卡片 JSON（Flutter 端资源）：覆盖缺少分号/括号/引号、变量未声明、scanf 取地址、结构体成员访问、右值赋值、缺少返回值等高频错误
 - **代码审查修复（2026-05-14）**：
   - `cide_session_load` 丢失 VM 状态：`setup_vm()` 恢复 bytecode/函数表/断点，会话保存→加载→运行链路可用
   - `call_user_function` Trap 时错误取栈顶值：拆分 `Finished`/`Trap` match 分支，Trap 返回 `None`

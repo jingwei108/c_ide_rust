@@ -1770,6 +1770,100 @@ int main() {
 }
 
 #[test]
+fn test_e2e_union_basic() {
+    let src = r#"
+#include <stdio.h>
+union U { int i; float f; };
+int main() {
+    union U u;
+    u.i = 1;
+    printf("%d", u.i);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_union_double_member() {
+    let src = r#"
+#include <stdio.h>
+union U { int i; double d; };
+int main() {
+    union U u;
+    u.d = 3.14;
+    printf("%.2f", u.d);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3.14")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_union_sizeof() {
+    let src = r#"
+#include <stdio.h>
+union U { int i; double d; };
+int main() {
+    printf("%d", (int)sizeof(union U));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("8")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_union_int_member() {
+    let src = r#"
+#include <stdio.h>
+union U { int i; double d; };
+int main() {
+    union U u;
+    u.i = 42;
+    printf("%d", u.i);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_union_pointer() {
+    let src = r#"
+#include <stdio.h>
+union U { int i; double d; };
+int main() {
+    union U u;
+    union U *p = &u;
+    p->i = 99;
+    printf("%d", p->i);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("99")), "Outputs: {:?}", outputs);
+}
+
+#[test]
 fn test_e2e_int_func_arg_implicit_cast_from_float() {
     let src = r#"
 #include <stdio.h>

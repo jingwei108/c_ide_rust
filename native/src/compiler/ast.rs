@@ -9,6 +9,7 @@ pub enum TypeKind {
     Pointer,
     Array,
     Struct,
+    Union,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -71,6 +72,9 @@ impl Type {
     pub fn struct_type(name: impl Into<String>) -> Self {
         Self { kind: TypeKind::Struct, name: name.into(), ..Self::default() }
     }
+    pub fn union_type(name: impl Into<String>) -> Self {
+        Self { kind: TypeKind::Union, name: name.into(), ..Self::default() }
+    }
 
     pub fn is_scalar(&self) -> bool {
         matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
@@ -83,6 +87,9 @@ impl Type {
     }
     pub fn is_struct(&self) -> bool {
         matches!(self.kind, TypeKind::Struct)
+    }
+    pub fn is_union(&self) -> bool {
+        matches!(self.kind, TypeKind::Union)
     }
     pub fn is_void(&self) -> bool {
         matches!(self.kind, TypeKind::Void)
@@ -131,9 +138,11 @@ impl Type {
             TypeKind::Float => "float".to_string(),
             TypeKind::Double => "double".to_string(),
             TypeKind::LongLong => "long long".to_string(),
+            TypeKind::Union => format!("union {}", self.name),
             TypeKind::Pointer => {
                 let base = match self.base_kind {
                     TypeKind::Struct => format!("struct {}", self.name),
+            TypeKind::Union => format!("union {}", self.name),
                     TypeKind::Char => "char".to_string(),
                     TypeKind::Float => "float".to_string(),
                     TypeKind::Void => "void".to_string(),
@@ -318,6 +327,7 @@ pub struct GlobalDecl {
 #[derive(Debug, Clone, Default)]
 pub struct ProgramNode {
     pub structs: Vec<StructDecl>,
+    pub unions: Vec<StructDecl>,
     pub globals: Vec<GlobalDecl>,
     pub funcs: Vec<FuncDecl>,
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-C IDE MAUI Full-Chain Validation Script
-Verifies: Compile -> Run -> Step -> Memory/Array Visualization
+Cide Flutter Full-Chain Validation Script
+Verifies: App Launch -> UI Loaded on Android device
 
 Usage:
     python scripts/test_full_chain.py --device <device_id>   # Run on specific device
@@ -38,8 +38,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--apk-path",
-        default=r"dist\android\com.cide.app-Signed.apk",
-        help="Path to the APK file",
+        default=r"CideFlutter\build\app\outputs\flutter-apk\app-debug.apk",
+        help="Path to the Flutter APK file",
     )
     parser.add_argument(
         "--skip-install", action="store_true", help="Skip APK installation"
@@ -115,18 +115,18 @@ def main() -> int:
     else:
         warn("App Launch — process not found immediately, may still be starting")
 
-    # Test 2: WebView Loaded
+    # Test 2: Flutter Engine Loaded
     time.sleep(2)
     result = run(
-        [str(adb), "-s", device, "logcat", "-d", "-s", "chromium"],
+        [str(adb), "-s", device, "logcat", "-d", "-s", "flutter"],
         capture_output=True,
         check=False,
     )
     log = result.stdout
-    if log and ("CodeMirror" in log or "Blazor" in log):
-        success("WebView Loaded")
+    if log and ("FlutterEngine" in log or "FlutterActivity" in log):
+        success("Flutter Engine Loaded")
     else:
-        warn("WebView Loaded — CodeMirror/Blazor markers not found in logcat")
+        warn("Flutter Engine Loaded — Flutter markers not found in logcat")
 
     info("Interactive chain tests (compile/run/step/viz) require manual verification or UI automation.")
     info("Manual checklist:")

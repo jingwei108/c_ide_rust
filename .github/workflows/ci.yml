@@ -33,24 +33,25 @@ jobs:
         run: cargo clippy -- -D warnings
         working-directory: native
 
-  csharp:
-    name: C# Build & Test
+  flutter:
+    name: Flutter Build
     runs-on: windows-latest
     needs: rust
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install .NET
-        uses: actions/setup-dotnet@v4
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
         with:
-          dotnet-version: '10.0.x'
+          flutter-version: '3.29.x'
 
-      - name: Build native DLL (Debug)
-        run: cargo build
-        working-directory: native
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Build C# tests
-        run: dotnet build Cide.Client.Tests/Cide.Client.Tests.csproj
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: CideFlutter
 
-      - name: Run C# tests
-        run: dotnet test Cide.Client.Tests/Cide.Client.Tests.csproj --no-build
+      - name: Build Windows (Debug)
+        run: flutter build windows --debug
+        working-directory: CideFlutter

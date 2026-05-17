@@ -1,3 +1,5 @@
+> 归档说明：本文档基于已移除的 C# MAUI 前端编写，仅供参考。
+>
 # C IDE 移动端功能测试计划
 
 > 本文档基于 `Cide.Client.Maui`（.NET MAUI + Blazor Hybrid）Android 端代码结构整理，用于移动端真机/模拟器功能测试。

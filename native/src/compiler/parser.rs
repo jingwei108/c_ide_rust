@@ -138,6 +138,7 @@ impl Parser {
            self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
            self.check(TokenType::Long) || self.check(TokenType::Short) ||
            self.check(TokenType::Signed) || self.check(TokenType::Const) ||
+           self.check(TokenType::Union) ||
            self.check(TokenType::LongLiteral) {
             return true;
         }
@@ -215,6 +216,8 @@ impl Parser {
                     self.errors.truncate(errors_checkpoint);
                     self.parse_global_var_or_func(&mut program);
                 }
+            } else if self.check(TokenType::Union) {
+                program.unions.push(self.parse_union_decl());
             } else if self.is_type_token() {
                 self.parse_global_var_or_func(&mut program);
             } else {
@@ -304,6 +307,23 @@ impl Parser {
         decl
     }
 
+    fn parse_union_decl(&mut self) -> StructDecl {
+        self.consume(TokenType::Union, "预期 'union'");
+        let name_tok = if self.check(TokenType::Identifier) {
+            self.advance().clone()
+        } else {
+            Token {
+                ty: TokenType::Identifier,
+                text: format!("__anon_union_{}", self.pos),
+                line: self.current().line,
+                column: self.current().column,
+            }
+        };
+        let decl = self.parse_struct_body(name_tok.text.clone(), SourceLoc { line: name_tok.line, column: name_tok.column });
+        self.consume(TokenType::Semicolon, "联合体声明后预期 ';'");
+        decl
+    }
+
     fn parse_typedef_struct_decl(&mut self, program: &mut ProgramNode) {
         let loc = self.current().clone();
         self.advance(); // typedef
@@ -381,6 +401,13 @@ impl Parser {
             Type::float()
         } else if self.match_token(TokenType::Double) {
             Type::double()
+        } else if self.match_token(TokenType::Union) {
+            if self.check(TokenType::Identifier) {
+                let name_tok = self.advance().clone();
+                Type::union_type(name_tok.text)
+            } else {
+                Type::union_type("")
+            }
         } else if self.check(TokenType::LongLiteral) {
             self.advance();
             Type::long_long()
@@ -957,6 +984,7 @@ impl Parser {
             let mut t = Type::default();
             if self.check(TokenType::Int) || self.check(TokenType::Void) ||
                self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
+               self.check(TokenType::Union) || self.check(TokenType::Enum) ||
                self.check(TokenType::Unsigned) || self.check(TokenType::Long) || self.check(TokenType::LongLiteral) ||
                self.check(TokenType::Short) || self.check(TokenType::Signed) ||
                self.check(TokenType::Const) ||

@@ -38,6 +38,7 @@ pub struct BytecodeGen {
     symbols: Vec<VMSymbol>,
     sym_index: HashMap<String, i32>,
     struct_defs: HashMap<String, Vec<StructField>>,
+    union_defs: HashMap<String, Vec<StructField>>,
     string_data: Vec<(u32, String)>,
     string_mem_offset: u32,
     source_map: Vec<(u32, VMSourceLoc)>,
@@ -79,6 +80,7 @@ impl BytecodeGen {
             symbols: Vec::new(),
             sym_index: HashMap::new(),
             struct_defs: HashMap::new(),
+            union_defs: HashMap::new(),
             string_data: Vec::new(),
             string_mem_offset: 0x1000,
             source_map: Vec::new(),
@@ -93,6 +95,9 @@ impl BytecodeGen {
 
         for s in &program.structs {
             self.struct_defs.insert(s.name.clone(), s.fields.clone());
+        }
+        for u in &program.unions {
+            self.union_defs.insert(u.name.clone(), u.fields.clone());
         }
 
         // Pass 1: Register globals (byte offsets)
@@ -250,6 +255,7 @@ impl BytecodeGen {
             source_map: self.source_map,
             symbols: self.symbols,
             struct_defs: self.struct_defs,
+            union_defs: self.union_defs,
             f64_constants: self.f64_constants,
             i64_constants: self.i64_constants,
         })
@@ -350,23 +356,42 @@ impl BytecodeGen {
     }
 
     fn get_member_offset(&self, object_type: &Type, member_name: &str) -> i32 {
-        let struct_name = match object_type.kind {
-            TypeKind::Struct => &object_type.name,
-            TypeKind::Pointer if object_type.base_kind == TypeKind::Struct => &object_type.name,
-            _ => return 0,
-        };
-        let fields = match self.struct_defs.get(struct_name) {
-            Some(f) => f,
-            None => return 0,
-        };
-        let mut offset = 0;
-        for field in fields {
-            if field.name == member_name {
-                return offset;
+        match object_type.kind {
+            TypeKind::Union | TypeKind::Pointer if object_type.base_kind == TypeKind::Union => {
+                // All union members start at offset 0
+                let _ = member_name;
+                0
             }
-            offset += self.type_size(&field.ty);
+            TypeKind::Struct => {
+                let fields = match self.struct_defs.get(&object_type.name) {
+                    Some(f) => f,
+                    None => return 0,
+                };
+                let mut offset = 0;
+                for field in fields {
+                    if field.name == member_name {
+                        return offset;
+                    }
+                    offset += self.type_size(&field.ty);
+                }
+                0
+            }
+            TypeKind::Pointer if object_type.base_kind == TypeKind::Struct => {
+                let fields = match self.struct_defs.get(&object_type.name) {
+                    Some(f) => f,
+                    None => return 0,
+                };
+                let mut offset = 0;
+                for field in fields {
+                    if field.name == member_name {
+                        return offset;
+                    }
+                    offset += self.type_size(&field.ty);
+                }
+                0
+            }
+            _ => 0,
         }
-        0
     }
 
     fn push_f64_constant(&mut self, val: f64) -> i32 {
@@ -393,6 +418,11 @@ impl BytecodeGen {
                             f.iter().map(|field| self.type_size(&field.ty)).sum()
                         }).unwrap_or(4)
                     }
+                    TypeKind::Union => {
+                        self.union_defs.get(&ty.name).map(|f| {
+                            f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0)
+                        }).unwrap_or(4)
+                    }
                     _ => 4,
                 }
             }
@@ -409,6 +439,11 @@ impl BytecodeGen {
             TypeKind::Struct => {
                 self.struct_defs.get(&arr_type.name).map(|f| {
                     f.iter().map(|field| self.type_size(&field.ty)).sum()
+                }).unwrap_or(4)
+            }
+            TypeKind::Union => {
+                self.union_defs.get(&arr_type.name).map(|f| {
+                    f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0)
                 }).unwrap_or(4)
             }
             _ => 4,
@@ -433,22 +468,9 @@ impl BytecodeGen {
                     f.iter().map(|field| self.type_size(&field.ty)).sum()
                 }).unwrap_or(0)
             }
-        }
-    }
-
-    #[allow(dead_code)]
-    fn elem_size(&self, ty: &Type) -> i32 {
-        match ty.base_kind {
-            TypeKind::Void => 4,
-            TypeKind::Int => 4,
-            TypeKind::Char => 1,
-            TypeKind::Float => 4,
-            TypeKind::Double | TypeKind::LongLong => 8,
-            TypeKind::Pointer => 4,
-            TypeKind::Array => 4,
-            TypeKind::Struct => {
-                self.struct_defs.get(&ty.name).map(|f| {
-                    f.iter().map(|field| self.type_size(&field.ty)).sum()
+            TypeKind::Union => {
+                self.union_defs.get(&ty.name).map(|f| {
+                    f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0)
                 }).unwrap_or(0)
             }
         }
@@ -1293,7 +1315,15 @@ impl BytecodeGen {
             Expr::Member { object, member, ty, .. } => {
                 self.gen_member_addr(object, member, &loc);
                 if !ty.is_array() {
-                    self.emit(OpCode::LoadMem, 0, &loc);
+                    if ty.kind == TypeKind::Char {
+                        self.emit(OpCode::LoadMemByte, 0, &loc);
+                    } else if ty.kind == TypeKind::Double {
+                        self.emit(OpCode::LoadMemD, 0, &loc);
+                    } else if ty.kind == TypeKind::LongLong {
+                        self.emit(OpCode::LoadMemQ, 0, &loc);
+                    } else {
+                        self.emit(OpCode::LoadMem, 0, &loc);
+                    }
                 }
             }
             Expr::Ternary { cond, then_branch, else_branch, .. } => {
@@ -1606,95 +1636,88 @@ impl BytecodeGen {
             }
         } else if let Expr::Index { array, index, ty, .. } = left {
             let result_ty = ty.clone();
-            self.gen_index(array, index, &result_ty, loc, true);
             if *op != AssignOp::Assign {
+                self.gen_index(array, index, &result_ty, loc, true);
                 self.emit(OpCode::Dup, 0, loc);
                 if result_ty.kind == TypeKind::Char {
                     self.emit(OpCode::LoadMemByte, 0, loc);
                 } else if result_ty.kind == TypeKind::Double {
                     self.emit(OpCode::LoadMemD, 0, loc);
+                } else if result_ty.kind == TypeKind::LongLong {
+                    self.emit(OpCode::LoadMemQ, 0, loc);
                 } else {
                     self.emit(OpCode::LoadMem, 0, loc);
                 }
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
+                if result_ty.kind == TypeKind::Char {
+                    self.emit(OpCode::StoreMemByte, 0, loc);
+                } else if result_ty.kind == TypeKind::Double {
+                    self.emit(OpCode::StoreMemD, 0, loc);
+                } else if result_ty.kind == TypeKind::LongLong {
+                    self.emit(OpCode::StoreMemQ, 0, loc);
+                } else {
+                    self.emit(OpCode::StoreMem, 0, loc);
+                }
             } else {
+                self.gen_index(array, index, &result_ty, loc, true);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
+                if result_ty.kind == TypeKind::Char {
+                    self.emit(OpCode::StoreMemByte, 0, loc);
+                } else if result_ty.kind == TypeKind::Double {
+                    self.emit(OpCode::StoreMemD, 0, loc);
+                } else if result_ty.kind == TypeKind::LongLong {
+                    self.emit(OpCode::StoreMemQ, 0, loc);
+                } else {
+                    self.emit(OpCode::StoreMem, 0, loc);
+                }
             }
-            let val_temp = self.get_temp_slot(0);
-            self.emit(OpCode::StoreLocal, val_temp, loc);
-            let addr_temp = self.get_temp_slot(2);
-            self.emit(OpCode::StoreLocal, addr_temp, loc);
-            self.emit(OpCode::LoadLocal, addr_temp, loc);
-            self.emit(OpCode::LoadLocal, val_temp, loc);
-            if result_ty.kind == TypeKind::Char {
-                self.emit(OpCode::StoreMemByte, 0, loc);
-            } else if result_ty.kind == TypeKind::Double {
-                self.emit(OpCode::StoreMemD, 0, loc);
-            } else if result_ty.kind == TypeKind::LongLong {
-                self.emit(OpCode::StoreMemQ, 0, loc);
-            } else {
-                self.emit(OpCode::StoreMem, 0, loc);
-            }
-            self.emit(OpCode::LoadLocal, addr_temp, loc);
-            if result_ty.kind == TypeKind::Char {
-                self.emit(OpCode::LoadMemByte, 0, loc);
-            } else if result_ty.kind == TypeKind::Double {
-                self.emit(OpCode::LoadMemD, 0, loc);
-            } else if result_ty.kind == TypeKind::LongLong {
-                self.emit(OpCode::LoadMemQ, 0, loc);
-            } else {
-                self.emit(OpCode::LoadMem, 0, loc);
-            }
+            self.gen_index(array, index, &result_ty, loc, false);
             return;
         } else if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left {
-            self.gen_expr(operand);
             if *op != AssignOp::Assign {
+                self.gen_expr(operand);
                 self.emit(OpCode::Dup, 0, loc);
                 if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
+                if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
+                else { self.emit(OpCode::StoreMem, 0, loc); }
             } else {
+                self.gen_expr(operand);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
+                if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
+                else { self.emit(OpCode::StoreMem, 0, loc); }
             }
-            let val_temp = self.get_temp_slot(0);
-            self.emit(OpCode::StoreLocal, val_temp, loc);
-            let addr_temp = self.get_temp_slot(1);
-            self.emit(OpCode::StoreLocal, addr_temp, loc);
-            self.emit(OpCode::LoadLocal, addr_temp, loc);
-            self.emit(OpCode::LoadLocal, val_temp, loc);
-            if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
-            else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
-            else { self.emit(OpCode::StoreMem, 0, loc); }
-            self.emit(OpCode::LoadLocal, addr_temp, loc);
+            self.gen_expr(operand);
             if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
             else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
             else { self.emit(OpCode::LoadMem, 0, loc); }
             return;
         } else if let Expr::Member { object, member, .. } = left {
-            self.gen_member_addr(object, member, loc);
             if *op != AssignOp::Assign {
+                self.gen_member_addr(object, member, loc);
                 self.emit(OpCode::Dup, 0, loc);
                 if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
+                if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
+                else { self.emit(OpCode::StoreMem, 0, loc); }
             } else {
+                self.gen_member_addr(object, member, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
+                if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
+                else { self.emit(OpCode::StoreMem, 0, loc); }
             }
-            let val_temp = self.get_temp_slot(0);
-            self.emit(OpCode::StoreLocal, val_temp, loc);
-            let addr_temp = self.get_temp_slot(1);
-            self.emit(OpCode::StoreLocal, addr_temp, loc);
-            self.emit(OpCode::LoadLocal, addr_temp, loc);
-            self.emit(OpCode::LoadLocal, val_temp, loc);
-            if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
-            else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
-            else { self.emit(OpCode::StoreMem, 0, loc); }
-            self.emit(OpCode::LoadLocal, addr_temp, loc);
+            self.gen_member_addr(object, member, loc);
             if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
             else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
             else { self.emit(OpCode::LoadMem, 0, loc); }
@@ -1768,6 +1791,7 @@ pub struct CompileOutput {
     pub source_map: Vec<(u32, VMSourceLoc)>,
     pub symbols: Vec<VMSymbol>,
     pub struct_defs: HashMap<String, Vec<StructField>>,
+    pub union_defs: HashMap<String, Vec<StructField>>,
     pub f64_constants: Vec<f64>,
     pub i64_constants: Vec<i64>,
 }

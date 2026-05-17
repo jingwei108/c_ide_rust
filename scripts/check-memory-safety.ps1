@@ -2,7 +2,7 @@
 .SYNOPSIS
     Memory safety pre-commit check script for Cide project.
 .DESCRIPTION
-    Scans C# and Rust source files for common memory safety anti-patterns.
+    Scans Rust source files for common memory safety anti-patterns.
     Returns exit code 0 if clean, 1 if violations found.
     Run manually: .\scripts\check-memory-safety.ps1
     Or install as git hook:
@@ -23,62 +23,10 @@ function Add-Violation($file, $line, $message, $severity) {
 }
 
 # ============================================================================
-# C# Checks
-# ============================================================================
-$csFiles = Get-ChildItem -Path "$root\Cide.Client" -Recurse -Filter "*.cs" |
-    Where-Object { $_.FullName -notmatch '\\obj\\' -and $_.FullName -notmatch '\\bin\\' }
-$rsFiles = Get-ChildItem -Path "$root\native\src" -Recurse -Filter "*.rs" |
-    Where-Object { $_.FullName -notmatch '\\target\\' }
-
-foreach ($file in $csFiles) {
-    $lines = Get-Content $file.FullName -ErrorAction SilentlyContinue
-    if (-not $lines) { continue }
-
-    for ($i = 0; $i -lt $lines.Count; $i++) {
-        $line = $lines[$i]
-        $ln = $i + 1
-
-        # 1. Event subscription without corresponding -= (heuristic)
-        if ($line -match '\+\=\s*\(?\s*(\w+|\(s\s*,\s*e\))' -and
-            $line -notmatch 'Loaded\s*\+\=|Unloaded\s*\+\=' -and
-            $line -notmatch '\/\/.*\+\=') {
-            # 简单启发式：如果文件中没有对应的 -=，报 warning
-            $eventName = if ($line -match '(\w+)\s*\+\=') { $matches[1] } else { "unknown" }
-            $content = $lines -join "`n"
-            if (-not ($content -match [regex]::Escape($eventName) + '\s*\-\=')) {
-                Add-Violation $file.FullName $ln "Event '$eventName' subscribed with += but no -= found in file" "Warning"
-            }
-        }
-
-        # 2. async void (fire-and-forget without cancellation)
-        if ($line -match 'async\s+void\s+\w+') {
-            Add-Violation $file.FullName $ln "async void detected - ensure CancellationToken is used to prevent UAF after disposal" "Warning"
-        }
-
-        # 3. new SolidColorBrush / new Pen in non-static context (hot path)
-        if ($line -match 'new\s+SolidColorBrush|new\s+Pen\s*\(' -and
-            $line -notmatch 'static\s+readonly|private\s+static|CreateBrush') {
-            Add-Violation $file.FullName $ln "new SolidColorBrush/Pen in instance method - consider static caching to reduce GC pressure" "Suggestion"
-        }
-
-        # 4. IntPtr field without IDisposable
-        if ($line -match 'private\s+IntPtr\s+\w+') {
-            $content = $lines -join "`n"
-            if (-not ($content -match 'IDisposable')) {
-                Add-Violation $file.FullName $ln "IntPtr field detected but class does not implement IDisposable" "Warning"
-            }
-        }
-
-        # 5. Task.Delay without CancellationToken
-        if ($line -match 'Task\.Delay\s*\([^,]+\)' -and $line -notmatch 'CancellationToken') {
-            Add-Violation $file.FullName $ln "Task.Delay without CancellationToken - may access disposed resources after delay" "Warning"
-        }
-    }
-}
-
-# ============================================================================
 # Rust Checks
 # ============================================================================
+$rsFiles = Get-ChildItem -Path "$root\native\src" -Recurse -Filter "*.rs" |
+    Where-Object { $_.FullName -notmatch '\\target\\' }
 foreach ($file in $rsFiles) {
     $lines = Get-Content $file.FullName -ErrorAction SilentlyContinue
     if (-not $lines) { continue }

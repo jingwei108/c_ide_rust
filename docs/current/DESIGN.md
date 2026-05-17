@@ -178,8 +178,6 @@ c-ide/
 │   │   │   └── services/              # 业务逻辑（编译、诊断、修复）
 │   │   └── assets/                    # 知识卡片等资源
 │   └── rust_builder/                  # FRB Rust 构建配置
-├── Cide.Client.Maui/                  # 旧 MAUI 前端（已归档，仅保留）
-│   └── lib/
 └── docs/
     ├── current/                         # 当前有效文档
     │   ├── DESIGN.md

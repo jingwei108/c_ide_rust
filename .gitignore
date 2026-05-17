@@ -12,8 +12,6 @@
 native/check.log
 
 # .NET build artifacts (all platforms)
-**/bin/
-**/obj/
 
 # Distribution / publish outputs
 /dist
