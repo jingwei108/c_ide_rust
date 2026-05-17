@@ -24,6 +24,15 @@ class VariablesTab extends ConsumerWidget {
       accessedMap[av.name] = av.accessType;
     }
 
+    // 上一步变量值，用于检测变化
+    final prevValues = <String, String>{};
+    if (currentStep > 0) {
+      final prevPayload = frameCache[currentStep - 1];
+      for (final pv in prevPayload.localVars) {
+        prevValues[pv.name] = pv.value;
+      }
+    }
+
     if (localVars.isEmpty) {
       return _buildEmpty('当前作用域无变量');
     }
@@ -34,7 +43,8 @@ class VariablesTab extends ConsumerWidget {
       itemBuilder: (context, index) {
         final v = localVars[index];
         final accessType = accessedMap[v.name];
-        return _buildVarTile(v, accessType, isDark);
+        final prevValue = prevValues[v.name];
+        return _buildVarTile(v, accessType, prevValue, isDark);
       },
     );
   }
@@ -55,6 +65,7 @@ class VariablesTab extends ConsumerWidget {
   Widget _buildVarTile(
     dynamic v, // ApiVariableSnapshot
     String? accessType,
+    String? prevValue,
     bool isDark,
   ) {
     final textColor = isDark ? const Color(0xffd4d4d4) : const Color(0xff383a42);
@@ -68,6 +79,26 @@ class VariablesTab extends ConsumerWidget {
     } else if (accessType == "Write") {
       borderColor = Colors.orange;
       badgeText = "写";
+    }
+
+    // 值变化检测
+    String? changeIndicator;
+    Color? changeColor;
+    if (prevValue != null && prevValue != v.value) {
+      final prevNum = double.tryParse(prevValue);
+      final currNum = double.tryParse(v.value);
+      if (prevNum != null && currNum != null) {
+        if (currNum > prevNum) {
+          changeIndicator = '↑';
+          changeColor = Colors.green;
+        } else {
+          changeIndicator = '↓';
+          changeColor = Colors.red;
+        }
+      } else {
+        changeIndicator = '•';
+        changeColor = Colors.amber;
+      }
     }
 
     return Container(
@@ -128,6 +159,24 @@ class VariablesTab extends ConsumerWidget {
                           style: TextStyle(
                             fontSize: 9,
                             color: borderColor,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (changeIndicator != null) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: changeColor?.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          changeIndicator,
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: changeColor,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
