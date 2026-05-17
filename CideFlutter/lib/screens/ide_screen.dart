@@ -28,6 +28,7 @@ import '../widgets/custom_keyboard.dart';
 import '../widgets/template_bar.dart';
 import '../widgets/execution_control_panel.dart';
 import '../widgets/toolbar.dart';
+import '../widgets/breakpoints_tab.dart';
 import '../widgets/var_history_tab.dart';
 import '../widgets/variables_tab.dart';
 import '../widgets/watch_tab.dart';
@@ -466,6 +467,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
         return state.diagnostics.isNotEmpty ? '${state.diagnostics.length}' : null;
       case 'algorithm':
         return state.algorithmMatches.isNotEmpty ? '${state.algorithmMatches.length}' : null;
+      case 'breakpoints':
+        return state.breakpoints.isNotEmpty ? '${state.breakpoints.length}' : null;
       default:
         return null;
     }
@@ -499,6 +502,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
         return _buildProgressTab(state, isDark);
       case 'varHistory':
         return _buildVarHistoryTab(isDark);
+      case 'breakpoints':
+        return _buildBreakpointsTab(state, isDark);
       default:
         return const SizedBox.shrink();
     }
@@ -652,6 +657,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
 
   Widget _buildProgressTab(IdeState state, bool isDark) {
     return ProgressTab(state: state);
+  }
+
+  Widget _buildBreakpointsTab(IdeState state, bool isDark) {
+    return BreakpointsTab(state: state, isDark: isDark);
   }
 }
 
