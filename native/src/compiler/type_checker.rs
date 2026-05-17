@@ -43,7 +43,7 @@ pub struct TypeChecker {
 
 fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     let current_ty = expr.ty().clone();
-    if target.kind == TypeKind::Double && current_ty.kind != TypeKind::Double && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+    if target.kind == TypeKind::Double && current_ty.kind != TypeKind::Double && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong) {
         if matches!(expr, Expr::FloatLiteral { .. }) {
             expr.set_ty(Type::double());
         } else {
@@ -56,11 +56,12 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
                 ty: Type::double(),
             };
         }
-    } else if target.kind != TypeKind::Double && current_ty.kind == TypeKind::Double && matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+    } else if target.kind != TypeKind::Double && current_ty.kind == TypeKind::Double && matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong) {
         let loc = *expr.loc();
         let target_ty = match target.kind {
             TypeKind::Char => Type::char(),
             TypeKind::Float => Type::float(),
+            TypeKind::LongLong => Type::long_long(),
             _ => Type::int(),
         };
         let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
@@ -70,7 +71,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
             loc,
             ty: target_ty,
         };
-    } else if target.kind == TypeKind::Float && current_ty.kind != TypeKind::Float && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char) {
+    } else if target.kind == TypeKind::Float && current_ty.kind != TypeKind::Float && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char | TypeKind::LongLong) {
         let loc = *expr.loc();
         let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
         *expr = Expr::Cast {
@@ -79,7 +80,30 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
             loc,
             ty: Type::float(),
         };
-    } else if target.kind != TypeKind::Float && current_ty.kind == TypeKind::Float && matches!(target.kind, TypeKind::Int | TypeKind::Char) {
+    } else if target.kind != TypeKind::Float && current_ty.kind == TypeKind::Float && matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::LongLong) {
+        let loc = *expr.loc();
+        let target_ty = match target.kind {
+            TypeKind::Char => Type::char(),
+            TypeKind::LongLong => Type::long_long(),
+            _ => Type::int(),
+        };
+        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        *expr = Expr::Cast {
+            expr: Box::new(old),
+            target_type: target_ty.clone(),
+            loc,
+            ty: target_ty,
+        };
+    } else if target.kind == TypeKind::LongLong && current_ty.kind != TypeKind::LongLong && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char) {
+        let loc = *expr.loc();
+        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        *expr = Expr::Cast {
+            expr: Box::new(old),
+            target_type: Type::long_long(),
+            loc,
+            ty: Type::long_long(),
+        };
+    } else if target.kind != TypeKind::LongLong && current_ty.kind == TypeKind::LongLong && matches!(target.kind, TypeKind::Int | TypeKind::Char) {
         let loc = *expr.loc();
         let target_ty = if target.kind == TypeKind::Char { Type::char() } else { Type::int() };
         let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
@@ -204,7 +228,7 @@ impl TypeChecker {
         matches!(t.kind, TypeKind::Int | TypeKind::Char)
     }
     fn is_scalar(&self, t: &Type) -> bool {
-        matches!(t.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)
+        matches!(t.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
     }
 
     fn is_comparable(&self, a: &Type, b: &Type) -> bool {
@@ -609,6 +633,7 @@ impl TypeChecker {
                         if self.is_scalar(&left_type) && self.is_scalar(&right_type) {
                             if left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double { Type::double() }
                             else if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() }
+                            else if left_type.kind == TypeKind::LongLong || right_type.kind == TypeKind::LongLong { Type::long_long() }
                             else { Type::int() }
                         } else if left_type.is_pointer() && self.is_int(&right_type) {
                             left_type.clone()
@@ -627,10 +652,11 @@ impl TypeChecker {
                         }
                         if left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double { Type::double() }
                         else if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() }
+                        else if left_type.kind == TypeKind::LongLong || right_type.kind == TypeKind::LongLong { Type::long_long() }
                         else { Type::int() }
                     }
                     BinaryOp::Mod => {
-                        if !self.is_int(&left_type) || !self.is_int(&right_type) {
+                        if !self.is_int(&left_type) && !matches!(left_type.kind, TypeKind::LongLong) || !self.is_int(&right_type) && !matches!(right_type.kind, TypeKind::LongLong) {
                             self.report_error("取模运算要求两边都是 int 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
                         }
                         Type::int()
@@ -735,6 +761,7 @@ impl TypeChecker {
             }
             Expr::Literal { .. } => Type::int(),
             Expr::FloatLiteral { .. } => Type::float(),
+            Expr::LongLiteral { .. } => Type::long_long(),
             Expr::StringLiteral { .. } => Type::pointer(TypeKind::Char, "char"),
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {

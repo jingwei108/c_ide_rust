@@ -6,7 +6,7 @@ pub enum TokenType {
     Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
     Struct, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Float, Double,
     Null,
-    Identifier, Number, FloatLiteral, CharLiteral, String,
+    Identifier, Number, FloatLiteral, LongLiteral, CharLiteral, String,
     Plus, Minus, Star, Slash, Percent,
     Eq, Ne, Lt, Le, Gt, Ge,
     AndAnd, OrOr, Not,
@@ -287,6 +287,14 @@ impl Lexer {
             return self.make_token(TokenType::FloatLiteral, &text);
         }
         let text: String = self.chars[start..self.pos].iter().collect();
+        // check for long-long suffix (LL, ll, L, l)
+        if self.peek(0) == 'L' || self.peek(0) == 'l' {
+            self.advance();
+            if self.peek(0) == 'L' || self.peek(0) == 'l' {
+                self.advance();
+            }
+            return self.make_token(TokenType::LongLiteral, &text);
+        }
         self.make_token(TokenType::Number, &text)
     }
 

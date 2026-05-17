@@ -1716,6 +1716,60 @@ int main() {
 }
 
 #[test]
+fn test_e2e_long_long_basic() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    long long ll = 9223372036854775807LL;
+    printf("%lld", ll);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("9223372036854775807")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_long_long_arith() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    long long a = 3000000000LL;
+    long long b = 2000000000LL;
+    long long c = a + b;
+    printf("%lld", c);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("5000000000")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_long_long_scanf() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    long long ll;
+    scanf("%lld", &ll);
+    printf("%lld", ll);
+    return 0;
+}
+"#;
+    let result = compile_and_run_with_input(src, "123456789012");
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("123456789012")), "Outputs: {:?}", outputs);
+}
+
+#[test]
 fn test_e2e_int_func_arg_implicit_cast_from_float() {
     let src = r#"
 #include <stdio.h>

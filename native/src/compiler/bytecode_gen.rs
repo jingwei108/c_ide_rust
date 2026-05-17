@@ -34,6 +34,7 @@ pub struct BytecodeGen {
     globals_init_64: Vec<(u32, u64)>,
     next_global_offset: i32,
     f64_constants: Vec<f64>,
+    i64_constants: Vec<i64>,
     symbols: Vec<VMSymbol>,
     sym_index: HashMap<String, i32>,
     struct_defs: HashMap<String, Vec<StructField>>,
@@ -74,6 +75,7 @@ impl BytecodeGen {
             globals_init_64: Vec::new(),
             next_global_offset: 0,
             f64_constants: Vec::new(),
+            i64_constants: Vec::new(),
             symbols: Vec::new(),
             sym_index: HashMap::new(),
             struct_defs: HashMap::new(),
@@ -123,10 +125,13 @@ impl BytecodeGen {
                                                     (*value).to_bits()
                                                 }
                                             }
+                                            Expr::LongLiteral { value, .. } => (*value as f64).to_bits(),
                                             Expr::Literal { value, .. } => (*value as f64).to_bits(),
                                             Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
                                                 if let Expr::FloatLiteral { value, .. } = operand.as_ref() {
                                                     (-*value).to_bits()
+                                                } else if let Expr::LongLiteral { value, .. } = operand.as_ref() {
+                                                    (-(*value as f64)).to_bits()
                                                 } else if let Expr::Literal { value, .. } = operand.as_ref() {
                                                     (-(*value as f64)).to_bits()
                                                 } else {
@@ -158,6 +163,9 @@ impl BytecodeGen {
                     }
                     Expr::Literal { value, .. } => {
                         self.globals_init_32.push((offset as u32, *value));
+                    }
+                    Expr::LongLiteral { value, .. } => {
+                        self.globals_init_64.push((offset as u32, *value as u64));
                     }
                     Expr::FloatLiteral { value, .. } => {
                         if g.ty.kind == TypeKind::Double {
@@ -243,6 +251,7 @@ impl BytecodeGen {
             symbols: self.symbols,
             struct_defs: self.struct_defs,
             f64_constants: self.f64_constants,
+            i64_constants: self.i64_constants,
         })
     }
 
@@ -366,13 +375,19 @@ impl BytecodeGen {
         idx
     }
 
+    fn push_i64_constant(&mut self, val: i64) -> i32 {
+        let idx = self.i64_constants.len() as i32;
+        self.i64_constants.push(val);
+        idx
+    }
+
     fn ptr_step_size(&self, ty: &Type) -> i32 {
         match ty.kind {
             TypeKind::Pointer => {
                 match ty.base_kind {
                     TypeKind::Char => 1,
                     TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
-                    TypeKind::Double => 8,
+                    TypeKind::Double | TypeKind::LongLong => 8,
                     TypeKind::Struct => {
                         self.struct_defs.get(&ty.name).map(|f| {
                             f.iter().map(|field| self.type_size(&field.ty)).sum()
@@ -390,7 +405,7 @@ impl BytecodeGen {
         match arr_type.base_kind {
             TypeKind::Char => 1,
             TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
-            TypeKind::Double => 8,
+            TypeKind::Double | TypeKind::LongLong => 8,
             TypeKind::Struct => {
                 self.struct_defs.get(&arr_type.name).map(|f| {
                     f.iter().map(|field| self.type_size(&field.ty)).sum()
@@ -406,7 +421,7 @@ impl BytecodeGen {
             TypeKind::Int => 4,
             TypeKind::Char => 1,
             TypeKind::Float => 4,
-            TypeKind::Double => 8,
+            TypeKind::Double | TypeKind::LongLong => 8,
             TypeKind::Pointer => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
@@ -428,7 +443,7 @@ impl BytecodeGen {
             TypeKind::Int => 4,
             TypeKind::Char => 1,
             TypeKind::Float => 4,
-            TypeKind::Double => 8,
+            TypeKind::Double | TypeKind::LongLong => 8,
             TypeKind::Pointer => 4,
             TypeKind::Array => 4,
             TypeKind::Struct => {
@@ -537,6 +552,8 @@ impl BytecodeGen {
                                     self.gen_expr(elem);
                                     if fields[i].ty.kind == TypeKind::Double {
                                         self.emit(OpCode::StoreMemD, 0, loc);
+                                    } else if fields[i].ty.kind == TypeKind::LongLong {
+                                        self.emit(OpCode::StoreMemQ, 0, loc);
                                     } else {
                                         self.emit(OpCode::StoreMem, 0, loc);
                                     }
@@ -563,14 +580,19 @@ impl BytecodeGen {
                             }
                         } else {
                             self.gen_expr(e);
-                            if vty.kind == TypeKind::Float && e.ty().kind != TypeKind::Float && e.ty().kind != TypeKind::Double {
+                            if vty.kind == TypeKind::Float && e.ty().kind != TypeKind::Float && e.ty().kind != TypeKind::Double && e.ty().kind != TypeKind::LongLong {
                                 self.emit(OpCode::CastI2F, 0, loc);
                             }
-                            if vty.kind == TypeKind::Double && e.ty().kind != TypeKind::Float && e.ty().kind != TypeKind::Double {
+                            if vty.kind == TypeKind::Double && e.ty().kind != TypeKind::Float && e.ty().kind != TypeKind::Double && e.ty().kind != TypeKind::LongLong {
                                 self.emit(OpCode::CastI2D, 0, loc);
+                            }
+                            if vty.kind == TypeKind::LongLong && e.ty().kind != TypeKind::LongLong && e.ty().kind != TypeKind::Double && e.ty().kind != TypeKind::Float {
+                                self.emit(OpCode::CastI2Q, 0, loc);
                             }
                             if vty.kind == TypeKind::Double {
                                 self.emit(OpCode::StoreLocalD, local_offset, loc);
+                            } else if vty.kind == TypeKind::LongLong {
+                                self.emit(OpCode::StoreLocalQ, local_offset, loc);
                             } else {
                                 self.emit(OpCode::StoreLocal, local_offset, loc);
                             }
@@ -817,6 +839,10 @@ impl BytecodeGen {
                     self.emit(OpCode::PushConstF, bits, &loc);
                 }
             }
+            Expr::LongLiteral { value, .. } => {
+                let idx = self.push_i64_constant(*value);
+                self.emit(OpCode::PushConstQ, idx, &loc);
+            }
             Expr::StringLiteral { value, .. } => {
                 let addr = self.string_mem_offset;
                 let new_offset = addr + value.len() as u32 + 1;
@@ -851,6 +877,8 @@ impl BytecodeGen {
                             }
                         } else if ty.kind == TypeKind::Double {
                             self.emit(OpCode::LoadLocalD, local_offset, &loc);
+                        } else if ty.kind == TypeKind::LongLong {
+                            self.emit(OpCode::LoadLocalQ, local_offset, &loc);
                         } else {
                             self.emit(OpCode::LoadLocal, local_offset, &loc);
                         }
@@ -865,6 +893,8 @@ impl BytecodeGen {
                                 self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + global_offset, &loc);
                             } else if ty.kind == TypeKind::Double {
                                 self.emit(OpCode::LoadGlobalD, global_offset, &loc);
+                            } else if ty.kind == TypeKind::LongLong {
+                                self.emit(OpCode::LoadGlobalQ, global_offset, &loc);
                             } else {
                                 self.emit(OpCode::LoadGlobal, global_offset, &loc);
                             }
@@ -882,21 +912,30 @@ impl BytecodeGen {
                 let right_is_ptr = right.ty().is_pointer() || right.ty().is_array();
                 let result_is_double = ty.kind == TypeKind::Double;
                 let result_is_float = ty.kind == TypeKind::Float;
+                let result_is_long_long = ty.kind == TypeKind::LongLong;
                 let any_fp = result_is_double || result_is_float;
 
                 self.gen_expr(left);
-                if any_fp && !left_is_ptr && left.ty().kind != TypeKind::Float && left.ty().kind != TypeKind::Double {
+                if any_fp && !left_is_ptr && left.ty().kind != TypeKind::Float && left.ty().kind != TypeKind::Double && left.ty().kind != TypeKind::LongLong {
                     if result_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
                     else { self.emit(OpCode::CastI2F, 0, &loc); }
                 } else if result_is_double && left.ty().kind == TypeKind::Float {
                     self.emit(OpCode::CastF2D, 0, &loc);
+                } else if result_is_double && left.ty().kind == TypeKind::LongLong {
+                    self.emit(OpCode::CastQ2D, 0, &loc);
+                } else if result_is_long_long && left.ty().kind == TypeKind::Int {
+                    self.emit(OpCode::CastI2Q, 0, &loc);
                 }
                 self.gen_expr(right);
-                if any_fp && !right_is_ptr && right.ty().kind != TypeKind::Float && right.ty().kind != TypeKind::Double {
+                if any_fp && !right_is_ptr && right.ty().kind != TypeKind::Float && right.ty().kind != TypeKind::Double && right.ty().kind != TypeKind::LongLong {
                     if result_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
                     else { self.emit(OpCode::CastI2F, 0, &loc); }
                 } else if result_is_double && right.ty().kind == TypeKind::Float {
                     self.emit(OpCode::CastF2D, 0, &loc);
+                } else if result_is_double && right.ty().kind == TypeKind::LongLong {
+                    self.emit(OpCode::CastQ2D, 0, &loc);
+                } else if result_is_long_long && right.ty().kind == TypeKind::Int {
+                    self.emit(OpCode::CastI2Q, 0, &loc);
                 }
 
                 match op {
@@ -917,6 +956,8 @@ impl BytecodeGen {
                             self.emit(OpCode::AddD, 0, &loc);
                         } else if result_is_float {
                             self.emit(OpCode::AddF, 0, &loc);
+                        } else if result_is_long_long {
+                            self.emit(OpCode::AddQ, 0, &loc);
                         } else {
                             self.emit(OpCode::Add, 0, &loc);
                         }
@@ -936,6 +977,8 @@ impl BytecodeGen {
                             self.emit(OpCode::SubD, 0, &loc);
                         } else if result_is_float {
                             self.emit(OpCode::SubF, 0, &loc);
+                        } else if result_is_long_long {
+                            self.emit(OpCode::SubQ, 0, &loc);
                         } else {
                             self.emit(OpCode::Sub, 0, &loc);
                         }
@@ -943,42 +986,53 @@ impl BytecodeGen {
                     BinaryOp::Mul => {
                         if result_is_double { self.emit(OpCode::MulD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::MulF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::MulQ, 0, &loc); }
                         else { self.emit(OpCode::Mul, 0, &loc); }
                     }
                     BinaryOp::Div => {
                         if result_is_double { self.emit(OpCode::DivD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::DivF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::DivQ, 0, &loc); }
                         else { self.emit(OpCode::Div, 0, &loc); }
                     }
-                    BinaryOp::Mod => self.emit(OpCode::Mod, 0, &loc),
+                    BinaryOp::Mod => {
+                        if result_is_long_long { self.emit(OpCode::ModQ, 0, &loc); }
+                        else { self.emit(OpCode::Mod, 0, &loc); }
+                    }
                     BinaryOp::Eq => {
                         if result_is_double { self.emit(OpCode::EqD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::EqF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::EqQ, 0, &loc); }
                         else { self.emit(OpCode::Eq, 0, &loc); }
                     }
                     BinaryOp::Ne => {
                         if result_is_double { self.emit(OpCode::NeD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::NeF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::NeQ, 0, &loc); }
                         else { self.emit(OpCode::Ne, 0, &loc); }
                     }
                     BinaryOp::Lt => {
                         if result_is_double { self.emit(OpCode::LtD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::LtF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::LtQ, 0, &loc); }
                         else { self.emit(OpCode::Lt, 0, &loc); }
                     }
                     BinaryOp::Le => {
                         if result_is_double { self.emit(OpCode::LeD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::LeF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::LeQ, 0, &loc); }
                         else { self.emit(OpCode::Le, 0, &loc); }
                     }
                     BinaryOp::Gt => {
                         if result_is_double { self.emit(OpCode::GtD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::GtF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::GtQ, 0, &loc); }
                         else { self.emit(OpCode::Gt, 0, &loc); }
                     }
                     BinaryOp::Ge => {
                         if result_is_double { self.emit(OpCode::GeD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::GeF, 0, &loc); }
+                        else if result_is_long_long { self.emit(OpCode::GeQ, 0, &loc); }
                         else { self.emit(OpCode::Ge, 0, &loc); }
                     }
                     BinaryOp::And => self.emit(OpCode::And, 0, &loc),
@@ -1048,6 +1102,8 @@ impl BytecodeGen {
                         };
                         if base_ty == TypeKind::Double {
                             self.emit(OpCode::LoadMemD, 0, &loc);
+                        } else if base_ty == TypeKind::LongLong {
+                            self.emit(OpCode::LoadMemQ, 0, &loc);
                         } else {
                             self.emit(OpCode::LoadMem, 0, &loc);
                         }
@@ -1164,6 +1220,11 @@ impl BytecodeGen {
                         if self.func_index.contains_key(name) {
                             self.emit(OpCode::SplitD, 0, &loc);
                         }
+                    } else if arg_ty.kind == TypeKind::LongLong {
+                        self.gen_expr(arg);
+                        if self.func_index.contains_key(name) {
+                            self.emit(OpCode::SplitQ, 0, &loc);
+                        }
                     } else {
                         self.gen_expr(arg);
                         if (name == "printf" || name == "fprintf") && arg_ty_kind == TypeKind::Float {
@@ -1263,18 +1324,26 @@ impl BytecodeGen {
             }
             Expr::Cast { expr, target_type, .. } => {
                 self.gen_expr(expr);
-                if target_type.kind == TypeKind::Double && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double {
+                if target_type.kind == TypeKind::Double && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double && expr.ty().kind != TypeKind::LongLong {
                     self.emit(OpCode::CastI2D, 0, &loc);
                 } else if target_type.kind == TypeKind::Double && expr.ty().kind == TypeKind::Float {
                     self.emit(OpCode::CastF2D, 0, &loc);
-                } else if target_type.kind == TypeKind::Float && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double {
+                } else if target_type.kind == TypeKind::Double && expr.ty().kind == TypeKind::LongLong {
+                    self.emit(OpCode::CastQ2D, 0, &loc);
+                } else if target_type.kind == TypeKind::Float && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double && expr.ty().kind != TypeKind::LongLong {
                     self.emit(OpCode::CastI2F, 0, &loc);
                 } else if target_type.kind == TypeKind::Float && expr.ty().kind == TypeKind::Double {
                     self.emit(OpCode::CastD2F, 0, &loc);
-                } else if target_type.kind != TypeKind::Float && target_type.kind != TypeKind::Double && expr.ty().kind == TypeKind::Double {
+                } else if target_type.kind == TypeKind::LongLong && expr.ty().kind != TypeKind::LongLong && expr.ty().kind != TypeKind::Double && expr.ty().kind != TypeKind::Float {
+                    self.emit(OpCode::CastI2Q, 0, &loc);
+                } else if target_type.kind == TypeKind::LongLong && expr.ty().kind == TypeKind::Double {
+                    self.emit(OpCode::CastD2Q, 0, &loc);
+                } else if target_type.kind != TypeKind::Float && target_type.kind != TypeKind::Double && target_type.kind != TypeKind::LongLong && expr.ty().kind == TypeKind::Double {
                     self.emit(OpCode::CastD2I, 0, &loc);
-                } else if target_type.kind != TypeKind::Float && target_type.kind != TypeKind::Double && expr.ty().kind == TypeKind::Float {
+                } else if target_type.kind != TypeKind::Float && target_type.kind != TypeKind::Double && target_type.kind != TypeKind::LongLong && expr.ty().kind == TypeKind::Float {
                     self.emit(OpCode::CastF2I, 0, &loc);
+                } else if target_type.kind != TypeKind::Float && target_type.kind != TypeKind::Double && target_type.kind != TypeKind::LongLong && expr.ty().kind == TypeKind::LongLong {
+                    self.emit(OpCode::CastQ2I, 0, &loc);
                 }
             }
             Expr::InitList { .. } => {
@@ -1353,6 +1422,8 @@ impl BytecodeGen {
                 self.emit(OpCode::LoadMemByte, 0, loc);
             } else if result_ty.kind == TypeKind::Double {
                 self.emit(OpCode::LoadMemD, 0, loc);
+            } else if result_ty.kind == TypeKind::LongLong {
+                self.emit(OpCode::LoadMemQ, 0, loc);
             } else {
                 self.emit(OpCode::LoadMem, 0, loc);
             }
@@ -1361,16 +1432,22 @@ impl BytecodeGen {
 
     fn gen_expr_with_cast(&mut self, expr: &mut Expr, target_is_fp: bool, target_is_double: bool, loc: &SourceLoc) {
         self.gen_expr(expr);
-        if target_is_double && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double {
+        let _target_is_long_long = !target_is_fp && expr.ty().kind != TypeKind::Int && expr.ty().kind != TypeKind::Char && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double;
+        // Note: target_is_long_long heuristic is approximate; caller ensures correct cast via Cast nodes
+        if target_is_double && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double && expr.ty().kind != TypeKind::LongLong {
             self.emit(OpCode::CastI2D, 0, loc);
         } else if target_is_double && expr.ty().kind == TypeKind::Float {
             self.emit(OpCode::CastF2D, 0, loc);
-        } else if !target_is_double && target_is_fp && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double {
+        } else if target_is_double && expr.ty().kind == TypeKind::LongLong {
+            self.emit(OpCode::CastQ2D, 0, loc);
+        } else if !target_is_double && target_is_fp && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double && expr.ty().kind != TypeKind::LongLong {
             self.emit(OpCode::CastI2F, 0, loc);
         } else if !target_is_fp && expr.ty().kind == TypeKind::Double {
             self.emit(OpCode::CastD2I, 0, loc);
         } else if !target_is_fp && expr.ty().kind == TypeKind::Float {
             self.emit(OpCode::CastF2I, 0, loc);
+        } else if !target_is_fp && expr.ty().kind == TypeKind::LongLong {
+            self.emit(OpCode::CastQ2I, 0, loc);
         }
     }
 
@@ -1452,6 +1529,7 @@ impl BytecodeGen {
     fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
         let left_is_double = left.ty().kind == TypeKind::Double;
         let left_is_float = left.ty().kind == TypeKind::Float;
+        let left_is_long_long = left.ty().kind == TypeKind::LongLong;
         let left_is_fp = left_is_double || left_is_float;
         if left.ty().is_struct() && *op == AssignOp::Assign {
             self.gen_struct_copy(left, right, loc);
@@ -1479,7 +1557,10 @@ impl BytecodeGen {
                     else if left_is_float { this.emit(OpCode::DivF, 0, loc); }
                     else { this.emit(OpCode::Div, 0, loc); }
                 }
-                AssignOp::ModAssign => this.emit(OpCode::Mod, 0, loc),
+                AssignOp::ModAssign => {
+                    if left_is_long_long { this.emit(OpCode::ModQ, 0, loc); }
+                    else { this.emit(OpCode::Mod, 0, loc); }
+                }
                 _ => {}
             }
         };
@@ -1489,6 +1570,7 @@ impl BytecodeGen {
             if local_offset >= 0 {
                 if *op != AssignOp::Assign {
                     if left_is_double { self.emit(OpCode::LoadLocalD, local_offset, loc); }
+                    else if left_is_long_long { self.emit(OpCode::LoadLocalQ, local_offset, loc); }
                     else { self.emit(OpCode::LoadLocal, local_offset, loc); }
                     self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                     emit_compound(self, loc);
@@ -1496,8 +1578,10 @@ impl BytecodeGen {
                     self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 }
                 if left_is_double { self.emit(OpCode::StoreLocalD, local_offset, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreLocalQ, local_offset, loc); }
                 else { self.emit(OpCode::StoreLocal, local_offset, loc); }
                 if left_is_double { self.emit(OpCode::LoadLocalD, local_offset, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadLocalQ, local_offset, loc); }
                 else { self.emit(OpCode::LoadLocal, local_offset, loc); }
                 return;
             }
@@ -1505,6 +1589,7 @@ impl BytecodeGen {
             if global_offset >= 0 {
                 if *op != AssignOp::Assign {
                     if left_is_double { self.emit(OpCode::LoadGlobalD, global_offset, loc); }
+                    else if left_is_long_long { self.emit(OpCode::LoadGlobalQ, global_offset, loc); }
                     else { self.emit(OpCode::LoadGlobal, global_offset, loc); }
                     self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                     emit_compound(self, loc);
@@ -1512,8 +1597,10 @@ impl BytecodeGen {
                     self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 }
                 if left_is_double { self.emit(OpCode::StoreGlobalD, global_offset, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreGlobalQ, global_offset, loc); }
                 else { self.emit(OpCode::StoreGlobal, global_offset, loc); }
                 if left_is_double { self.emit(OpCode::LoadGlobalD, global_offset, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadGlobalQ, global_offset, loc); }
                 else { self.emit(OpCode::LoadGlobal, global_offset, loc); }
                 return;
             }
@@ -1544,6 +1631,8 @@ impl BytecodeGen {
                 self.emit(OpCode::StoreMemByte, 0, loc);
             } else if result_ty.kind == TypeKind::Double {
                 self.emit(OpCode::StoreMemD, 0, loc);
+            } else if result_ty.kind == TypeKind::LongLong {
+                self.emit(OpCode::StoreMemQ, 0, loc);
             } else {
                 self.emit(OpCode::StoreMem, 0, loc);
             }
@@ -1552,6 +1641,8 @@ impl BytecodeGen {
                 self.emit(OpCode::LoadMemByte, 0, loc);
             } else if result_ty.kind == TypeKind::Double {
                 self.emit(OpCode::LoadMemD, 0, loc);
+            } else if result_ty.kind == TypeKind::LongLong {
+                self.emit(OpCode::LoadMemQ, 0, loc);
             } else {
                 self.emit(OpCode::LoadMem, 0, loc);
             }
@@ -1561,6 +1652,7 @@ impl BytecodeGen {
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
                 if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
@@ -1574,9 +1666,11 @@ impl BytecodeGen {
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, val_temp, loc);
             if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+            else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
             else { self.emit(OpCode::StoreMem, 0, loc); }
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+            else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
             else { self.emit(OpCode::LoadMem, 0, loc); }
             return;
         } else if let Expr::Member { object, member, .. } = left {
@@ -1584,6 +1678,7 @@ impl BytecodeGen {
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
                 if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
@@ -1597,9 +1692,11 @@ impl BytecodeGen {
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             self.emit(OpCode::LoadLocal, val_temp, loc);
             if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+            else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
             else { self.emit(OpCode::StoreMem, 0, loc); }
             self.emit(OpCode::LoadLocal, addr_temp, loc);
             if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+            else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
             else { self.emit(OpCode::LoadMem, 0, loc); }
             return;
         }
@@ -1633,11 +1730,14 @@ fn flatten_init_list(elements: &[Expr]) -> Vec<i32> {
     for elem in elements {
         match elem {
             Expr::Literal { value, .. } => result.push(*value),
+            Expr::LongLiteral { value, .. } => result.push(*value as i32),
             Expr::FloatLiteral { value, .. } => result.push((*value as f32).to_bits() as i32),
             Expr::InitList { elements: sub, .. } => result.extend(flatten_init_list(sub)),
             Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
                 if let Expr::Literal { value, .. } = operand.as_ref() {
                     result.push(-*value);
+                } else if let Expr::LongLiteral { value, .. } = operand.as_ref() {
+                    result.push(-*value as i32);
                 } else {
                     result.push(0);
                 }
@@ -1669,4 +1769,5 @@ pub struct CompileOutput {
     pub symbols: Vec<VMSymbol>,
     pub struct_defs: HashMap<String, Vec<StructField>>,
     pub f64_constants: Vec<f64>,
+    pub i64_constants: Vec<i64>,
 }

@@ -5,6 +5,7 @@ pub enum TypeKind {
     Char,
     Float,
     Double,
+    LongLong,
     Pointer,
     Array,
     Struct,
@@ -51,6 +52,9 @@ impl Type {
     pub fn double() -> Self {
         Self { kind: TypeKind::Double, name: "double".to_string(), ..Self::default() }
     }
+    pub fn long_long() -> Self {
+        Self { kind: TypeKind::LongLong, name: "long long".to_string(), ..Self::default() }
+    }
     pub fn void() -> Self {
         Self { kind: TypeKind::Void, name: "void".to_string(), ..Self::default() }
     }
@@ -69,7 +73,7 @@ impl Type {
     }
 
     pub fn is_scalar(&self) -> bool {
-        matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)
+        matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
     }
     pub fn is_pointer(&self) -> bool {
         matches!(self.kind, TypeKind::Pointer)
@@ -126,6 +130,7 @@ impl Type {
             TypeKind::Char => "char".to_string(),
             TypeKind::Float => "float".to_string(),
             TypeKind::Double => "double".to_string(),
+            TypeKind::LongLong => "long long".to_string(),
             TypeKind::Pointer => {
                 let base = match self.base_kind {
                     TypeKind::Struct => format!("struct {}", self.name),
@@ -198,6 +203,7 @@ pub enum Expr {
     Unary { op: UnaryOp, operand: Box<Expr>, loc: SourceLoc, ty: Type },
     Literal { value: i32, loc: SourceLoc, ty: Type },
     FloatLiteral { value: f64, loc: SourceLoc, ty: Type },
+    LongLiteral { value: i64, loc: SourceLoc, ty: Type },
     StringLiteral { value: String, loc: SourceLoc, ty: Type },
     Identifier { name: String, loc: SourceLoc, ty: Type },
     Call { name: String, args: Vec<Expr>, loc: SourceLoc, ty: Type },
@@ -217,6 +223,7 @@ macro_rules! expr_field {
             Expr::Unary { $field, .. } => $field,
             Expr::Literal { $field, .. } => $field,
             Expr::FloatLiteral { $field, .. } => $field,
+            Expr::LongLiteral { $field, .. } => $field,
             Expr::StringLiteral { $field, .. } => $field,
             Expr::Identifier { $field, .. } => $field,
             Expr::Call { $field, .. } => $field,

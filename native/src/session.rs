@@ -67,6 +67,7 @@ pub struct CompileState {
     pub globals_init: Vec<(u32, i32)>,
     pub globals_init_64: Vec<(u32, u64)>,
     pub f64_constants: Vec<f64>,
+    pub i64_constants: Vec<i64>,
     pub diagnostics: Vec<Diagnostic>,
     pub source_map: Vec<(u32, SourceLoc)>,
     pub func_table: HashMap<String, FuncMeta>,

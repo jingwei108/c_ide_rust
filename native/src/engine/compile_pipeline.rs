@@ -119,6 +119,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     vm.set_globals_32(&session.compile.globals_init);
     vm.set_globals_64(&session.compile.globals_init_64);
     vm.set_f64_constants(session.compile.f64_constants.clone());
+    vm.set_i64_constants(session.compile.i64_constants.clone());
     vm.set_max_steps(10_000_000);
 
     for (name, meta) in &session.compile.func_table {
@@ -190,6 +191,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.bytecode.clear();
     session.compile.globals_init.clear();
     session.compile.globals_init_64.clear();
+    session.compile.i64_constants.clear();
     session.compile.diagnostics.clear();
     session.compile.source_map.clear();
     session.compile.func_table.clear();
@@ -255,6 +257,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.globals_init = output.globals_init_32;
     session.compile.globals_init_64 = output.globals_init_64;
     session.compile.f64_constants = output.f64_constants;
+    session.compile.i64_constants = output.i64_constants;
     session.compile.source_map = output
         .source_map
         .into_iter()

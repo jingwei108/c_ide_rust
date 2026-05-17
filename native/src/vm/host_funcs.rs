@@ -126,12 +126,16 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                             precision = prec_str.parse().ok();
                         }
                     }
-                    // 跳过长度修饰符
+                    // 跳过长度修饰符，记录是否 ll
+                    let mut is_ll = false;
                     if let Some(&c) = chars.peek() {
                         if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
                             chars.next();
                             if let Some(&c2) = chars.peek() {
-                                if (c == 'l' && c2 == 'l') || (c == 'h' && c2 == 'h') {
+                                if c == 'l' && c2 == 'l' {
+                                    is_ll = true;
+                                    chars.next();
+                                } else if c == 'h' && c2 == 'h' {
                                     chars.next();
                                 }
                             }
@@ -141,7 +145,13 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                     if let Some(&spec) = chars.peek() {
                         let arg = args[used];
                         match spec {
-                            'd' | 'i' => out.push_str(&(arg as i32).to_string()),
+                            'd' | 'i' => {
+                                if is_ll {
+                                    out.push_str(&(arg as i64).to_string());
+                                } else {
+                                    out.push_str(&(arg as i32).to_string());
+                                }
+                            }
                             'f' => {
                                 let f = f64::from_bits(arg);
                                 let prec = precision.unwrap_or(6);
@@ -395,8 +405,8 @@ fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     session.runtime.output_lines.push(out);
 }
 
-/// 解析 scanf 格式字符串，返回每个格式符的类型及是否带 long 修饰符（%lf → ('f', true)）。
-fn parse_scanf_specs(fmt: &str) -> Vec<(char, bool)> {
+/// 解析 scanf 格式字符串，返回每个格式符的类型及长度修饰符级别（0=无, 1=l/h, 2=ll）。
+fn parse_scanf_specs(fmt: &str) -> Vec<(char, i32)> {
     let mut specs = Vec::new();
     let mut chars = fmt.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -433,15 +443,16 @@ fn parse_scanf_specs(fmt: &str) -> Vec<(char, bool)> {
                         }
                     }
                     // 读取长度修饰符
-                    let mut is_long = false;
+                    let mut len_mod = 0i32;
                     if let Some(&c) = chars.peek() {
                         if c == 'l' {
-                            is_long = true;
+                            len_mod = 1;
                             chars.next();
                             if let Some(&c2) = chars.peek() {
-                                if c2 == 'l' { chars.next(); } // skip ll
+                                if c2 == 'l' { len_mod = 2; chars.next(); }
                             }
                         } else if c == 'h' {
+                            len_mod = 1;
                             chars.next();
                             if let Some(&c2) = chars.peek() {
                                 if c2 == 'h' { chars.next(); }
@@ -452,7 +463,7 @@ fn parse_scanf_specs(fmt: &str) -> Vec<(char, bool)> {
                     }
                     // 真正的格式字母
                     if let Some(&spec) = chars.peek() {
-                        specs.push((spec, is_long));
+                        specs.push((spec, len_mod));
                         chars.next();
                     }
                 }
@@ -506,7 +517,7 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let chars: Vec<char> = line.chars().collect();
     let mut pos = 0usize;
     // 依次解析并写入各指针地址
-    for (i, (spec, is_long)) in spec_types.iter().enumerate() {
+    for (i, (spec, len_mod)) in spec_types.iter().enumerate() {
         let ptr = ptrs[i];
         match spec {
             'd' => {
@@ -523,14 +534,20 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
                     pos += 1;
                 }
                 let token: String = chars[start..pos].iter().collect();
-                let value: i32 = token.parse().unwrap_or(0);
-                vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
+                if *len_mod >= 2 {
+                    // %lld → long long (8 bytes)
+                    let value: i64 = token.parse().unwrap_or(0);
+                    vm.store_i64(ptr, value as u64, &super::instruction::SourceLoc::default());
+                } else {
+                    let value: i32 = token.parse().unwrap_or(0);
+                    vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
+                }
             }
             'f' => {
                 let (token, new_pos) = read_float_token(&chars, pos);
                 pos = new_pos;
                 if token.is_empty() { break; }
-                if *is_long {
+                if *len_mod >= 1 {
                     // %lf → double (8 bytes)
                     let value: f64 = token.parse().unwrap_or(0.0);
                     vm.store_i64(ptr, value.to_bits(), &super::instruction::SourceLoc::default());

@@ -120,7 +120,7 @@ impl Parser {
             }
             if self.previous().ty == TokenType::Semicolon { return; }
             match current {
-                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float | TokenType::Double |
+                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float | TokenType::Double | TokenType::LongLiteral |
                 TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
                 TokenType::Return | TokenType::Break | TokenType::Continue |
                 TokenType::Struct | TokenType::Switch | TokenType::Case |
@@ -137,7 +137,8 @@ impl Parser {
            self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
            self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
            self.check(TokenType::Long) || self.check(TokenType::Short) ||
-           self.check(TokenType::Signed) || self.check(TokenType::Const) {
+           self.check(TokenType::Signed) || self.check(TokenType::Const) ||
+           self.check(TokenType::LongLiteral) {
             return true;
         }
         if self.check(TokenType::Identifier) {
@@ -361,7 +362,14 @@ impl Parser {
             if self.match_token(TokenType::Const) { is_const = true; continue; }
             if self.match_token(TokenType::Signed) { continue; }
             if self.match_token(TokenType::Unsigned) { is_unsigned = true; continue; }
-            if self.match_token(TokenType::Long) { continue; }
+            if self.match_token(TokenType::Long) {
+                // Check for 'long long'
+                if self.check(TokenType::Long) {
+                    self.advance();
+                    return Type::long_long();
+                }
+                continue;
+            }
             if self.match_token(TokenType::Short) { continue; }
             break;
         }
@@ -373,6 +381,9 @@ impl Parser {
             Type::float()
         } else if self.match_token(TokenType::Double) {
             Type::double()
+        } else if self.check(TokenType::LongLiteral) {
+            self.advance();
+            Type::long_long()
         } else if self.match_token(TokenType::Char) {
             if is_unsigned { Type { kind: TypeKind::Char, is_unsigned: true, ..Type::char() } } else { Type::char() }
         } else if self.match_token(TokenType::Struct) {
@@ -511,7 +522,7 @@ impl Parser {
                 if self.pos == checkpoint {
                     self.synchronize(&[
                         TokenType::Semicolon, TokenType::RBrace,
-                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float, TokenType::Double,
+                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float, TokenType::Double, TokenType::LongLiteral,
                         TokenType::If, TokenType::While, TokenType::Do, TokenType::For,
                         TokenType::Return, TokenType::Break, TokenType::Continue,
                         TokenType::Struct, TokenType::Switch, TokenType::Typedef,
@@ -946,7 +957,7 @@ impl Parser {
             let mut t = Type::default();
             if self.check(TokenType::Int) || self.check(TokenType::Void) ||
                self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
-               self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
+               self.check(TokenType::Unsigned) || self.check(TokenType::Long) || self.check(TokenType::LongLiteral) ||
                self.check(TokenType::Short) || self.check(TokenType::Signed) ||
                self.check(TokenType::Const) ||
                (self.check(TokenType::Identifier) && self.typedef_names.contains_key(&self.current().text)) {
@@ -1027,6 +1038,11 @@ impl Parser {
             let value: i32 = self.previous().text.parse().unwrap_or(0);
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             return Expr::Literal { value, loc, ty: Type::int() };
+        }
+        if self.match_token(TokenType::LongLiteral) {
+            let value: i64 = self.previous().text.parse().unwrap_or(0);
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            return Expr::LongLiteral { value, loc, ty: Type::long_long() };
         }
         if self.match_token(TokenType::FloatLiteral) {
             let value: f64 = self.previous().text.parse().unwrap_or(0.0);

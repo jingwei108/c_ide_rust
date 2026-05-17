@@ -436,6 +436,7 @@ fn expr_to_string(expr: &Expr) -> String {
             format!("{}{}", op_str, expr_to_string(operand))
         }
         Expr::Literal { value, .. } => value.to_string(),
+        Expr::LongLiteral { value, .. } => value.to_string(),
         Expr::FloatLiteral { value, .. } => value.to_string(),
         Expr::StringLiteral { value, .. } => format!("\"{}\"", value),
         Expr::Identifier { name, .. } => name.clone(),
