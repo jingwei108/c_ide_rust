@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/knowledge_card.dart';
 import '../models/unified_state.dart';
+import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import 'knowledge_card_item.dart';
 
@@ -186,6 +187,13 @@ class ExecutionControlPanel extends ConsumerWidget {
               state.phase == ExecutionPhase.paused ||
               state.phase == ExecutionPhase.stepMode)
             _buildSpeedButton(state, controller),
+          // 代码覆盖率
+          if (state.heatmap != null && state.heatmap!.lineCounts.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 8),
+              child: _buildCoverageText(context, state, ref),
+            ),
+          ],
           // 步数显示
           Padding(
             padding: const EdgeInsets.only(left: 8),
@@ -199,6 +207,22 @@ class ExecutionControlPanel extends ConsumerWidget {
     ),
   ],
 );
+  }
+
+  Widget _buildCoverageText(BuildContext context, UnifiedState state, WidgetRef ref) {
+    final source = ref.watch(ideProvider).source;
+    final totalLines = source.isEmpty ? 0 : source.split('\n').length;
+    final executedLines = state.heatmap!.lineCounts.length;
+    final coverage = totalLines > 0 ? executedLines / totalLines : 0.0;
+    final color = coverage >= 0.8
+        ? Colors.green
+        : coverage >= 0.5
+            ? Colors.orange
+            : Colors.red;
+    return Text(
+      '覆盖率 ${(coverage * 100).toStringAsFixed(1)}%',
+      style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color),
+    );
   }
 
   String _buildSliderLabel(UnifiedState state) {
