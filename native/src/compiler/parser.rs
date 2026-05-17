@@ -348,7 +348,7 @@ impl Parser {
 
         let mut ret_type = base_type.clone();
         if self.match_token(TokenType::Star) {
-            ret_type = Type { kind: TypeKind::Pointer, name: base_type.name, base_kind: base_type.kind, ..Type::default() };
+            ret_type = Type::pointer(base_type.kind(), base_type.name());
         }
 
         let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
@@ -414,7 +414,7 @@ impl Parser {
             self.advance();
             Type::long_long()
         } else if self.match_token(TokenType::Char) {
-            if is_unsigned { Type { kind: TypeKind::Char, is_unsigned: true, ..Type::char() } } else { Type::char() }
+            if is_unsigned { Type::Char { is_unsigned: true, is_const: false } } else { Type::char() }
         } else if self.match_token(TokenType::Struct) {
             if self.check(TokenType::Identifier) {
                 let name_tok = self.advance().clone();
@@ -444,9 +444,9 @@ impl Parser {
         } else {
             if is_unsigned { Type::unsigned_int() } else { Type::int() }
         };
-        if is_unsigned && !matches!(t.kind, TypeKind::Int | TypeKind::Char) {
+        if is_unsigned && !matches!(t.kind(), TypeKind::Int | TypeKind::Char) {
             self.errors.push(ParseError {
-                message: format!("'unsigned' 不能修饰 '{}' 类型", match t.kind {
+                message: format!("'unsigned' 不能修饰 '{}' 类型", match t.kind() {
                     TypeKind::Float => "float",
                     TypeKind::Double => "double",
                     TypeKind::Struct => "struct",
@@ -460,7 +460,7 @@ impl Parser {
                 code: ErrorCode::E1006_UnsupportedFeature as i32,
             });
         }
-        t.is_const = is_const;
+        t.set_const(is_const);
         t
     }
 
@@ -486,18 +486,18 @@ impl Parser {
             self.consume(TokenType::RBracket, "预期 ']'");
         }
         if is_ptr {
-            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name.clone(), base_kind: base_type.kind, is_const: base_type.is_const, is_unsigned: base_type.is_unsigned, ..Type::default() };
+            let ptr_type = Type::Pointer { base_kind: base_type.kind(), name: base_type.name().to_string(), is_const: base_type.is_const(), is_unsigned: base_type.is_unsigned() };
             if !dims.is_empty() {
                 let has_unknown = dims.iter().any(|&d| d <= 0);
                 let total = if has_unknown { 0 } else { dims.iter().product() };
-                return (Type { kind: TypeKind::Array, name: ptr_type.name.clone(), array_size: total, base_kind: TypeKind::Pointer, dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
+                return (Type::Array { base_kind: TypeKind::Pointer, name: ptr_type.name().to_string(), array_size: total, dims, is_unsigned: base_type.is_unsigned(), is_const: base_type.is_const() }, name_tok.text);
             }
             return (ptr_type, name_tok.text);
         }
         if !dims.is_empty() {
             let has_unknown = dims.iter().any(|&d| d <= 0);
             let total = if has_unknown { 0 } else { dims.iter().product() };
-            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind, dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
+            return (Type::Array { base_kind: base_type.kind(), name: base_type.name().to_string(), array_size: total, dims, is_unsigned: base_type.is_unsigned(), is_const: base_type.is_const() }, name_tok.text);
         }
         (base_type.clone(), name_tok.text)
     }
@@ -993,7 +993,7 @@ impl Parser {
                (self.check(TokenType::Identifier) && self.typedef_names.contains_key(&self.current().text)) {
                 t = self.parse_base_type();
                 if self.match_token(TokenType::Star) {
-                    t = Type { kind: TypeKind::Pointer, name: t.name, ..Type::default() };
+                    t = Type::pointer(TypeKind::Void, t.name());
                 }
                 if self.check(TokenType::RParen) {
                     is_type = true;
@@ -1015,7 +1015,7 @@ impl Parser {
     fn parse_type_only(&mut self) -> Type {
         let base = self.parse_base_type();
         if self.match_token(TokenType::Star) {
-            return Type { kind: TypeKind::Pointer, name: base.name, base_kind: base.kind, ..Type::default() };
+            return Type::pointer(base.kind(), base.name());
         }
         base
     }

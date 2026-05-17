@@ -157,7 +157,7 @@ fn test_parser_array_decl() {
         if let Stmt::VarDecl { name, var_type: ty, .. } = &stmts[0] {
             assert_eq!(name, "arr");
             assert!(ty.is_array());
-            assert_eq!(ty.array_size, 5);
+            assert_eq!(ty.array_size(), 5);
         } else {
             panic!("Expected VarDecl");
         }

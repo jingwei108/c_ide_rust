@@ -16,7 +16,7 @@ Cide 是一个跨平台 C 语言 IDE，包含：
 | Android | Flutter + `re_editor` + CustomPainter 可视化 |
 | Desktop | Flutter + `re_editor` + CustomPainter 可视化 |
 | Native | **Rust 1.95.0**, Cargo, cdylib/staticlib/rlib |
-| VM | 自定义字节码解释器，256KB 线性内存 |
+| VM | 自定义字节码解释器，1MB 线性内存 |
 | Bridge | flutter_rust_bridge v2.12.0 (SSE codec) |
 
 ## 关键目录
@@ -137,7 +137,7 @@ docs/                   设计文档、事故报告
   - `qsort(base, nmemb, size, compar)`：支持用户自定义比较函数，通过 `vm.call_user_function` 在 host 上下文中调用用户函数
 - **函数指针基础支持**：TypeChecker 将函数名识别为 `int`（函数索引）；BytecodeGen 生成 `PushConst func_idx`；支持将函数名作为参数传递（如 `qsort(..., cmp)`）
 - **算法可视化事件 FRB 集成**：`VisEvent` 扩展 `context` 字段保留比较上下文（如 `arr[i]:arr[i+1]`）；Flutter 算法面板支持展开查看关键比较事件列表
-- **内存映射 Canvas 组件**：256KB 内存以 64×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet
+- **内存映射 Canvas 组件**：1MB 内存以 256×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet
 - **VS-style Enter 格式化**：`re_editor` 拦截 Enter 键，自动补充分号、大括号配对、智能缩进
 - **教程引导 overlay**：`IntroOverlay` 组件支持多步骤引导，带跳过/下一步按钮
 - **Touch swipe tabs**：底部和悬浮面板支持水平滑动手势（60px 阈值）切换 Tab

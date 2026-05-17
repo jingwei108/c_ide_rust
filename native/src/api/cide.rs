@@ -29,11 +29,11 @@ pub struct StructField {
 // ========== 转换辅助函数 ==========
 
 fn convert_variable(v: crate::session::VariableSnapshot) -> VariableSnapshot {
-    let value_str = if v.ty.kind == crate::compiler::ast::TypeKind::Double {
+    let value_str = if v.ty.kind() == crate::compiler::ast::TypeKind::Double {
         let bits = v.value as u64;
         let f = f64::from_bits(bits);
         format!("{:.15}", f).trim_end_matches('0').trim_end_matches('.').to_string()
-    } else if v.ty.kind == crate::compiler::ast::TypeKind::Float {
+    } else if v.ty.kind() == crate::compiler::ast::TypeKind::Float {
         let bits = v.value as u32;
         let f = f32::from_bits(bits);
         format!("{:.7}", f).trim_end_matches('0').trim_end_matches('.').to_string()
@@ -165,4 +165,24 @@ pub fn get_struct_fields(name: String) -> Vec<StructField> {
 #[frb]
 pub fn reset_session() {
     crate::flutter_bridge::reset_session();
+}
+
+#[frb]
+pub fn create_session() -> u64 {
+    crate::flutter_bridge::create_session()
+}
+
+#[frb]
+pub fn destroy_session(session_id: u64) {
+    crate::flutter_bridge::destroy_session(session_id);
+}
+
+#[frb]
+pub fn set_current_session_id(session_id: u64) {
+    crate::flutter_bridge::set_current_session_id(session_id);
+}
+
+#[frb]
+pub fn get_current_session_id() -> u64 {
+    crate::flutter_bridge::get_current_session_id()
 }

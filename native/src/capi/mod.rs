@@ -793,9 +793,9 @@ pub unsafe extern "C" fn cide_variable_get(
     write_str(name, name_size, &v.name);
     if !addr.is_null() { *addr = v.addr; }
     if !is_local.is_null() { *is_local = if v.is_local { 1 } else { 0 }; }
-    let is_arr = matches!(v.ty.kind, crate::compiler::ast::TypeKind::Array);
+    let is_arr = matches!(v.ty.kind(), crate::compiler::ast::TypeKind::Array);
     if !is_array.is_null() { *is_array = if is_arr { 1 } else { 0 }; }
-    if !array_size.is_null() { *array_size = if is_arr { v.ty.array_size } else { 0 }; }
+    if !array_size.is_null() { *array_size = if is_arr { v.ty.array_size() } else { 0 }; }
     if !value.is_null() { *value = v.value as c_int; }
 }
 
@@ -832,8 +832,8 @@ pub unsafe extern "C" fn cide_variable_find_by_addr(
     }
     let vars = &(*s).runtime.variable_snapshot;
     for v in vars.iter() {
-        let size = if matches!(v.ty.kind, crate::compiler::ast::TypeKind::Array) {
-            (v.ty.array_size as u32) * 4
+        let size = if matches!(v.ty.kind(), crate::compiler::ast::TypeKind::Array) {
+            (v.ty.array_size() as u32) * 4
         } else {
             4
         };
@@ -865,9 +865,9 @@ pub unsafe extern "C" fn cide_variable_get_field(
         return -1;
     }
     let v = &session.runtime.variable_snapshot[var_index as usize];
-    let struct_name = match v.ty.kind {
-        crate::compiler::ast::TypeKind::Struct => v.ty.name.clone(),
-        crate::compiler::ast::TypeKind::Pointer if matches!(v.ty.base_kind, crate::compiler::ast::TypeKind::Struct) => v.ty.name.clone(),
+    let struct_name = match v.ty.kind() {
+        crate::compiler::ast::TypeKind::Struct => v.ty.name().to_string(),
+        crate::compiler::ast::TypeKind::Pointer if matches!(v.ty.base_kind(), crate::compiler::ast::TypeKind::Struct) => v.ty.name().to_string(),
         _ => return -1,
     };
     let fields = match session.compile.struct_fields.get(&struct_name) {

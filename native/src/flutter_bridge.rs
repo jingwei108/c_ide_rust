@@ -5,17 +5,62 @@
 
 #![forbid(unsafe_code)]
 
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::session::*;
 
-// ========== 全局 Session ==========
+// ========== 多 Session 管理 ==========
 
 use std::sync::LazyLock;
 
-static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| {
-    Mutex::new(Session::default())
+static SESSIONS: LazyLock<Mutex<HashMap<u64, &'static Mutex<Session>>>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    let session: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
+    map.insert(0, session);
+    Mutex::new(map)
 });
+
+static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
+static CURRENT_SESSION_ID: AtomicU64 = AtomicU64::new(0);
+
+/// 创建新 Session，返回唯一 ID
+pub fn create_session() -> u64 {
+    let id = NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst);
+    let session: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
+    let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.insert(id, session);
+    id
+}
+
+/// 销毁指定 Session
+pub fn destroy_session(session_id: u64) {
+    let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
+    sessions.remove(&session_id);
+    // 注意：Box::leak 的内存不会真正释放，但对于教学 IDE 的 session 数量是可接受的
+}
+
+/// 切换当前操作的 Session ID
+pub fn set_current_session_id(session_id: u64) {
+    CURRENT_SESSION_ID.store(session_id, Ordering::SeqCst);
+}
+
+/// 获取当前 Session ID
+pub fn get_current_session_id() -> u64 {
+    CURRENT_SESSION_ID.load(Ordering::SeqCst)
+}
+
+fn current_session() -> std::sync::MutexGuard<'static, Session> {
+    let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
+    let sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
+    let session_ref: &'static Mutex<Session> = sessions
+        .get(&id)
+        .or_else(|| sessions.get(&0))
+        .expect("session not found");
+    drop(sessions);
+    session_ref.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 // ========== 辅助函数 ==========
 
@@ -26,7 +71,7 @@ use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime
 
 /// 设置源码并编译
 pub fn compile(source: String) -> CompileResult {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
 
     // 设置编译单元
     session.compile.compile_units.clear();
@@ -62,7 +107,7 @@ pub fn compile(source: String) -> CompileResult {
 
 /// 全速运行已编译的程序
 pub fn run_code() -> RunResult {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
 
     if !session.compile.compiled {
         return RunResult {
@@ -97,7 +142,7 @@ pub fn run_code() -> RunResult {
 
 /// 单步执行
 pub fn step_next() -> StepResult {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
 
     if !session.compile.compiled {
         return StepResult {
@@ -219,61 +264,61 @@ pub fn step_next() -> StepResult {
 
 /// 获取诊断信息
 pub fn get_diagnostics() -> Vec<Diagnostic> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.compile.diagnostics.clone()
 }
 
 /// 获取算法匹配
 pub fn get_algorithm_matches() -> Vec<AlgorithmMatch> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.compile.algorithm_matches.clone()
 }
 
 /// 获取变量列表
 pub fn get_variables() -> Vec<VariableSnapshot> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.vm.as_ref().map(|vm| vm.get_variable_snapshot()).unwrap_or_default()
 }
 
 /// 获取内存区域
 pub fn get_memory_regions() -> Vec<MemoryRegion> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.memory.regions.clone()
 }
 
 /// 获取 VM 内存总大小（字节）
 pub fn get_memory_size() -> u32 {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.vm.as_ref().map(|v| v.get_memory_size()).unwrap_or(0)
 }
 
 /// 获取调用栈
 pub fn get_callstack() -> Vec<TraceEntry> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.runtime.trace.clone()
 }
 
 /// 获取输出
 pub fn get_output() -> String {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.runtime.output()
 }
 
 /// 获取当前行
 pub fn get_current_line() -> i32 {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.runtime.current_line
 }
 
 /// 是否等待输入
 pub fn is_waiting_input() -> bool {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.runtime.waiting_input
 }
 
 /// 添加断点
 pub fn add_breakpoint(line: i32) {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     if let Some(ref mut vm) = session.vm {
         vm.add_breakpoint(line);
     }
@@ -281,7 +326,7 @@ pub fn add_breakpoint(line: i32) {
 
 /// 清除所有断点
 pub fn clear_breakpoints() {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     if let Some(ref mut vm) = session.vm {
         vm.clear_breakpoints();
     }
@@ -289,7 +334,7 @@ pub fn clear_breakpoints() {
 
 /// 批量设置断点（清除后重新添加）
 pub fn set_breakpoints(lines: Vec<i32>) {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     if let Some(ref mut vm) = session.vm {
         vm.clear_breakpoints();
         for line in lines {
@@ -300,7 +345,7 @@ pub fn set_breakpoints(lines: Vec<i32>) {
 
 /// 设置输入（用于 scanf）
 pub fn set_input(input: String) {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     session.runtime.input_lines = input
         .lines()
         .map(|l| l.trim_end_matches('\r').to_string())
@@ -311,7 +356,7 @@ pub fn set_input(input: String) {
 
 /// 提供单行输入（恢复执行）
 pub fn provide_input_line(line: String) {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     session.runtime.input_lines.push(line);
     session.runtime.waiting_input = false;
     if let Some(ref mut vm) = session.vm {
@@ -321,19 +366,19 @@ pub fn provide_input_line(line: String) {
 
 /// 获取可视化事件
 pub fn get_vis_events() -> Vec<VisEvent> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.runtime.vis_event_cache.clone()
 }
 
 /// 清除可视化事件
 pub fn clear_vis_events() {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     session.runtime.vis_event_cache.clear();
 }
 
 /// 读取 VM 内存（按 i32 数组返回）
 pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     if let Some(ref vm) = session.vm {
         let mem = vm.memory_ref();
         let mut result = Vec::new();
@@ -355,12 +400,12 @@ pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
 
 /// 获取结构体字段定义（字段名, 偏移量）
 pub fn get_struct_fields(name: String) -> Vec<(String, i32)> {
-    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let session = current_session();
     session.compile.struct_fields.get(&name).cloned().unwrap_or_default()
 }
 
 /// 重置会话
 pub fn reset_session() {
-    let mut session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    let mut session = current_session();
     *session = Session::default();
 }

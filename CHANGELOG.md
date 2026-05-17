@@ -81,7 +81,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **C language features**: `struct`/`typedef struct`, `enum`, arrays (multi-dimensional), pointers (arithmetic, dereference, cast), `#define` macros, function forward declarations, `sizeof`, explicit casts, compound assignments (`+=`, `-=`, etc.), ternary operator, bitwise operators (`& | ^ ~ << >>`).
 - ** pedagogical diagnostics**: Chinese error messages with emoji, fix suggestions, error catalog with explanations.
 - **Algorithm visualization**: Bubble sort, selection sort, insertion sort, quick sort, merge sort, binary search detection with visual event hooks.
-- **Memory map visualization**: 256KB VM memory grid with color-coded regions.
+- **Memory map visualization**: 1MB VM memory grid with color-coded regions.
 - **Flutter frontend**: IDE screen with `re_editor`, console, variable watch, step debugging, algorithm animation panel.
 - **Session save/load**: `serde_json`-based snapshot of compile/runtime/memory state.
 - **CI/CD**: GitHub Actions workflow for Rust build/test/clippy + C# build/test.

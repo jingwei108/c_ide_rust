@@ -1,5 +1,8 @@
 # 内存扩容 + File I/O (VFS) 实现计划
 
+> **状态**：Phase 0（内存扩容 256KB → 1MB）✅ 已完成（2026-05-17）  
+> VFS（File I/O）Phase 1-6 待后续排期
+
 ## 背景
 
 影子验证缺口 Top 2 为 `function_pointer` (3) 和 `file_io` (3)。用户选择优先实现 `file_io`，核心诉求是**教学可视化**——学生能在内存 Canvas 中看到文件缓冲区的实际读写过程。

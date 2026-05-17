@@ -543,7 +543,7 @@ impl CideVM {
         let mut best_dist = i32::MAX;
 
         for sym in &self.symbols {
-            if !matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Array) || sym.ty.array_size <= 0 {
+            if !matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Array) || sym.ty.array_size() <= 0 {
                 continue;
             }
             let mut base = sym.addr;
@@ -554,12 +554,12 @@ impl CideVM {
                     continue;
                 }
             }
-            let elem_size = match sym.ty.base_kind {
+            let elem_size = match sym.ty.base_kind() {
                 crate::compiler::ast::TypeKind::Char => 1,
                 crate::compiler::ast::TypeKind::Double => 8,
                 _ => 4,
             };
-            let size = (sym.ty.array_size as u32) * elem_size as u32;
+            let size = (sym.ty.array_size() as u32) * elem_size as u32;
             let dist = if addr >= base && addr < base + size {
                 0
             } else if addr >= base + size && addr < base + size + 64 {
@@ -576,7 +576,7 @@ impl CideVM {
         }
 
         if let Some((sym, base, _)) = best_sym {
-            let elem_size = match sym.ty.base_kind {
+            let elem_size = match sym.ty.base_kind() {
                 crate::compiler::ast::TypeKind::Char => 1,
                 crate::compiler::ast::TypeKind::Double => 8,
                 _ => 4,
@@ -584,8 +584,8 @@ impl CideVM {
             let index = ((addr as i64 - base as i64) / elem_size as i64) as i32;
             format!(
                 "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n📍 发生在第 {} 行\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
-                sym.name, index, sym.name, sym.ty.array_size, sym.ty.array_size - 1,
-                self.current_line, sym.ty.array_size - 1
+                sym.name, index, sym.name, sym.ty.array_size(), sym.ty.array_size() - 1,
+                self.current_line, sym.ty.array_size() - 1
             )
         } else {
             format!(
@@ -598,7 +598,7 @@ impl CideVM {
     fn format_div_zero_error(&self, a: i32, _b: i32) -> String {
         let mut diag = format!("😵 除零错误：你试图用 {} 除以 0。\n\n", a);
         let zero_vars: Vec<String> = self.symbols.iter().filter_map(|sym| {
-            if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Array) {
+            if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Array) {
                 return None;
             }
             let mut vaddr = sym.addr;
@@ -636,7 +636,7 @@ impl CideVM {
         let mut stale_vars = Vec::new();
         let mut changed_vars = Vec::new();
         for sym in &self.symbols {
-            if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Array) {
+            if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Array) {
                 continue;
             }
             let cur_val = self.read_variable(sym);
@@ -694,7 +694,7 @@ impl CideVM {
         if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
             return 0;
         }
-        if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Double | crate::compiler::ast::TypeKind::LongLong) {
+        if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Double | crate::compiler::ast::TypeKind::LongLong) {
             if vaddr + 8 > MEM_SIZE {
                 return 0;
             }
@@ -725,7 +725,7 @@ impl CideVM {
             if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
                 return None;
             }
-            let val = if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Double) {
+            let val = if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Double) {
                 if vaddr + 8 > MEM_SIZE {
                     return None;
                 }
@@ -790,7 +790,7 @@ impl CideVM {
         if self.step_count % SNAPSHOT_INTERVAL == 0 {
             self.snapshot_vars.clear();
             for sym in &self.symbols {
-                if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Array) {
+                if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Array) {
                     continue;
                 }
                 self.snapshot_vars.insert(sym.name.clone(), self.read_variable(sym) as u64);
@@ -1477,7 +1477,7 @@ impl CideVM {
                     if sym_idx < self.symbols.len() {
                         let sym = &self.symbols[sym_idx];
                         name = sym.name.clone();
-                        size = sym.ty.array_size;
+                        size = sym.ty.array_size();
                     }
                 } else {
                     size = -operand;

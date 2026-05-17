@@ -341,7 +341,7 @@ Ret
 
 ### 4.3 内存布局（CideVM Linear Memory）
 
-CideVM 使用 256KB 线性内存，划分如下：
+CideVM 使用 1MB 线性内存，划分如下：
 
 ```
 地址空间
@@ -474,7 +474,7 @@ Flutter 前端基于 `LayoutBuilder` 和 `MediaQuery` 实现多端自适应：
 - **编辑器**：`re_editor`（CustomPainter 实现），支持语法高亮、智能缩进、VS-style Enter 格式化
 - **触控优化**：最小触控区域 48dp；底部符号工具栏；手势滑动切换 Tab（60px 阈值）
 - **虚拟键盘适配**：弹出时自动滚动到光标位置
-- **算法可视化**：内存映射 Canvas（256KB 64×4KB 网格）、链表/数组/树可视化
+- **算法可视化**：内存映射 Canvas（1MB 256×4KB 网格）、链表/数组/树可视化
 
 ---
 
