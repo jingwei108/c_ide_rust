@@ -20,6 +20,7 @@ static SESSION: LazyLock<Mutex<Session>> = LazyLock::new(|| {
 // ========== 辅助函数 ==========
 
 use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
+use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime_for_step};
 
 // ========== 公开 API ==========
 
@@ -72,64 +73,26 @@ pub fn run_code() -> RunResult {
         };
     }
 
-    let is_resume = session.runtime.waiting_input;
-
-    if !is_resume {
-        session.runtime.output_lines.clear();
-        session.runtime.error.clear();
-        session.runtime.trace.clear();
-        session.memory.regions.clear();
-        session.memory.free_list.clear();
-        session.memory.heap_offset = 0x5000;
-        session.memory.alloc_counter = 0;
-        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
-        session.runtime.running = true;
-    }
-    session.runtime.step_mode = false;
-    session.runtime.waiting_input = false;
-
-    let mut vm = session.vm.take().unwrap_or_default();
-    if !is_resume {
-        setup_vm(&mut vm, &session);
-        let mut vfs = std::mem::take(&mut session.vfs);
-        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
-        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
-        session.vfs = vfs;
-    } else {
-        vm.resume();
-    }
-
-    let ret = vm.run(&mut session);
-
-    let result = if vm.has_error() {
-        session.runtime.error = vm.get_error().to_string();
-        session.runtime.running = false;
-        RunResult {
-            success: false,
-            output: session.runtime.output(),
-            waiting_input: false,
-            error: Some(session.runtime.error.clone()),
-        }
-    } else if session.runtime.waiting_input {
-        session.vm = Some(vm);
-        return RunResult {
+    match execute_run(&mut session) {
+        Ok((_, true)) => RunResult {
             success: true,
             output: session.runtime.output(),
             waiting_input: true,
             error: None,
-        };
-    } else {
-        session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
-        session.runtime.running = false;
-        RunResult {
+        },
+        Ok((_, false)) => RunResult {
             success: true,
             output: session.runtime.output(),
             waiting_input: false,
             error: None,
-        }
-    };
-    session.vm = Some(vm);
-    result
+        },
+        Err(e) => RunResult {
+            success: false,
+            output: session.runtime.output(),
+            waiting_input: false,
+            error: Some(e),
+        },
+    }
 }
 
 /// 单步执行
@@ -147,25 +110,10 @@ pub fn step_next() -> StepResult {
 
     let mut vm = session.vm.take().unwrap_or_default();
     let result = if !session.runtime.running {
-        session.runtime.output_lines.clear();
-        session.runtime.error.clear();
-        session.runtime.trace.clear();
-        session.memory.regions.clear();
-        session.memory.free_list.clear();
-        session.memory.heap_offset = 0x5000;
-        session.memory.alloc_counter = 0;
-        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
-        session.runtime.step_count = 0;
-        session.runtime.step_mode = true;
-        session.runtime.running = true;
-
+        reset_runtime_for_step(&mut session);
         setup_vm(&mut vm, &session);
-        let mut vfs = std::mem::take(&mut session.vfs);
-        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
-        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
-        session.vfs = vfs;
+        inject_preset_files(&mut vm, &mut session);
         vm.pause();
-
         session.runtime.waiting_input = false;
         loop {
             match vm.step(&mut session) {

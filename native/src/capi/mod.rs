@@ -7,6 +7,7 @@ use std::ptr;
 use std::slice;
 
 use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
+use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime_for_step};
 
 /// 将 C 字符串指针安全转换为 Rust &str。
 ///
@@ -225,50 +226,11 @@ pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
         return -1;
     }
     let session = &mut *s;
-    let is_resume = session.runtime.waiting_input;
-
-    if !is_resume {
-        session.runtime.output_lines.clear();
-        session.runtime.error.clear();
-        session.runtime.trace.clear();
-        session.memory.regions.clear();
-        session.memory.free_list.clear();
-        session.memory.heap_offset = 0x5000;
-        session.memory.alloc_counter = 0;
-        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
-        session.runtime.running = true;
+    match execute_run(session) {
+        Ok((_, true)) => 2,
+        Ok((_, false)) => 0,
+        Err(_) => -1,
     }
-    session.runtime.step_mode = false;
-    session.runtime.waiting_input = false;
-
-    let mut vm = session.vm.take().unwrap();
-    if !is_resume {
-        setup_vm(&mut vm, session);
-        let mut vfs = std::mem::take(&mut session.vfs);
-        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
-        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
-        session.vfs = vfs;
-    } else {
-        vm.resume();
-    }
-
-    let ret = vm.run(session);
-
-    let result = if vm.has_error() {
-        session.runtime.error = vm.get_error().to_string();
-        session.runtime.running = false;
-        -1
-    } else if session.runtime.waiting_input {
-        // 等待用户输入，不是错误也不是完成
-        session.vm = Some(vm);
-        return 2;
-    } else {
-        session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
-        session.runtime.running = false;
-        0
-    };
-    session.vm = Some(vm);
-    result
 }
 
 #[no_mangle]
@@ -283,23 +245,9 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
 
     let mut vm = session.vm.take().unwrap();
     let result = if !session.runtime.running {
-        session.runtime.output_lines.clear();
-        session.runtime.error.clear();
-        session.runtime.trace.clear();
-        session.memory.regions.clear();
-        session.memory.free_list.clear();
-        session.memory.heap_offset = 0x5000;
-        session.memory.alloc_counter = 0;
-        session.vfs = crate::vm::vfs::VirtualFileSystem::new();
-        session.runtime.step_count = 0;
-        session.runtime.step_mode = true;
-        session.runtime.running = true;
-
+        reset_runtime_for_step(session);
         setup_vm(&mut vm, session);
-        let mut vfs = std::mem::take(&mut session.vfs);
-        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
-        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
-        session.vfs = vfs;
+        inject_preset_files(&mut vm, session);
         vm.pause();
 
         let ret;
