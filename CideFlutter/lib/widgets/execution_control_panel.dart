@@ -23,6 +23,18 @@ class ExecutionControlPanel extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
+    // 获取当前步的算法可视化事件上下文
+    String? visContext;
+    if (state.currentStep >= 0 && state.currentStep < state.frameCache.length) {
+      final payload = state.frameCache[state.currentStep];
+      if (payload.visEvents.isNotEmpty) {
+        visContext = payload.visEvents
+            .map((e) => e.context)
+            .where((c) => c.isNotEmpty)
+            .join(' · ');
+      }
+    }
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -68,6 +80,31 @@ class ExecutionControlPanel extends ConsumerWidget {
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
                   child: const Text('重置', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        // 算法可视化事件指示条
+        if (visContext != null && visContext.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.purple.shade700, Colors.pink.shade600],
+              ),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.auto_graph, color: Colors.white, size: 14),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '算法事件: $visContext',
+                    style: const TextStyle(color: Colors.white, fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
               ],
             ),

@@ -70,7 +70,7 @@ pub struct CideVM {
     func_table: Vec<FuncMeta>,
     func_names: Vec<String>,
     symbols: Vec<VMSymbol>,
-    vis_event_lines: Vec<(i32, i32)>,
+    vis_event_lines: Vec<(i32, i32, String)>,
     vis_event_queue: Vec<VisEvent>,
     breakpoints: HashSet<i32>,
     paused: bool,
@@ -206,7 +206,7 @@ impl CideVM {
         self.i64_constants = constants;
     }
 
-    pub fn set_vis_event_lines(&mut self, lines: Vec<(i32, i32)>) {
+    pub fn set_vis_event_lines(&mut self, lines: Vec<(i32, i32, String)>) {
         self.vis_event_lines = lines;
     }
 
@@ -1589,7 +1589,7 @@ impl CideVM {
                     self.paused = true;
                 }
                 self.step_event_hit = true;
-                for &(line, ty) in &self.vis_event_lines {
+                for &(line, ty, ref ctx) in &self.vis_event_lines {
                     if line == inst.operand {
                         self.vis_event_queue.push(VisEvent {
                             ty,
@@ -1597,7 +1597,7 @@ impl CideVM {
                             extra0: 0,
                             extra1: 0,
                             extra2: 0,
-                            context: String::new(),
+                            context: ctx.clone(),
                         });
                     }
                 }
