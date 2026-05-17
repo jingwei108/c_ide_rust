@@ -25,11 +25,12 @@ class PanelItem {
   static const watch = PanelItem._(id: 'watch', label: '监视变量', icon: Icons.visibility);
   static const callstack = PanelItem._(id: 'callstack', label: '调用栈', icon: Icons.account_tree);
   static const progress = PanelItem._(id: 'progress', label: '学习进度', icon: Icons.trending_up);
+  static const varHistory = PanelItem._(id: 'varHistory', label: '变量历史', icon: Icons.show_chart);
 
-  /// 全部 11 个面板元素
+  /// 全部 12 个面板元素
   static const List<PanelItem> all = [
     output, diagnostics, algorithm,
-    knowledge, pointer, arrayVis, memory, variables, watch, callstack, progress,
+    knowledge, pointer, arrayVis, memory, variables, watch, callstack, progress, varHistory,
   ];
 
   /// 根据 id 查找
