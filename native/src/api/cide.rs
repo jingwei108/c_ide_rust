@@ -90,6 +90,11 @@ pub fn get_memory_regions() -> Vec<MemoryRegion> {
 }
 
 #[frb]
+pub fn get_memory_size() -> u32 {
+    crate::flutter_bridge::get_memory_size()
+}
+
+#[frb]
 pub fn get_callstack() -> Vec<TraceEntry> {
     crate::flutter_bridge::get_callstack()
 }

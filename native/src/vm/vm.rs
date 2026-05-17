@@ -5,11 +5,11 @@ use crate::compiler::ast::Type;
 use crate::session::{Session, VisEvent};
 use std::collections::{HashMap, HashSet};
 
-pub const MEM_SIZE: u32 = 256 * 1024;
+pub const MEM_SIZE: u32 = 1024 * 1024;
 pub const NULL_TRAP_SIZE: u32 = 0x1000;
 pub const GLOBAL_START: u32 = 0x1000;
 pub const HEAP_START: u32 = 0x5000;
-pub const STACK_START: u32 = 0x10000;
+pub const STACK_START: u32 = MEM_SIZE;
 pub const SNAPSHOT_INTERVAL: i32 = 100_000;
 pub const MAX_STACK_DEPTH: usize = 10_000;
 

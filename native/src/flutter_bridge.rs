@@ -283,6 +283,12 @@ pub fn get_memory_regions() -> Vec<MemoryRegion> {
     session.memory.regions.clone()
 }
 
+/// 获取 VM 内存总大小（字节）
+pub fn get_memory_size() -> u32 {
+    let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
+    session.vm.as_ref().map(|v| v.get_memory_size()).unwrap_or(0)
+}
+
 /// 获取调用栈
 pub fn get_callstack() -> Vec<TraceEntry> {
     let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());

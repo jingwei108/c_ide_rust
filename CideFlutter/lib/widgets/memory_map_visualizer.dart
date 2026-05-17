@@ -13,16 +13,18 @@ class _MemoryColors {
 
 /// 内存映射可视化组件
 ///
-/// 将 256KB 内存划分为 64 个 4KB 块，以网格形式展示各区域的占用情况。
+/// 将 VM 内存划分为 4KB 块，以网格形式展示各区域的占用情况。
 /// 点击某块可查看该范围内所有内存区域的详细信息。
 class MemoryMapVisualizer extends StatelessWidget {
   final List<rust.MemoryRegion> regions;
   final bool isDark;
+  final int memorySize;
 
   const MemoryMapVisualizer({
     super.key,
     required this.regions,
     this.isDark = false,
+    this.memorySize = 1024 * 1024,
   });
 
   Color _getRegionColor(rust.MemoryRegion region) {
@@ -144,9 +146,8 @@ class MemoryMapVisualizer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const memorySize = 256 * 1024; // 256KB
     const blockSize = 4096; // 每块 4KB
-    const blockCount = memorySize ~/ blockSize; // 64 块
+    final blockCount = memorySize ~/ blockSize;
 
     // 构建块颜色和标签映射
     final blockColors = List<Color>.filled(blockCount, _MemoryColors.free);

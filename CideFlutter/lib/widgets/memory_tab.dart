@@ -9,10 +9,17 @@ class MemoryTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<rust.MemoryRegion>>(
-      future: rust.getMemoryRegions(),
+    return FutureBuilder<Map<String, dynamic>>(
+      future: Future.wait([
+        rust.getMemoryRegions(),
+        rust.getMemorySize(),
+      ]).then((results) => {
+        'regions': results[0] as List<rust.MemoryRegion>,
+        'memorySize': results[1] as int,
+      }),
       builder: (context, snapshot) {
-        final regions = snapshot.data ?? [];
+        final regions = snapshot.data?['regions'] as List<rust.MemoryRegion>? ?? [];
+        final memorySize = snapshot.data?['memorySize'] as int? ?? 1024 * 1024;
         if (regions.isEmpty) {
           return Center(
             child: Column(
@@ -25,7 +32,11 @@ class MemoryTab extends StatelessWidget {
             ),
           );
         }
-        return MemoryMapVisualizer(regions: regions, isDark: isDark);
+        return MemoryMapVisualizer(
+          regions: regions,
+          isDark: isDark,
+          memorySize: memorySize,
+        );
       },
     );
   }
