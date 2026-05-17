@@ -71,6 +71,17 @@ class ProgressTab extends ConsumerWidget {
             icon: Icons.auto_fix_high,
             color: Colors.teal,
           ),
+          const SizedBox(height: 12),
+          // 统一模式探索
+          ProgressCard(
+            title: '🚀 调试探索',
+            value: '${progress.totalUnifiedRuns} 次',
+            subtitle: progress.totalUnifiedRuns == 0
+                ? '使用统一模式运行代码以开始追踪'
+                : '总步数 ${progress.totalStepsExecuted} · 异常 ${progress.totalTraps} · Seek ${progress.totalSeeks} · 峰值 ${progress.maxStepsInSingleRun} 步',
+            icon: Icons.play_circle_outline,
+            color: Colors.deepOrange,
+          ),
           const SizedBox(height: 24),
           // 重置按钮
           Center(

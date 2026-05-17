@@ -14,6 +14,11 @@ class LearningProgress {
   final Map<String, int> algorithmValidationsTotal;
   final String lastActiveDate;
   final int streakDays;
+  final int totalUnifiedRuns;
+  final int totalStepsExecuted;
+  final int totalTraps;
+  final int totalSeeks;
+  final int maxStepsInSingleRun;
 
   const LearningProgress({
     this.totalCompiles = 0,
@@ -26,6 +31,11 @@ class LearningProgress {
     this.algorithmValidationsTotal = const {},
     this.lastActiveDate = '',
     this.streakDays = 0,
+    this.totalUnifiedRuns = 0,
+    this.totalStepsExecuted = 0,
+    this.totalTraps = 0,
+    this.totalSeeks = 0,
+    this.maxStepsInSingleRun = 0,
   });
 
   double get successRate => totalCompiles == 0 ? 0.0 : successfulCompiles / totalCompiles;
@@ -51,6 +61,11 @@ class LearningProgress {
     Map<String, int>? algorithmValidationsTotal,
     String? lastActiveDate,
     int? streakDays,
+    int? totalUnifiedRuns,
+    int? totalStepsExecuted,
+    int? totalTraps,
+    int? totalSeeks,
+    int? maxStepsInSingleRun,
   }) {
     return LearningProgress(
       totalCompiles: totalCompiles ?? this.totalCompiles,
@@ -63,6 +78,11 @@ class LearningProgress {
       algorithmValidationsTotal: algorithmValidationsTotal ?? this.algorithmValidationsTotal,
       lastActiveDate: lastActiveDate ?? this.lastActiveDate,
       streakDays: streakDays ?? this.streakDays,
+      totalUnifiedRuns: totalUnifiedRuns ?? this.totalUnifiedRuns,
+      totalStepsExecuted: totalStepsExecuted ?? this.totalStepsExecuted,
+      totalTraps: totalTraps ?? this.totalTraps,
+      totalSeeks: totalSeeks ?? this.totalSeeks,
+      maxStepsInSingleRun: maxStepsInSingleRun ?? this.maxStepsInSingleRun,
     );
   }
 
@@ -78,6 +98,11 @@ class LearningProgress {
       'algorithmValidationsTotal': algorithmValidationsTotal,
       'lastActiveDate': lastActiveDate,
       'streakDays': streakDays,
+      'totalUnifiedRuns': totalUnifiedRuns,
+      'totalStepsExecuted': totalStepsExecuted,
+      'totalTraps': totalTraps,
+      'totalSeeks': totalSeeks,
+      'maxStepsInSingleRun': maxStepsInSingleRun,
     };
   }
 
@@ -110,6 +135,11 @@ class LearningProgress {
               const {},
       lastActiveDate: json['lastActiveDate'] as String? ?? '',
       streakDays: json['streakDays'] as int? ?? 0,
+      totalUnifiedRuns: json['totalUnifiedRuns'] as int? ?? 0,
+      totalStepsExecuted: json['totalStepsExecuted'] as int? ?? 0,
+      totalTraps: json['totalTraps'] as int? ?? 0,
+      totalSeeks: json['totalSeeks'] as int? ?? 0,
+      maxStepsInSingleRun: json['maxStepsInSingleRun'] as int? ?? 0,
     );
   }
 

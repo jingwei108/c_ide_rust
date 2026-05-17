@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
 import '../models/unified_state.dart';
+import 'ide_provider.dart';
 
 class UnifiedNotifier extends Notifier<UnifiedState> {
   Timer? _playbackTimer;
@@ -88,6 +89,11 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
           errorMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
           trapMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
           clearTrap: !result.trapped,
+        );
+        // 记录学习进度
+        await ref.read(ideProvider.notifier).recordUnifiedRun(
+          steps: state.maxCollectedStep,
+          trapped: result.trapped,
         );
       }
     } catch (e) {
@@ -190,6 +196,8 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
 
     // 需要后台恢复 VM
     state = state.copyWith(phase: ExecutionPhase.seeking);
+    // 记录 Seek 操作
+    await ref.read(ideProvider.notifier).recordSeek();
     try {
       final result = await rust.seekToStep(target: targetStep);
       if (result.success && result.payload != null) {

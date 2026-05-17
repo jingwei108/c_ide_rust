@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/types.dart' as rust;
@@ -559,6 +560,29 @@ class IdeNotifier extends Notifier<IdeState> {
     final newViewed = Set<String>.from(progress.viewedKnowledgeCards)..add(cardId);
     state = state.copyWith(
       learningProgress: progress.copyWith(viewedKnowledgeCards: newViewed),
+    );
+    await _saveProgress();
+  }
+
+  /// 记录一次统一模式运行
+  Future<void> recordUnifiedRun({required int steps, required bool trapped}) async {
+    final progress = state.learningProgress;
+    state = state.copyWith(
+      learningProgress: progress.copyWith(
+        totalUnifiedRuns: progress.totalUnifiedRuns + 1,
+        totalStepsExecuted: progress.totalStepsExecuted + steps,
+        maxStepsInSingleRun: math.max(progress.maxStepsInSingleRun, steps),
+        totalTraps: trapped ? progress.totalTraps + 1 : progress.totalTraps,
+      ),
+    );
+    await _saveProgress();
+  }
+
+  /// 记录一次 Seek 操作
+  Future<void> recordSeek() async {
+    final progress = state.learningProgress;
+    state = state.copyWith(
+      learningProgress: progress.copyWith(totalSeeks: progress.totalSeeks + 1),
     );
     await _saveProgress();
   }
