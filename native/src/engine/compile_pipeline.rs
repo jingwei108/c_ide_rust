@@ -11,7 +11,6 @@ use crate::compiler::type_checker::TypeChecker;
 use crate::session::*;
 use crate::vm::vm::CideVM;
 use std::collections::HashMap;
-use std::slice;
 
 // ---------- 辅助函数：根据类型定义计算类型大小 ----------
 
@@ -196,32 +195,8 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     vm.set_vis_event_lines(vis_lines);
 
     // 写入字符串数据到 VM 内存
-    let mem = vm.get_memory();
-    let mem_size = vm.get_memory_size() as usize;
     for &(addr, ref s) in &session.compile.string_data {
-        unsafe {
-            write_string_to_vm_memory(mem, mem_size, addr, s);
-        }
-    }
-}
-
-/// 将 C 风格字符串安全写入 VM 内存的指定地址。
-///
-/// 内部验证边界条件：要求 `mem` 指向至少 `mem_size` 字节的有效内存，
-/// 且 `addr + s.len() + 1 <= mem_size` 时才执行写入（含 null 终止符）。
-/// 自动追加 null 终止符。
-/// # Safety
-/// `mem` 必须指向至少 `mem_size` 字节的有效连续内存。
-pub unsafe fn write_string_to_vm_memory(mem: *mut u8, mem_size: usize, addr: u32, s: &str) {
-    let a = addr as usize;
-    let bytes = s.as_bytes();
-    #[allow(clippy::int_plus_one)]
-    if a + bytes.len() + 1 <= mem_size {
-        unsafe {
-            let dst = slice::from_raw_parts_mut(mem.add(a), bytes.len() + 1);
-            dst[..bytes.len()].copy_from_slice(bytes);
-            dst[bytes.len()] = 0;
-        }
+        vm.write_cstring(addr, s);
     }
 }
 

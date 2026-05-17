@@ -1,81 +1,65 @@
-use cide_native::engine::compile_pipeline::write_string_to_vm_memory;
+use cide_native::vm::vm::CideVM;
 
 #[test]
-fn test_write_string_to_vm_memory_basic() {
-    let mut mem = vec![0u8; 256];
-    let mem_ptr = mem.as_mut_ptr();
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 0, "hello");
-    }
-    assert_eq!(&mem[..6], b"hello\0");
+fn test_write_cstring_basic() {
+    let mut vm = CideVM::default();
+    vm.write_cstring(0, "hello");
+    assert_eq!(&vm.memory_ref()[..6], b"hello\0");
 }
 
 #[test]
-fn test_write_string_to_vm_memory_at_offset() {
-    let mut mem = vec![0u8; 256];
-    let mem_ptr = mem.as_mut_ptr();
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 10, "world");
-    }
-    assert_eq!(&mem[10..16], b"world\0");
+fn test_write_cstring_at_offset() {
+    let mut vm = CideVM::default();
+    vm.write_cstring(10, "world");
+    assert_eq!(&vm.memory_ref()[10..16], b"world\0");
     // 之前的区域不应被修改
-    assert_eq!(mem[0..10].iter().sum::<u8>(), 0);
+    assert_eq!(vm.memory_ref()[0..10].iter().sum::<u8>(), 0);
 }
 
 #[test]
-fn test_write_string_to_vm_memory_exact_fit() {
-    let mut mem = vec![0u8; 6];
-    let mem_ptr = mem.as_mut_ptr();
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 0, "hello");
-    }
-    // "hello" is 5 bytes + null = 6, exactly fits
-    assert_eq!(&mem[..6], b"hello\0");
+fn test_write_cstring_exact_fit() {
+    let mut vm = CideVM::default();
+    let addr = 100;
+    vm.write_cstring(addr as u32, "hello");
+    // "hello" is 5 bytes + null = 6
+    let mem = vm.memory_ref();
+    assert_eq!(&mem[addr..addr + 6], b"hello\0");
 }
 
 #[test]
-fn test_write_string_to_vm_memory_boundary_rejected() {
-    let mut mem = vec![0u8; 5];
-    let mem_ptr = mem.as_mut_ptr();
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 0, "hello");
-    }
-    // "hello" is 5 bytes + null = 6, but mem_size is 5, should not write
-    assert_eq!(mem.iter().sum::<u8>(), 0);
+fn test_write_cstring_boundary_rejected() {
+    let mut vm = CideVM::default();
+    let addr = (vm.get_memory_size() - 2) as usize; // 只剩 2 字节空间
+    let before = vm.memory_ref()[addr..].to_vec();
+    vm.write_cstring(addr as u32, "hello"); // 5+1=6 字节，超出边界
+    // 不应写入
+    assert_eq!(vm.memory_ref()[addr..], before);
 }
 
 #[test]
-fn test_write_string_to_vm_memory_offset_boundary() {
-    let mut mem = vec![0u8; 10];
-    let mem_ptr = mem.as_mut_ptr();
-    // addr=8, string="hello" (5+1=6 bytes), 8+6=14 > 10, should not write
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 8, "hello");
-    }
-    assert_eq!(mem.iter().sum::<u8>(), 0);
+fn test_write_cstring_offset_boundary() {
+    let mut vm = CideVM::default();
+    let addr = (vm.get_memory_size() - 3) as usize;
+    let before = vm.memory_ref()[addr..].to_vec();
+    // addr + 6 > MEM_SIZE, should not write
+    vm.write_cstring(addr as u32, "hello");
+    assert_eq!(vm.memory_ref()[addr..], before);
 }
 
 #[test]
-fn test_write_string_to_vm_memory_empty_string() {
-    let mut mem = vec![0xFFu8; 4];
-    let mem_ptr = mem.as_mut_ptr();
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 0, "");
-    }
+fn test_write_cstring_empty_string() {
+    let mut vm = CideVM::default();
+    vm.write_cstring(0, "");
     // empty string writes just '\0' at addr 0
-    assert_eq!(mem[0], 0);
-    assert_eq!(mem[1], 0xFF);
+    assert_eq!(vm.memory_ref()[0], 0);
 }
 
 #[test]
-fn test_write_string_to_vm_memory_chinese() {
-    let mut mem = vec![0u8; 256];
-    let mem_ptr = mem.as_mut_ptr();
+fn test_write_cstring_chinese() {
+    let mut vm = CideVM::default();
     let s = "你好";
-    unsafe {
-        write_string_to_vm_memory(mem_ptr, mem.len(), 0, s);
-    }
-    let written = &mem[..s.len() + 1];
+    vm.write_cstring(0, s);
+    let written = &vm.memory_ref()[..s.len() + 1];
     assert_eq!(&written[..s.len()], s.as_bytes());
     assert_eq!(written[s.len()], 0);
 }

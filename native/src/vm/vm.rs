@@ -348,8 +348,16 @@ impl CideVM {
         self.exit_code = code;
     }
 
-    pub fn get_memory(&mut self) -> *mut u8 {
-        self.memory.as_mut_ptr()
+    /// 将 C 风格字符串安全写入 VM 内存的指定地址（含 null 终止符）。
+    /// 若目标地址超出边界则静默跳过。
+    pub fn write_cstring(&mut self, addr: u32, s: &str) {
+        let a = addr as usize;
+        let bytes = s.as_bytes();
+        #[allow(clippy::int_plus_one)]
+        if a + bytes.len() + 1 <= self.memory.len() {
+            self.memory[a..a + bytes.len()].copy_from_slice(bytes);
+            self.memory[a + bytes.len()] = 0;
+        }
     }
 
     pub fn memory_ref(&self) -> &[u8] {
