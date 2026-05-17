@@ -197,7 +197,7 @@ for (int i = 0; i <= 5; i++) { arr[i] = i; }
 
 ### 已完成（保留资产）
 - ✅ Rust 后端全链路：Lexer / Parser / AST / TypeChecker / BytecodeGen / VM
-- ✅ C 子集语法扩展（float/char/位运算/三目/指针算术/const/NULL）
+- ✅ C 子集语法扩展（float/double/char/位运算/三目/指针算术/const/NULL）
 - ✅ flutter_rust_bridge v2 桥接（SSE codec）
 - ✅ 基础运行验证（递归、循环、指针、struct、printf/scanf/float）
 - ✅ P0 安全修复（VM 栈-堆碰撞、u32 溢出、移位越界、trap 边界）
@@ -209,7 +209,6 @@ for (int i = 0; i <= 5; i++) { arr[i] = i; }
 - 🔄 Desktop 端 Release 构建优化
 
 ### 下一步
-- `double` 类型支持
 - 函数指针完整支持
 - 社区贡献算法模板
 - iOS 目标支持评估

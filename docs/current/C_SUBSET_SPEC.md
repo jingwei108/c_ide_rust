@@ -302,7 +302,7 @@ arr[1] = 2;
 
 | 特性 | 排除理由 | 遇到时的错误提示 |
 |:---|:---|:---|
-| `double` | 教学以整数和 float 为主；double 增加复杂度且教学价值有限 | "教学子集暂不支持 `double` 类型，请使用 `float` 代替" |
+| `double` | ✅ **已支持**：完整 64 位精度浮点运算、数组、函数参数/返回值、printf `%lf` / scanf `%lf` | — |
 | `char` / `char*` / 字符串 | ✅ **已支持**：char 按 i32 存储，字符串通过 Data Segment 注入；支持 `strlen`/`strcpy`/`strcmp`/`strcat` | — |
 | `break` / `continue` | ✅ **已支持**：循环控制的核心语法 | — |
 | `goto` | 教学上不鼓励使用；增加控制流图复杂度 | "暂不支持 `goto`" |
@@ -355,7 +355,7 @@ arr[1] = 2;
 | 内存布局教学 | 变量、数组、指针、malloc | ✅ |
 | 字符串操作 | char、char*、字符串字面量、printf/scanf | ✅ |
 | 文件读写 | fopen/fread/fwrite | ❌（沙盒中不支持） |
-| 浮点运算 | float/double | ❌（Phase 1 不支持） |
+| 浮点运算 | float/double | ✅ |
 | 枚举与状态机 | enum | ✅ |
 | 类型抽象 | typedef | ✅ |
 
@@ -416,7 +416,7 @@ int main() {
 | typedef | ❌ | ✅ |
 | enum | ❌ | ✅ |
 | printf / scanf | ❌ | ✅（printf 支持可变参数） |
-| float/double | ❌ | ❌ |
+| float/double | ❌ | ✅ |
 | 预处理 | ❌ | ❌ |
 | 标准库（除 printf/scanf/malloc/free） | ❌ | ❌ |
 | 指针运算 | ❌ | ❌ |
@@ -527,7 +527,7 @@ int main() { return 0; }
 - [x] **`fprintf`/`realloc`/`qsort`** — 已支持
 - [x] **函数指针基础** — 已支持函数名作为参数传递（如 `qsort(..., cmp)`）
 - [ ] 函数指针完整支持（声明变量、赋值）
-- [ ] `double` 类型
+- [x] **`double` 类型** — 已支持完整 64 位精度
 
 ---
 
@@ -556,7 +556,7 @@ int main() { return 0; }
 ### 最终推荐的 Cide-C 子集（Phase 1 ~ 3 完整版）
 
 ```
-数据类型：int、char、float、unsigned、int*、char*、float*、int[]、char[]、struct、enum
+数据类型：int、char、float、double、unsigned、int*、char*、float*、double*、int[]、char[]、double[]、struct、enum
 类型系统：typedef、sizeof、const
 语句：变量声明、赋值、if/else、while、do...while、for、switch/case/default、
        break、continue、return、块作用域
@@ -568,7 +568,7 @@ I/O：printf、scanf、fprintf、getchar、putchar
 字符串：strlen、strcpy、strcmp、strcat、atoi
 其他：rand/srand/memset/exit/qsort
 
-不支持：double、union/bitfield、goto、文件I/O、extern/static/volatile/restrict、
+不支持：union/bitfield、goto、文件I/O、extern/static/volatile/restrict、
        完整预处理器（仅 #define 常量宏）
 ```
 

@@ -395,11 +395,97 @@ fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     session.runtime.output_lines.push(out);
 }
 
+/// 解析 scanf 格式字符串，返回每个格式符的类型及是否带 long 修饰符（%lf → ('f', true)）。
+fn parse_scanf_specs(fmt: &str) -> Vec<(char, bool)> {
+    let mut specs = Vec::new();
+    let mut chars = fmt.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '%' {
+            if let Some(&next) = chars.peek() {
+                if next == '%' {
+                    chars.next(); // 跳过 %%
+                } else {
+                    // 跳过 flags
+                    while let Some(&c) = chars.peek() {
+                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 width
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_digit() || c == '*' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                    // 跳过 precision
+                    if let Some(&'.') = chars.peek() {
+                        chars.next();
+                        while let Some(&c) = chars.peek() {
+                            if c.is_ascii_digit() || c == '*' {
+                                chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                    // 读取长度修饰符
+                    let mut is_long = false;
+                    if let Some(&c) = chars.peek() {
+                        if c == 'l' {
+                            is_long = true;
+                            chars.next();
+                            if let Some(&c2) = chars.peek() {
+                                if c2 == 'l' { chars.next(); } // skip ll
+                            }
+                        } else if c == 'h' {
+                            chars.next();
+                            if let Some(&c2) = chars.peek() {
+                                if c2 == 'h' { chars.next(); }
+                            }
+                        } else if c == 'L' {
+                            chars.next();
+                        }
+                    }
+                    // 真正的格式字母
+                    if let Some(&spec) = chars.peek() {
+                        specs.push((spec, is_long));
+                        chars.next();
+                    }
+                }
+            }
+        }
+    }
+    specs
+}
+
+/// 从 chars 中读取一个浮点数字符串，返回 (token_string, new_pos)。
+fn read_float_token(chars: &[char], mut pos: usize) -> (String, usize) {
+    while pos < chars.len() && chars[pos].is_whitespace() {
+        pos += 1;
+    }
+    if pos >= chars.len() {
+        return (String::new(), pos);
+    }
+    let start = pos;
+    if chars[pos] == '+' || chars[pos] == '-' {
+        pos += 1;
+    }
+    while pos < chars.len() && (chars[pos].is_ascii_digit() || chars[pos] == '.') {
+        pos += 1;
+    }
+    let token: String = chars[start..pos].iter().collect();
+    (token, pos)
+}
+
 fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    // 扫描格式字符串，记录每个 % 格式符的类型（跳过 %% 和修饰符）
-    let spec_types = parse_format_specs(&fmt);
+    // 扫描格式字符串，记录每个 % 格式符的类型及是否带 long 修饰符
+    let spec_types = parse_scanf_specs(&fmt);
     // 按数量 pop 指针参数
     let mut ptrs = Vec::with_capacity(spec_types.len());
     for _ in 0..spec_types.len() {
@@ -420,7 +506,7 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let chars: Vec<char> = line.chars().collect();
     let mut pos = 0usize;
     // 依次解析并写入各指针地址
-    for (i, spec) in spec_types.iter().enumerate() {
+    for (i, (spec, is_long)) in spec_types.iter().enumerate() {
         let ptr = ptrs[i];
         match spec {
             'd' => {
@@ -441,20 +527,18 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
                 vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
             }
             'f' => {
-                while pos < chars.len() && chars[pos].is_whitespace() {
-                    pos += 1;
+                let (token, new_pos) = read_float_token(&chars, pos);
+                pos = new_pos;
+                if token.is_empty() { break; }
+                if *is_long {
+                    // %lf → double (8 bytes)
+                    let value: f64 = token.parse().unwrap_or(0.0);
+                    vm.store_i64(ptr, value.to_bits(), &super::instruction::SourceLoc::default());
+                } else {
+                    // %f → float (4 bytes)
+                    let value: f32 = token.parse().unwrap_or(0.0);
+                    vm.store_i32(ptr, value.to_bits() as i32, &super::instruction::SourceLoc::default());
                 }
-                if pos >= chars.len() { break; }
-                let start = pos;
-                if chars[pos] == '+' || chars[pos] == '-' {
-                    pos += 1;
-                }
-                while pos < chars.len() && (chars[pos].is_ascii_digit() || chars[pos] == '.') {
-                    pos += 1;
-                }
-                let token: String = chars[start..pos].iter().collect();
-                let value: f32 = token.parse().unwrap_or(0.0);
-                vm.store_i32(ptr, value.to_bits() as i32, &super::instruction::SourceLoc::default());
             }
             'c' => {
                 // 标准 C: %c 不跳过空白
@@ -774,7 +858,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     // Track new region
     session.memory.regions.push(MemoryRegion {
         addr: new_addr,
-        size: new_size as i32,
+        size: new_size,
         name: String::new(),
         ty: String::new(),
         is_heap: true,

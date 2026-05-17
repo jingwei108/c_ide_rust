@@ -120,17 +120,13 @@ impl BytecodeGen {
                                                 if ty.kind == TypeKind::Double {
                                                     value.to_bits()
                                                 } else {
-                                                    (*value as f64).to_bits()
+                                                    (*value).to_bits()
                                                 }
                                             }
                                             Expr::Literal { value, .. } => (*value as f64).to_bits(),
                                             Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
-                                                if let Expr::FloatLiteral { value, ty, .. } = operand.as_ref() {
-                                                    if ty.kind == TypeKind::Double {
-                                                        (-*value).to_bits()
-                                                    } else {
-                                                        (-(*value as f64)).to_bits()
-                                                    }
+                                                if let Expr::FloatLiteral { value, .. } = operand.as_ref() {
+                                                    (-*value).to_bits()
                                                 } else if let Expr::Literal { value, .. } = operand.as_ref() {
                                                     (-(*value as f64)).to_bits()
                                                 } else {
@@ -1165,7 +1161,7 @@ impl BytecodeGen {
                         }
                     } else if arg_ty.kind == TypeKind::Double {
                         self.gen_expr(arg);
-                        if self.func_index.get(name).is_some() {
+                        if self.func_index.contains_key(name) {
                             self.emit(OpCode::SplitD, 0, &loc);
                         }
                     } else {

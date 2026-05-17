@@ -102,7 +102,7 @@ impl Type {
     pub fn subscript_type(&self) -> Self {
         if !self.is_array() { return self.clone(); }
         if self.dims.len() <= 1 {
-            let mut t = Self { kind: self.base_kind.clone(), name: self.name.clone(), ..Self::default() };
+            let mut t = Self { kind: self.base_kind, name: self.name.clone(), ..Self::default() };
             if self.base_kind == TypeKind::Pointer {
                 t.base_kind = match self.name.as_str() {
                     "char" => TypeKind::Char,

@@ -446,7 +446,7 @@ impl Parser {
             self.consume(TokenType::RBracket, "预期 ']'");
         }
         if is_ptr {
-            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name.clone(), base_kind: base_type.kind.clone(), is_const: base_type.is_const, is_unsigned: base_type.is_unsigned, ..Type::default() };
+            let ptr_type = Type { kind: TypeKind::Pointer, name: base_type.name.clone(), base_kind: base_type.kind, is_const: base_type.is_const, is_unsigned: base_type.is_unsigned, ..Type::default() };
             if !dims.is_empty() {
                 let has_unknown = dims.iter().any(|&d| d <= 0);
                 let total = if has_unknown { 0 } else { dims.iter().product() };
@@ -457,7 +457,7 @@ impl Parser {
         if !dims.is_empty() {
             let has_unknown = dims.iter().any(|&d| d <= 0);
             let total = if has_unknown { 0 } else { dims.iter().product() };
-            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind.clone(), dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
+            return (Type { kind: TypeKind::Array, name: base_type.name.clone(), array_size: total, base_kind: base_type.kind, dims, is_unsigned: base_type.is_unsigned, is_const: base_type.is_const }, name_tok.text);
         }
         (base_type.clone(), name_tok.text)
     }

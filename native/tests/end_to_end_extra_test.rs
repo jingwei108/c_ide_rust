@@ -58,6 +58,63 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
     }
 }
 
+fn compile_and_run_with_input(source: &str, input: &str) -> Result<(i32, Vec<String>), String> {
+    unsafe {
+        let session = cide_native::capi::cide_session_create();
+        if session.is_null() {
+            return Err("Failed to create session".to_string());
+        }
+
+        let src = CString::new(source).map_err(|e| e.to_string())?;
+        let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
+        if compile_ret != 0 {
+            let err_ptr = cide_native::capi::cide_get_compile_errors(session);
+            let err_msg = if err_ptr.is_null() {
+                "Unknown compile error".to_string()
+            } else {
+                std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string()
+            };
+            cide_native::capi::cide_session_destroy(session);
+            return Err(err_msg);
+        }
+
+        let input_cstr = CString::new(input).map_err(|e| e.to_string())?;
+        cide_native::capi::cide_set_input(session, input_cstr.as_ptr() as *const c_char);
+
+        let run_ret = cide_native::capi::cide_run(session);
+
+        let mut outputs = Vec::new();
+        let out_len = cide_native::capi::cide_get_output_length(session);
+        if out_len > 0 {
+            let mut buf = vec![0u8; out_len as usize + 1];
+            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
+            for line in out_str.lines() {
+                if !line.is_empty() {
+                    outputs.push(line.to_string());
+                }
+            }
+        }
+
+        let err_ptr = cide_native::capi::cide_get_runtime_error(session);
+        let runtime_err = if err_ptr.is_null() {
+            None
+        } else {
+            Some(std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string())
+        };
+
+        cide_native::capi::cide_session_destroy(session);
+
+        if let Some(e) = runtime_err {
+            if !e.is_empty() {
+                return Err(format!("Runtime error: {}", e));
+            }
+        }
+
+        Ok((run_ret, outputs))
+    }
+}
+
 // ============================================================================
 // Control Flow
 // ============================================================================
@@ -1617,6 +1674,45 @@ int main() {
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("1.0000000001")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_double_scanf_lf() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double x;
+    scanf("%lf", &x);
+    printf("%.6f", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run_with_input(src, "3.1415926535");
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3.141593")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_double_scanf_lf_and_int() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n;
+    double x;
+    scanf("%d %lf", &n, &x);
+    printf("%d ", n);
+    printf("%.2f", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run_with_input(src, "42 2.71828");
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
+    assert!(outputs.iter().any(|l| l.contains("2.72")), "Outputs: {:?}", outputs);
 }
 
 #[test]

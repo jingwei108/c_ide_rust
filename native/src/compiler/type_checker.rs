@@ -386,7 +386,7 @@ impl TypeChecker {
         let elem_type = if arr_type.base_kind == TypeKind::Struct {
             Type::struct_type(&arr_type.name)
         } else {
-            Type { kind: arr_type.base_kind.clone(), ..Type::default() }
+            Type { kind: arr_type.base_kind, ..Type::default() }
         };
 
         if !arr_type.dims.is_empty() && arr_type.dims.len() > 1 {
@@ -701,7 +701,7 @@ impl TypeChecker {
                         Type::int()
                     }
                     UnaryOp::Addr => {
-                        Type { kind: TypeKind::Pointer, name: operand_type.name.clone(), base_kind: operand_type.kind.clone(), ..Type::default() }
+                        Type { kind: TypeKind::Pointer, name: operand_type.name.clone(), base_kind: operand_type.kind, ..Type::default() }
                     }
                     UnaryOp::Deref => {
                         if !operand_type.is_pointer() && !operand_type.is_array() {
@@ -710,7 +710,7 @@ impl TypeChecker {
                         } else if operand_type.base_kind == TypeKind::Struct {
                             Type::struct_type(&operand_type.name)
                         } else {
-                            Type { kind: operand_type.base_kind.clone(), ..Type::default() }
+                            Type { kind: operand_type.base_kind, ..Type::default() }
                         }
                     }
                     UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {

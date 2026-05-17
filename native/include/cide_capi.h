@@ -38,6 +38,9 @@ typedef enum {
     CIDE_E1002_UnterminatedString = 1002,
     CIDE_E1003_StringCrossLine    = 1003,
     CIDE_E1004_UnsupportedOp      = 1004,
+    CIDE_E1005_InvalidDefine      = 1005,
+    CIDE_E1006_UnsupportedFeature = 1006,
+    CIDE_E1010_UnterminatedComment = 1010,
 
     CIDE_E2001_ExpectedType       = 2001,
     CIDE_E2002_ExpectedArraySize  = 2002,
@@ -96,6 +99,7 @@ typedef enum {
     CIDE_E3046_SwitchCondType     = 3046,
     CIDE_E3047_CaseNotConstant    = 3047,
     CIDE_E3048_BitOpTypeError     = 3048,
+    CIDE_E3049_AssignToConst      = 3049,
 
     CIDE_W3050_AssignInCondition  = 3050,
     CIDE_W3051_ArrayBoundOffByOne = 3051,
@@ -104,6 +108,7 @@ typedef enum {
     CIDE_W3054_IntToPointerCast   = 3054,
     CIDE_W3055_VoidPointerCast    = 3055,
     CIDE_W3056_UnsignedToInt      = 3056,
+    CIDE_H3057_ImplicitConversionHint = 3057,
 } CideErrorCode;
 
 // ========== 编译 ==========
