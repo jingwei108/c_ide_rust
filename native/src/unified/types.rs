@@ -13,6 +13,15 @@ pub struct StepPayload {
     pub vis_events: Vec<crate::session::VisEvent>,
     pub heatmap_line: i32,
     pub heatmap_count: u64,
+    pub accessed_vars: Vec<AccessedVar>,
+}
+
+/// 当前步访问的变量（用于变量级高亮）。
+#[frb]
+#[derive(Debug, Clone)]
+pub struct AccessedVar {
+    pub name: String,
+    pub access_type: String, // "Read" | "Write"
 }
 
 /// FRB 友好的变量快照（ty 已格式化为字符串）。

@@ -7,6 +7,25 @@ import '../frb_generated.dart';
 import '../session.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 
+/// 当前步访问的变量（用于变量级高亮）。
+class AccessedVar {
+  final String name;
+  final String accessType;
+
+  const AccessedVar({required this.name, required this.accessType});
+
+  @override
+  int get hashCode => name.hashCode ^ accessType.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AccessedVar &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          accessType == other.accessType;
+}
+
 /// FRB 友好的调用帧信息。
 class ApiFrameInfo {
   final String funcName;
@@ -153,6 +172,7 @@ class StepPayload {
   final List<VisEvent> visEvents;
   final int heatmapLine;
   final BigInt heatmapCount;
+  final List<AccessedVar> accessedVars;
 
   const StepPayload({
     required this.stepIndex,
@@ -164,6 +184,7 @@ class StepPayload {
     required this.visEvents,
     required this.heatmapLine,
     required this.heatmapCount,
+    required this.accessedVars,
   });
 
   @override
@@ -176,7 +197,8 @@ class StepPayload {
       callStack.hashCode ^
       visEvents.hashCode ^
       heatmapLine.hashCode ^
-      heatmapCount.hashCode;
+      heatmapCount.hashCode ^
+      accessedVars.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -191,7 +213,8 @@ class StepPayload {
           callStack == other.callStack &&
           visEvents == other.visEvents &&
           heatmapLine == other.heatmapLine &&
-          heatmapCount == other.heatmapCount;
+          heatmapCount == other.heatmapCount &&
+          accessedVars == other.accessedVars;
 }
 
 /// 编译并启动统一模式的返回结果。

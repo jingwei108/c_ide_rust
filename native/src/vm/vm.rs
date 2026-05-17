@@ -47,6 +47,18 @@ pub enum StepResult {
     WaitingInput,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessType {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone)]
+pub struct VariableAccess {
+    pub name: String,
+    pub access_type: AccessType,
+}
+
 pub struct CideVM {
     code: Vec<Instruction>,
     ip: usize,
@@ -75,6 +87,7 @@ pub struct CideVM {
     qsort_depth: i32,
     f64_constants: Vec<f64>,
     i64_constants: Vec<i64>,
+    last_accessed_vars: Vec<VariableAccess>,
 }
 
 impl Default for CideVM {
@@ -113,6 +126,7 @@ impl CideVM {
             qsort_depth: 0,
             f64_constants: Vec::new(),
             i64_constants: Vec::new(),
+            last_accessed_vars: Vec::new(),
         }
     }
 
@@ -140,6 +154,7 @@ impl CideVM {
         self.finished = false;
         self.exit_code = 0;
         self.i64_constants.clear();
+        self.last_accessed_vars.clear();
         self.memory.fill(0);
         self.mem_stack_top = STACK_START;
     }
@@ -507,6 +522,10 @@ impl CideVM {
 
     pub fn get_call_stack(&self) -> &[CallFrame] {
         &self.call_stack
+    }
+
+    pub fn get_last_accessed_vars(&self) -> &[VariableAccess] {
+        &self.last_accessed_vars
     }
 
     pub fn was_step_event_hit(&self) -> bool {
@@ -895,6 +914,9 @@ impl CideVM {
             session.runtime.heatmap.record(inst.loc.line);
         }
 
+        // 清空上一步的变量访问记录
+        self.last_accessed_vars.clear();
+
         match inst.op {
             OpCode::Nop => {}
 
@@ -903,6 +925,14 @@ impl CideVM {
             }
 
             OpCode::LoadLocal => {
+                let var_name = self.symbols.iter()
+                    .find(|s| s.is_local && s.addr == inst.operand as u32)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| format!("local_{}", inst.operand));
+                self.last_accessed_vars.push(VariableAccess {
+                    name: var_name,
+                    access_type: AccessType::Read,
+                });
                 if let Some(frame) = self.call_stack.last() {
                     let addr = frame.locals_base + inst.operand as u32;
                     if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
@@ -917,6 +947,14 @@ impl CideVM {
             }
 
             OpCode::StoreLocal => {
+                let var_name = self.symbols.iter()
+                    .find(|s| s.is_local && s.addr == inst.operand as u32)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| format!("local_{}", inst.operand));
+                self.last_accessed_vars.push(VariableAccess {
+                    name: var_name,
+                    access_type: AccessType::Write,
+                });
                 if let Some(frame) = self.call_stack.last() {
                     let addr = frame.locals_base + inst.operand as u32;
                     if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
@@ -967,6 +1005,14 @@ impl CideVM {
             }
 
             OpCode::LoadGlobal => {
+                let var_name = self.symbols.iter()
+                    .find(|s| !s.is_local && s.addr == inst.operand as u32)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| format!("global_{}", inst.operand));
+                self.last_accessed_vars.push(VariableAccess {
+                    name: var_name,
+                    access_type: AccessType::Read,
+                });
                 let addr = GLOBAL_START + inst.operand as u32;
                 if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
                     self.trap("LoadGlobal: 地址越界", &inst.loc);
@@ -977,6 +1023,14 @@ impl CideVM {
             }
 
             OpCode::StoreGlobal => {
+                let var_name = self.symbols.iter()
+                    .find(|s| !s.is_local && s.addr == inst.operand as u32)
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| format!("global_{}", inst.operand));
+                self.last_accessed_vars.push(VariableAccess {
+                    name: var_name,
+                    access_type: AccessType::Write,
+                });
                 let addr = GLOBAL_START + inst.operand as u32;
                 if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
                     self.trap("StoreGlobal: 地址越界", &inst.loc);

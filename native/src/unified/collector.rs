@@ -1,5 +1,5 @@
 use crate::session::Session;
-use crate::unified::types::{ApiFrameInfo, ApiVariableSnapshot, StepPayload};
+use crate::unified::types::{AccessedVar, ApiFrameInfo, ApiVariableSnapshot, StepPayload};
 use crate::vm::vm::CideVM;
 
 /// 每步数据收集器：从 VM 和 Session 中提取轻量 `StepPayload`。
@@ -52,6 +52,18 @@ impl StepCollector {
 
         let semantic_label = infer_semantic_label(code_line, &local_vars, &func_name, session);
 
+        let accessed_vars = vm
+            .get_last_accessed_vars()
+            .iter()
+            .map(|a| AccessedVar {
+                name: a.name.clone(),
+                access_type: match a.access_type {
+                    crate::vm::vm::AccessType::Read => "Read".to_string(),
+                    crate::vm::vm::AccessType::Write => "Write".to_string(),
+                },
+            })
+            .collect();
+
         StepPayload {
             step_index,
             code_line,
@@ -62,6 +74,7 @@ impl StepCollector {
             vis_events,
             heatmap_line,
             heatmap_count,
+            accessed_vars,
         }
     }
 }
