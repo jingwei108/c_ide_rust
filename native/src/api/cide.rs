@@ -9,6 +9,13 @@ pub use crate::session::{
     TraceEntry, VisEvent,
 };
 
+// 统一模式类型 re-export
+#[frb]
+pub use crate::unified::types::{
+    ApiFrameInfo, ApiVariableSnapshot, AutoStepResult, HeatmapData, HeatmapDelta, SeekResult,
+    StepMeta, StepPayload, UnifiedRunResult,
+};
+
 #[frb]
 #[derive(Debug, Clone)]
 pub struct VariableSnapshot {
@@ -165,6 +172,53 @@ pub fn get_struct_fields(name: String) -> Vec<StructField> {
 #[frb]
 pub fn reset_session() {
     crate::flutter_bridge::reset_session();
+}
+
+// ========== 统一模式 FRB API ==========
+
+#[frb]
+pub fn compile_and_run(source: String) -> UnifiedRunResult {
+    crate::flutter_bridge::compile_and_run(source)
+}
+
+#[frb]
+pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
+    crate::flutter_bridge::run_auto_steps(batch_size)
+}
+
+#[frb]
+pub fn seek_to_step(target: i32) -> SeekResult {
+    crate::flutter_bridge::seek_to_step(target)
+}
+
+#[frb]
+pub fn step_next_unified() -> Option<StepPayload> {
+    crate::flutter_bridge::step_next_unified()
+}
+
+#[frb]
+pub fn pause_execution() {
+    crate::flutter_bridge::pause_execution();
+}
+
+#[frb]
+pub fn resume_execution() {
+    crate::flutter_bridge::resume_execution();
+}
+
+#[frb]
+pub fn get_heatmap() -> HeatmapData {
+    crate::flutter_bridge::get_heatmap()
+}
+
+#[frb]
+pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
+    crate::flutter_bridge::get_step_payloads(start, end)
+}
+
+#[frb]
+pub fn continue_from_step(step: i32) -> UnifiedRunResult {
+    crate::flutter_bridge::continue_from_step(step)
 }
 
 #[frb]

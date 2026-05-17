@@ -21,7 +21,7 @@ pub struct FuncMeta {
     pub param_sizes: Vec<i32>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallFrame {
     pub return_ip: usize,
     pub locals_base: u32,
@@ -222,6 +222,86 @@ impl CideVM {
 
     pub fn cancel(&mut self) {
         self.cancelled = true;
+    }
+
+    /// 创建全量快照。
+    ///
+    /// 调用者应确保 `session.compile` 中的编译产物与当前 VM 加载的程序一致。
+    pub fn snapshot(&self, session: &Session) -> super::snapshot::VMSnapshot {
+        super::snapshot::VMSnapshot {
+            memory: self.memory.clone(),
+            stack: self.stack.clone(),
+            call_stack: self.call_stack.clone(),
+            ip: self.ip,
+            mem_stack_top: self.mem_stack_top,
+            step_count: self.step_count,
+            current_line: self.current_line,
+            finished: self.finished,
+            exit_code: self.exit_code,
+            error: self.error.clone(),
+            paused: self.paused,
+            cancelled: self.cancelled,
+            step_event_hit: self.step_event_hit,
+            last_snapshot_step: self.last_snapshot_step,
+            snapshot_vars: self.snapshot_vars.clone(),
+            qsort_depth: self.qsort_depth,
+            vis_event_queue: self.vis_event_queue.clone(),
+            breakpoints: self.breakpoints.clone(),
+            global_count: self.global_count,
+            runtime: super::snapshot::RuntimeSnapshot::from(&session.runtime),
+            memory_state: super::snapshot::MemorySnapshot::from(&session.memory),
+        }
+    }
+
+    /// 从快照恢复 VM 和 Session 运行时状态。
+    ///
+    /// 恢复前必须先调用 `setup_vm()` 加载编译产物，否则 `code`、`func_table` 等为空，
+    /// 恢复后的 VM 将无法继续执行。
+    pub fn restore(&mut self, snap: &super::snapshot::VMSnapshot, session: &mut Session) {
+        // VM 内存（1MB）
+        self.memory.copy_from_slice(&snap.memory);
+
+        // VM 栈与调用帧
+        self.stack = snap.stack.clone();
+        self.call_stack = snap.call_stack.clone();
+
+        // VM 执行指针与计数器
+        self.ip = snap.ip;
+        self.mem_stack_top = snap.mem_stack_top;
+        self.step_count = snap.step_count;
+        self.current_line = snap.current_line;
+
+        // VM 状态标志
+        self.finished = snap.finished;
+        self.exit_code = snap.exit_code;
+        self.error = snap.error.clone();
+        self.paused = snap.paused;
+        self.cancelled = snap.cancelled;
+        self.step_event_hit = snap.step_event_hit;
+        self.last_snapshot_step = snap.last_snapshot_step;
+        self.snapshot_vars = snap.snapshot_vars.clone();
+        self.qsort_depth = snap.qsort_depth;
+
+        // 可视化与调试
+        self.vis_event_queue = snap.vis_event_queue.clone();
+        self.breakpoints = snap.breakpoints.clone();
+        self.global_count = snap.global_count;
+
+        // Session 运行时状态
+        session.runtime.output_lines = snap.runtime.output_lines.clone();
+        session.runtime.trace = snap.runtime.trace.clone();
+        session.runtime.current_line = snap.runtime.current_line;
+        session.runtime.input_index = snap.runtime.input_index;
+        session.runtime.input_char_offset = snap.runtime.input_char_offset;
+        session.runtime.waiting_input = snap.runtime.waiting_input;
+        session.runtime.rand_seed = snap.runtime.rand_seed;
+        session.runtime.vis_event_cache = snap.runtime.vis_event_cache.clone();
+
+        // Session 内存管理状态
+        session.memory.regions = snap.memory_state.regions.clone();
+        session.memory.free_list = snap.memory_state.free_list.clone();
+        session.memory.heap_offset = snap.memory_state.heap_offset;
+        session.memory.alloc_counter = snap.memory_state.alloc_counter;
     }
 
     /// Call a user-defined function from a host function context.
@@ -809,6 +889,11 @@ impl CideVM {
 
         let inst = self.code[self.ip];
         self.ip += 1;
+
+        // 记录执行热力图
+        if inst.loc.line > 0 {
+            session.runtime.heatmap.record(inst.loc.line);
+        }
 
         match inst.op {
             OpCode::Nop => {}

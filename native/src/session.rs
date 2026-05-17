@@ -106,6 +106,28 @@ pub struct VisEvent {
     pub context: String,
 }
 
+/// 执行路径热力图：记录每行源代码被执行的次数。
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ExecutionHeatmap {
+    pub line_counts: HashMap<i32, u64>,
+}
+
+impl ExecutionHeatmap {
+    pub fn record(&mut self, line: i32) {
+        if line > 0 {
+            *self.line_counts.entry(line).or_insert(0) += 1;
+        }
+    }
+
+    pub fn max_count(&self) -> u64 {
+        self.line_counts.values().copied().max().unwrap_or(0)
+    }
+
+    pub fn clear(&mut self) {
+        self.line_counts.clear();
+    }
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeState {
     pub error: String,
@@ -123,6 +145,7 @@ pub struct RuntimeState {
     pub rand_seed: u32,
     pub input_char_offset: usize,
     pub waiting_input: bool,
+    pub heatmap: ExecutionHeatmap,
 }
 
 impl RuntimeState {

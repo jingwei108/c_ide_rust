@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
 use crate::session::*;
+use crate::unified::engine::UnifiedEngine;
+use crate::unified::types::*;
 
 // ========== 多 Session 管理 ==========
 
@@ -24,6 +26,23 @@ static SESSIONS: LazyLock<Mutex<HashMap<u64, &'static Mutex<Session>>>> = LazyLo
 
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 static CURRENT_SESSION_ID: AtomicU64 = AtomicU64::new(0);
+
+static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, &'static Mutex<UnifiedEngine>>>> = LazyLock::new(|| {
+    let mut map = HashMap::new();
+    let engine: &'static Mutex<UnifiedEngine> = &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())));
+    map.insert(0, engine);
+    Mutex::new(map)
+});
+
+fn current_unified_engine() -> std::sync::MutexGuard<'static, UnifiedEngine> {
+    let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
+    let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
+    let engine_ref: &'static Mutex<UnifiedEngine> = *engines.entry(id).or_insert_with(|| {
+        &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())))
+    });
+    drop(engines);
+    engine_ref.lock().unwrap_or_else(|e| e.into_inner())
+}
 
 /// 创建新 Session，返回唯一 ID
 pub fn create_session() -> u64 {
@@ -408,4 +427,188 @@ pub fn get_struct_fields(name: String) -> Vec<(String, i32)> {
 pub fn reset_session() {
     let mut session = current_session();
     *session = Session::default();
+    let mut engine = current_unified_engine();
+    engine.reset();
+}
+
+// ========== 统一模式 API ==========
+
+/// 编译并初始化统一模式执行环境。
+pub fn compile_and_run(source: String) -> UnifiedRunResult {
+    let mut session = current_session();
+
+    // 编译
+    session.compile.compile_units.clear();
+    session.compile.compile_units.push(CompileUnit {
+        filename: "main.c".to_string(),
+        source: source.clone(),
+    });
+    let mut full_source = String::new();
+    for unit in &session.compile.compile_units {
+        full_source.push_str(&unit.source);
+        if !unit.source.ends_with('\n') {
+            full_source.push('\n');
+        }
+    }
+
+    if run_compile_pipeline(&mut session, &full_source).is_err() {
+        return UnifiedRunResult {
+            success: false,
+            error: Some(session.compile.errors.clone()),
+            total_steps: 0,
+            finished: false,
+        };
+    }
+
+    // 重置统一模式引擎
+    let mut engine = current_unified_engine();
+    engine.reset();
+
+    // 初始化 VM
+    let mut vm = session.vm.take().unwrap_or_default();
+    reset_runtime_for_step(&mut session);
+    setup_vm(&mut vm, &session);
+    inject_preset_files(&mut vm, &mut session);
+    session.runtime.running = true;
+
+    // 保存初始检查点（第 0 步）
+    engine.checkpoints.save(0, &vm, &session);
+
+    session.vm = Some(vm);
+
+    UnifiedRunResult {
+        success: true,
+        error: None,
+        total_steps: 0,
+        finished: false,
+    }
+}
+
+/// 批量自动执行。
+pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
+    let mut session = current_session();
+    let mut engine = current_unified_engine();
+
+    let mut vm = session.vm.take().unwrap_or_default();
+    let result = match engine.run_batch(&mut vm, &mut session, batch_size) {
+        Ok(r) => r,
+        Err(_e) => {
+            let line = vm.get_current_line();
+            session.vm = Some(vm);
+            return AutoStepResult {
+                payloads: Vec::new(),
+                finished: false,
+                trapped: true,
+                waiting_input: false,
+                current_line: line,
+            };
+        }
+    };
+
+    session.vm = Some(vm);
+    result
+}
+
+/// Seek 到指定步。
+pub fn seek_to_step(target: i32) -> SeekResult {
+    let mut session = current_session();
+    let mut engine = current_unified_engine();
+
+    let mut vm = session.vm.take().unwrap_or_default();
+    let result = engine.seek_to(target, &mut vm, &mut session);
+
+    session.vm = Some(vm);
+    result
+}
+
+/// 单步执行（统一模式）。
+pub fn step_next_unified() -> Option<StepPayload> {
+    let mut session = current_session();
+    let mut engine = current_unified_engine();
+
+    let mut vm = session.vm.take().unwrap_or_default();
+    let step = vm.get_executed_steps();
+
+    let payload = match vm.step(&mut session) {
+        crate::vm::vm::StepResult::Ok
+        | crate::vm::vm::StepResult::Paused
+        | crate::vm::vm::StepResult::WaitingInput
+        | crate::vm::vm::StepResult::Finished
+        | crate::vm::vm::StepResult::Trap => {
+            let p = crate::unified::collector::StepCollector::collect(&mut vm, &session, step);
+            if step as usize >= engine.frame_cache.len() {
+                engine.frame_cache.push(p.clone());
+            } else {
+                engine.frame_cache[step as usize] = p.clone();
+            }
+            Some(p)
+        }
+    };
+
+    session.vm = Some(vm);
+    payload
+}
+
+/// 暂停自动执行。
+pub fn pause_execution() {
+    let mut engine = current_unified_engine();
+    engine.pause();
+}
+
+/// 恢复自动执行。
+pub fn resume_execution() {
+    let mut engine = current_unified_engine();
+    engine.resume();
+}
+
+/// 获取执行热力图。
+pub fn get_heatmap() -> HeatmapData {
+    let session = current_session();
+    let line_counts: Vec<(i32, u64)> = session
+        .runtime
+        .heatmap
+        .line_counts
+        .iter()
+        .map(|(&k, &v)| (k, v))
+        .collect();
+    let max_count = session.runtime.heatmap.max_count();
+    HeatmapData {
+        line_counts,
+        max_count,
+    }
+}
+
+/// 获取指定范围的 StepPayload。
+pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
+    let engine = current_unified_engine();
+    engine.get_payloads(start, end)
+}
+
+/// 从指定步继续执行。
+pub fn continue_from_step(step: i32) -> UnifiedRunResult {
+    let mut session = current_session();
+    let mut engine = current_unified_engine();
+
+    let mut vm = session.vm.take().unwrap_or_default();
+
+    let seek_result = engine.seek_to(step, &mut vm, &mut session);
+    if !seek_result.success {
+        session.vm = Some(vm);
+        return UnifiedRunResult {
+            success: false,
+            error: seek_result.error,
+            total_steps: 0,
+            finished: false,
+        };
+    }
+
+    engine.resume();
+
+    session.vm = Some(vm);
+    UnifiedRunResult {
+        success: true,
+        error: None,
+        total_steps: engine.max_collected_step(),
+        finished: false,
+    }
 }

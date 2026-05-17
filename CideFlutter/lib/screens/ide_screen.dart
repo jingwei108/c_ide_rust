@@ -24,6 +24,7 @@ import '../widgets/pointer_vis_tab.dart';
 import '../widgets/progress_tab.dart';
 import '../widgets/custom_keyboard.dart';
 import '../widgets/template_bar.dart';
+import '../widgets/execution_control_panel.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/variables_tab.dart';
 import '../widgets/watch_tab.dart';
@@ -211,6 +212,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                       axisAlignment: -1,
                       child: _buildToolbar(state, notifier, isDark),
                     ),
+                    _buildExecutionControl(state, notifier),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -293,6 +295,14 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
       notifier: notifier,
       isDark: isDark,
       onToggleTheme: () => ref.read(themeProvider.notifier).toggle(),
+    );
+  }
+
+  // ========== 执行控制面板 ==========
+
+  Widget _buildExecutionControl(IdeState state, IdeNotifier notifier) {
+    return ExecutionControlPanel(
+      onRun: () => notifier.compile(),
     );
   }
 

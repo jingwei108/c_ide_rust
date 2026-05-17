@@ -16,7 +16,7 @@ class PointerVisTab extends StatelessWidget {
         const nullTrapEnd = 64;
         const linearMemorySize = 256 * 1024;
         final pointers = vars.where((v) {
-          final val = v.value;
+          final val = int.tryParse(v.value) ?? 0;
           return v.tyName.contains('*') &&
               val > nullTrapEnd &&
               val < linearMemorySize;
@@ -71,7 +71,7 @@ class PointerVisTab extends StatelessWidget {
                               ),
                               Expanded(
                                 child: LinkedListVisualizer(
-                                  headAddr: hv.value,
+                                  headAddr: int.tryParse(hv.value) ?? 0,
                                   structName: 'Node',
                                   visEvents: visEvents,
                                   isDark: isDark,
@@ -93,7 +93,7 @@ class PointerVisTab extends StatelessWidget {
                 itemBuilder: (context, index) {
                   final p = pointers[index];
                   String targetName = '';
-                  final targetAddr = p.value;
+                  final targetAddr = int.tryParse(p.value) ?? 0;
                   for (final v in vars) {
                     if (v.addr == targetAddr) {
                       targetName = v.name;

@@ -10,6 +10,8 @@ import 'package:re_highlight/styles/atom-one-light.dart';
 import '../models/ide_state.dart';
 import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/unified_provider.dart';
+import 'package:cide/src/rust/unified/types.dart' as rust_unified;
 
 class EditorPanel extends ConsumerStatefulWidget {
   final VoidCallback? onTap;
@@ -552,35 +554,156 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     final lineNumberColor = isDark ? const Color(0xff5c6370) : const Color(0xffa0a1a7);
     final focusedLineNumberColor = isDark ? const Color(0xffabb2bf) : const Color(0xff383a42);
 
-    return DefaultCodeLineNumber(
-      controller: editingController,
-      notifier: notifier,
-      textStyle: TextStyle(color: lineNumberColor, fontSize: 14),
-      focusedTextStyle: TextStyle(color: focusedLineNumberColor, fontSize: 14),
-      customLineIndex2Text: (lineIndex) {
-        final line = lineIndex + 1;
-        final hasBreakpoint = state.breakpoints.contains(line);
-        final severity = diagMap[line];
+    final unifiedState = ref.watch(unifiedProvider);
+    final heatmap = unifiedState.heatmap;
 
-        String prefix = '';
-        if (hasBreakpoint) {
-          prefix = '● ';
-        } else if (severity == 0) {
-          prefix = '✗ ';
-        } else if (severity == 1) {
-          prefix = '⚠ ';
-        } else if (severity == 2) {
-          prefix = 'ℹ ';
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 执行路径热力图条带
+        if (heatmap != null && heatmap.lineCounts.isNotEmpty)
+          _HeatmapGutterStrip(
+            notifier: notifier,
+            heatmap: heatmap,
+            isDark: isDark,
+          ),
+        DefaultCodeLineNumber(
+          controller: editingController,
+          notifier: notifier,
+          textStyle: TextStyle(color: lineNumberColor, fontSize: 14),
+          focusedTextStyle: TextStyle(color: focusedLineNumberColor, fontSize: 14),
+          customLineIndex2Text: (lineIndex) {
+            final line = lineIndex + 1;
+            final hasBreakpoint = state.breakpoints.contains(line);
+            final severity = diagMap[line];
+
+            String prefix = '';
+            if (hasBreakpoint) {
+              prefix = '● ';
+            } else if (severity == 0) {
+              prefix = '✗ ';
+            } else if (severity == 1) {
+              prefix = '⚠ ';
+            } else if (severity == 2) {
+              prefix = 'ℹ ';
+            }
+
+            // 当前调试行特殊标记
+            if (state.isStepMode && line == state.currentLine) {
+              return '$prefix▶ $line';
+            }
+
+            return prefix.isEmpty ? '$line' : '$prefix$line';
+          },
+        ),
+      ],
+    );
+  }
+}
+
+/// 编辑器左侧热力图条带。
+///
+/// 监听 [CodeIndicatorValueNotifier] 获取每行的渲染位置，
+/// 在左侧 4px 宽度内绘制颜色深浅表示执行次数。
+class _HeatmapGutterStrip extends StatefulWidget {
+  final CodeIndicatorValueNotifier notifier;
+  final rust_unified.HeatmapData heatmap;
+  final bool isDark;
+
+  const _HeatmapGutterStrip({
+    required this.notifier,
+    required this.heatmap,
+    required this.isDark,
+  });
+
+  @override
+  State<_HeatmapGutterStrip> createState() => _HeatmapGutterStripState();
+}
+
+class _HeatmapGutterStripState extends State<_HeatmapGutterStrip> {
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<CodeIndicatorValue?>(
+      valueListenable: widget.notifier,
+      builder: (context, value, child) {
+        if (value == null) {
+          return const SizedBox(width: 4);
         }
 
-        // 当前调试行特殊标记
-        if (state.isStepMode && line == state.currentLine) {
-          return '$prefix▶ $line';
+        final lineCountMap = <int, int>{};
+        for (final entry in widget.heatmap.lineCounts) {
+          lineCountMap[entry.$1] = entry.$2.toInt();
         }
+        final maxCount = widget.heatmap.maxCount.toInt() > 0 ? widget.heatmap.maxCount.toInt() : 1;
 
-        return prefix.isEmpty ? '$line' : '$prefix$line';
+        return CustomPaint(
+          painter: _HeatmapPainter(
+            paragraphs: value.paragraphs,
+            lineCountMap: lineCountMap,
+            maxCount: maxCount,
+            isDark: widget.isDark,
+          ),
+          size: const Size(4, double.infinity),
+        );
       },
     );
+  }
+}
+
+class _HeatmapPainter extends CustomPainter {
+  final List<CodeLineRenderParagraph> paragraphs;
+  final Map<int, int> lineCountMap;
+  final int maxCount;
+  final bool isDark;
+
+  _HeatmapPainter({
+    required this.paragraphs,
+    required this.lineCountMap,
+    required this.maxCount,
+    required this.isDark,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    for (int i = 0; i < paragraphs.length; i++) {
+      final line = i + 1;
+      final count = lineCountMap[line] ?? 0;
+      if (count == 0) continue;
+
+      final intensity = count / maxCount;
+      final color = _heatmapColor(intensity);
+
+      final rect = Rect.fromLTWH(
+        0,
+        paragraphs[i].offset.dy,
+        size.width,
+        paragraphs[i].height,
+      );
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(1));
+      canvas.drawRRect(rrect, Paint()..color = color);
+    }
+  }
+
+  Color _heatmapColor(double intensity) {
+    // 从浅灰到深红的渐变
+    if (intensity < 0.2) {
+      return isDark ? const Color(0xFF3A3A3C) : const Color(0xFFE0E0E0);
+    } else if (intensity < 0.4) {
+      return isDark ? const Color(0xFF5C3A3A) : const Color(0xFFFFCDD2);
+    } else if (intensity < 0.6) {
+      return isDark ? const Color(0xFF7A3A3A) : const Color(0xFFEF9A9A);
+    } else if (intensity < 0.8) {
+      return isDark ? const Color(0xFFB04A4A) : const Color(0xFFE57373);
+    } else {
+      return isDark ? const Color(0xFFD32F2F) : const Color(0xFFC62828);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _HeatmapPainter old) {
+    return old.lineCountMap != lineCountMap ||
+        old.maxCount != maxCount ||
+        old.paragraphs.length != paragraphs.length;
   }
 }
 

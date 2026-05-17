@@ -6,6 +6,7 @@ import '../models/ide_state.dart';
 import '../models/knowledge_card.dart';
 import '../models/learning_progress.dart';
 import '../services/learning_progress_service.dart';
+import 'unified_provider.dart';
 
 class IdeNotifier extends Notifier<IdeState> {
   final _outputController = TextEditingController();
@@ -93,6 +94,12 @@ class IdeNotifier extends Notifier<IdeState> {
         learningProgress: newProgress,
       );
       await _saveProgress();
+
+      // 编译成功后启动统一模式
+      if (result.success) {
+        final unifiedNotifier = ref.read(unifiedProvider.notifier);
+        await unifiedNotifier.compileAndRun(state.source);
+      }
     } catch (e) {
       state = state.copyWith(isCompiling: false, error: '编译异常: $e');
     }
