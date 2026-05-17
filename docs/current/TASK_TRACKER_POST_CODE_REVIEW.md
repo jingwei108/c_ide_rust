@@ -22,11 +22,20 @@
 | **printf %.2f 精度** | `format_printf_string()` 忽略精度修饰符，固定 6 位输出 | `host_funcs.rs`：解析 `.*` 精度并传递给 `format!("{:.*}", prec, f)` | ✅ |
 | **forward_decl 解析** | 单行压缩代码 `int foo(int);` 被 Parser 错误识别 | `parser.rs`：`parse_global_var_or_func()` 的 checkpoint/lookahead 逻辑修复 | ✅ |
 
-### 3. double 类型阶段 1（最小实现）
-- [x] Lexer：`"double"` 关键字映射为 `TokenType::Float`（教学宽松模式）
-- [x] 8 个端到端测试覆盖：基本运算、数组、printf 精度、函数参数/返回值、隐式转换、比较、强制转换、复合赋值
-- [x] 影子验证：3 个 double 用例全部编译通过（2 个输出匹配，1 个有 float/double 精度差异为预期行为）
+### 3. double 类型全管线支持（阶段 1→2A→2B→3 全部完成）
+- [x] **阶段 1**：Lexer 映射为 Float（教学妥协），8 个测试覆盖
+- [x] **阶段 2A**：类型系统真区分（`TokenType::Double` / `TypeKind::Double` / `Type::double()`）
+- [x] **阶段 2B**：BytecodeGen 保留 double 类型，降级为 float 指令（兼容过渡）
+- [x] **阶段 3**：VM 栈 `Vec<i32>` → `Vec<u64>`，真正 double 指令（`PushConstD`/`AddD`/`CastI2D`/...）
+- [x] **字节偏移架构**：`LoadLocal`/`StoreLocal`/`Call` 全面改为字节偏移
+- [x] **param_sizes 参数传递**：支持 double 占 8 字节、正序遍历
+- [x] **`SplitD`**：f64 拆分为 2 个 i32 word 用于普通函数 Call
+- [x] **printf**：`%f` 统一读取 f64，float 参数自动 `CastF2D` 提升
+- [x] **精度验证**：`test_e2e_double_precision_64bit` 通过（`1.0000000001` 正确输出）
+- [x] **sizeof(double) = 8**
+- [x] 影子验证：3 个 double 用例全部编译通过且运行正确
 - [x] 匹配率从 **57.8% → 68%**
+- [x] `DOUBLE_FULL_IMPLEMENTATION_PLAN.md` + `FIXES_DOUBLE_IMPLEMENTATION.md` 文档化
 
 ### 4. 文档整理
 - [x] 归档过时文档（CODE_REVIEW_REPORT_20260514、FLUTTER_MIGRATION_PLAN 重复件、Tauri 方案等）
@@ -39,35 +48,33 @@
 
 ## ⏳ 进行中 / 待启动
 
-### 高优先级（工程债偿还）
+### 高优先级（当前分支收尾）
 
-#### 🔴 double 类型全管线支持（阶段 2A → 2B → 3）
-> **当前状态**：阶段 1 已完成（映射为 float），但 `sizeof(double)=4`、精度 7 位，与标准 C 语义不符，欠下工程债。
->
-> **方案**：分阶段还款（见 `DOUBLE_TYPE_SUPPORT_PLAN.md`）
+#### 🔴 当前分支 `feat/post-code-review-followup` 核心工作已完成
 
-| 阶段 | 目标 | 预估工作量 | 风险 | 前置条件 |
-|------|------|------------|------|----------|
-| **2A** | Lexer/Parser/AST/TypeChecker 真正区分 `double`（`TypeKind::Double`） | ~4h | 低 | 无 |
-| **2B** | BytecodeGen 保留 double 类型信息，但继续生成 float 指令（兼容现有 VM） | ~2h | 低 | 2A 完成 |
-| **3** | VM 栈 `Vec<i32>` → `Vec<u64>` + 新增 `PushConstD`/`AddD`/... 指令 | ~2d | **高** | 2B 完成 |
+| 模块 | 状态 | 测试 |
+|------|------|------|
+| 影子验证框架 | ✅ | 45 用例，27/27 baseline 匹配 |
+| 3 个真实 bug 修复 | ✅ | string_literal / printf 精度 / forward_decl |
+| double 全量干净实现 | ✅ | 216/216 通过，0 clippy 警告 |
 
-**阶段 2A 具体任务**：
-- [ ] Lexer：新增 `TokenType::Double`，`"double"` 不再映射为 `Float`
-- [ ] AST：`TypeKind` 新增 `Double`，`Type::double()` 构造函数
-- [ ] Parser：`parse_base_type()` 新增 `Double` 分支；`is_type_token()` 包含 `Double`
-- [ ] TypeChecker：
-  - [ ] `is_scalar()` 加入 `Double`
-  - [ ] 隐式转换链扩展：**char → int → float → double**
-  - [ ] `double` → `float`/`int`/`char`：允许，warning 提示精度丢失
-  - [ ] 二元运算类型提升：有 `double` → 结果为 `double`
-  - [ ] `printf`/`scanf` 支持 `%lf` 格式符
+**建议**：当前分支合并到 `master`，后续工作开新分支。
 
-**阶段 3 核心风险**：
-- VM 栈改为 `u64` 后，**所有现有指令**（`Add`/`LoadMem`/`Call`/`Return` 等）的 push/pop 需适配
-- `Call`/`Return` 栈帧偏移计算从 4 字节 → 8 字节
-- `frb_generated.rs` 可能需重新生成（若 `Instruction` 或 `CideVM` 结构变化）
-- **缓解**：每改一组指令后立即 `cargo test`，确保无回归
+---
+
+### 中优先级（代码审查遗留项）
+
+#### 🟡 3.8 `format_bounds_error` 预建索引优化
+- **当前**：每次越界线性扫描全部 `symbols`，O(n)
+- **建议**：全局数组符号预建按 `addr` 排序索引，二分查找 O(log n)
+- **收益**：教学场景 symbols 通常 <100，实际收益有限
+- **优先级**：P2（建议），非阻塞
+
+#### 🟡 3.9 `Type` 结构体 `String` → `Cow<'static, str>`
+- **当前**：`Type::name` 是 `String`，编译管线中频繁 `clone`
+- **建议**：短字符串（`"int"`, `"Node"`）用 `Cow<'static, str>` 减少堆分配
+- **风险**：改动面极广（Lexer→Parser→TypeChecker→BytecodeGen→VM→C API），且可能影响 FFI
+- **优先级**：P2（建议），非阻塞
 
 ---
 
@@ -107,36 +114,80 @@
 
 ---
 
-## 📊 影子验证基线数据
+## 📊 影子验证基线数据（2026-05-17，double 完成后）
 
 ```
 总用例数: 45
-完全匹配: 31 (68%) ← 目标：> 90%
+完全匹配: 32 (71%) ← double 精度差异已解决
 编译缺口: 13 (28%)
 运行时缺口: 0
-输出差异: 1 (double_basic 的 float/double 精度差异)
+输出差异: 0
 ```
 
 **baseline 类别**：27/27 全部匹配 ✅  
+**double 类别**：3/3 全部匹配 ✅（含 64 位精度验证）  
 **已知缺失特性**：13 个编译缺口均为 Cide 明确不支持的语法
+
+---
+
+## 🎯 下一个 Sprint 推荐：`long long` 支持
+
+VM 栈已扩展为 `u64`，`long long`（64 位整型）的实现成本大幅降低：
+
+| 组件 | 工作量 | 说明 |
+|------|--------|------|
+| Lexer | 10 分钟 | 识别 `long long` 关键字 |
+| AST | 10 分钟 | `TypeKind::LongLong` |
+| Parser | 30 分钟 | 解析 `long long x;` |
+| TypeChecker | 1 小时 | 隐式转换链 |
+| BytecodeGen | 2 小时 | 复用 double 的字节偏移模式，新增 `PushConstI64` / `AddI64` / ... |
+| VM | 2 小时 | 新增 `OpCode::AddI64` / `CastI2I64` / `CastI64I2` |
+| 测试 | 半天 | E2E 测试 |
+
+**总计：1 天**（内存框架已是字节偏移，无需再改 `LoadLocal`/`Call`/全局初始化）
 
 ---
 
 ## 🗓️ 建议的后续 Sprint 规划
 
-### Sprint 1（当前）：Post-Code-Review 收尾
-- [ ] double 阶段 2A/2B（类型系统真区分）
-- [ ] 3.8 / 3.9 优化项（可选，视时间余量）
+### Sprint 1（已完成）：Post-Code-Review + Double 全量
+- [x] 影子验证框架搭建
+- [x] 3 个真实 bug 修复
+- [x] double 全量干净实现（VM 栈 u64 + 字节偏移 + *D 指令）
+- [x] 216/216 测试通过，0 clippy 警告
 
-### Sprint 2：VM 栈扩展 + double 阶段 3
-- [ ] VM 栈 `Vec<i32>` → `Vec<u64>`
-- [ ] 现有指令适配 + 新增 double 指令
-- [ ] 端到端测试全覆盖
+**建议动作**：合并 `feat/post-code-review-followup` → `master`
+
+### Sprint 2：`long long` 快速胜利
+> 分支建议：`feat/long-long-support`  
+> 预估：1 天  
+> 理由：VM 栈已是 u64，字节偏移架构就绪，long long 只需新增类型 + 指令
+
+- [ ] Lexer：`long long` 关键字
+- [ ] AST：`TypeKind::LongLong`
+- [ ] Parser：`long long` / `long` 类型解析
+- [ ] TypeChecker：隐式转换链 `int → long long`
+- [ ] BytecodeGen：`PushConstI64` / `AddI64` / `CastI2I64` / ...
+- [ ] VM：新增 I64 运算指令
+- [ ] 端到端测试
 
 ### Sprint 3：C 子集扩展（数据驱动）
-- [ ] function_pointer 完整支持（2 个用例，ROI 最高）
-- [ ] file_io 宿主函数（2 个用例）
-- [ ] union 支持（1 个用例，C 核心特性）
+> 分支建议：`feat/c-subset-extensions`
+
+| 优先级 | 特性 | 用例数 | 实现成本 | 备注 |
+|--------|------|--------|----------|------|
+| P1 | `file_io`（`fopen`/`fread`/`fwrite`） | 2 | 中 | 新增宿主函数，教学场景高频 |
+| P1 | `function_pointer` 完整支持 | 2 | 高 | Parser 语法复杂，但 ROADMAP 明确 |
+| P2 | `union` | 1 | 高 | C 核心特性，内存布局特殊 |
+| P2 | `goto` | 1 | 中 | 控制流跳转，需 BytecodeGen 标签系统 |
+| P2 | `designated_initializer` | 1 | 低 | `.field = value` 语法 |
+| P3 | `variable_length_array` | 1 | 中 | 运行时定长数组 |
+| P3 | `static_assert` / `typeof` / `variadic_macro` | 各 1 | 低~中 | 低频特性 |
+
+### Sprint 4：工程优化（CODE_REVIEW 遗留项）
+- [ ] 3.8 `format_bounds_error` 预建索引
+- [ ] 3.9 `Type::name` `String` → `Cow<'static, str>`
+- [ ] 增量编译缓存（4.9）
 
 ---
 
