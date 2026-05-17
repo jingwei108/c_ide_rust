@@ -36,6 +36,12 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
   bool _readOnly = true;
   OverlayEntry? _contextMenuOverlay;
 
+  /// 获取当前光标所在行号（1-based），无焦点时返回 0
+  int getCurrentLine() {
+    if (_controller.selection.baseIndex < 0) return 0;
+    return _controller.selection.baseIndex + 1;
+  }
+
   @override
   void initState() {
     super.initState();

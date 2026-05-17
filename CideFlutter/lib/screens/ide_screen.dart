@@ -4,7 +4,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/code_template.dart';
 import '../models/ide_state.dart';
 import '../models/panel_item.dart';
+import '../models/unified_state.dart';
 import '../providers/ide_provider.dart';
+import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/draggable_panel_tab.dart';
 import '../widgets/editor_panel.dart';
@@ -37,6 +39,22 @@ class IdeScreen extends ConsumerStatefulWidget {
   ConsumerState<IdeScreen> createState() => _IdeScreenState();
 }
 
+class _RunIntent extends Intent {
+  const _RunIntent();
+}
+
+class _StepIntent extends Intent {
+  const _StepIntent();
+}
+
+class _ToggleBreakpointIntent extends Intent {
+  const _ToggleBreakpointIntent();
+}
+
+class _StopIntent extends Intent {
+  const _StopIntent();
+}
+
 class _IdeScreenState extends ConsumerState<IdeScreen>
     with SingleTickerProviderStateMixin {
   final _editorKey = GlobalKey<EditorPanelState>();
@@ -47,6 +65,35 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   OverlayEntry? _panelOverlayEntry;
   late final AnimationController _barsAnimationController;
   late final Animation<double> _barsAnimation;
+
+  // ========== 快捷键 Intent ==========
+  void _handleRun() {
+    final unified = ref.read(unifiedProvider);
+    final unifiedNotifier = ref.read(unifiedProvider.notifier);
+    if (unified.phase == ExecutionPhase.idle) {
+      ref.read(ideProvider.notifier).compile();
+    } else if (unified.canPlay && !unified.isPlaying) {
+      unifiedNotifier.resume();
+    }
+  }
+
+  void _handleStep() {
+    final unified = ref.read(unifiedProvider);
+    if (unified.canStep) {
+      ref.read(unifiedProvider.notifier).stepNext();
+    }
+  }
+
+  void _handleToggleBreakpoint() {
+    final line = _editorKey.currentState?.getCurrentLine() ?? 0;
+    if (line > 0) {
+      ref.read(ideProvider.notifier).toggleBreakpoint(line);
+    }
+  }
+
+  void _handleStop() {
+    ref.read(unifiedProvider.notifier).onCodeChanged();
+  }
 
   @override
   void initState() {
@@ -197,8 +244,28 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     // 同步上下栏动画
     _syncBarsAnimation();
 
-    return Scaffold(
-      resizeToAvoidBottomInset: false,
+    final shortcuts = <ShortcutActivator, Intent>{
+      const SingleActivator(LogicalKeyboardKey.f5): const _RunIntent(),
+      const SingleActivator(LogicalKeyboardKey.f10): const _StepIntent(),
+      const SingleActivator(LogicalKeyboardKey.f9): const _ToggleBreakpointIntent(),
+      const SingleActivator(LogicalKeyboardKey.f5, shift: true): const _StopIntent(),
+    };
+
+    final actions = <Type, Action<Intent>>{
+      _RunIntent: CallbackAction<_RunIntent>(onInvoke: (_) => _handleRun()),
+      _StepIntent: CallbackAction<_StepIntent>(onInvoke: (_) => _handleStep()),
+      _ToggleBreakpointIntent: CallbackAction<_ToggleBreakpointIntent>(onInvoke: (_) => _handleToggleBreakpoint()),
+      _StopIntent: CallbackAction<_StopIntent>(onInvoke: (_) => _handleStop()),
+    };
+
+    return Shortcuts(
+      shortcuts: shortcuts,
+      child: Actions(
+        actions: actions,
+        child: Focus(
+          autofocus: true,
+          child: Scaffold(
+            resizeToAvoidBottomInset: false,
       backgroundColor: scaffoldBg,
       body: Stack(
         children: [
@@ -285,7 +352,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
           // 悬浮球通过 OverlayEntry 渲染，不放在 body Stack 中
         ],
       ),
-    );
+    ),
+  ),
+),
+);
   }
 
   // ========== 工具栏 ==========
