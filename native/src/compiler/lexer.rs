@@ -629,6 +629,7 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         "signed"   => Some(TokenType::Signed),
         "const"    => Some(TokenType::Const),
         "float"    => Some(TokenType::Float),
+        "double"   => Some(TokenType::Float),
         "NULL"     => Some(TokenType::Null),
         "null"     => Some(TokenType::Null),
         _          => None,

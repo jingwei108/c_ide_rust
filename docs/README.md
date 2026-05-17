@@ -17,11 +17,18 @@
 | [`current/FLUTTER_MIGRATION_PLAN.md`](current/FLUTTER_MIGRATION_PLAN.md) | Flutter 前端迁移计划 |
 | [`current/FLUTTER_MIGRATION_STATUS.md`](current/FLUTTER_MIGRATION_STATUS.md) | Flutter 迁移当前状态 |
 | [`current/FLUTTER_BUILD_MANUAL.md`](current/FLUTTER_BUILD_MANUAL.md) | Flutter 手动构建指南 |
+| [`current/FLUTTER_HOT_RELOAD_GUIDE.md`](current/FLUTTER_HOT_RELOAD_GUIDE.md) | Flutter 热重载指南 |
 | [`current/ALGORITHM_DATASTRUCTURE_DESIGN.md`](current/ALGORITHM_DATASTRUCTURE_DESIGN.md) | 算法与数据结构支持设计 |
 | [`current/STUDENT_ERROR_TEST_CASES.md`](current/STUDENT_ERROR_TEST_CASES.md) | 学生常见错误测试用例 |
 | [`current/UI_ISSUES_AND_PLAN.md`](current/UI_ISSUES_AND_PLAN.md) | UI 问题与改进计划 |
 | [`current/UI_FLOATING_BUTTON_DESIGN.md`](current/UI_FLOATING_BUTTON_DESIGN.md) | 悬浮按钮交互设计 |
+| [`current/PANEL_DRAG_GESTURE_DESIGN.md`](current/PANEL_DRAG_GESTURE_DESIGN.md) | 面板拖拽手势设计 |
+| [`current/CUSTOM_KEYBOARD.md`](current/CUSTOM_KEYBOARD.md) | 自定义键盘设计 |
+| [`current/EDITOR_LONG_PRESS_MENU.md`](current/EDITOR_LONG_PRESS_MENU.md) | 编辑器长按菜单设计 |
 | [`current/MOBILE_FUNCTIONAL_TEST_PLAN.md`](current/MOBILE_FUNCTIONAL_TEST_PLAN.md) | 移动端功能测试计划 |
+| [`current/CODE_REVIEW_5_16.md`](current/CODE_REVIEW_5_16.md) | 全面代码审查报告（2026-05-16） |
+| [`current/SHADOW_VERIFICATION_FRAMEWORK.md`](current/SHADOW_VERIFICATION_FRAMEWORK.md) | Clang 影子验证框架 |
+| [`current/DOUBLE_TYPE_SUPPORT_PLAN.md`](current/DOUBLE_TYPE_SUPPORT_PLAN.md) | `double` 类型支持计划 |
 
 ### 📁 [archive/](archive/) — 历史归档文档
 
