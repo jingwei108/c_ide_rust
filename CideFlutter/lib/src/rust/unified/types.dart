@@ -81,6 +81,31 @@ class ApiVariableSnapshot {
           value == other.value;
 }
 
+/// 数组变量快照（用于算法可视化条形图）。
+class ArraySnapshot {
+  final String name;
+  final String elementTy;
+  final List<String> elements;
+
+  const ArraySnapshot({
+    required this.name,
+    required this.elementTy,
+    required this.elements,
+  });
+
+  @override
+  int get hashCode => name.hashCode ^ elementTy.hashCode ^ elements.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ArraySnapshot &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          elementTy == other.elementTy &&
+          elements == other.elements;
+}
+
 /// 批量自动执行的返回结果。
 class AutoStepResult {
   final List<StepPayload> payloads;
@@ -173,6 +198,7 @@ class StepPayload {
   final int heatmapLine;
   final BigInt heatmapCount;
   final List<AccessedVar> accessedVars;
+  final List<ArraySnapshot> arraySnapshots;
 
   const StepPayload({
     required this.stepIndex,
@@ -185,6 +211,7 @@ class StepPayload {
     required this.heatmapLine,
     required this.heatmapCount,
     required this.accessedVars,
+    required this.arraySnapshots,
   });
 
   @override
@@ -198,7 +225,8 @@ class StepPayload {
       visEvents.hashCode ^
       heatmapLine.hashCode ^
       heatmapCount.hashCode ^
-      accessedVars.hashCode;
+      accessedVars.hashCode ^
+      arraySnapshots.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -214,7 +242,8 @@ class StepPayload {
           visEvents == other.visEvents &&
           heatmapLine == other.heatmapLine &&
           heatmapCount == other.heatmapCount &&
-          accessedVars == other.accessedVars;
+          accessedVars == other.accessedVars &&
+          arraySnapshots == other.arraySnapshots;
 }
 
 /// 编译并启动统一模式的返回结果。

@@ -64,6 +64,8 @@ impl StepCollector {
             })
             .collect();
 
+        let array_snapshots = vm.get_array_snapshots();
+
         StepPayload {
             step_index,
             code_line,
@@ -75,6 +77,7 @@ impl StepCollector {
             heatmap_line,
             heatmap_count,
             accessed_vars,
+            array_snapshots,
         }
     }
 }

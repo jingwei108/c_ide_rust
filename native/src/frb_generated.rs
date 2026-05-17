@@ -1158,6 +1158,20 @@ impl SseDecode for crate::unified::types::ApiVariableSnapshot {
     }
 }
 
+impl SseDecode for crate::unified::types::ArraySnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_elementTy = <String>::sse_decode(deserializer);
+        let mut var_elements = <Vec<String>>::sse_decode(deserializer);
+        return crate::unified::types::ArraySnapshot {
+            name: var_name,
+            element_ty: var_elementTy,
+            elements: var_elements,
+        };
+    }
+}
+
 impl SseDecode for crate::unified::types::AutoStepResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1250,6 +1264,18 @@ impl SseDecode for i32 {
     }
 }
 
+impl SseDecode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<String>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::unified::types::AccessedVar> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1293,6 +1319,18 @@ impl SseDecode for Vec<crate::unified::types::ApiVariableSnapshot> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::unified::types::ApiVariableSnapshot>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::unified::types::ArraySnapshot> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::unified::types::ArraySnapshot>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1512,6 +1550,7 @@ impl SseDecode for crate::unified::types::StepPayload {
         let mut var_heatmapLine = <i32>::sse_decode(deserializer);
         let mut var_heatmapCount = <u64>::sse_decode(deserializer);
         let mut var_accessedVars = <Vec<crate::unified::types::AccessedVar>>::sse_decode(deserializer);
+        let mut var_arraySnapshots = <Vec<crate::unified::types::ArraySnapshot>>::sse_decode(deserializer);
         return crate::unified::types::StepPayload {
             step_index: var_stepIndex,
             code_line: var_codeLine,
@@ -1523,6 +1562,7 @@ impl SseDecode for crate::unified::types::StepPayload {
             heatmap_line: var_heatmapLine,
             heatmap_count: var_heatmapCount,
             accessed_vars: var_accessedVars,
+            array_snapshots: var_arraySnapshots,
         };
     }
 }
@@ -1800,6 +1840,23 @@ impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::ApiVariableSnapsho
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::unified::types::ArraySnapshot {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.element_ty.into_into_dart().into_dart(),
+            self.elements.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::unified::types::ArraySnapshot {}
+impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::ArraySnapshot> for crate::unified::types::ArraySnapshot {
+    fn into_into_dart(self) -> crate::unified::types::ArraySnapshot {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::unified::types::AutoStepResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -1949,6 +2006,7 @@ impl flutter_rust_bridge::IntoDart for crate::unified::types::StepPayload {
             self.heatmap_line.into_into_dart().into_dart(),
             self.heatmap_count.into_into_dart().into_dart(),
             self.accessed_vars.into_into_dart().into_dart(),
+            self.array_snapshots.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2130,6 +2188,15 @@ impl SseEncode for crate::unified::types::ApiVariableSnapshot {
     }
 }
 
+impl SseEncode for crate::unified::types::ArraySnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <String>::sse_encode(self.element_ty, serializer);
+        <Vec<String>>::sse_encode(self.elements, serializer);
+    }
+}
+
 impl SseEncode for crate::unified::types::AutoStepResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2191,6 +2258,16 @@ impl SseEncode for i32 {
     }
 }
 
+impl SseEncode for Vec<String> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <String>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::unified::types::AccessedVar> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2227,6 +2304,16 @@ impl SseEncode for Vec<crate::unified::types::ApiVariableSnapshot> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::unified::types::ApiVariableSnapshot>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::unified::types::ArraySnapshot> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::unified::types::ArraySnapshot>::sse_encode(item, serializer);
         }
     }
 }
@@ -2403,6 +2490,7 @@ impl SseEncode for crate::unified::types::StepPayload {
         <i32>::sse_encode(self.heatmap_line, serializer);
         <u64>::sse_encode(self.heatmap_count, serializer);
         <Vec<crate::unified::types::AccessedVar>>::sse_encode(self.accessed_vars, serializer);
+        <Vec<crate::unified::types::ArraySnapshot>>::sse_encode(self.array_snapshots, serializer);
     }
 }
 

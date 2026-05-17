@@ -849,6 +849,99 @@ impl CideVM {
         }).collect()
     }
 
+    /// 获取所有数组变量的元素快照（用于算法可视化条形图）。
+    pub fn get_array_snapshots(&self) -> Vec<crate::unified::types::ArraySnapshot> {
+        use crate::compiler::ast::TypeKind;
+        let mut result = Vec::new();
+        for sym in &self.symbols {
+            if sym.ty.kind() != TypeKind::Array {
+                continue;
+            }
+            let vaddr = if sym.is_local {
+                if let Some(frame) = self.call_stack.last() {
+                    frame.locals_base + sym.addr
+                } else {
+                    continue;
+                }
+            } else {
+                GLOBAL_START + sym.addr
+            };
+            let array_size = sym.ty.array_size();
+            if array_size <= 0 {
+                continue;
+            }
+            let base_kind = sym.ty.base_kind();
+            let elem_size = match base_kind {
+                TypeKind::Char => 1,
+                TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
+                TypeKind::Double | TypeKind::LongLong => 8,
+                _ => 4,
+            };
+            let mut elements = Vec::with_capacity(array_size as usize);
+            for i in 0..array_size {
+                let addr = vaddr + (i as u32) * (elem_size as u32);
+                if addr + (elem_size as u32) > MEM_SIZE {
+                    break;
+                }
+                let val_str = match base_kind {
+                    TypeKind::Char => {
+                        let b = self.memory[addr as usize];
+                        if b >= 32 && b <= 126 {
+                            format!("'{}'", b as char)
+                        } else {
+                            format!("{}", b as i8)
+                        }
+                    }
+                    TypeKind::Int => {
+                        let bytes = [
+                            self.memory[addr as usize],
+                            self.memory[addr as usize + 1],
+                            self.memory[addr as usize + 2],
+                            self.memory[addr as usize + 3],
+                        ];
+                        i32::from_le_bytes(bytes).to_string()
+                    }
+                    TypeKind::Float => {
+                        let bytes = [
+                            self.memory[addr as usize],
+                            self.memory[addr as usize + 1],
+                            self.memory[addr as usize + 2],
+                            self.memory[addr as usize + 3],
+                        ];
+                        format!("{:.2}", f32::from_le_bytes(bytes))
+                    }
+                    TypeKind::Double => {
+                        let mut bytes = [0u8; 8];
+                        bytes.copy_from_slice(&self.memory[addr as usize..addr as usize + 8]);
+                        format!("{:.2}", f64::from_le_bytes(bytes))
+                    }
+                    TypeKind::LongLong => {
+                        let mut bytes = [0u8; 8];
+                        bytes.copy_from_slice(&self.memory[addr as usize..addr as usize + 8]);
+                        i64::from_le_bytes(bytes).to_string()
+                    }
+                    _ => "?".to_string(),
+                };
+                elements.push(val_str);
+            }
+            let element_ty = match base_kind {
+                TypeKind::Int => "int",
+                TypeKind::Char => "char",
+                TypeKind::Float => "float",
+                TypeKind::Double => "double",
+                TypeKind::LongLong => "long long",
+                _ => "unknown",
+            }
+            .to_string();
+            result.push(crate::unified::types::ArraySnapshot {
+                name: sym.name.clone(),
+                element_ty,
+                elements,
+            });
+        }
+        result
+    }
+
     // --- Run ---
 
     pub fn run(&mut self, session: &mut Session) -> i32 {

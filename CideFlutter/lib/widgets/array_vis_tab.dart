@@ -1,50 +1,81 @@
 import 'package:flutter/material.dart';
-import 'package:cide/src/rust/api/types.dart' as rust;
-import '../widgets/array_visualizer.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/unified_provider.dart';
+import 'array_visualizer.dart';
 
-class ArrayVisTab extends StatelessWidget {
+class ArrayVisTab extends ConsumerWidget {
   final bool isDark;
 
   const ArrayVisTab({super.key, required this.isDark});
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<rust.VariableSnapshot>>(
-      future: rust.getVariables(),
-      builder: (context, varSnapshot) {
-        final vars = varSnapshot.data ?? [];
-        // 筛选可能是数组的变量（类型名包含 [ 或名字包含 arr）
-        final arrayVars = vars.where((v) {
-          return v.tyName.contains('[') || v.name.toLowerCase().contains('arr');
-        }).toList();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unifiedState = ref.watch(unifiedProvider);
+    final frameCache = unifiedState.frameCache;
+    final currentStep = unifiedState.currentStep;
 
-        if (arrayVars.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.bar_chart, size: 40, color: Colors.grey[500]),
-                const SizedBox(height: 12),
-                Text('未检测到数组变量', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-              ],
-            ),
-          );
-        }
+    if (frameCache.isEmpty || currentStep < 0 || currentStep >= frameCache.length) {
+      return _buildEmpty('运行程序以查看数组');
+    }
 
-        return ListView.builder(
-          padding: const EdgeInsets.all(12),
-          itemCount: arrayVars.length,
-          itemBuilder: (context, index) {
-            final v = arrayVars[index];
-            return ArrayVisualizer(
-              name: v.name,
-              addr: v.addr,
-              tyName: v.tyName,
-              isDark: isDark,
-            );
-          },
+    final payload = frameCache[currentStep];
+    final arraySnapshots = payload.arraySnapshots;
+
+    if (arraySnapshots.isEmpty) {
+      return _buildEmpty('未检测到数组变量');
+    }
+
+    // 解析 vis_events 中的比较上下文，高亮对应元素
+    final highlighted = _parseHighlightedIndices(payload.visEvents);
+
+    return ListView.builder(
+      padding: const EdgeInsets.all(12),
+      itemCount: arraySnapshots.length,
+      itemBuilder: (context, index) {
+        final snap = arraySnapshots[index];
+        return ArrayVisualizer(
+          name: snap.name,
+          elementTy: snap.elementTy,
+          elements: snap.elements,
+          highlightedIndices: highlighted[snap.name] ?? const {},
+          isDark: isDark,
         );
       },
     );
+  }
+
+  Widget _buildEmpty(String message) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.bar_chart, size: 40, color: Colors.grey[500]),
+          const SizedBox(height: 12),
+          Text(message, style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+        ],
+      ),
+    );
+  }
+
+  /// 解析 VisEvent.context 如 "arr[i]:arr[i+1]" → { "arr": {i, i+1} }
+  Map<String, Set<int>> _parseHighlightedIndices(List<dynamic> visEvents) {
+    final result = <String, Set<int>>{};
+    for (final ev in visEvents) {
+      final ctx = ev.context as String? ?? '';
+      if (ctx.isEmpty) continue;
+      // 格式: "arr[i]:arr[j]" 或 "arr[i]"
+      final parts = ctx.split(':');
+      for (final part in parts) {
+        final match = RegExp(r'(\w+)\[(\d+)\]').firstMatch(part.trim());
+        if (match != null) {
+          final arrName = match.group(1)!;
+          final idx = int.tryParse(match.group(2)!) ?? -1;
+          if (idx >= 0) {
+            result.putIfAbsent(arrName, () => <int>{}).add(idx);
+          }
+        }
+      }
+    }
+    return result;
   }
 }

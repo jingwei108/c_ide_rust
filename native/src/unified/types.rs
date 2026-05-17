@@ -14,6 +14,7 @@ pub struct StepPayload {
     pub heatmap_line: i32,
     pub heatmap_count: u64,
     pub accessed_vars: Vec<AccessedVar>,
+    pub array_snapshots: Vec<ArraySnapshot>,
 }
 
 /// 当前步访问的变量（用于变量级高亮）。
@@ -33,6 +34,15 @@ pub struct ApiVariableSnapshot {
     pub is_local: bool,
     pub ty_name: String,
     pub value: String,
+}
+
+/// 数组变量快照（用于算法可视化条形图）。
+#[frb]
+#[derive(Debug, Clone)]
+pub struct ArraySnapshot {
+    pub name: String,
+    pub element_ty: String,
+    pub elements: Vec<String>,
 }
 
 /// FRB 友好的调用帧信息。

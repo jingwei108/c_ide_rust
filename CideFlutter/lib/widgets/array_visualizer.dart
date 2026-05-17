@@ -1,17 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:cide/src/rust/api/types.dart' as rust;
 
 class ArrayVisualizer extends StatefulWidget {
   final String name;
-  final int addr;
-  final String tyName;
+  final String elementTy;
+  final List<String> elements;
+  final Set<int> highlightedIndices;
   final bool isDark;
 
   const ArrayVisualizer({
     super.key,
     required this.name,
-    required this.addr,
-    required this.tyName,
+    required this.elementTy,
+    required this.elements,
+    this.highlightedIndices = const {},
     required this.isDark,
   });
 
@@ -20,10 +21,24 @@ class ArrayVisualizer extends StatefulWidget {
 }
 
 class _ArrayVisualizerState extends State<ArrayVisualizer> {
-  static const int _maxElements = 20;
+  static const int _maxElements = 40;
 
   @override
   Widget build(BuildContext context) {
+    final displayElements = widget.elements.length > _maxElements
+        ? widget.elements.sublist(0, _maxElements)
+        : widget.elements;
+
+    // 解析数值用于条形图高度
+    final numbers = displayElements.map((e) {
+      // 去掉引号，如 "'5'" → "5"
+      final clean = e.replaceAll("'", "");
+      return double.tryParse(clean) ?? 0.0;
+    }).toList();
+
+    final maxVal = numbers.map((v) => v.abs()).fold(0.0, (a, b) => a > b ? a : b).clamp(1.0, double.infinity);
+    const barHeight = 120.0;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       color: widget.isDark ? const Color(0xff2a2a2a) : const Color(0xfff8f8f8),
@@ -50,134 +65,81 @@ class _ArrayVisualizerState extends State<ArrayVisualizer> {
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    widget.tyName,
+                    widget.elementTy,
                     style: TextStyle(fontSize: 11, color: Colors.grey[600], fontFamily: 'monospace'),
                   ),
+                ),
+                const Spacer(),
+                Text(
+                  '${widget.elements.length} 个元素',
+                  style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            FutureBuilder<dynamic>(
-              future: rust.readMemory(addr: widget.addr, count: _maxElements),
-              builder: (context, snapshot) {
-                if (!snapshot.hasData) {
-                  return const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
-                }
-                final data = (snapshot.data as List<dynamic>).cast<int>().toList();
-                if (data.isEmpty) {
-                  return const Text('无法读取数组数据', style: TextStyle(color: Colors.grey, fontSize: 12));
-                }
-                return _ArrayBarChart(data: data, isDark: widget.isDark);
-              },
+            SizedBox(
+              height: barHeight + 28,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: displayElements.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 4),
+                itemBuilder: (context, index) {
+                  final valStr = displayElements[index];
+                  final num = numbers[index];
+                  final ratio = num.abs() / maxVal;
+                  final height = (ratio * barHeight).clamp(4.0, barHeight);
+                  final isNegative = num < 0;
+                  final isHighlighted = widget.highlightedIndices.contains(index);
+
+                  Color barColor;
+                  if (isHighlighted) {
+                    barColor = Colors.amber;
+                  } else if (isNegative) {
+                    barColor = Colors.redAccent.withValues(alpha: 0.7);
+                  } else {
+                    barColor = Colors.blueAccent.withValues(alpha: 0.7);
+                  }
+
+                  return Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        width: 24,
+                        height: height,
+                        decoration: BoxDecoration(
+                          color: barColor,
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                          boxShadow: isHighlighted
+                              ? [BoxShadow(color: Colors.amber.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2)]
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        valStr.length > 6 ? '${valStr.substring(0, 6)}..' : valStr,
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: widget.isDark ? Colors.grey[400] : Colors.grey[700],
+                          fontFamily: 'monospace',
+                          fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                      Text(
+                        '[$index]',
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: isHighlighted ? Colors.amber : Colors.grey[600],
+                          fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _ArrayBarChart extends StatefulWidget {
-  final List<int> data;
-  final bool isDark;
-
-  const _ArrayBarChart({required this.data, required this.isDark});
-
-  @override
-  State<_ArrayBarChart> createState() => _ArrayBarChartState();
-}
-
-class _ArrayBarChartState extends State<_ArrayBarChart> {
-  final Set<int> _flashIndices = {};
-
-  @override
-  void didUpdateWidget(covariant _ArrayBarChart oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.data.length != oldWidget.data.length) {
-      _flashIndices.clear();
-      return;
-    }
-    final changed = <int>{};
-    for (var i = 0; i < widget.data.length; i++) {
-      if (i < oldWidget.data.length && widget.data[i] != oldWidget.data[i]) {
-        changed.add(i);
-      }
-    }
-    if (changed.isNotEmpty) {
-      setState(() {
-        _flashIndices.addAll(changed);
-      });
-      Future.delayed(const Duration(milliseconds: 500), () {
-        if (mounted) {
-          setState(() {
-            for (final i in changed) {
-              _flashIndices.remove(i);
-            }
-          });
-        }
-      });
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final maxVal = widget.data.map((v) => v.abs()).reduce((a, b) => a > b ? a : b).clamp(1, 999999);
-    const barHeight = 120.0;
-
-    return SizedBox(
-      height: barHeight + 24,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: widget.data.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 4),
-        itemBuilder: (context, index) {
-          final val = widget.data[index];
-          final ratio = val.abs() / maxVal;
-          final height = (ratio * barHeight).clamp(4.0, barHeight);
-          final isNegative = val < 0;
-          final isFlashing = _flashIndices.contains(index);
-
-          Color barColor;
-          if (isFlashing) {
-            barColor = Colors.amber;
-          } else if (isNegative) {
-            barColor = Colors.redAccent.withValues(alpha: 0.7);
-          } else {
-            barColor = Colors.blueAccent.withValues(alpha: 0.7);
-          }
-
-          return Column(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 24,
-                height: height,
-                decoration: BoxDecoration(
-                  color: barColor,
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-                  boxShadow: isFlashing
-                      ? [BoxShadow(color: Colors.amber.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2)]
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '$val',
-                style: TextStyle(
-                  fontSize: 10,
-                  color: widget.isDark ? Colors.grey[400] : Colors.grey[700],
-                  fontFamily: 'monospace',
-                  fontWeight: isFlashing ? FontWeight.bold : FontWeight.normal,
-                ),
-              ),
-              Text(
-                '[$index]',
-                style: TextStyle(fontSize: 9, color: Colors.grey[600]),
-              ),
-            ],
-          );
-        },
       ),
     );
   }
