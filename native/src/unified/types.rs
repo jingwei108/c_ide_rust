@@ -98,6 +98,7 @@ pub struct AutoStepResult {
     pub finished: bool,
     pub trapped: bool,
     pub waiting_input: bool,
+    pub paused: bool,
     pub current_line: i32,
     pub trap_message: Option<String>,
 }

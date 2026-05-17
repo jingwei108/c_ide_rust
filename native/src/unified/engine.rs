@@ -141,6 +141,7 @@ impl UnifiedEngine {
             finished,
             trapped,
             waiting_input,
+            paused: self.is_paused,
             current_line: vm.get_current_line(),
             trap_message,
         })

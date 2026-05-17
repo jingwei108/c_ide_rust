@@ -112,6 +112,7 @@ class AutoStepResult {
   final bool finished;
   final bool trapped;
   final bool waitingInput;
+  final bool paused;
   final int currentLine;
   final String? trapMessage;
 
@@ -120,6 +121,7 @@ class AutoStepResult {
     required this.finished,
     required this.trapped,
     required this.waitingInput,
+    required this.paused,
     required this.currentLine,
     this.trapMessage,
   });
@@ -130,6 +132,7 @@ class AutoStepResult {
       finished.hashCode ^
       trapped.hashCode ^
       waitingInput.hashCode ^
+      paused.hashCode ^
       currentLine.hashCode ^
       trapMessage.hashCode;
 
@@ -142,6 +145,7 @@ class AutoStepResult {
           finished == other.finished &&
           trapped == other.trapped &&
           waitingInput == other.waitingInput &&
+          paused == other.paused &&
           currentLine == other.currentLine &&
           trapMessage == other.trapMessage;
 }

@@ -500,6 +500,7 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
                 finished: false,
                 trapped: true,
                 waiting_input: false,
+                paused: false,
                 current_line: line,
                 trap_message: Some(e),
             };

@@ -82,7 +82,13 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
         );
       }
 
-      if (result.finished || result.trapped || result.waitingInput) {
+      if (result.paused) {
+        _playbackTimer?.cancel();
+        state = state.copyWith(
+          phase: ExecutionPhase.paused,
+          isPlaying: false,
+        );
+      } else if (result.finished || result.trapped || result.waitingInput) {
         _playbackTimer?.cancel();
         final heatmap = await rust.getHeatmap();
         state = state.copyWith(
