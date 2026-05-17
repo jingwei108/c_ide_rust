@@ -1506,6 +1506,103 @@ int main() {
 }
 
 #[test]
+fn test_e2e_double_func_arg_return() {
+    let src = r#"
+#include <stdio.h>
+double add(double a, double b) {
+    return a + b;
+}
+int main() {
+    double r = add(1.5, 2.5);
+    printf("%f", r);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("4.000000")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_double_implicit_cast_from_int() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double x = 7;
+    printf("%f", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("7.000000")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_double_compare() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double a = 5.0;
+    double b = 3.0;
+    printf("%d", a > b);
+    printf("%d", a == b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
+    assert!(outputs.iter().any(|l| l.contains("0")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_double_cast() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 5;
+    double b = (double)a;
+    printf("%f", b);
+    double c = 3.7;
+    int d = (int)c;
+    printf("%d", d);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("5.000000")), "Outputs: {:?}", outputs);
+    assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_double_compound_assign() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double x = 2.0;
+    x += 3.0;
+    printf("%f", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("5.000000")), "Outputs: {:?}", outputs);
+}
+
+#[test]
 fn test_e2e_int_func_arg_implicit_cast_from_float() {
     let src = r#"
 #include <stdio.h>
