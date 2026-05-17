@@ -1,7 +1,7 @@
 # C IDE 项目路线图（2026-05-14 修订版）
 
 > **核心原则**：不急着发布，不把时间浪费在"能用"上。每一行代码都指向一个竞品没有的功能亮点。
-> **当前状态**：Rust 后端全链路稳定，Flutter 前端已接棒 MAUI，算法可视化 + 诊断修复系统全部就绪。
+> **当前状态**：Rust 后端全链路稳定，Flutter 前端已接棒 MAUI，算法可视化 + 诊断修复系统全部就绪，**统一模式 / 时间旅行 已实现**。
 
 ---
 
@@ -62,12 +62,22 @@ native/
 │   │   ├── vm.rs
 │   │   ├── opcode.rs
 │   │   ├── instruction.rs
-│   │   └── host_funcs.rs
+│   │   ├── host_funcs.rs
+│   │   ├── host_func_id.rs        # 宿主函数 ID 统一常量
+│   │   └── snapshot.rs            # VM 全量快照（时间旅行）
 │   ├── diagnostics/              # 结构化诊断与自动修复
 │   │   ├── error_codes.rs
 │   │   └── error_catalog.rs
-│   ├── capi/                     # C API 桥接层
+│   ├── unified/                   # 统一模式 / 时间旅行引擎
+│   │   ├── engine.rs              # UnifiedEngine
+│   │   ├── checkpoint.rs          # 检查点管理器
+│   │   ├── collector.rs           # StepCollector
+│   │   └── types.rs               # StepPayload 等 FRB 类型
+│   ├── engine/                    # 编译管线与工具
+│   │   └── compile_pipeline.rs    # 统一编译管线
+│   ├── capi/                     # C API 桥接层（MAUI 兼容）
 │   ├── api/                      # flutter_rust_bridge API
+│   ├── flutter_bridge.rs          # FRB 业务包装层（Session 管理）
 │   └── session.rs                # Session 状态管理
 └── tests/                        # Rust 集成测试
 CideFlutter/                      # Flutter 前端（Android + Desktop）
@@ -191,6 +201,29 @@ for (int i = 0; i <= 5; i++) { arr[i] = i; }
 - `fprintf`/`realloc`/`qsort`
 - 函数指针基础支持（用于 `qsort` 回调）
 
+### Stage 8: 统一模式 / 时间旅行（✅ 已实现）
+
+**核心能力**：学生写完代码点击"运行"后，程序自动逐条语句执行，前端实时收集每一步的状态快照。用户可以随时暂停、单步前进、拖动进度条回退到任意历史时刻，系统从最近的检查点恢复 VM 状态并正向重放。
+
+**Rust 后端**：
+- `VMSnapshot` 全量快照（1MB 内存 + 运行时状态 + 内存管理状态）
+- `CheckpointManager` 检查点管理器（固定间隔 20 步保存快照）
+- `UnifiedEngine` 批量自动执行引擎（`run_batch` + `seek_to` + Trap 自动回退）
+- `StepCollector` 每步数据收集（变量快照、调用栈、可视化事件、语义标签、热力图）
+- FRB API：`compileAndRun`、`runAutoSteps`、`seekToStep`、`stepNextUnified`、`pause/resume`、`getHeatmap`
+
+**Flutter 前端**：
+- `UnifiedState` + `ExecutionPhase`（idle / compiling / collecting / paused / playback / seeking / stepMode / error）
+- `UnifiedNotifier`（自动收集循环、播放控制、Seek、单步、播放速度）
+- `ExecutionControlPanel`（播放/暂停/单步/进度条/语义标签/速度调节/覆盖率显示/异常提示条/算法检测条）
+- `VarHistoryTab` 变量历史趋势图（从 `frame_cache` 提取变化轨迹）
+- `VariablesTab` 实时变量面板 + `ArrayVisTab` 数组可视化
+
+**教学价值**：
+- 学生第一次看到"程序不是黑箱"——每一行代码的执行都留下可追溯的痕迹
+- 拖动进度条即可"时间旅行"，观察变量如何随时间变化
+- 运行时异常自动回退到上一步，配合知识卡片即时诊断
+
 ---
 
 ## 四、当前状态 & 下一步
@@ -203,6 +236,7 @@ for (int i = 0; i <= 5; i++) { arr[i] = i; }
 - ✅ P0 安全修复（VM 栈-堆碰撞、u32 溢出、移位越界、trap 边界）
 - ✅ Flutter 前端端到端可用（编辑器 + 编译 + 运行 + 调试 + 可视化）
 - ✅ 学习进度追踪 + 知识卡片系统
+- ✅ **统一模式 / 时间旅行**（VM 快照 + 检查点 + Seek + 自动执行 + 异常回退）
 
 ### 正在做
 - 🔄 知识图谱系统

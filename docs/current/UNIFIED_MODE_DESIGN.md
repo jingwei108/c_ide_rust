@@ -1,7 +1,7 @@
 # Cide 统一模式设计文档
 
 > **版本**：2026-05-17  
-> **状态**：设计阶段  
+> **状态**：✅ 已实现（Rust 后端 + Flutter 前端）  
 > **核心原则**：用户不区分"调试模式"和"回放模式"。写代码 → 编译 → 运行 → 自由探索，一个流程走到底。
 
 ---
@@ -427,59 +427,84 @@ impl CheckpointManager {
 }
 ```
 
-### 5.3 自动执行引擎
+### 5.3 统一模式引擎（`UnifiedEngine`）
+
+实际实现中，`AutoExecutor` 与 `CheckpointManager` 已合并为 `UnifiedEngine`，采用**批量轮询**而非后台线程，以兼容 FRB 的同步调用模型。
 
 ```rust
-pub struct AutoExecutor {
-    vm: CideVM,
-    checkpoint_mgr: CheckpointManager,
-    frame_cache: Vec<StepPayload>,
-    max_steps: i32,          // 防止无限循环（默认 10000）
-    is_paused: bool,
-    is_cancelled: bool,
+pub struct UnifiedEngine {
+    pub checkpoints: CheckpointManager,
+    pub frame_cache: Vec<StepPayload>,
+    pub max_steps: i32,          // 防止无限循环（默认 10000）
+    pub is_paused: bool,
+    pub is_cancelled: bool,
 }
 
-impl AutoExecutor {
-    /// 启动自动收集循环
-    pub fn run(&mut self, session: &mut Session) -> Result<(), String> {
-        while !self.is_cancelled && !self.is_paused && self.vm.can_step() {
-            let step = self.vm.get_step_count();
-            
+impl UnifiedEngine {
+    /// 批量自动执行，返回收集到的 StepPayload 列表。
+    /// 前端通过 Timer 周期性调用（如每 50ms 调用一次，batch_size=5）。
+    pub fn run_batch(
+        &mut self,
+        vm: &mut CideVM,
+        session: &mut Session,
+        batch_size: i32,
+    ) -> Result<AutoStepResult, String> {
+        let mut payloads = Vec::new();
+        let mut finished = false;
+        let mut trapped = false;
+        let mut waiting_input = false;
+        let mut trap_message: Option<String> = None;
+
+        for _ in 0..batch_size {
+            if self.is_paused || self.is_cancelled { break; }
+
+            let step = vm.get_executed_steps();
+
             // 检查点保存
-            let meta = infer_step_meta(&self.vm);
-            if self.checkpoint_mgr.should_checkpoint(step, &meta) {
-                self.checkpoint_mgr.save(step, &self.vm, session);
+            let meta = StepMeta { code_line: vm.get_current_line(), /* ... */ };
+            if self.checkpoints.should_checkpoint(step, &meta) {
+                self.checkpoints.save(step, vm, session);
             }
-            
+
+            // 执行前快照：用于 Trap 时自动回退
+            let pre_step_snap = vm.snapshot(session);
+
             // 执行一步
-            self.vm.step_next()?;
-            
-            // 收集 StepPayload
-            let payload = collect_step_payload(&self.vm, session, step);
-            self.frame_cache.push(payload);
-            
-            // 检查最大步数
+            match vm.step(session) {
+                StepResult::Ok | StepResult::Paused => {
+                    let payload = StepCollector::collect(vm, session, step);
+                    payloads.push(payload);
+                }
+                StepResult::Finished => { /* ... */ finished = true; break; }
+                StepResult::WaitingInput => { /* ... */ break; }
+                StepResult::Trap => {
+                    // 自动回退到上一步状态
+                    vm.restore(&pre_step_snap, session);
+                    trapped = true;
+                    trap_message = Some(vm.get_error().to_string());
+                    break;
+                }
+            }
+
             if step >= self.max_steps {
-                return Err("执行步数超过限制，可能存在无限循环".to_string());
+                return Err("执行步数超过限制（10,000 步），可能存在无限循环。".to_string());
             }
         }
-        
-        Ok(())
+
+        self.frame_cache.extend(payloads.clone());
+        Ok(AutoStepResult { payloads, finished, trapped, waiting_input, /* ... */ })
     }
-    
-    pub fn pause(&mut self) {
-        self.is_paused = true;
-    }
-    
-    pub fn resume(&mut self) {
-        self.is_paused = false;
-    }
-    
-    pub fn cancel(&mut self) {
-        self.is_cancelled = true;
-    }
+
+    pub fn pause(&mut self) { self.is_paused = true; }
+    pub fn resume(&mut self) { self.is_paused = false; }
+    pub fn cancel(&mut self) { self.is_cancelled = true; }
 }
 ```
+
+**关键实现细节**：
+- **Trap 自动回退**：每步执行前保存 `pre_step_snap`，若发生 Trap 立即 `vm.restore()`，保证用户看到的始终是安全状态
+- **批量轮询**：前端 `Timer.periodic` 每 50ms 调用 `runAutoSteps(batchSize: 5)`，兼顾流畅度与 UI 响应
+- **Output 截断**：`seek_to` 时 `frame_cache.truncate()` 丢弃目标步之后的旧数据，保证时间线一致性
 
 ### 5.4 FRB API
 
@@ -1172,54 +1197,57 @@ Future<void> restoreSession() async {
 
 ## 10. 实施路线图
 
-### Phase 0：VM 快照/恢复（3 天）
-- [ ] `VMSnapshot` 数据结构
-- [ ] `CideVM::snapshot()` / `restore()`
-- [ ] `output_lines` 截断处理
-- [ ] 单元测试：快照 → 恢复 → 状态一致
+> **状态总览**：Rust 后端全部完成，Flutter 前端核心链路完成。以下标记为 ✅ 的已在代码库中实现并可用。
 
-### Phase 1：检查点管理器 + 自动执行引擎（2 天）
-- [ ] `CheckpointManager`（基础间隔 + 智能模式）
-- [ ] `AutoExecutor`（后台线程 + 步数限制 + 暂停/继续）
-- [ ] 集成到 `flutter_bridge.rs`
+### Phase 0：VM 快照/恢复 ✅
+- [x] `VMSnapshot` 数据结构（`vm/snapshot.rs`：内存、栈、调用栈、运行时状态、内存管理状态）
+- [x] `CideVM::snapshot()` / `restore()`（`vm/vm.rs`）
+- [x] `output_lines` 截断处理（`seek_to` 中 `frame_cache.truncate`）
+- [x] 单元测试：快照 → 恢复 → 状态一致
 
-### Phase 2：FRB API + Flutter 状态管理（3 天）
-- [ ] FRB Stream：`StepPayload` 推送
-- [ ] `ExecutionController`（Riverpod + 六状态机）
-- [ ] 执行控制面板（Play/Pause/Step/Slider）
+### Phase 1：检查点管理器 + 自动执行引擎 ✅
+- [x] `CheckpointManager`（`unified/checkpoint.rs`：固定间隔 20 步，智能模式骨架）
+- [x] `UnifiedEngine`（`unified/engine.rs`：批量轮询 + 步数限制 + 暂停/继续 + Trap 回退）
+- [x] 集成到 `flutter_bridge.rs`：`runAutoSteps`、`seekToStep`、`stepNextUnified`
 
-### Phase 3：执行路径热力图（2 天）
-- [ ] VM 层：`heatmap.line_counts` 收集
-- [ ] FRB API：`get_heatmap()`
-- [ ] Flutter：`HeatmapGutter` 侧边栏渲染
+### Phase 2：FRB API + Flutter 状态管理 ✅
+- [x] FRB API：`StepPayload`、`AutoStepResult`、`SeekResult`、`HeatmapData`（`unified/types.rs`）
+- [x] `UnifiedNotifier`（`providers/unified_notifier.dart`：Riverpod + 六状态机）
+- [x] `UnifiedState`（`models/unified_state.dart`）
+- [x] 执行控制面板（`widgets/execution_control_panel.dart`：Play/Pause/Step/Slider/速度/覆盖率）
 
-### Phase 4：排序动画 MVP + 语义进度条（3 天）
-- [ ] `VisState` 数据结构 + 数组排序反推
-- [ ] `StepMeta` 语义标签生成
-- [ ] `AlgoCanvas` 柱状图 + 交换动画
-- [ ] 进度条语义标签显示
+### Phase 3：执行路径热力图 ✅
+- [x] VM 层：`heatmap.line_counts` 收集（`session.rs`）
+- [x] FRB API：`getHeatmap()`（`flutter_bridge.rs`）
+- [x] Flutter：覆盖率百分比显示（`ExecutionControlPanel` 右上角）
 
-### Phase 5：变量变化历史 + 悬浮球零延迟（2 天）
-- [ ] `VarHistory` 收集
-- [ ] `DebugSummary` 每步预存
-- [ ] 悬浮球变量面板 + 趋势图
+### Phase 4：排序动画 MVP + 语义进度条 ✅
+- [x] `StepPayload.vis_events`：数组比较/交换/更新事件
+- [x] `StepMeta` 语义标签生成（`unified/collector.rs`：`infer_semantic_label`，支持循环/交换/递归/函数调用/IO/内存分配）
+- [x] `AlgoCanvas` 柱状图 + 交换动画（`widgets/array_vis_tab.dart`）
+- [x] 进度条语义标签显示（`ExecutionControlPanel._buildSliderLabel`）
+- [x] 算法检测信息条（`ExecutionControlPanel` 顶部显示检测到的算法名称）
 
-### Phase 6：运行时异常自动回退（2 天）
-- [ ] `step_next_safe` 包装
-- [ ] 异常诊断匹配
-- [ ] 自动回退 UI 面板
+### Phase 5：变量变化历史 + 零延迟面板 ✅
+- [x] `VarHistoryTab`（`widgets/var_history_tab.dart`：从 `frame_cache` 提取变量历史，绘制迷你趋势图）
+- [x] `VariablesTab`（`widgets/variables_tab.dart`：每步局部变量实时面板）
+- [x] `CallStackPanel`：调用栈显示
 
-### Phase 7：变量级高亮（2 天）
-- [ ] 编译器符号表 → VM 变量访问映射
-- [ ] `VariableHighlight` 数据结构
-- [ ] `re_editor` 集成（下划线/边框/底色）
+### Phase 6：运行时异常自动回退 ✅
+- [x] `pre_step_snap` + Trap 回退（`unified/engine.rs`）
+- [x] 异常诊断匹配 + 知识卡片（`ExecutionControlPanel` Trap 提示条 + "查看帮助" BottomSheet）
+- [x] 自动回退 UI 面板（红色异常条，显示 `trap_message`，提供重置按钮）
 
-### Phase 8：链表/树可视化增强（1.5 周）
+### Phase 7：变量级高亮 🔄
+- [ ] `accessed_vars` 已收集（`StepPayload.accessed_vars`：Read/Write 标记）
+- [ ] `re_editor` 集成（下划线/边框/底色）— **待实现**
+
+### Phase 8：链表/树可视化增强 ⏳
 - [ ] `LinkedListVisualizer`
 - [ ] `TreeVisualizer`
 - [ ] 复用统一模式的所有基础设施
 
-**总计：约 6~7 周**
+**实际用时**：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）
 
 ---
 

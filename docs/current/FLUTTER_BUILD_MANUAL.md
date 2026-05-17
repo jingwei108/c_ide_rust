@@ -315,14 +315,13 @@ python scripts/build_flutter.py --skip-rust
 | `cargo ndk --target ... build --release` | `build_rust_android()` |
 | `flutter build apk --release` | `build_flutter_android()` |
 
-### 4.3 与现有 MAUI 脚本的关系
+### 4.3 构建脚本关系
 
 | 脚本 | 用途 | 目标前端 |
 |------|------|---------|
-| `scripts/build.py` | MAUI Desktop / Android | .NET MAUI |
-| `scripts/build_release.py` | MAUI Release 发布 | .NET MAUI |
-| `scripts/test_mobile.py` | MAUI 移动端完整流水线 | .NET MAUI |
-| **`scripts/build_flutter.py`** | **Flutter Desktop / Android** | **Flutter** |
+| `scripts/build_flutter.py` | Flutter Desktop / Android 日常构建 | Flutter |
+| `scripts/build_release.py` | Flutter Release 发布构建（Desktop + Android） | Flutter |
+| `scripts/test_mobile.py` | Flutter Android 移动端完整流水线 | Flutter |
 
 ---
 

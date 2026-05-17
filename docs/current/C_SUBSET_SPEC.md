@@ -25,7 +25,7 @@
 1. 会分散初学者注意力的细节（如 printf 的格式化字符串）
 2. 增加编译器复杂度但教学价值低（如 double 精度问题）
 3. 可以用现有语法等价表达的（如 break/continue 可用 return 替代）
-4. 在 WASM 沙盒中无意义的（如 #include、文件 I/O）
+4. 在 CideVM 沙盒中无意义的（如 #include、文件 I/O）
 
 ---
 
@@ -89,7 +89,7 @@ typedef int* IntPtr;
 - **数组/字符串初始化**：支持 `{1,2,3}` 和 `"hello"` 两种初始化方式，自动推断大小
 - **基本指针**：&（取地址）、*（解引用）是 C 的灵魂，必须支持
 - **struct**：链表、树等数据结构的基础；统一为引用语义（不需要理解值拷贝 vs 引用）
-- **enum**：编译期计算常量值，生成 WASM 全局常量，便于教学演示状态机
+- **enum**：编译期计算常量值，生成 CideVM 全局常量，便于教学演示状态机
 - **typedef**：简化复杂类型声明，提升代码可读性
 
 ### 2.2 语句
@@ -308,15 +308,15 @@ arr[1] = 2;
 | `goto` | 教学上不鼓励使用；增加控制流图复杂度 | "暂不支持 `goto`" |
 | `do...while` | ✅ **已支持**：至少执行一次的循环 | — |
 | `switch` / `case` / `default` | ✅ **已支持**：多分支选择，支持 fallthrough | — |
-| 预处理 (`#include`) | WASM 沙盒中无意义 | "解释器模式下无需 `#include`，直接编写代码即可" |
-| `union` / `bitfield` | 进阶特性，初学者不需要 | "暂不支持该特性" |
+| 预处理 (`#include`) | CideVM 沙盒中无意义 | "解释器模式下无需 `#include`，直接编写代码即可" |
+| `union` | ✅ **已支持**：全管线支持（声明、`sizeof(union U)`、成员访问、`p->i`），内存布局为所有字段 offset=0、size=max(fields) | — |
+| `bitfield` | 进阶特性，初学者不需要 | "暂不支持该特性" |
 | 多维数组 | ✅ **已支持**：二维数组声明、嵌套初始化、索引访问、函数参数传递 | — |
 | `sizeof` | ✅ **已支持**：编译期常量，所有标量/指针返回 4 | — |
 | 逗号分隔的多变量声明 (`int a, b;`) | ✅ **已支持**：`int a = 1, b = 2;` | — |
 | 标准库函数 (`printf` / `scanf` / `malloc` 除外) | ✅ **已支持**：printf / scanf / malloc / free 为宿主导入函数 | — |
 | `typedef` | ✅ **已支持**：类型别名，提升代码可读性 | — |
 | `enum` | ✅ **已支持**：编译期常量，底层为 int | — |
-| `union` / `bitfield` | 进阶特性，初学者不需要 | "暂不支持该特性" |
 | `extern` / `static` / `volatile` / `restrict` | 存储类和类型修饰符，增加复杂度 | "暂不支持存储类修饰符" |
 | `const` | ✅ **已支持**：直接变量 `const` 语义，阻止赋值和自增/自减 | — |
 
@@ -452,15 +452,15 @@ int main() {
 
 ### 6.2 降低风险的策略
 
-**风险**：WASM CodeGen 是最复杂的部分。
+**风险**：BytecodeGen 是编译器中最复杂的部分（~1200 行）。
 
-**缓解方案**：
+**缓解方案**（已全部验证有效）：
 
 | 策略 | 说明 | 效果 |
 |:---|:---|:---|
-| **Phase 1 缩小子集** | 先实现变量+数组+函数+指针+if/while/for | 减少 ~30% CodeGen 工作量 |
-| **Rust 枚举 AST** | 用 enum 替代 C++ 多态类层次 | 减少内存管理错误，Borrow Checker 保障安全 |
-| **端到端测试驱动** | 每增加一个语法特性，立即添加 E2E 测试 | 早发现错误，防止回归 |
+| **Phase 1 缩小子集** | 先实现变量+数组+函数+指针+if/while/for | 减少 ~30% CodeGen 工作量 ✅ |
+| **Rust 枚举 AST** | 用 enum 替代 C++ 多态类层次 | 减少内存管理错误，Borrow Checker 保障安全 ✅ |
+| **端到端测试驱动** | 每增加一个语法特性，立即添加 E2E 测试 | 早发现错误，防止回归 ✅ |
 
 ---
 
@@ -547,10 +547,10 @@ int main() { return 0; }
 
 2. **这个特性会增加多少编译器复杂度？**
    - for 循环 → 复杂度中等，但教学价值极高 → **保留**
-   - float/double → 复杂度中等，教学价值低 → **排除**
+   - float/double → 复杂度中等，教学价值中等（数值计算入门）→ **保留** ✅ 已实现
 
 3. **学生第一次接触这个特性时会困惑吗？**
-   - `int a, b;` → 可能困惑（为什么可以一行两个？）→ **排除**
+   - `int a, b;` → 可能困惑（为什么可以一行两个？）→ **已支持** ✅（`int a = 1, b = 2;`）
    - `p++` vs `arr[i++]` → 需要理解步长缩放，但已支持并带教学提示 → **保留**
 
 ### 最终推荐的 Cide-C 子集（Phase 1 ~ 3 完整版）
@@ -568,7 +568,7 @@ I/O：printf、scanf、fprintf、getchar、putchar
 字符串：strlen、strcpy、strcmp、strcat、atoi
 其他：rand/srand/memset/exit/qsort
 
-不支持：union/bitfield、goto、文件I/O、extern/static/volatile/restrict、
+不支持：bitfield、goto、文件I/O、extern/static/volatile/restrict、
        完整预处理器（仅 #define 常量宏）
 ```
 

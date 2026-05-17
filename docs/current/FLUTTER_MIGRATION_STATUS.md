@@ -1,7 +1,8 @@
 # Flutter 前端迁移状态报告
 
-> 日期：2026-05-13  
-> 分支：`flutter-migration`  
+> 日期：2026-05-17  
+> 分支：`main`  
+> 状态：迁移已完成，当前为 Flutter 主分支  
 > 目标：将 .NET MAUI 前端迁移至 Flutter，保留 Rust 后端完全不变
 
 ---
@@ -22,6 +23,12 @@
 | 函数 | 说明 |
 |------|------|
 | `compile(source)` | 编译 C 源码 |
+| `compileAndRun(source)` | 编译并启动统一模式自动收集 |
+| `runAutoSteps(batchSize)` | 批量自动执行（统一模式） |
+| `seekToStep(target)` | Seek 到指定步（时间旅行） |
+| `stepNextUnified()` | 统一模式单步 |
+| `pauseExecution()` / `resumeExecution()` | 暂停/恢复自动执行 |
+| `getHeatmap()` | 获取执行热力图 |
 | `run_code()` | 全速运行 |
 | `step_next()` | 单步调试 |
 | `get_diagnostics()` | 获取诊断信息 |
@@ -213,11 +220,11 @@ cd CideFlutter && flutter run -d windows
 - [ ] **算法验证**：算法检测后的通过/失败测试用例展示（待实现）
 
 ### P2 — 交互增强
-- [ ] **执行速度滑块**：调节单步调试速度
-- [ ] **应用修复按钮**：诊断面板中一键应用自动修复建议
-- [ ] **Intro 覆盖层**：首次使用时的引导教程
-- [ ] **触摸滑动切换 Tab**：底部面板支持左右滑动手势
-- [ ] **键盘快捷键**：F5 运行、F10 单步、F9 断点等
+- [x] **执行速度滑块**：调节单步调试速度（0.5x / 1.0x / 2.0x / 4.0x）
+- [x] **应用修复按钮**：诊断面板中一键应用结构化自动修复建议
+- [x] **Intro 覆盖层**：首次使用时的引导教程 (`IntroOverlay`)
+- [x] **触摸滑动切换 Tab**：底部面板支持左右滑动手势（60px 阈值）
+- [x] **键盘快捷键**：F5 运行/继续、Shift+F5 停止、F10 单步、F9 切换断点
 
 ### P3 — 工程化
 - [x] **Android 构建环境修复**：本地 Gradle + 阿里云镜像 + NDK 配置

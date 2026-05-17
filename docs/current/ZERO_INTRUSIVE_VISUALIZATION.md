@@ -1,6 +1,7 @@
 # Cide 数据结构可视化计划文档
 
 > 版本：2026-05-17  
+> 状态：数组排序可视化 MVP ✅ 已实现；链表/树可视化 ⏳ 待实现  
 > 设计原则：**零侵入（不写 vis_*()） + 人机协作（分层确认兜底） + 按需反推（不预录帧）**
 
 ---
@@ -699,18 +700,19 @@ class VisFrameBuffer {
 - [ ] Flutter：`DetectionHintBar` / `ManualConfigPanel`
 - [ ] 配置持久化到 `SharedPreferences`
 
-### Phase 3：数组排序动画 MVP（1 周）
-- [ ] `SortingVisualizer` 柱状图 + 比较/交换动画
-- [ ] 冒泡/选择/插入排序完整动画
+### Phase 3：数组排序动画 MVP（✅ 已实现）
+- [x] `ArrayVisualizer` 柱状图 + 比较/交换动画（`widgets/array_visualizer.dart`）
+- [x] 冒泡/选择/插入/快排/归并/二分排序动画 + 算法检测信息条
+- [x] VisEvent 比较事件高亮对应条形（琥珀色 + 发光阴影）
 
 ### Phase 4：链表与二叉树（2 周）
 - [ ] `LinkedListVisualizer` 创建/删除/重连动画
 - [ ] `TreeVisualizer` 递归布局 + 遍历高亮
 
-### Phase 5：快排/归并/二分（1 周）
-- [ ] 快排（pivot 高亮 + partition 区间）
-- [ ] 归并（双数组 + merge 区间）
-- [ ] 二分查找（搜索区间收缩）
+### Phase 5：快排/归并/二分（✅ 已合并至 Phase 3）
+- [x] 快排（pivot 高亮 + partition 区间）
+- [x] 归并（双数组 + merge 区间）
+- [x] 二分查找（搜索区间收缩）
 
 ### Phase 6：体验打磨（1 周）
 - [ ] 动画速度调节（0ms ~ 500ms）

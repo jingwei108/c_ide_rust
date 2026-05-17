@@ -50,8 +50,8 @@
 | 前端 UI | Flutter（Android + Windows Desktop） | 跨平台，统一 UI |
 | 前端渲染 | Flutter CustomPainter + Widget | 算法可视化、内存映射 Canvas |
 | 后端核心 | Rust 1.95 | 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机 |
-| 通信 | C API (`extern "C"`) | 统一 P/Invoke（Android/Desktop） |
-| 构建 | Cargo + dotnet + PowerShell | 与参考项目保持一致 |
+| 通信 | flutter_rust_bridge v2 (SSE codec) | Dart ↔ Rust 零拷贝桥接 |
+| 构建 | Cargo + Flutter tools | Rust cdylib + Flutter 插件 |
 
 ### 1.4 参考项目经验
 
@@ -109,7 +109,7 @@
 - **教学专用执行引擎**：为 C 子集量身定制的轻量级虚拟机，不是通用 WASM 解释器
 - 用户代码编译为扁平字节码，在 **CideVM** 中逐条解释执行
 - 利用线性内存隔离和指令级边界检查保证安全
-- 前端统一使用 **P/Invoke**，Android 和 Desktop 完全一致
+- 前端统一使用 **flutter_rust_bridge v2**，Android 和 Desktop 完全一致
 
 **从 wasm3 到 CideVM 的演进**：
 
@@ -154,14 +154,25 @@ c-ide/
 │   │   │   ├── vm.rs
 │   │   │   ├── opcode.rs
 │   │   │   ├── instruction.rs
-│   │   │   └── host_funcs.rs
+│   │   │   ├── host_funcs.rs
+│   │   │   ├── host_func_id.rs        # 宿主函数 ID 统一常量
+│   │   │   └── snapshot.rs            # VM 全量快照（时间旅行）
 │   │   ├── diagnostics/               # 诊断与自动修复系统
 │   │   │   ├── error_codes.rs
 │   │   │   └── error_catalog.rs
-│   │   ├── capi/                      # C API 桥接层
+│   │   ├── unified/                   # 统一模式 / 时间旅行引擎
+│   │   │   ├── mod.rs
+│   │   │   ├── engine.rs              # UnifiedEngine（批量执行 + Seek）
+│   │   │   ├── checkpoint.rs          # 检查点管理器
+│   │   │   ├── collector.rs           # StepCollector（每步数据收集）
+│   │   │   └── types.rs               # StepPayload / StepMeta 等 FRB 类型
+│   │   ├── engine/                    # 编译管线与工具
+│   │   │   └── compile_pipeline.rs    # 统一编译管线
+│   │   ├── capi/                      # C API 桥接层（MAUI 兼容）
 │   │   │   └── mod.rs
 │   │   ├── api/                       # flutter_rust_bridge API
 │   │   │   └── cide.rs
+│   │   ├── flutter_bridge.rs          # FRB 业务包装层（Session 管理）
 │   │   └── session.rs                 # Session 状态管理
 │   └── tests/                         # 测试套件
 │       ├── end_to_end_test.rs
@@ -251,8 +262,7 @@ sizeof(int) / sizeof(struct S)  // sizeof
 
 | 特性 | 遇到时的中文提示 |
 |------|---------------|
-| `double` | "教学子集暂不支持 double 类型，请使用 float 代替" |
-| `union` / `bitfield` | "暂不支持该特性" |
+| `union` / `bitfield` | `union` ✅ 已支持（全管线：`sizeof(union U)`、成员访问、指针访问）；`bitfield` 暂不支持 |
 | `goto` | "暂不支持 goto" |
 | 预处理 (`#include` / `#ifdef`) | "解释器模式下无需 #include，直接编写代码即可" |
 | 文件 I/O (`fopen`/`fread`) | "沙盒中不支持文件 I/O" |
@@ -412,7 +422,9 @@ int f() { return f(); }
 while (1) {}     // 程序执行步数超过限制（10000000步），可能包含无限循环。
 ```
 
-### 4.5 C API 接口
+### 4.5 接口层
+
+#### C API（保留用于 MAUI 兼容）
 
 ```cpp
 // 会话管理
@@ -450,6 +462,28 @@ void cide_diagnostic_get(CideSession* s, int index,
 int cide_trace_count(CideSession* s);
 void cide_trace_get(CideSession* s, int index, int* line, char* operation, int op_size);
 ```
+
+#### FRB API（Flutter 前端实际使用）
+
+Flutter 前端通过 `flutter_rust_bridge v2` 调用 Rust 后端，主要 API：
+
+| 函数 | 说明 |
+|------|------|
+| `compile(source)` | 编译 C 源码 |
+| `compileAndRun(source)` | 编译并启动统一模式自动收集 |
+| `runAutoSteps(batchSize)` | 批量自动执行 |
+| `seekToStep(target)` | Seek 到指定步 |
+| `stepNextUnified()` | 统一模式单步 |
+| `pauseExecution()` / `resumeExecution()` | 暂停/恢复 |
+| `getHeatmap()` | 获取执行热力图 |
+| `getAlgorithmMatches()` | 获取算法检测匹配 |
+| `getDiagnostics()` | 获取诊断信息 |
+| `getVariables()` | 获取变量快照 |
+| `getMemoryRegions()` | 获取内存区域 |
+| `getCallstack()` | 获取调用栈 |
+| `getOutput()` | 获取输出文本 |
+| `readMemory(addr, count)` | 从 VM 内存读取 |
+| `resetSession()` | 重置会话 |
 
 > VM 设计细节见本章节 4.2 ~ 4.3 节
 
@@ -724,11 +758,19 @@ void bubbleSort(int arr[], int n) {
 - [x] `fprintf`/`realloc`/`qsort`
 - [x] 隐式转换提示系统（warning + hint 分级）
 
-### Phase 7: 扩展与未来
-- [ ] `double` 类型支持
+### Phase 7: 统一模式 / 时间旅行（✅ 已完成）
+- [x] VM 全量快照/恢复（`vm/snapshot.rs`）：1MB 内存 + 运行时状态 + 内存管理状态
+- [x] 检查点管理器（`unified/checkpoint.rs`）：固定间隔 20 步保存快照
+- [x] 批量自动执行引擎（`unified/engine.rs`）：`run_batch` + `seek_to` + Trap 自动回退
+- [x] 每步数据收集（`unified/collector.rs`）：变量快照、调用栈、可视化事件、语义标签、热力图
+- [x] Flutter 前端：`UnifiedNotifier` 状态机 + `ExecutionControlPanel` 控制面板 + `VarHistoryTab` 变量历史趋势图
+- [x] 运行时异常自动回退 + 知识卡片诊断匹配
+
+### Phase 8: 扩展与未来
 - [ ] 函数指针完整支持（当前仅基础支持，用于 `qsort` 回调）
 - [ ] 知识图谱系统
 - [ ] 社区贡献算法模板
+- [ ] 链表/树可视化增强（`LinkedListVisualizer` / `TreeVisualizer`）
 
 ---
 

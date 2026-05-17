@@ -413,18 +413,18 @@ impl CheckpointManager {
 
 ## 9. 实施优先级
 
-| 优先级 | 功能 | 预估时间 | 依赖 |
+| 优先级 | 功能 | 状态 | 实际文件 |
 |:---|:---|:---|:---|
-| P0 | VM 全量快照/恢复 + 检查点管理 | 3 天 | 无 |
-| P0 | 自动执行模式（收集 VisState + StepMeta） | 2 天 | 快照 |
-| P1 | 执行路径热力图（Heatmap） | 2 天 | 自动执行 |
-| P1 | 排序动画 MVP + 语义进度条 | 3 天 | StepMeta |
-| P1 | 变量变化历史（悬浮球零延迟） | 2 天 | 自动执行 |
-| P2 | 运行时异常自动回退 | 2 天 | 快照 |
-| P2 | 变量级高亮 | 2 天 | 编译器符号表 |
-| P3 | 链表/树可视化增强 | 1.5 周 | 排序动画 |
+| P0 | VM 全量快照/恢复 + 检查点管理 | ✅ 已实现 | `vm/snapshot.rs` + `unified/checkpoint.rs` |
+| P0 | 自动执行模式（收集 StepPayload + StepMeta） | ✅ 已实现 | `unified/engine.rs` `run_batch()` |
+| P1 | 执行路径热力图（Heatmap） | ✅ 已实现 | `session.rs` heatmap + Flutter 覆盖率显示 |
+| P1 | 排序动画 MVP + 语义进度条 | ✅ 已实现 | `widgets/array_vis_tab.dart` + `ExecutionControlPanel` |
+| P1 | 变量变化历史（悬浮球零延迟） | ✅ 已实现 | `widgets/var_history_tab.dart` 迷你趋势图 |
+| P2 | 运行时异常自动回退 | ✅ 已实现 | `unified/engine.rs` `pre_step_snap` + Trap 回退 |
+| P2 | 变量级高亮 | 🔄 部分实现 | `StepPayload.accessed_vars` 已收集；`re_editor` 集成待实现 |
+| P3 | 链表/树可视化增强 | ⏳ 待实现 | `LinkedListVisualizer` / `TreeVisualizer` |
 
-**总计：约 4~5 周做出市面独一份的"时间旅行调试+动画+热力图"统一体验。**
+**实际用时：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）。**
 
 ---
 

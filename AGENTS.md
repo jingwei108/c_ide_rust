@@ -24,7 +24,9 @@ Cide 是一个跨平台 C 语言 IDE，包含：
 ```
 native/src/compiler/    Lexer, Parser, TypeChecker, BytecodeGen, AST (Rust)
 native/src/vm/          CideVM 字节码解释器 (Rust)
-native/src/capi/        C API (P/Invoke / JNI 接口) (Rust)
+native/src/unified/     统一模式 / 时间旅行引擎 (Rust)
+native/src/engine/      编译管线与工具 (Rust)
+native/src/capi/        C API (MAUI 兼容层) (Rust)
 native/src/api/         FRB API (flutter_rust_bridge) (Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议 (Rust)
 CideFlutter/            Flutter 跨平台前端 (Android + Desktop Windows)
@@ -53,6 +55,7 @@ docs/                   设计文档、事故报告
 | Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
 | Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 44 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
 | Phase 12 | `union` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ `sizeof(union U)` | ✅ 完成 |
+| Phase 13 | **统一模式 / 时间旅行**：VM 快照/恢复 + 检查点管理器 + 批量自动执行 + Seek 进度条 + 异常自动回退 + 语义标签 + 变量历史趋势图 | ✅ 完成 |
 
 ## 编码约定
 
@@ -98,6 +101,12 @@ docs/                   设计文档、事故报告
 - **`realloc`** — `realloc(ptr, new_size)`，支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
 - **`qsort`** — `qsort(base, nmemb, size, compar)`，支持用户自定义比较函数（通过 VM 调用用户函数）
 - **`union` 类型** — `union U { int i; double d; }; union U u; u.i = 1; u.d = 3.14; printf("%.2f", u.d);`，内存布局为所有字段 offset=0、size=max(fields)，支持成员访问、指针访问（`p->i`）、`sizeof(union U)`
+- **统一模式 / 时间旅行** — 点击"运行"后自动逐语句执行并收集每步状态快照；可随时暂停、单步前进、拖动进度条回退到任意历史步；系统从最近检查点（每 20 步）恢复 VM 状态并正向重放；运行时异常自动回退到上一步并弹出知识卡片诊断
+  - `VMSnapshot` 全量快照（`vm/snapshot.rs`）：1MB 内存 + 运行时状态 + 内存管理状态
+  - `CheckpointManager` 检查点管理器（`unified/checkpoint.rs`）
+  - `UnifiedEngine` 批量自动执行 + Seek + Trap 回退（`unified/engine.rs`）
+  - `StepCollector` 每步数据收集：变量快照、调用栈、可视化事件、语义标签、热力图（`unified/collector.rs`）
+  - Flutter 前端：`UnifiedNotifier` 状态机 + `ExecutionControlPanel` 控制面板 + `VarHistoryTab` 变量历史趋势图
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护
