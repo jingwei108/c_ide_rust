@@ -43,7 +43,30 @@ pub struct TypeChecker {
 
 fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     let current_ty = expr.ty().clone();
-    if target.kind == TypeKind::Float && current_ty.kind != TypeKind::Float && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char) {
+    if target.kind == TypeKind::Double && current_ty.kind != TypeKind::Double && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+        let loc = *expr.loc();
+        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        *expr = Expr::Cast {
+            expr: Box::new(old),
+            target_type: Type::double(),
+            loc,
+            ty: Type::double(),
+        };
+    } else if target.kind != TypeKind::Double && current_ty.kind == TypeKind::Double && matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+        let loc = *expr.loc();
+        let target_ty = match target.kind {
+            TypeKind::Char => Type::char(),
+            TypeKind::Float => Type::float(),
+            _ => Type::int(),
+        };
+        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        *expr = Expr::Cast {
+            expr: Box::new(old),
+            target_type: target_ty.clone(),
+            loc,
+            ty: target_ty,
+        };
+    } else if target.kind == TypeKind::Float && current_ty.kind != TypeKind::Float && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char) {
         let loc = *expr.loc();
         let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
         *expr = Expr::Cast {
@@ -177,11 +200,11 @@ impl TypeChecker {
         matches!(t.kind, TypeKind::Int | TypeKind::Char)
     }
     fn is_scalar(&self, t: &Type) -> bool {
-        matches!(t.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)
+        matches!(t.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)
     }
 
     fn is_comparable(&self, a: &Type, b: &Type) -> bool {
-        if matches!(a.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) && matches!(b.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) { return true; }
+        if matches!(a.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) && matches!(b.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) { return true; }
         if matches!(a.kind, TypeKind::Pointer) && matches!(b.kind, TypeKind::Pointer) { return true; }
         if matches!(a.kind, TypeKind::Pointer) && matches!(b.kind, TypeKind::Array) { return true; }
         if matches!(a.kind, TypeKind::Array) && matches!(b.kind, TypeKind::Pointer) { return true; }
@@ -213,13 +236,16 @@ impl TypeChecker {
             }
             if dims_compatible { return true; }
         }
-        if (matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)) && (matches!(value.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)) {
+        if (matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)) && (matches!(value.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)) {
             // 警告可能丢失精度的情况
-            if matches!(target.kind, TypeKind::Char) && matches!(value.kind, TypeKind::Int | TypeKind::Float) {
+            if matches!(target.kind, TypeKind::Char) && matches!(value.kind, TypeKind::Int | TypeKind::Float | TypeKind::Double) {
                 self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
             }
-            if matches!(target.kind, TypeKind::Int) && matches!(value.kind, TypeKind::Float) {
-                self.report_warning("float 被隐式转换为 int，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+            if matches!(target.kind, TypeKind::Int) && matches!(value.kind, TypeKind::Float | TypeKind::Double) {
+                self.report_warning(&format!("{} 被隐式转换为 int，可能会丢失精度。", value), loc, ErrorCode::W3053_ImplicitScalarConversion);
+            }
+            if matches!(target.kind, TypeKind::Float) && matches!(value.kind, TypeKind::Double) {
+                self.report_warning("double 被隐式转换为 float，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
             }
             // 提示安全的隐式提升
             if matches!(target.kind, TypeKind::Int) && matches!(value.kind, TypeKind::Char) {
@@ -228,6 +254,14 @@ impl TypeChecker {
             if matches!(target.kind, TypeKind::Float) && matches!(value.kind, TypeKind::Int | TypeKind::Char) {
                 let src = if matches!(value.kind, TypeKind::Char) { "char" } else { "int" };
                 self.report_hint(&format!("{} 被隐式提升为 float。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
+            }
+            if matches!(target.kind, TypeKind::Double) && matches!(value.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+                let src = match value.kind {
+                    TypeKind::Char => "char",
+                    TypeKind::Float => "float",
+                    _ => "int",
+                };
+                self.report_hint(&format!("{} 被隐式提升为 double。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
             }
             return true;
         }
@@ -562,7 +596,9 @@ impl TypeChecker {
                 *ty = match op {
                     BinaryOp::Add | BinaryOp::Sub => {
                         if self.is_scalar(&left_type) && self.is_scalar(&right_type) {
-                            if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
+                            if left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double { Type::double() }
+                            else if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() }
+                            else { Type::int() }
                         } else if left_type.is_pointer() && self.is_int(&right_type) {
                             left_type.clone()
                         } else if self.is_int(&left_type) && right_type.is_pointer() && matches!(op, BinaryOp::Add) {
@@ -578,7 +614,9 @@ impl TypeChecker {
                         if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
                             self.report_error("乘除运算要求两边都是 int 或 float 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
                         }
-                        if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
+                        if left_type.kind == TypeKind::Double || right_type.kind == TypeKind::Double { Type::double() }
+                        else if left_type.kind == TypeKind::Float || right_type.kind == TypeKind::Float { Type::float() }
+                        else { Type::int() }
                     }
                     BinaryOp::Mod => {
                         if !self.is_int(&left_type) || !self.is_int(&right_type) {
@@ -635,7 +673,9 @@ impl TypeChecker {
                         if !self.is_scalar(&operand_type) {
                             self.report_error("取负运算要求操作数是 int 或 float 类型", loc, ErrorCode::E3020_UnaryTypeError);
                         }
-                        if operand_type.kind == TypeKind::Float { Type::float() } else { Type::int() }
+                        if operand_type.kind == TypeKind::Double { Type::double() }
+                        else if operand_type.kind == TypeKind::Float { Type::float() }
+                        else { Type::int() }
                     }
                     UnaryOp::Not => {
                         if !self.is_scalar(&operand_type) && !operand_type.is_pointer() {
@@ -663,7 +703,7 @@ impl TypeChecker {
                         }
                     }
                     UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
-                        if !self.is_int(&operand_type) && operand_type.kind != TypeKind::Float && !operand_type.is_pointer() {
+                        if !self.is_int(&operand_type) && operand_type.kind != TypeKind::Float && operand_type.kind != TypeKind::Double && !operand_type.is_pointer() {
                             self.report_error("自增/自减要求 int 类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
                         }
                         if let Expr::Identifier { name, .. } = operand.as_ref() {

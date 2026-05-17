@@ -361,7 +361,7 @@ impl BytecodeGen {
     fn elem_type_size(&self, arr_type: &Type) -> i32 {
         match arr_type.base_kind {
             TypeKind::Char => 1,
-            TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
+            TypeKind::Int | TypeKind::Pointer | TypeKind::Float | TypeKind::Double => 4,
             TypeKind::Struct => {
                 self.struct_defs.get(&arr_type.name).map(|f| {
                     f.iter().map(|field| self.type_size(&field.ty)).sum()
@@ -377,6 +377,7 @@ impl BytecodeGen {
             TypeKind::Int => 4,
             TypeKind::Char => 1,
             TypeKind::Float => 4,
+            TypeKind::Double => 4,
             TypeKind::Pointer => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
@@ -398,6 +399,7 @@ impl BytecodeGen {
             TypeKind::Int => 4,
             TypeKind::Char => 1,
             TypeKind::Float => 4,
+            TypeKind::Double => 4,
             TypeKind::Pointer => 4,
             TypeKind::Array => 4,
             TypeKind::Struct => {
@@ -506,7 +508,7 @@ impl BytecodeGen {
                             }
                         } else {
                             self.gen_expr(e);
-                            if vty.kind == TypeKind::Float && e.ty().kind != TypeKind::Float {
+                            if (vty.kind == TypeKind::Float || vty.kind == TypeKind::Double) && e.ty().kind != TypeKind::Float && e.ty().kind != TypeKind::Double {
                                 self.emit(OpCode::CastI2F, 0, loc);
                             }
                             self.emit(OpCode::StoreLocal, local_idx, loc);
@@ -622,10 +624,10 @@ impl BytecodeGen {
             Stmt::Return { value, loc } => {
                 if let Some(ref mut v) = value {
                     self.gen_expr(v);
-                    let ret_is_float = self.func_table.get(&self.current_func).map(|m| m.return_type.kind == TypeKind::Float).unwrap_or(false);
-                    if ret_is_float && v.ty().kind != TypeKind::Float {
+                    let ret_is_float = self.func_table.get(&self.current_func).map(|m| m.return_type.kind == TypeKind::Float || m.return_type.kind == TypeKind::Double).unwrap_or(false);
+                    if ret_is_float && v.ty().kind != TypeKind::Float && v.ty().kind != TypeKind::Double {
                         self.emit(OpCode::CastI2F, 0, loc);
-                    } else if !ret_is_float && v.ty().kind == TypeKind::Float {
+                    } else if !ret_is_float && (v.ty().kind == TypeKind::Float || v.ty().kind == TypeKind::Double) {
                         self.emit(OpCode::CastF2I, 0, loc);
                     }
                     self.emit(OpCode::Ret, 0, loc);
@@ -787,15 +789,15 @@ impl BytecodeGen {
             Expr::Binary { op, left, right, ty, .. } => {
                 let left_is_ptr = left.ty().is_pointer() || left.ty().is_array();
                 let right_is_ptr = right.ty().is_pointer() || right.ty().is_array();
-                let any_float = left.ty().kind == TypeKind::Float || right.ty().kind == TypeKind::Float;
-                let result_is_float = ty.kind == TypeKind::Float;
+                let any_float = left.ty().kind == TypeKind::Float || left.ty().kind == TypeKind::Double || right.ty().kind == TypeKind::Float || right.ty().kind == TypeKind::Double;
+                let result_is_float = ty.kind == TypeKind::Float || ty.kind == TypeKind::Double;
 
                 self.gen_expr(left);
-                if any_float && !left_is_ptr && left.ty().kind != TypeKind::Float {
+                if any_float && !left_is_ptr && left.ty().kind != TypeKind::Float && left.ty().kind != TypeKind::Double {
                     self.emit(OpCode::CastI2F, 0, &loc);
                 }
                 self.gen_expr(right);
-                if any_float && !right_is_ptr && right.ty().kind != TypeKind::Float {
+                if any_float && !right_is_ptr && right.ty().kind != TypeKind::Float && right.ty().kind != TypeKind::Double {
                     self.emit(OpCode::CastI2F, 0, &loc);
                 }
 
@@ -882,7 +884,7 @@ impl BytecodeGen {
                 match op {
                     UnaryOp::Neg => {
                         self.gen_expr(operand);
-                        if operand.ty().kind == TypeKind::Float {
+                        if operand.ty().kind == TypeKind::Float || operand.ty().kind == TypeKind::Double {
                             self.emit(OpCode::NegF, 0, &loc);
                         } else {
                             self.emit(OpCode::Neg, 0, &loc);
@@ -1131,9 +1133,9 @@ impl BytecodeGen {
             }
             Expr::Cast { expr, target_type, .. } => {
                 self.gen_expr(expr);
-                if target_type.kind == TypeKind::Float && expr.ty().kind != TypeKind::Float {
+                if (target_type.kind == TypeKind::Float || target_type.kind == TypeKind::Double) && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double {
                     self.emit(OpCode::CastI2F, 0, &loc);
-                } else if target_type.kind != TypeKind::Float && expr.ty().kind == TypeKind::Float {
+                } else if target_type.kind != TypeKind::Float && target_type.kind != TypeKind::Double && (expr.ty().kind == TypeKind::Float || expr.ty().kind == TypeKind::Double) {
                     self.emit(OpCode::CastF2I, 0, &loc);
                 }
             }
@@ -1219,9 +1221,9 @@ impl BytecodeGen {
 
     fn gen_expr_with_cast(&mut self, expr: &mut Expr, target_is_float: bool, loc: &SourceLoc) {
         self.gen_expr(expr);
-        if target_is_float && expr.ty().kind != TypeKind::Float {
+        if target_is_float && expr.ty().kind != TypeKind::Float && expr.ty().kind != TypeKind::Double {
             self.emit(OpCode::CastI2F, 0, loc);
-        } else if !target_is_float && expr.ty().kind == TypeKind::Float {
+        } else if !target_is_float && (expr.ty().kind == TypeKind::Float || expr.ty().kind == TypeKind::Double) {
             self.emit(OpCode::CastF2I, 0, loc);
         }
     }
@@ -1302,7 +1304,7 @@ impl BytecodeGen {
     }
 
     fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
-        let left_is_float = left.ty().kind == TypeKind::Float;
+        let left_is_float = left.ty().kind == TypeKind::Float || left.ty().kind == TypeKind::Double;
         if left.ty().is_struct() && *op == AssignOp::Assign {
             self.gen_struct_copy(left, right, loc);
             return;

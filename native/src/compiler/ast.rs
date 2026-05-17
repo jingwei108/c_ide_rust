@@ -4,6 +4,7 @@ pub enum TypeKind {
     Int,
     Char,
     Float,
+    Double,
     Pointer,
     Array,
     Struct,
@@ -47,6 +48,9 @@ impl Type {
     pub fn float() -> Self {
         Self { kind: TypeKind::Float, name: "float".to_string(), ..Self::default() }
     }
+    pub fn double() -> Self {
+        Self { kind: TypeKind::Double, name: "double".to_string(), ..Self::default() }
+    }
     pub fn void() -> Self {
         Self { kind: TypeKind::Void, name: "void".to_string(), ..Self::default() }
     }
@@ -65,7 +69,7 @@ impl Type {
     }
 
     pub fn is_scalar(&self) -> bool {
-        matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float)
+        matches!(self.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)
     }
     pub fn is_pointer(&self) -> bool {
         matches!(self.kind, TypeKind::Pointer)
@@ -121,6 +125,7 @@ impl Type {
             TypeKind::Int => "int".to_string(),
             TypeKind::Char => "char".to_string(),
             TypeKind::Float => "float".to_string(),
+            TypeKind::Double => "double".to_string(),
             TypeKind::Pointer => {
                 let base = match self.base_kind {
                     TypeKind::Struct => format!("struct {}", self.name),

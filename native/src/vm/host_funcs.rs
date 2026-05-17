@@ -79,7 +79,7 @@ fn parse_format_specs(fmt: &str) -> Vec<char> {
 
 /// 根据格式字符串和参数列表生成 printf 输出。
 /// 会正确跳过宽度/精度/长度修饰符，只根据格式字母消费参数。
-fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
+fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
     let mut out = String::new();
     let mut used = 0;
     let mut chars = fmt.chars().peekable();
@@ -141,7 +141,7 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
                     if let Some(&spec) = chars.peek() {
                         let arg = args[used];
                         match spec {
-                            'd' | 'i' => out.push_str(&arg.to_string()),
+                            'd' | 'i' => out.push_str(&(arg as i32).to_string()),
                             'f' => {
                                 let f = f32::from_bits(arg as u32);
                                 let prec = precision.unwrap_or(6);
@@ -203,7 +203,7 @@ fn host_output(vm: &mut CideVM, session: &mut Session) {
 }
 
 fn host_step(vm: &mut CideVM, session: &mut Session) {
-    let line = vm.pop();
+    let line = vm.pop() as i32;
     session.runtime.current_line = line;
     session.runtime.trace.push(crate::session::TraceEntry {
         line,
@@ -212,7 +212,7 @@ fn host_step(vm: &mut CideVM, session: &mut Session) {
 }
 
 fn host_malloc(vm: &mut CideVM, session: &mut Session) {
-    let size = vm.pop();
+    let size = vm.pop() as i32;
     if size == 0 {
         session.runtime.output_lines.push("[warning] malloc(0) 返回 NULL。在 C 标准中，malloc(0) 的行为是实现定义的，可能返回 NULL 也可能返回一个不可解引用的非空指针。".to_string());
         vm.push(0);
@@ -275,7 +275,7 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
             is_freed: false,
         });
     }
-    vm.push(addr as i32);
+    vm.push(addr as u64);
 }
 
 fn merge_free_list(free_list: &mut Vec<crate::session::FreeBlock>) {
@@ -409,9 +409,9 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     if session.runtime.input_index >= session.runtime.input_lines.len() {
         // 输入不足：将已 pop 的参数重新 push 回栈，等待前端提供输入
         for &p in ptrs.iter().rev() {
-            vm.push(p as i32);
+            vm.push(p as u64);
         }
-        vm.push(fmt_addr as i32);
+        vm.push(fmt_addr as u64);
         session.runtime.waiting_input = true;
         return;
     }
@@ -471,7 +471,7 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
 fn host_strlen(vm: &mut CideVM, _session: &mut Session) {
     let addr = vm.pop() as u32;
     let bytes = read_cbytes(vm, addr);
-    vm.push(bytes.len() as i32);
+    vm.push(bytes.len() as u64);
 }
 
 fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
@@ -508,7 +508,7 @@ fn host_strcmp(vm: &mut CideVM, _session: &mut Session) {
         }
         i += 1;
     };
-    vm.push(result);
+    vm.push(result as u64);
 }
 
 // Helper trait to get memory slice safely
@@ -556,7 +556,7 @@ fn host_getchar(vm: &mut CideVM, session: &mut Session) {
             session.runtime.input_char_offset = 0;
         }
     }
-    vm.push(result);
+    vm.push(result as u64);
 }
 
 fn host_putchar(vm: &mut CideVM, session: &mut Session) {
@@ -568,7 +568,7 @@ fn host_rand(vm: &mut CideVM, session: &mut Session) {
     let seed = session.runtime.rand_seed;
     let next = seed.wrapping_mul(1103515245).wrapping_add(12345);
     session.runtime.rand_seed = next;
-    vm.push((next & 0x7fff) as i32);
+    vm.push((next & 0x7fff) as u64);
 }
 
 fn host_srand(vm: &mut CideVM, session: &mut Session) {
@@ -582,7 +582,7 @@ fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     let size = vm.pop();
     let mem_size = vm.get_memory_slice().len();
     if ptr as usize >= mem_size {
-        vm.push(ptr as i32);
+        vm.push(ptr as u64);
         return;
     }
     let max_write = mem_size - ptr as usize;
@@ -590,11 +590,11 @@ fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     let byte_val = (value & 0xFF) as u8;
     let mem = vm.memory_ref_mut();
     mem[ptr as usize..ptr as usize + write_len].fill(byte_val);
-    vm.push(ptr as i32);
+    vm.push(ptr as u64);
 }
 
 fn host_exit(vm: &mut CideVM, _session: &mut Session) {
-    let code = vm.pop();
+    let code = vm.pop() as i32;
     vm.set_finished(code);
 }
 
@@ -603,7 +603,7 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
     let src = vm.pop() as u32;
     let mem_size = vm.get_memory_slice().len();
     if dest as usize >= mem_size {
-        vm.push(dest as i32);
+        vm.push(dest as u64);
         return;
     }
     let mut end = dest as usize;
@@ -617,14 +617,14 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
         vm.store_i8((end + i) as u32, b as i32, &super::instruction::SourceLoc::default());
     }
     vm.store_i8((end + copy_len) as u32, 0, &super::instruction::SourceLoc::default());
-    vm.push(dest as i32);
+    vm.push(dest as u64);
 }
 
 fn host_atoi(vm: &mut CideVM, _session: &mut Session) {
     let addr = vm.pop() as u32;
     let s = read_cstring(vm, addr);
     let val = s.trim_start().parse::<i32>().unwrap_or(0);
-    vm.push(val);
+    vm.push(val as u64);
 }
 
 fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
@@ -642,7 +642,7 @@ fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
 
 fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     let ptr = vm.pop() as u32;
-    let new_size = vm.pop();
+    let new_size = vm.pop() as i32;
 
     if new_size <= 0 {
         if ptr != 0 {
@@ -705,7 +705,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
             });
             merge_free_list(&mut session.memory.free_list);
         }
-        vm.push(old_addr as i32);
+        vm.push(old_addr as u64);
         return;
     }
 
@@ -774,14 +774,14 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     // Track new region
     session.memory.regions.push(MemoryRegion {
         addr: new_addr,
-        size: new_size,
+        size: new_size as i32,
         name: String::new(),
         ty: String::new(),
         is_heap: true,
         is_freed: false,
     });
 
-    vm.push(new_addr as i32);
+    vm.push(new_addr as u64);
 }
 
 const MAX_QSORT_DEPTH: i32 = 8;

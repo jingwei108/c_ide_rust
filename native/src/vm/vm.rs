@@ -50,7 +50,7 @@ pub struct CideVM {
     code: Vec<Instruction>,
     ip: usize,
     memory: Vec<u8>,
-    stack: Vec<i32>,
+    stack: Vec<u64>,
     mem_stack_top: u32,
     global_count: usize,
     call_stack: Vec<CallFrame>,
@@ -68,7 +68,7 @@ pub struct CideVM {
     current_line: i32,
     error: String,
     last_snapshot_step: i32,
-    snapshot_vars: HashMap<String, i32>,
+    snapshot_vars: HashMap<String, u64>,
     finished: bool,
     exit_code: i32,
     qsort_depth: i32,
@@ -272,7 +272,7 @@ impl CideVM {
             let step_result = self.step(session);
             match step_result {
                 StepResult::Finished => {
-                    result = self.stack.pop();
+                    result = self.stack.pop().map(|v| v as i32);
                     break;
                 }
                 StepResult::Trap => {
@@ -352,7 +352,7 @@ impl CideVM {
         MEM_SIZE
     }
 
-    pub fn get_stack(&self) -> &[i32] {
+    pub fn get_stack(&self) -> &[u64] {
         &self.stack
     }
 
@@ -370,7 +370,7 @@ impl CideVM {
 
     // --- Stack helpers ---
 
-    pub fn pop(&mut self) -> i32 {
+    pub fn pop(&mut self) -> u64 {
         match self.stack.pop() {
             Some(v) => v,
             None => {
@@ -380,7 +380,7 @@ impl CideVM {
         }
     }
 
-    pub fn push(&mut self, val: i32) {
+    pub fn push(&mut self, val: u64) {
         if self.stack.len() >= MAX_STACK_DEPTH {
             self.trap("值栈溢出：栈深度超过限制。请检查是否有无限递归或过多嵌套表达式。", &SourceLoc::default());
             return;
@@ -539,7 +539,7 @@ impl CideVM {
             }
             let cur_val = self.read_variable(sym);
             if let Some(&old_val) = self.snapshot_vars.get(&sym.name) {
-                if old_val == cur_val {
+                if old_val == cur_val as u64 {
                     stale_vars.push(format!("{} = {}", sym.name, cur_val));
                 } else {
                     changed_vars.push(format!("{} = {}", sym.name, cur_val));
@@ -635,7 +635,7 @@ impl CideVM {
             let result = self.step(session);
             match result {
                 StepResult::Finished => {
-                    return if self.finished { self.exit_code } else { self.stack.last().copied().unwrap_or(0) };
+                    return if self.finished { self.exit_code } else { self.stack.last().copied().unwrap_or(0) as i32 };
                 }
                 StepResult::Trap => return 0,
                 StepResult::Paused => {
@@ -671,7 +671,7 @@ impl CideVM {
                 if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Array) {
                     continue;
                 }
-                self.snapshot_vars.insert(sym.name.clone(), self.read_variable(sym));
+                self.snapshot_vars.insert(sym.name.clone(), self.read_variable(sym) as u64);
             }
             self.last_snapshot_step = self.step_count;
         }
@@ -692,7 +692,7 @@ impl CideVM {
             OpCode::Nop => {}
 
             OpCode::PushConst => {
-                self.push(inst.operand);
+                self.push(inst.operand as u64);
             }
 
             OpCode::LoadLocal => {
@@ -702,7 +702,7 @@ impl CideVM {
                         self.trap("LoadLocal: 地址越界", &inst.loc);
                     } else {
                         let val = self.load_i32(addr as u32, &inst.loc);
-                        self.push(val);
+                        self.push(val as u64);
                     }
                 } else {
                     self.trap("LoadLocal: 无调用帧", &inst.loc);
@@ -715,7 +715,7 @@ impl CideVM {
                     if addr + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE as u64 {
                         self.trap("StoreLocal: 地址越界", &inst.loc);
                     } else {
-                        let val = self.pop();
+                        let val = self.pop() as i32;
                         self.store_i32(addr as u32, val, &inst.loc);
                     }
                 } else {
@@ -725,7 +725,7 @@ impl CideVM {
 
             OpCode::GetFrameBase => {
                 if let Some(frame) = self.call_stack.last() {
-                    self.push(frame.locals_base as i32);
+                    self.push(frame.locals_base as u64);
                 } else {
                     self.trap("GetFrameBase: 无调用帧", &inst.loc);
                 }
@@ -738,7 +738,7 @@ impl CideVM {
                 } else {
                     let addr = GLOBAL_START + (idx as u32) * 4;
                     let val = self.load_i32(addr, &inst.loc);
-                    self.push(val);
+                    self.push(val as u64);
                 }
             }
 
@@ -748,7 +748,7 @@ impl CideVM {
                     self.trap("StoreGlobal: 索引越界", &inst.loc);
                 } else {
                     let addr = GLOBAL_START + (idx as u32) * 4;
-                    let val = self.pop();
+                    let val = self.pop() as i32;
                     self.store_i32(addr, val, &inst.loc);
                 }
             }
@@ -777,11 +777,11 @@ impl CideVM {
             OpCode::LoadMem => {
                 let addr = self.pop() as u32;
                 let val = self.load_i32(addr, &inst.loc);
-                self.push(val);
+                self.push(val as u64);
             }
 
             OpCode::StoreMem => {
-                let val = self.pop();
+                let val = self.pop() as i32;
                 let addr = self.pop() as u32;
                 self.store_i32(addr, val, &inst.loc);
             }
@@ -789,133 +789,133 @@ impl CideVM {
             OpCode::LoadMemByte => {
                 let addr = self.pop() as u32;
                 let val = self.load_i8(addr, &inst.loc);
-                self.push(val);
+                self.push(val as u64);
             }
 
             OpCode::StoreMemByte => {
-                let val = self.pop();
+                let val = self.pop() as i32;
                 let addr = self.pop() as u32;
                 self.store_i8(addr, val, &inst.loc);
             }
 
             OpCode::Add => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                let r = a + b;
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
+                let r = (a as i64) + (b as i64);
                 if r > i32::MAX as i64 || r < i32::MIN as i64 {
                     self.trap("整数加法溢出。两个很大的正数（或很小的负数）相加超出了 int 能表示的范围。", &inst.loc);
                 } else {
-                    self.push(r as i32);
+                    self.push(r as u64);
                 }
             }
 
             OpCode::Sub => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                let r = a - b;
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
+                let r = (a as i64) - (b as i64);
                 if r > i32::MAX as i64 || r < i32::MIN as i64 {
                     self.trap("整数减法溢出。被减数太小而减数太大，结果超出了 int 能表示的范围。", &inst.loc);
                 } else {
-                    self.push(r as i32);
+                    self.push(r as u64);
                 }
             }
 
             OpCode::Mul => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                let r = a * b;
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
+                let r = (a as i64) * (b as i64);
                 if r > i32::MAX as i64 || r < i32::MIN as i64 {
                     self.trap("整数乘法溢出。乘积太大，超出了 int 能表示的范围。", &inst.loc);
                 } else {
-                    self.push(r as i32);
+                    self.push(r as u64);
                 }
             }
 
             OpCode::Div => {
-                let b = self.pop();
-                let a = self.pop();
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
                 if b == 0 {
                     let msg = self.format_div_zero_error(a, b);
                     self.trap(&msg, &inst.loc);
                 } else if a == i32::MIN && b == -1 {
                     self.trap("整数除法溢出。INT_MIN / -1 的结果超出了 int 能表示的范围。", &inst.loc);
                 } else {
-                    self.push(a / b);
+                    self.push((a / b) as u64);
                 }
             }
 
             OpCode::Mod => {
-                let b = self.pop();
-                let a = self.pop();
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
                 if b == 0 {
                     let msg = self.format_div_zero_error(a, b);
                     self.trap(&msg, &inst.loc);
                 } else {
-                    self.push(a % b);
+                    self.push((a % b) as u64);
                 }
             }
 
             OpCode::Neg => {
-                let a = self.pop();
+                let a = self.pop() as i32;
                 if a == i32::MIN {
                     self.trap("整数取反溢出。-INT_MIN 的结果超出了 int 能表示的范围。", &inst.loc);
                 } else {
-                    self.push(-a);
+                    self.push((-a) as u64);
                 }
             }
 
-            OpCode::Eq => { let b = self.pop(); let a = self.pop(); self.push(if a == b { 1 } else { 0 }); }
-            OpCode::Ne => { let b = self.pop(); let a = self.pop(); self.push(if a != b { 1 } else { 0 }); }
-            OpCode::Lt => { let b = self.pop(); let a = self.pop(); self.push(if a < b { 1 } else { 0 }); }
-            OpCode::Le => { let b = self.pop(); let a = self.pop(); self.push(if a <= b { 1 } else { 0 }); }
-            OpCode::Gt => { let b = self.pop(); let a = self.pop(); self.push(if a > b { 1 } else { 0 }); }
-            OpCode::Ge => { let b = self.pop(); let a = self.pop(); self.push(if a >= b { 1 } else { 0 }); }
+            OpCode::Eq => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a == b { 1 } else { 0 }); }
+            OpCode::Ne => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != b { 1 } else { 0 }); }
+            OpCode::Lt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a < b { 1 } else { 0 }); }
+            OpCode::Le => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a <= b { 1 } else { 0 }); }
+            OpCode::Gt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a > b { 1 } else { 0 }); }
+            OpCode::Ge => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a >= b { 1 } else { 0 }); }
 
-            OpCode::And => { let b = self.pop(); let a = self.pop(); self.push(if a != 0 && b != 0 { 1 } else { 0 }); }
-            OpCode::Or  => { let b = self.pop(); let a = self.pop(); self.push(if a != 0 || b != 0 { 1 } else { 0 }); }
-            OpCode::Not => { let a = self.pop(); self.push(if a != 0 { 0 } else { 1 }); }
-            OpCode::BitAnd => { let b = self.pop(); let a = self.pop(); self.push(a & b); }
-            OpCode::BitOr  => { let b = self.pop(); let a = self.pop(); self.push(a | b); }
-            OpCode::BitXor => { let b = self.pop(); let a = self.pop(); self.push(a ^ b); }
-            OpCode::BitNot => { let a = self.pop(); self.push(!a); }
+            OpCode::And => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 && b != 0 { 1 } else { 0 }); }
+            OpCode::Or  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 || b != 0 { 1 } else { 0 }); }
+            OpCode::Not => { let a = self.pop() as i32; self.push(if a != 0 { 0 } else { 1 }); }
+            OpCode::BitAnd => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a & b) as u64); }
+            OpCode::BitOr  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a | b) as u64); }
+            OpCode::BitXor => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a ^ b) as u64); }
+            OpCode::BitNot => { let a = self.pop() as i32; self.push((!a) as u64); }
             OpCode::Shl => {
-                let b = self.pop();
-                let a = self.pop();
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
                 if !(0..32).contains(&b) {
                     self.trap(&format!("Shl 移位量越界：{}（必须是 0~31）", b), &inst.loc);
                 } else {
-                    self.push(a << b);
+                    self.push((a << b) as u64);
                 }
             }
             OpCode::Shr => {
-                let b = self.pop();
-                let a = self.pop();
+                let b = self.pop() as i32;
+                let a = self.pop() as i32;
                 if !(0..32).contains(&b) {
                     self.trap(&format!("Shr 移位量越界：{}（必须是 0~31）", b), &inst.loc);
                 } else {
-                    self.push(a >> b);
+                    self.push((a >> b) as u64);
                 }
             }
 
-            OpCode::PushConstF => { self.push(inst.operand); }
+            OpCode::PushConstF => { self.push(inst.operand as u64); }
 
             OpCode::AddF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
                 let r = a + b;
-                self.push(r.to_bits() as i32);
+                self.push(r.to_bits() as u64);
             }
             OpCode::SubF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
                 let r = a - b;
-                self.push(r.to_bits() as i32);
+                self.push(r.to_bits() as u64);
             }
             OpCode::MulF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
                 let r = a * b;
-                self.push(r.to_bits() as i32);
+                self.push(r.to_bits() as u64);
             }
             OpCode::DivF => {
                 let b = f32::from_bits(self.pop() as u32);
@@ -924,13 +924,13 @@ impl CideVM {
                     self.trap("浮点数除以零", &inst.loc);
                 } else {
                     let r = a / b;
-                    self.push(r.to_bits() as i32);
+                    self.push(r.to_bits() as u64);
                 }
             }
             OpCode::NegF => {
                 let a = f32::from_bits(self.pop() as u32);
                 let r = -a;
-                self.push(r.to_bits() as i32);
+                self.push(r.to_bits() as u64);
             }
             OpCode::EqF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a == b { 1 } else { 0 }); }
             OpCode::NeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a != b { 1 } else { 0 }); }
@@ -939,12 +939,12 @@ impl CideVM {
             OpCode::GtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a > b { 1 } else { 0 }); }
             OpCode::GeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a >= b { 1 } else { 0 }); }
             OpCode::CastI2F => {
-                let a = self.pop() as f32;
-                self.push(a.to_bits() as i32);
+                let a = self.pop() as i32;
+                self.push((a as f32).to_bits() as u64);
             }
             OpCode::CastF2I => {
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(a as i32);
+                self.push(a as i32 as u64);
             }
 
             OpCode::Jump => {
@@ -1003,7 +1003,7 @@ impl CideVM {
                                 let locals_base = self.mem_stack_top;
 
                                 for i in (0..meta.arg_count).rev() {
-                                    let arg = self.pop();
+                                    let arg = self.pop() as i32;
                                     let arg_addr = (locals_base as u64) + ((meta.arg_count - 1 - i) as u64) * 4;
                                     self.store_i32(arg_addr as u32, arg, &inst.loc);
                                 }
@@ -1093,7 +1093,7 @@ impl CideVM {
 
             OpCode::TrapBounds => {
                 let operand = inst.operand;
-                let index = *self.stack.last().unwrap_or(&0);
+                let index = *self.stack.last().unwrap_or(&0) as i64;
                 let mut name = "数组".to_string();
                 let mut size = 0;
                 if operand >= 0 {
@@ -1106,7 +1106,7 @@ impl CideVM {
                 } else {
                     size = -operand;
                 }
-                if index < 0 || index >= size {
+                if index < 0 || index >= size as i64 {
                     let diag = if operand >= 0 {
                         format!(
                             "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",

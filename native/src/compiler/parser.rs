@@ -120,7 +120,7 @@ impl Parser {
             }
             if self.previous().ty == TokenType::Semicolon { return; }
             match current {
-                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float |
+                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float | TokenType::Double |
                 TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
                 TokenType::Return | TokenType::Break | TokenType::Continue |
                 TokenType::Struct | TokenType::Switch | TokenType::Case |
@@ -134,7 +134,7 @@ impl Parser {
 
     fn is_type_token(&self) -> bool {
         if self.check(TokenType::Int) || self.check(TokenType::Void) ||
-           self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Struct) ||
+           self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
            self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
            self.check(TokenType::Long) || self.check(TokenType::Short) ||
            self.check(TokenType::Signed) || self.check(TokenType::Const) {
@@ -371,6 +371,8 @@ impl Parser {
             Type::void()
         } else if self.match_token(TokenType::Float) {
             Type::float()
+        } else if self.match_token(TokenType::Double) {
+            Type::double()
         } else if self.match_token(TokenType::Char) {
             if is_unsigned { Type { kind: TypeKind::Char, is_unsigned: true, ..Type::char() } } else { Type::char() }
         } else if self.match_token(TokenType::Struct) {
@@ -406,6 +408,7 @@ impl Parser {
             self.errors.push(ParseError {
                 message: format!("'unsigned' 不能修饰 '{}' 类型", match t.kind {
                     TypeKind::Float => "float",
+                    TypeKind::Double => "double",
                     TypeKind::Struct => "struct",
                     TypeKind::Void => "void",
                     TypeKind::Pointer => "指针",
@@ -467,7 +470,7 @@ impl Parser {
     fn parse_param_list(&mut self) -> Vec<Param> {
         let mut params = Vec::new();
         if self.check(TokenType::RParen) { return params; }
-        if (self.check(TokenType::Void) || self.check(TokenType::Float)) && self.peek(1).ty == TokenType::RParen {
+        if (self.check(TokenType::Void) || self.check(TokenType::Float) || self.check(TokenType::Double)) && self.peek(1).ty == TokenType::RParen {
             self.advance();
             return params;
         }
@@ -508,7 +511,7 @@ impl Parser {
                 if self.pos == checkpoint {
                     self.synchronize(&[
                         TokenType::Semicolon, TokenType::RBrace,
-                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float,
+                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float, TokenType::Double,
                         TokenType::If, TokenType::While, TokenType::Do, TokenType::For,
                         TokenType::Return, TokenType::Break, TokenType::Continue,
                         TokenType::Struct, TokenType::Switch, TokenType::Typedef,
@@ -942,7 +945,7 @@ impl Parser {
             let mut is_type = false;
             let mut t = Type::default();
             if self.check(TokenType::Int) || self.check(TokenType::Void) ||
-               self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Struct) ||
+               self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
                self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
                self.check(TokenType::Short) || self.check(TokenType::Signed) ||
                self.check(TokenType::Const) ||
