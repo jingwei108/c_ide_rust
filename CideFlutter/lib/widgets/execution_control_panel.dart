@@ -85,7 +85,7 @@ class ExecutionControlPanel extends ConsumerWidget {
                 max: math.max(state.maxCollectedStep.toDouble(), 1),
                 value: state.currentStep.clamp(0, state.maxCollectedStep).toDouble(),
                 divisions: state.maxCollectedStep > 0 ? state.maxCollectedStep : null,
-                label: '第 ${state.currentStep} 步',
+                label: _buildSliderLabel(state),
                 onChangeStart: (_) => controller.pause(),
                 onChanged: (v) => controller.onSliderChanged(v.round()),
                 onChangeEnd: (v) => controller.seekTo(v.round()),
@@ -109,6 +109,16 @@ class ExecutionControlPanel extends ConsumerWidget {
     ),
   ],
 );
+  }
+
+  String _buildSliderLabel(UnifiedState state) {
+    if (state.currentStep >= 0 && state.currentStep < state.frameCache.length) {
+      final payload = state.frameCache[state.currentStep];
+      if (payload.semanticLabel.isNotEmpty) {
+        return payload.semanticLabel;
+      }
+    }
+    return '第 ${state.currentStep} 步';
   }
 
   Widget _buildPlayPauseButton(
