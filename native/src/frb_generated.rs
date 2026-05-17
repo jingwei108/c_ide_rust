@@ -1154,12 +1154,14 @@ impl SseDecode for crate::unified::types::AutoStepResult {
         let mut var_trapped = <bool>::sse_decode(deserializer);
         let mut var_waitingInput = <bool>::sse_decode(deserializer);
         let mut var_currentLine = <i32>::sse_decode(deserializer);
+        let mut var_trapMessage = <Option<String>>::sse_decode(deserializer);
         return crate::unified::types::AutoStepResult {
             payloads: var_payloads,
             finished: var_finished,
             trapped: var_trapped,
             waiting_input: var_waitingInput,
             current_line: var_currentLine,
+            trap_message: var_trapMessage,
         };
     }
 }
@@ -1764,6 +1766,7 @@ impl flutter_rust_bridge::IntoDart for crate::unified::types::AutoStepResult {
             self.trapped.into_into_dart().into_dart(),
             self.waiting_input.into_into_dart().into_dart(),
             self.current_line.into_into_dart().into_dart(),
+            self.trap_message.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2084,6 +2087,7 @@ impl SseEncode for crate::unified::types::AutoStepResult {
         <bool>::sse_encode(self.trapped, serializer);
         <bool>::sse_encode(self.waiting_input, serializer);
         <i32>::sse_encode(self.current_line, serializer);
+        <Option<String>>::sse_encode(self.trap_message, serializer);
     }
 }
 

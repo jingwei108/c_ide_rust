@@ -23,6 +23,7 @@ class UnifiedState {
   final bool isVmRestored;
   final rust.HeatmapData? heatmap;
   final int currentLine;
+  final String? trapMessage;
 
   const UnifiedState({
     this.phase = ExecutionPhase.idle,
@@ -36,6 +37,7 @@ class UnifiedState {
     this.isVmRestored = false,
     this.heatmap,
     this.currentLine = 0,
+    this.trapMessage,
   });
 
   UnifiedState copyWith({
@@ -50,7 +52,9 @@ class UnifiedState {
     bool? isVmRestored,
     rust.HeatmapData? heatmap,
     int? currentLine,
+    String? trapMessage,
     bool clearError = false,
+    bool clearTrap = false,
   }) {
     return UnifiedState(
       phase: phase ?? this.phase,
@@ -64,6 +68,7 @@ class UnifiedState {
       isVmRestored: isVmRestored ?? this.isVmRestored,
       heatmap: heatmap ?? this.heatmap,
       currentLine: currentLine ?? this.currentLine,
+      trapMessage: clearTrap ? null : (trapMessage ?? this.trapMessage),
     );
   }
 

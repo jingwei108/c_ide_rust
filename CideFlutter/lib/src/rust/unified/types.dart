@@ -69,6 +69,7 @@ class AutoStepResult {
   final bool trapped;
   final bool waitingInput;
   final int currentLine;
+  final String? trapMessage;
 
   const AutoStepResult({
     required this.payloads,
@@ -76,6 +77,7 @@ class AutoStepResult {
     required this.trapped,
     required this.waitingInput,
     required this.currentLine,
+    this.trapMessage,
   });
 
   @override
@@ -84,7 +86,8 @@ class AutoStepResult {
       finished.hashCode ^
       trapped.hashCode ^
       waitingInput.hashCode ^
-      currentLine.hashCode;
+      currentLine.hashCode ^
+      trapMessage.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -95,7 +98,8 @@ class AutoStepResult {
           finished == other.finished &&
           trapped == other.trapped &&
           waitingInput == other.waitingInput &&
-          currentLine == other.currentLine;
+          currentLine == other.currentLine &&
+          trapMessage == other.trapMessage;
 }
 
 /// 执行热力图数据。

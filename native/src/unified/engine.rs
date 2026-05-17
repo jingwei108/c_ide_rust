@@ -66,6 +66,8 @@ impl UnifiedEngine {
         let mut trapped = false;
         let mut waiting_input = false;
 
+        let mut trap_message: Option<String> = None;
+
         for _ in 0..batch_size {
             if self.is_paused || self.is_cancelled {
                 break;
@@ -87,6 +89,9 @@ impl UnifiedEngine {
             if self.checkpoints.should_checkpoint(step, &meta) {
                 self.checkpoints.save(step, vm, session);
             }
+
+            // 执行前快照：用于 Trap 时自动回退
+            let pre_step_snap = vm.snapshot(session);
 
             // 执行一步
             match vm.step(session) {
@@ -112,9 +117,12 @@ impl UnifiedEngine {
                     break;
                 }
                 StepResult::Trap => {
+                    // 自动回退到上一步状态
+                    vm.restore(&pre_step_snap, session);
                     let payload = StepCollector::collect(vm, session, step);
                     payloads.push(payload);
                     trapped = true;
+                    trap_message = Some(vm.get_error().to_string());
                     break;
                 }
             }
@@ -134,6 +142,7 @@ impl UnifiedEngine {
             trapped,
             waiting_input,
             current_line: vm.get_current_line(),
+            trap_message,
         })
     }
 

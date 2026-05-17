@@ -492,7 +492,7 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
     let mut vm = session.vm.take().unwrap_or_default();
     let result = match engine.run_batch(&mut vm, &mut session, batch_size) {
         Ok(r) => r,
-        Err(_e) => {
+        Err(e) => {
             let line = vm.get_current_line();
             session.vm = Some(vm);
             return AutoStepResult {
@@ -501,6 +501,7 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
                 trapped: true,
                 waiting_input: false,
                 current_line: line,
+                trap_message: Some(e),
             };
         }
     };

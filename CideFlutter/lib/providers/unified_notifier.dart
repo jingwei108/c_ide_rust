@@ -85,7 +85,9 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
           isPlaying: false,
           totalSteps: state.maxCollectedStep,
           heatmap: heatmap,
-          errorMessage: result.trapped ? '运行时错误' : null,
+          errorMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
+          trapMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
+          clearTrap: !result.trapped,
         );
       }
     } catch (e) {

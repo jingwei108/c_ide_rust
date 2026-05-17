@@ -21,16 +21,52 @@ class ExecutionControlPanel extends ConsumerWidget {
       return const SizedBox.shrink();
     }
 
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor),
-        ),
-      ),
-      child: Row(
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 运行时异常提示条
+        if (state.trapMessage != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            color: Colors.red.shade900,
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    state.trapMessage!,
+                    style: const TextStyle(color: Colors.white, fontSize: 12),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    ref.read(unifiedProvider.notifier).onCodeChanged();
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.white,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('重置', style: TextStyle(fontSize: 12)),
+                ),
+              ],
+            ),
+          ),
+        Container(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerHighest,
+            border: Border(
+              top: BorderSide(color: Theme.of(context).dividerColor),
+            ),
+          ),
+          child: Row(
         children: [
           // 播放/暂停按钮
           _buildPlayPauseButton(state, controller, onRun),
@@ -70,7 +106,9 @@ class ExecutionControlPanel extends ConsumerWidget {
           ),
         ],
       ),
-    );
+    ),
+  ],
+);
   }
 
   Widget _buildPlayPauseButton(

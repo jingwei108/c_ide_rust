@@ -80,6 +80,7 @@ pub struct AutoStepResult {
     pub trapped: bool,
     pub waiting_input: bool,
     pub current_line: i32,
+    pub trap_message: Option<String>,
 }
 
 /// Seek 到指定步的返回结果。
