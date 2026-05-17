@@ -1,0 +1,290 @@
+{
+  "timestamp": "2026-05-17 09:00:17",
+  "summary": {
+    "total": 45,
+    "match": 26,
+    "compile_gap": 18,
+    "runtime_gap": 0,
+    "output_gap": 1
+  },
+  "category_frequency": {
+    "const_string": 1,
+    "unknown": 12,
+    "file_io": 2,
+    "union": 1,
+    "static_assert": 1,
+    "inline_asm": 1
+  },
+  "details": [
+    {
+      "case": "hello_world",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "int_arith",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "float_basic",
+      "expected": "baseline",
+      "diff_type": "output_gap",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "array_index",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "pointer_deref",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "struct_basic",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "if_else",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "for_loop",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "while_loop",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "function_call",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "malloc_free",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "scanf_printf",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "typedef",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "enum",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "sizeof",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "ternary",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "bitwise",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "compound_assign",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "string_literal",
+      "expected": "baseline",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "🔀 类型不匹配 — 错误 E3004 (第1行, 第14列): 类型不匹配：无法将 'char*' 赋值给 'char*'\n"
+    },
+    {
+      "case": "char_array_init",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "multi_dim_array",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "pointer_arith",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "const",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "null_keyword",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "qsort",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "realloc",
+      "expected": "baseline",
+      "diff_type": "match",
+      "cide_compile_error": ""
+    },
+    {
+      "case": "forward_decl",
+      "expected": "baseline",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第12列): 预期标识符名称\n🗂️ 预期右圆括号 — 错误 E2007 (第1行, 第13列): 预期 ')'\ng"
+    },
+    {
+      "case": "double_basic",
+      "expected": "double",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第14列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第37列): 预期表达式\no"
+    },
+    {
+      "case": "double_arr",
+      "expected": "double",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第14列): 预期 ';'\n⏹️ 预期分号 — 错误 E2005 (第1行, 第45列): 预期 struct、函数或全局变量声明，找到: ;\n⏹️ 预期分号 — 错误 E2005 (第1行, 第47列): 预期 struct、函数或全局变量声明，找到: printf\n⏹️ 预期分号 — 错误 E2005 (第1行, 第53列): 预期 struct、函数或全局变量声明，找到: (\n⏹️ 预期分号 — 错误 E2005 (第1行, 第54列): 预期 struct、函数或全局变量声明，找到: %.1f\n⏹️ 预期分号 — 错误 E2005 (第1行, 第60列): 预期 struct、函数或全局变量声明，找到: ,\n⏹️ 预期分号 — 错误 E2005 (第1行, 第62列): 预期 struct、函数或全局变量声明，找到: arr\n⏹️ 预期分号 — 错误 E2005 (第1行, 第65列): 预期 struct、函数或全局变量声明，找到: [\n⏹️ 预期分号 — 错误 E2005 (第1行, 第66列): 预期 struct、函数或"
+    },
+    {
+      "case": "double_printf_lf",
+      "expected": "double",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第14列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第29列): 预期表达式\no"
+    },
+    {
+      "case": "function_pointer_decl",
+      "expected": "function_pointer",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第56列): 预期标识符名称\n⏹️ 预期分号 — 错误 E2005 (第1行, 第61列): 变量声明后预期 ';'\n⏹️ 预期分号 — 错误 E2005 (第1行, 第65列): 预期标识符名称\n⏹️ 预期分号 — 错误 E2005 (第1行, 第65列): 变量声明后预期 ';'\n⏹️ 预期分号 — 错误 E2005 (第1行, 第69列): 预期标识符名称\nK"
+    },
+    {
+      "case": "function_pointer_array",
+      "expected": "function_pointer",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第41列): 预期标识符名称\n⏹️ 预期分号 — 错误 E2005 (第1行, 第58列): 变量声明后预期 ';'\n⏹️ 预期分号 — 错误 E2005 (第1行, 第61列): 预期 struct、函数或全局变量声明，找到: ;\n⏹️ 预期分号 — 错误 E2005 (第1行, 第63列): 预期 struct、函数或全局变量声明，找到: printf\n⏹️ 预期分号 — 错误 E2005 (第1行, 第69列): 预期 struct、函数或全局变量声明，找到: (\n⏹️ 预期分号 — 错误 E2005 (第1行, 第70列): 预期 struct、函数或全局变量声明，找到: %d\n⏹️ 预期分号 — 错误 E2005 (第1行, 第74列): 预期 struct、函数或全局变量声明，找到: ,\n⏹️ 预期分号 — 错误 E2005 (第1行, 第76列): 预期 struct、函数或全局变量声明，找到: fp\n⏹️ 预期分号 — 错误 E2005 (第1行, 第78列): 预期 struct、函数或全局变量声明，找到: [\n⏹️ "
+    },
+    {
+      "case": "file_fopen",
+      "expected": "file_io",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "📞 调用了未定义的函数 — 错误 E3036 (第1行, 第45列): 未定义的函数 'fopen'\n❓ 变量未声明 — 错误 E3023 (第1行, 第14列): 未声明的变量 'FILE'\n❓ 变量未声明 — 错误 E3023 (第1行, 第20列): 未声明的变量 'f'\n🔒 向右值赋值 — 错误 E3043 (第1行, 第20列): 赋值左边必须是可修改的左值\n🔀 赋值类型不匹配 — 错误 E3044 (第1行, 第20列): 类型不匹配：无法将 'void' 赋值给 'int'\n❓ 变量未声明 — 错误 E3023 (第1行, 第56列): 未声明的变量 'f'\n📞 调用了未定义的函数 — 错误 E3036 (第1行, 第77列): 未定义的函数 'fclose'\n"
+    },
+    {
+      "case": "file_fread",
+      "expected": "file_io",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "📞 调用了未定义的函数 — 错误 E3036 (第1行, 第45列): 未定义的函数 'fopen'\n❓ 变量未声明 — 错误 E3023 (第1行, 第14列): 未声明的变量 'FILE'\n❓ 变量未声明 — 错误 E3023 (第1行, 第20列): 未声明的变量 'f'\n🔒 向右值赋值 — 错误 E3043 (第1行, 第20列): 赋值左边必须是可修改的左值\n🔀 赋值类型不匹配 — 错误 E3044 (第1行, 第20列): 类型不匹配：无法将 'void' 赋值给 'int'\n📞 调用了未定义的函数 — 错误 E3036 (第1行, 第80列): 未定义的函数 'fread'\n📞 调用了未定义的函数 — 错误 E3036 (第1行, 第91列): 未定义的函数 'fclose'\n"
+    },
+    {
+      "case": "union_basic",
+      "expected": "union",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第1列): 预期 struct、函数或全局变量声明，找到: union\n⏹️ 预期分号 — 错误 E2005 (第1行, 第7列): 预期 struct、函数或全局变量声明，找到: U\n⏹️ 预期分号 — 错误 E2005 (第1行, 第9列): 预期 struct、函数或全局变量声明，找到: {\n⏹️ 预期分号 — 错误 E2005 (第1行, 第27列): 预期 struct、函数或全局变量声明，找到: }\n⏹️ 预期分号 — 错误 E2005 (第1行, 第28列): 预期 struct、函数或全局变量声明，找到: ;\n⏹️ 预期分号 — 错误 E2005 (第1行, 第43列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第52列): 预期表达式\n"
+    },
+    {
+      "case": "long_long",
+      "expected": "long_long",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第29列): 变量声明后预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第50列): 预期表达式\n"
+    },
+    {
+      "case": "goto_basic",
+      "expected": "goto",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第25列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第33列): 预期表达式\n⏹️ 预期分号 — 错误 E2005 (第1行, 第42列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第62列): 预期表达式\n��到: printf\n⏹️ 预期分号 — 错误 E2005 (第1行, 第53列): 预期 struct、函数或全局变量声明，找到: (\n⏹️ 预期分号 — 错误 E2005 (第1行, 第54列): 预期 struct、函数或全局变量声明，找到: %.1f\n"
+    },
+    {
+      "case": "designated_init",
+      "expected": "designated_initializer",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "🧮 预期表达式 — 错误 E2003 (第1行, 第26列): 预期表达式\n🧮 预期表达式 — 错误 E2003 (第1行, 第35列): 预期表达式\n 预期分号 — 错误 E2005 (第1行, 第42列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第62列): 预期表达式\n"
+    },
+    {
+      "case": "variable_length_array",
+      "expected": "variable_length_array",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "📐 预期数组大小 — 错误 E2002 (第1行, 第31列): 预期数组大小或 ']'\n🗂️ 预期右方括号 — 错误 E2008 (第1行, 第31列): 预期 ']'\n⏹️ 预期分号 — 错误 E2005 (第1行, 第31列): 变量声明后预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第33列): 预期表达式\nd\u0011"
+    },
+    {
+      "case": "static_assert",
+      "expected": "static_assert",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "📞 调用了未定义的函数 — 错误 E3036 (第1行, 第41列): 未定义的函数 '_Static_assert'\nQF\u0002"
+    },
+    {
+      "case": "complex_number",
+      "expected": "complex_number",
+      "diff_type": "match",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第14列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第44列): 预期表达式\n"
+    },
+    {
+      "case": "inline_asm",
+      "expected": "inline_asm",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "📞 调用了未定义的函数 — 错误 E3036 (第1行, 第39列): 未定义的函数 '__asm__'\nF\u0002"
+    },
+    {
+      "case": "variadic_macro",
+      "expected": "variadic_macro",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "🗂️ 预期右圆括号 — 错误 E2007 (第2行, 第14列): 预期 ')'\n⏹️ 预期分号 — 错误 E2005 (第2行, 第14列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第2行, 第27列): 预期表达式\n"
+    },
+    {
+      "case": "typeof_operator",
+      "expected": "typeof",
+      "diff_type": "compile_gap",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第33列): 预期 ';'\n🧮 预期表达式 — 错误 E2003 (第1行, 第41列): 预期表达式\n"
+    },
+    {
+      "case": "implicit_int",
+      "expected": "implicit_int",
+      "diff_type": "match",
+      "cide_compile_error": "⏹️ 预期分号 — 错误 E2005 (第1行, 第1列): 预期 struct、函数或全局变量声明，找到: main\n⏹️ 预期分号 — 错误 E2005 (第1行, 第5列): 预期 struct、函数或全局变量声明，找到: (\n⏹️ 预期分号 — 错误 E2005 (第1行, 第6列): 预期 struct、函数或全局变量声明，找到: )\n⏹️ 预期分号 — 错误 E2005 (第1行, 第8列): 预期 struct、函数或全局变量声明，找到: {\n⏹️ 预期分号 — 错误 E2005 (第1行, 第10列): 预期 struct、函数或全局变量声明，找到: printf\n⏹️ 预期分号 — 错误 E2005 (第1行, 第16列): 预期 struct、函数或全局变量声明，找到: (\n⏹️ 预期分号 — 错误 E2005 (第1行, 第17列): 预期 struct、函数或全局变量声明，找到: hello\n⏹️ 预期分号 — 错误 E2005 (第1行, 第24列): 预期 struct、函数或全局变量声明，找到: )\n⏹️ 预期分号 — 错误 E2005 (第1行, 第25"
+    }
+  ]
+}

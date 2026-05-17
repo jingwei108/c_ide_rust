@@ -508,7 +508,6 @@ VM 的 `step` 变为 `step(&mut self, host: &mut dyn VMHost)`，解耦 VM 和 Se
 ---
 
 ### 🔵 4.9 增量编译
-
 当前每次 `compile()` 都重新运行完整管线。对于 IDE 实时反馈场景，应实现：
 - 文件级脏标记：仅重编译修改过的 `CompileUnit`
 - Lexer token stream 缓存（token 序列可部分复用）
