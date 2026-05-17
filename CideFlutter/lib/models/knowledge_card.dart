@@ -8,6 +8,7 @@ class KnowledgeCard {
   final String correctCode;
   final String wrongCode;
   final List<int> relatedErrorCodes;
+  final List<String> relatedTrapKeywords;
 
   const KnowledgeCard({
     required this.id,
@@ -16,7 +17,8 @@ class KnowledgeCard {
     required this.explanation,
     required this.correctCode,
     required this.wrongCode,
-    required this.relatedErrorCodes,
+    this.relatedErrorCodes = const [],
+    this.relatedTrapKeywords = const [],
   });
 
   /// 全部知识卡片库
@@ -120,6 +122,52 @@ class KnowledgeCard {
       wrongCode: 'if (a = 10) { ... }',
       relatedErrorCodes: [3050],
     ),
+    // ===== 运行时异常知识卡片 =====
+    KnowledgeCard(
+      id: 'array_out_of_bounds',
+      emoji: '📊',
+      title: '数组越界访问',
+      explanation: '访问数组时下标超出了有效范围（如大小为 5 的数组访问 arr[5]）。C 语言不会自动检查越界，这会导致未定义行为甚至程序崩溃。',
+      correctCode: 'int arr[5] = {1,2,3,4,5};\nfor (int i = 0; i < 5; i++) {\n    printf("%d ", arr[i]);\n}',
+      wrongCode: 'int arr[5] = {1,2,3,4,5};\nprintf("%d", arr[5]);  // 越界！',
+      relatedTrapKeywords: ['bounds', 'out of bounds', 'array overflow', 'index'],
+    ),
+    KnowledgeCard(
+      id: 'null_pointer',
+      emoji: '💥',
+      title: 'NULL 指针解引用',
+      explanation: '对空指针（NULL）进行解引用操作（如 *p 或 p->x）会导致程序崩溃。使用指针前必须确保它指向有效的内存。',
+      correctCode: 'int* p = malloc(sizeof(int));\nif (p != NULL) {\n    *p = 42;\n}',
+      wrongCode: 'int* p = NULL;\n*p = 42;  // 崩溃！',
+      relatedTrapKeywords: ['null pointer', 'null', 'dereference'],
+    ),
+    KnowledgeCard(
+      id: 'divide_by_zero',
+      emoji: '➗',
+      title: '除零错误',
+      explanation: '整数除以 0 是未定义行为，会导致程序异常终止。进行除法运算前应先检查除数是否为 0。',
+      correctCode: 'int a = 10, b = 0;\nif (b != 0) {\n    printf("%d", a / b);\n}',
+      wrongCode: 'int a = 10, b = 0;\nprintf("%d", a / b);  // 崩溃！',
+      relatedTrapKeywords: ['divide by zero', 'division by zero'],
+    ),
+    KnowledgeCard(
+      id: 'stack_overflow',
+      emoji: '📚',
+      title: '栈溢出',
+      explanation: '递归调用过深或局部变量过大，导致调用栈超出限制。可通过减少递归深度、改用迭代或增大栈空间来解决。',
+      correctCode: 'int factorial(int n) {\n    int result = 1;\n    for (int i = 1; i <= n; i++)\n        result *= i;\n    return result;\n}',
+      wrongCode: 'int factorial(int n) {\n    if (n <= 1) return 1;\n    return n * factorial(n);  // 无限递归！\n}',
+      relatedTrapKeywords: ['stack overflow', 'call stack'],
+    ),
+    KnowledgeCard(
+      id: 'use_after_free',
+      emoji: '🗑️',
+      title: '访问已释放内存',
+      explanation: '内存被 free 后仍然访问该指针，会导致未定义行为（Use-After-Free）。释放内存后应将指针设为 NULL。',
+      correctCode: 'int* p = malloc(sizeof(int));\n*p = 42;\nfree(p);\np = NULL;',
+      wrongCode: 'int* p = malloc(sizeof(int));\nfree(p);\n*p = 42;  // 已释放！',
+      relatedTrapKeywords: ['use after free', 'double free', 'freed'],
+    ),
   ];
 
   /// 根据错误码查找匹配的知识卡片
@@ -134,6 +182,21 @@ class KnowledgeCard {
     for (final code in codes) {
       for (final card in findByErrorCode(code)) {
         if (seen.add(card.id)) {
+          result.add(card);
+        }
+      }
+    }
+    return result;
+  }
+
+  /// 根据运行时 Trap 消息查找匹配的知识卡片
+  static List<KnowledgeCard> findByTrapMessage(String message) {
+    final lower = message.toLowerCase();
+    final seen = <String>{};
+    final result = <KnowledgeCard>[];
+    for (final card in all) {
+      for (final kw in card.relatedTrapKeywords) {
+        if (lower.contains(kw.toLowerCase()) && seen.add(card.id)) {
           result.add(card);
         }
       }

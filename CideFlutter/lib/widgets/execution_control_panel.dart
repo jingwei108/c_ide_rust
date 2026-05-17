@@ -1,8 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../models/knowledge_card.dart';
 import '../models/unified_state.dart';
 import '../providers/unified_provider.dart';
+import 'knowledge_card_item.dart';
 
 class ExecutionControlPanel extends ConsumerWidget {
   final VoidCallback onRun;
@@ -42,6 +44,19 @@ class ExecutionControlPanel extends ConsumerWidget {
                     overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                TextButton(
+                  onPressed: () {
+                    _showTrapHelp(context, state.trapMessage!);
+                  },
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.yellow,
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(0, 0),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: const Text('查看帮助', style: TextStyle(fontSize: 12)),
+                ),
+                const SizedBox(width: 8),
                 TextButton(
                   onPressed: () {
                     ref.read(unifiedProvider.notifier).onCodeChanged();
@@ -164,6 +179,59 @@ class ExecutionControlPanel extends ConsumerWidget {
       icon: Icon(icon, size: 24),
       tooltip: tooltip,
       onPressed: onPressed,
+    );
+  }
+
+  void _showTrapHelp(BuildContext context, String trapMessage) {
+    final cards = KnowledgeCard.findByTrapMessage(trapMessage);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.5,
+        minChildSize: 0.3,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) {
+          return Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  cards.isEmpty ? '未找到相关知识卡片' : '相关帮助',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '异常信息: $trapMessage',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey[600],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: cards.isEmpty
+                      ? Center(
+                          child: Text(
+                            '暂无与该异常匹配的知识卡片',
+                            style: TextStyle(color: Colors.grey[500]),
+                          ),
+                        )
+                      : ListView.builder(
+                          controller: scrollController,
+                          itemCount: cards.length,
+                          itemBuilder: (context, index) => KnowledgeCardItem(
+                            card: cards[index],
+                            isDark: Theme.of(context).brightness == Brightness.dark,
+                          ),
+                        ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 

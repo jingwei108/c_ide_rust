@@ -593,7 +593,24 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
               return '$prefix▶ $line';
             }
 
-            return prefix.isEmpty ? '$line' : '$prefix$line';
+            // 统一模式变量访问指示（行号旁显示 R/W 标记）
+            String varSuffix = '';
+            if (unifiedState.canSeek &&
+                unifiedState.currentStep >= 0 &&
+                unifiedState.currentStep < unifiedState.frameCache.length) {
+              final payload = unifiedState.frameCache[unifiedState.currentStep];
+              if (payload.codeLine == line && payload.accessedVars.isNotEmpty) {
+                final markers = payload.accessedVars.take(2).map((a) {
+                  final marker = a.accessType == 'Read' ? 'R' : 'W';
+                  return '${a.name}=$marker';
+                }).join(' ');
+                varSuffix = ' $markers';
+              }
+            }
+
+            return prefix.isEmpty
+                ? '$line$varSuffix'
+                : '$prefix$line$varSuffix';
           },
         ),
       ],
