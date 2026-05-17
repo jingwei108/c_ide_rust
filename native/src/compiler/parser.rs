@@ -20,10 +20,13 @@ pub struct Parser {
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
+        let mut typedef_names = HashMap::new();
+        // 预定义 FILE 类型（stdio.h 中的不透明结构体指针）
+        typedef_names.insert("FILE".to_string(), Type::void());
         Self {
             tokens,
             errors: Vec::new(),
-            typedef_names: HashMap::new(),
+            typedef_names,
             pos: 0,
         }
     }

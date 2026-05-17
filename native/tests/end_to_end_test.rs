@@ -484,3 +484,85 @@ int main() {
         cide_native::capi::cide_session_destroy(session);
     }
 }
+
+
+// ========== VFS File I/O Tests ==========
+
+#[test]
+fn test_e2e_file_fopen() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    FILE* f = fopen("test.txt", "r");
+    if (f) {
+        printf("ok");
+    } else {
+        printf("fail");
+    }
+    fclose(f);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    assert!(outputs.iter().any(|l| l.contains("ok")), "outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_file_fread() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    FILE* f = fopen("test.txt", "r");
+    char buf[20];
+    int n = fread(buf, 1, 5, f);
+    buf[5] = 0;
+    printf("%s", buf);
+    fclose(f);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    assert!(outputs.iter().any(|l| l.contains("hello")), "outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_file_fwrite() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    FILE* f = fopen("out.txt", "w");
+    fwrite("hello", 1, 5, f);
+    fclose(f);
+    printf("ok");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    assert!(outputs.iter().any(|l| l.contains("ok")), "outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_file_not_found() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    FILE* f = fopen("noexist.txt", "r");
+    if (f == NULL) {
+        printf("null");
+    } else {
+        printf("fail");
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    assert!(outputs.iter().any(|l| l.contains("null")), "outputs: {:?}", outputs);
+}

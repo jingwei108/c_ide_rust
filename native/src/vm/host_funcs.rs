@@ -962,10 +962,11 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
 // ========== VFS File I/O Host Functions ==========
 
 fn host_fopen(vm: &mut CideVM, session: &mut Session) {
-    let mode_addr = vm.pop() as u32;
+    // 参数从右到左压栈：path, mode → 栈顶是 path
     let path_addr = vm.pop() as u32;
-    let mode = read_cstring(vm, mode_addr);
+    let mode_addr = vm.pop() as u32;
     let path = read_cstring(vm, path_addr);
+    let mode = read_cstring(vm, mode_addr);
     let mut vfs = std::mem::take(&mut session.vfs);
     let fd = vfs.fopen(&path, &mode, vm, &mut session.memory);
     session.vfs = vfs;
@@ -1011,10 +1012,11 @@ fn host_fopen(vm: &mut CideVM, session: &mut Session) {
 }
 
 fn host_fread(vm: &mut CideVM, session: &mut Session) {
-    let stream = vm.pop() as u32;
-    let nmemb = vm.pop() as usize;
-    let size = vm.pop() as usize;
+    // 参数从右到左压栈：buf, size, nmemb, stream → 栈顶是 buf
     let buf = vm.pop() as u32;
+    let size = vm.pop() as usize;
+    let nmemb = vm.pop() as usize;
+    let stream = vm.pop() as u32;
     let fd = read_fd_from_stream(vm, stream);
     let mut vfs = std::mem::take(&mut session.vfs);
     let n = vfs.fread(fd, buf, size, nmemb, vm);
@@ -1023,10 +1025,11 @@ fn host_fread(vm: &mut CideVM, session: &mut Session) {
 }
 
 fn host_fwrite(vm: &mut CideVM, session: &mut Session) {
-    let stream = vm.pop() as u32;
-    let nmemb = vm.pop() as usize;
-    let size = vm.pop() as usize;
+    // 参数从右到左压栈：buf, size, nmemb, stream → 栈顶是 buf
     let buf = vm.pop() as u32;
+    let size = vm.pop() as usize;
+    let nmemb = vm.pop() as usize;
+    let stream = vm.pop() as u32;
     let fd = read_fd_from_stream(vm, stream);
     let mut vfs = std::mem::take(&mut session.vfs);
     let n = vfs.fwrite(fd, buf, size, nmemb, vm, &mut session.memory);
