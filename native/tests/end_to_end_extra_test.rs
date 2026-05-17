@@ -1603,6 +1603,23 @@ int main() {
 }
 
 #[test]
+fn test_e2e_double_precision_64bit() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double x = 1.0000000001;
+    printf("%.10f", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1.0000000001")), "Outputs: {:?}", outputs);
+}
+
+#[test]
 fn test_e2e_int_func_arg_implicit_cast_from_float() {
     let src = r#"
 #include <stdio.h>

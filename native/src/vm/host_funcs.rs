@@ -143,7 +143,7 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                         match spec {
                             'd' | 'i' => out.push_str(&(arg as i32).to_string()),
                             'f' => {
-                                let f = f32::from_bits(arg as u32);
+                                let f = f64::from_bits(arg);
                                 let prec = precision.unwrap_or(6);
                                 out.push_str(&format!("{:.*}", prec, f));
                             }

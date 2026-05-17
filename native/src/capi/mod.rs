@@ -833,7 +833,7 @@ pub unsafe extern "C" fn cide_variable_get(
     let is_arr = matches!(v.ty.kind, crate::compiler::ast::TypeKind::Array);
     if !is_array.is_null() { *is_array = if is_arr { 1 } else { 0 }; }
     if !array_size.is_null() { *array_size = if is_arr { v.ty.array_size } else { 0 }; }
-    if !value.is_null() { *value = v.value; }
+    if !value.is_null() { *value = v.value as c_int; }
 }
 
 #[no_mangle]

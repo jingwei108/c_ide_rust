@@ -16,7 +16,7 @@ pub struct VariableSnapshot {
     pub addr: u32,
     pub is_local: bool,
     pub ty_name: String,
-    pub value: i32,
+    pub value: String,
 }
 
 #[frb]
@@ -29,12 +29,23 @@ pub struct StructField {
 // ========== 转换辅助函数 ==========
 
 fn convert_variable(v: crate::session::VariableSnapshot) -> VariableSnapshot {
+    let value_str = if v.ty.kind == crate::compiler::ast::TypeKind::Double {
+        let bits = v.value as u64;
+        let f = f64::from_bits(bits);
+        format!("{:.15}", f).trim_end_matches('0').trim_end_matches('.').to_string()
+    } else if v.ty.kind == crate::compiler::ast::TypeKind::Float {
+        let bits = v.value as u32;
+        let f = f32::from_bits(bits);
+        format!("{:.7}", f).trim_end_matches('0').trim_end_matches('.').to_string()
+    } else {
+        v.value.to_string()
+    };
     VariableSnapshot {
         name: v.name,
         addr: v.addr,
         is_local: v.is_local,
         ty_name: format!("{:?}", v.ty),
-        value: v.value,
+        value: value_str,
     }
 }
 

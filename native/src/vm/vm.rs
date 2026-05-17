@@ -18,6 +18,7 @@ pub struct FuncMeta {
     pub ip: usize,
     pub arg_count: i32,
     pub local_count: i32,
+    pub param_sizes: Vec<i32>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,6 +73,7 @@ pub struct CideVM {
     finished: bool,
     exit_code: i32,
     qsort_depth: i32,
+    f64_constants: Vec<f64>,
 }
 
 impl Default for CideVM {
@@ -108,6 +110,7 @@ impl CideVM {
             finished: false,
             exit_code: 0,
             qsort_depth: 0,
+            f64_constants: Vec::new(),
         }
     }
 
@@ -143,11 +146,17 @@ impl CideVM {
         self.ip = 0;
     }
 
-    pub fn set_globals(&mut self, globals: &[i32]) {
-        self.global_count = globals.len();
-        for (i, &v) in globals.iter().enumerate() {
-            let addr = GLOBAL_START + (i as u32) * 4;
+    pub fn set_globals_32(&mut self, globals: &[(u32, i32)]) {
+        for &(offset, v) in globals {
+            let addr = GLOBAL_START + offset;
             self.store_i32(addr, v, &SourceLoc::default());
+        }
+    }
+
+    pub fn set_globals_64(&mut self, globals: &[(u32, u64)]) {
+        for &(offset, v) in globals {
+            let addr = GLOBAL_START + offset;
+            self.store_i64(addr, v, &SourceLoc::default());
         }
     }
 
@@ -169,6 +178,10 @@ impl CideVM {
 
     pub fn set_symbols(&mut self, symbols: Vec<VMSymbol>) {
         self.symbols = symbols;
+    }
+
+    pub fn set_f64_constants(&mut self, constants: Vec<f64>) {
+        self.f64_constants = constants;
     }
 
     pub fn set_vis_event_lines(&mut self, lines: Vec<(i32, i32)>) {
@@ -420,6 +433,33 @@ impl CideVM {
         self.memory[addr as usize..addr as usize + 4].copy_from_slice(&bytes);
     }
 
+    pub fn load_i64(&mut self, addr: u32, loc: &SourceLoc) -> u64 {
+        if addr < NULL_TRAP_SIZE {
+            self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr), loc);
+            return 0;
+        }
+        if addr as u64 + 8 > MEM_SIZE as u64 {
+            self.trap(&self.format_bounds_error(addr), loc);
+            return 0;
+        }
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&self.memory[addr as usize..addr as usize + 8]);
+        u64::from_le_bytes(bytes)
+    }
+
+    pub fn store_i64(&mut self, addr: u32, val: u64, loc: &SourceLoc) {
+        if addr < NULL_TRAP_SIZE {
+            self.trap(&format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr), loc);
+            return;
+        }
+        if addr as u64 + 8 > MEM_SIZE as u64 {
+            self.trap(&self.format_bounds_error(addr), loc);
+            return;
+        }
+        let bytes = val.to_le_bytes();
+        self.memory[addr as usize..addr as usize + 8].copy_from_slice(&bytes);
+    }
+
     pub fn load_i8(&mut self, addr: u32, loc: &SourceLoc) -> i32 {
         if addr < NULL_TRAP_SIZE {
             self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）", addr), loc);
@@ -462,7 +502,12 @@ impl CideVM {
                     continue;
                 }
             }
-            let size = (sym.ty.array_size as u32) * 4;
+            let elem_size = match sym.ty.base_kind {
+                crate::compiler::ast::TypeKind::Char => 1,
+                crate::compiler::ast::TypeKind::Double => 8,
+                _ => 4,
+            };
+            let size = (sym.ty.array_size as u32) * elem_size as u32;
             let dist = if addr >= base && addr < base + size {
                 0
             } else if addr >= base + size && addr < base + size + 64 {
@@ -479,7 +524,12 @@ impl CideVM {
         }
 
         if let Some((sym, base, _)) = best_sym {
-            let index = ((addr as i64 - base as i64) / 4) as i32;
+            let elem_size = match sym.ty.base_kind {
+                crate::compiler::ast::TypeKind::Char => 1,
+                crate::compiler::ast::TypeKind::Double => 8,
+                _ => 4,
+            };
+            let index = ((addr as i64 - base as i64) / elem_size as i64) as i32;
             format!(
                 "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n📍 发生在第 {} 行\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
                 sym.name, index, sym.name, sym.ty.array_size, sym.ty.array_size - 1,
@@ -579,45 +629,65 @@ impl CideVM {
         }
     }
 
-    fn read_variable(&self, sym: &VMSymbol) -> i32 {
-        let mut vaddr = sym.addr;
-        if sym.is_local {
+    fn read_variable(&self, sym: &VMSymbol) -> i64 {
+        let vaddr = if sym.is_local {
             if let Some(frame) = self.call_stack.last() {
-                vaddr = frame.locals_base + sym.addr;
+                frame.locals_base + sym.addr
             } else {
                 return 0;
             }
-        }
+        } else {
+            GLOBAL_START + sym.addr
+        };
         if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
             return 0;
         }
-        i32::from_le_bytes([
-            self.memory[vaddr as usize],
-            self.memory[vaddr as usize + 1],
-            self.memory[vaddr as usize + 2],
-            self.memory[vaddr as usize + 3],
-        ])
-    }
-
-    pub fn get_variable_snapshot(&self) -> Vec<crate::session::VariableSnapshot> {
-        self.symbols.iter().filter_map(|sym| {
-            let mut vaddr = sym.addr;
-            if sym.is_local {
-                if let Some(frame) = self.call_stack.last() {
-                    vaddr = frame.locals_base + sym.addr;
-                } else {
-                    return None;
-                }
+        if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Double) {
+            if vaddr + 8 > MEM_SIZE {
+                return 0;
             }
-            if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
-                return None;
-            }
-            let val = i32::from_le_bytes([
+            let mut bytes = [0u8; 8];
+            bytes.copy_from_slice(&self.memory[vaddr as usize..vaddr as usize + 8]);
+            u64::from_le_bytes(bytes) as i64
+        } else {
+            i32::from_le_bytes([
                 self.memory[vaddr as usize],
                 self.memory[vaddr as usize + 1],
                 self.memory[vaddr as usize + 2],
                 self.memory[vaddr as usize + 3],
-            ]);
+            ]) as i64
+        }
+    }
+
+    pub fn get_variable_snapshot(&self) -> Vec<crate::session::VariableSnapshot> {
+        self.symbols.iter().filter_map(|sym| {
+            let vaddr = if sym.is_local {
+                if let Some(frame) = self.call_stack.last() {
+                    frame.locals_base + sym.addr
+                } else {
+                    return None;
+                }
+            } else {
+                GLOBAL_START + sym.addr
+            };
+            if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
+                return None;
+            }
+            let val = if matches!(sym.ty.kind, crate::compiler::ast::TypeKind::Double) {
+                if vaddr + 8 > MEM_SIZE {
+                    return None;
+                }
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&self.memory[vaddr as usize..vaddr as usize + 8]);
+                u64::from_le_bytes(bytes) as i64
+            } else {
+                i32::from_le_bytes([
+                    self.memory[vaddr as usize],
+                    self.memory[vaddr as usize + 1],
+                    self.memory[vaddr as usize + 2],
+                    self.memory[vaddr as usize + 3],
+                ]) as i64
+            };
             Some(crate::session::VariableSnapshot {
                 name: sym.name.clone(),
                 addr: vaddr,
@@ -697,11 +767,11 @@ impl CideVM {
 
             OpCode::LoadLocal => {
                 if let Some(frame) = self.call_stack.last() {
-                    let addr = (frame.locals_base as u64) + (inst.operand as u64) * 4;
-                    if addr + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE as u64 {
+                    let addr = frame.locals_base + inst.operand as u32;
+                    if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
                         self.trap("LoadLocal: 地址越界", &inst.loc);
                     } else {
-                        let val = self.load_i32(addr as u32, &inst.loc);
+                        let val = self.load_i32(addr, &inst.loc);
                         self.push(val as u64);
                     }
                 } else {
@@ -711,15 +781,43 @@ impl CideVM {
 
             OpCode::StoreLocal => {
                 if let Some(frame) = self.call_stack.last() {
-                    let addr = (frame.locals_base as u64) + (inst.operand as u64) * 4;
-                    if addr + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE as u64 {
+                    let addr = frame.locals_base + inst.operand as u32;
+                    if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
                         self.trap("StoreLocal: 地址越界", &inst.loc);
                     } else {
                         let val = self.pop() as i32;
-                        self.store_i32(addr as u32, val, &inst.loc);
+                        self.store_i32(addr, val, &inst.loc);
                     }
                 } else {
                     self.trap("StoreLocal: 无调用帧", &inst.loc);
+                }
+            }
+
+            OpCode::LoadLocalD => {
+                if let Some(frame) = self.call_stack.last() {
+                    let addr = frame.locals_base + inst.operand as u32;
+                    if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                        self.trap("LoadLocalD: 地址越界", &inst.loc);
+                    } else {
+                        let val = self.load_i64(addr, &inst.loc);
+                        self.push(val);
+                    }
+                } else {
+                    self.trap("LoadLocalD: 无调用帧", &inst.loc);
+                }
+            }
+
+            OpCode::StoreLocalD => {
+                if let Some(frame) = self.call_stack.last() {
+                    let addr = frame.locals_base + inst.operand as u32;
+                    if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                        self.trap("StoreLocalD: 地址越界", &inst.loc);
+                    } else {
+                        let val = self.pop();
+                        self.store_i64(addr, val, &inst.loc);
+                    }
+                } else {
+                    self.trap("StoreLocalD: 无调用帧", &inst.loc);
                 }
             }
 
@@ -732,24 +830,42 @@ impl CideVM {
             }
 
             OpCode::LoadGlobal => {
-                let idx = inst.operand as usize;
-                if idx >= self.global_count {
-                    self.trap("LoadGlobal: 索引越界", &inst.loc);
+                let addr = GLOBAL_START + inst.operand as u32;
+                if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                    self.trap("LoadGlobal: 地址越界", &inst.loc);
                 } else {
-                    let addr = GLOBAL_START + (idx as u32) * 4;
                     let val = self.load_i32(addr, &inst.loc);
                     self.push(val as u64);
                 }
             }
 
             OpCode::StoreGlobal => {
-                let idx = inst.operand as usize;
-                if idx >= self.global_count {
-                    self.trap("StoreGlobal: 索引越界", &inst.loc);
+                let addr = GLOBAL_START + inst.operand as u32;
+                if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                    self.trap("StoreGlobal: 地址越界", &inst.loc);
                 } else {
-                    let addr = GLOBAL_START + (idx as u32) * 4;
                     let val = self.pop() as i32;
                     self.store_i32(addr, val, &inst.loc);
+                }
+            }
+
+            OpCode::LoadGlobalD => {
+                let addr = GLOBAL_START + inst.operand as u32;
+                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                    self.trap("LoadGlobalD: 地址越界", &inst.loc);
+                } else {
+                    let val = self.load_i64(addr, &inst.loc);
+                    self.push(val);
+                }
+            }
+
+            OpCode::StoreGlobalD => {
+                let addr = GLOBAL_START + inst.operand as u32;
+                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                    self.trap("StoreGlobalD: 地址越界", &inst.loc);
+                } else {
+                    let val = self.pop();
+                    self.store_i64(addr, val, &inst.loc);
                 }
             }
 
@@ -784,6 +900,26 @@ impl CideVM {
                 let val = self.pop() as i32;
                 let addr = self.pop() as u32;
                 self.store_i32(addr, val, &inst.loc);
+            }
+
+            OpCode::LoadMemD => {
+                let addr = self.pop() as u32;
+                let val = self.load_i64(addr, &inst.loc);
+                self.push(val);
+            }
+
+            OpCode::StoreMemD => {
+                let val = self.pop();
+                let addr = self.pop() as u32;
+                self.store_i64(addr, val, &inst.loc);
+            }
+
+            OpCode::SplitD => {
+                let val = self.pop();
+                let low = (val & 0xFFFFFFFF) as i32;
+                let high = ((val >> 32) & 0xFFFFFFFF) as i32;
+                self.push(low as u64);
+                self.push(high as u64);
             }
 
             OpCode::LoadMemByte => {
@@ -947,6 +1083,62 @@ impl CideVM {
                 self.push(a as i32 as u64);
             }
 
+            OpCode::PushConstD => {
+                let idx = inst.operand as usize;
+                let val = self.f64_constants.get(idx).copied().unwrap_or(0.0);
+                self.push(val.to_bits());
+            }
+            OpCode::AddD => {
+                let b = f64::from_bits(self.pop());
+                let a = f64::from_bits(self.pop());
+                self.push((a + b).to_bits());
+            }
+            OpCode::SubD => {
+                let b = f64::from_bits(self.pop());
+                let a = f64::from_bits(self.pop());
+                self.push((a - b).to_bits());
+            }
+            OpCode::MulD => {
+                let b = f64::from_bits(self.pop());
+                let a = f64::from_bits(self.pop());
+                self.push((a * b).to_bits());
+            }
+            OpCode::DivD => {
+                let b = f64::from_bits(self.pop());
+                let a = f64::from_bits(self.pop());
+                if b == 0.0 {
+                    self.trap("double 除以零", &inst.loc);
+                } else {
+                    self.push((a / b).to_bits());
+                }
+            }
+            OpCode::NegD => {
+                let a = f64::from_bits(self.pop());
+                self.push((-a).to_bits());
+            }
+            OpCode::CastI2D => {
+                let a = self.pop() as i32;
+                self.push((a as f64).to_bits());
+            }
+            OpCode::CastF2D => {
+                let a = f32::from_bits(self.pop() as u32);
+                self.push((a as f64).to_bits());
+            }
+            OpCode::CastD2I => {
+                let a = f64::from_bits(self.pop());
+                self.push(a as i32 as u64);
+            }
+            OpCode::CastD2F => {
+                let a = f64::from_bits(self.pop());
+                self.push((a as f32).to_bits() as u64);
+            }
+            OpCode::EqD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a == b { 1 } else { 0 }); }
+            OpCode::NeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a != b { 1 } else { 0 }); }
+            OpCode::LtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a < b { 1 } else { 0 }); }
+            OpCode::LeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a <= b { 1 } else { 0 }); }
+            OpCode::GtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a > b { 1 } else { 0 }); }
+            OpCode::GeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a >= b { 1 } else { 0 }); }
+
             OpCode::Jump => {
                 let target = inst.operand as usize;
                 if target >= self.code.len() {
@@ -987,7 +1179,7 @@ impl CideVM {
                     self.trap(&format!("Call: 未知函数索引 {}", func_idx), &inst.loc);
                 } else {
                     let meta = self.func_table[idx].clone();
-                    let frame_size = (meta.local_count as u64) * 4;
+                    let frame_size = meta.local_count as u64;
                     if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
                         self.trap("Call: 栈溢出", &inst.loc);
                     } else {
@@ -1002,14 +1194,19 @@ impl CideVM {
                                 self.mem_stack_top -= frame_size_u32;
                                 let locals_base = self.mem_stack_top;
 
-                                for i in (0..meta.arg_count).rev() {
-                                    let arg = self.pop() as i32;
-                                    let arg_addr = (locals_base as u64) + ((meta.arg_count - 1 - i) as u64) * 4;
-                                    self.store_i32(arg_addr as u32, arg, &inst.loc);
+                                let mut word_offset = 0;
+                                for word_count in meta.param_sizes.iter() {
+                                    let words = *word_count as u32;
+                                    let addr = locals_base + word_offset * 4;
+                                    for w in (0..words).rev() {
+                                        let val = self.pop() as i32;
+                                        self.store_i32(addr + w * 4, val, &inst.loc);
+                                    }
+                                    word_offset += words;
                                 }
-                                for i in meta.arg_count..meta.local_count {
-                                    let local_addr = (locals_base as u64) + (i as u64) * 4;
-                                    self.store_i32(local_addr as u32, 0, &inst.loc);
+                                let arg_bytes = word_offset * 4;
+                                for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
+                                    self.memory[addr as usize] = 0;
                                 }
                                 let func_name = if (func_idx as usize) < self.func_names.len() {
                                     self.func_names[func_idx as usize].clone()

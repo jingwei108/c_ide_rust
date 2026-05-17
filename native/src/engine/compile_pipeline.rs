@@ -116,7 +116,9 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
 
     vm.reset();
     vm.load_program(session.compile.bytecode.clone());
-    vm.set_globals(&session.compile.globals_init);
+    vm.set_globals_32(&session.compile.globals_init);
+    vm.set_globals_64(&session.compile.globals_init_64);
+    vm.set_f64_constants(session.compile.f64_constants.clone());
     vm.set_max_steps(10_000_000);
 
     for (name, meta) in &session.compile.func_table {
@@ -125,6 +127,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                 ip: meta.ip,
                 arg_count: meta.arg_count,
                 local_count: meta.local_count,
+                param_sizes: meta.param_sizes.clone(),
             });
             vm.register_function_name(idx as u32, name.clone());
         }
@@ -186,6 +189,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     // 清空编译状态
     session.compile.bytecode.clear();
     session.compile.globals_init.clear();
+    session.compile.globals_init_64.clear();
     session.compile.diagnostics.clear();
     session.compile.source_map.clear();
     session.compile.func_table.clear();
@@ -248,7 +252,9 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
 
     // 填充编译结果
     session.compile.bytecode = output.code;
-    session.compile.globals_init = output.globals_init;
+    session.compile.globals_init = output.globals_init_32;
+    session.compile.globals_init_64 = output.globals_init_64;
+    session.compile.f64_constants = output.f64_constants;
     session.compile.source_map = output
         .source_map
         .into_iter()
@@ -263,6 +269,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
                 ip: meta.ip,
                 arg_count: meta.arg_count,
                 local_count: meta.local_count,
+                param_sizes: meta.param_sizes,
             },
         );
     }

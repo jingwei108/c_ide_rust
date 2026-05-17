@@ -118,7 +118,7 @@ fn test_bytecode_gen_function_call() {
 #[test]
 fn test_bytecode_gen_global_var() {
     let output = generate("int g = 10; int main() { return g; }");
-    assert!(!output.globals_init.is_empty(), "Should have global init");
+    assert!(!output.globals_init_32.is_empty(), "Should have global init");
 }
 
 #[test]

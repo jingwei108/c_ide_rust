@@ -1017,7 +1017,7 @@ impl SseDecode for crate::api::cide::VariableSnapshot {
         let mut var_addr = <u32>::sse_decode(deserializer);
         let mut var_isLocal = <bool>::sse_decode(deserializer);
         let mut var_tyName = <String>::sse_decode(deserializer);
-        let mut var_value = <i32>::sse_decode(deserializer);
+        let mut var_value = <String>::sse_decode(deserializer);
         return crate::api::cide::VariableSnapshot {
             name: var_name,
             addr: var_addr,
@@ -1557,7 +1557,7 @@ impl SseEncode for crate::api::cide::VariableSnapshot {
         <u32>::sse_encode(self.addr, serializer);
         <bool>::sse_encode(self.is_local, serializer);
         <String>::sse_encode(self.ty_name, serializer);
-        <i32>::sse_encode(self.value, serializer);
+        <String>::sse_encode(self.value.clone(), serializer);
     }
 }
 

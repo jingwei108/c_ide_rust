@@ -33,6 +33,7 @@ pub struct FuncMeta {
     pub ip: usize,
     pub arg_count: i32,
     pub local_count: i32,
+    pub param_sizes: Vec<i32>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -63,7 +64,9 @@ pub struct CompileState {
     pub compile_units: Vec<CompileUnit>,
     pub compiled: bool,
     pub bytecode: Vec<Instruction>,
-    pub globals_init: Vec<i32>,
+    pub globals_init: Vec<(u32, i32)>,
+    pub globals_init_64: Vec<(u32, u64)>,
+    pub f64_constants: Vec<f64>,
     pub diagnostics: Vec<Diagnostic>,
     pub source_map: Vec<(u32, SourceLoc)>,
     pub func_table: HashMap<String, FuncMeta>,
@@ -87,7 +90,7 @@ pub struct VariableSnapshot {
     pub addr: u32,
     pub is_local: bool,
     pub ty: Type,
-    pub value: i32,
+    pub value: i64,
 }
 
 #[frb]

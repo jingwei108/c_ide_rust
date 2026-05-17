@@ -44,14 +44,18 @@ pub struct TypeChecker {
 fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     let current_ty = expr.ty().clone();
     if target.kind == TypeKind::Double && current_ty.kind != TypeKind::Double && matches!(current_ty.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
-        let loc = *expr.loc();
-        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
-        *expr = Expr::Cast {
-            expr: Box::new(old),
-            target_type: Type::double(),
-            loc,
-            ty: Type::double(),
-        };
+        if matches!(expr, Expr::FloatLiteral { .. }) {
+            expr.set_ty(Type::double());
+        } else {
+            let loc = *expr.loc();
+            let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+            *expr = Expr::Cast {
+                expr: Box::new(old),
+                target_type: Type::double(),
+                loc,
+                ty: Type::double(),
+            };
+        }
     } else if target.kind != TypeKind::Double && current_ty.kind == TypeKind::Double && matches!(target.kind, TypeKind::Int | TypeKind::Char | TypeKind::Float) {
         let loc = *expr.loc();
         let target_ty = match target.kind {
@@ -355,6 +359,7 @@ impl TypeChecker {
                 self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", expected, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
                 return false;
             }
+            insert_implicit_cast(init, &expected);
             return true;
         }
         if !matches!(init, Expr::InitList { .. }) {
@@ -411,6 +416,8 @@ impl TypeChecker {
                 let e_type = self.resolve_expr_type(elem);
                 if !self.check_assignable(&elem_type, &e_type, loc) {
                     self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                } else {
+                    insert_implicit_cast(elem, &elem_type);
                 }
             }
         } else if let Expr::StringLiteral { value, .. } = init {
@@ -466,6 +473,8 @@ impl TypeChecker {
                         let init_type = self.resolve_expr_type(init_expr);
                         if !self.check_assignable(var_type, &init_type, loc) {
                             self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
+                        } else {
+                            insert_implicit_cast(init_expr, var_type);
                         }
                     }
                 }
@@ -480,6 +489,8 @@ impl TypeChecker {
                             let init_type = self.resolve_expr_type(init_expr);
                             if !self.check_assignable(ety, &init_type, loc) {
                                 self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, ety), loc, ErrorCode::E3004_TypeMismatch);
+                            } else {
+                                insert_implicit_cast(init_expr, ety);
                             }
                         }
                     }
@@ -796,6 +807,8 @@ impl TypeChecker {
                 }
                 if !self.check_assignable(&left_type, &right_type, loc) {
                     self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
+                } else {
+                    insert_implicit_cast(right, &left_type);
                 }
                 if *op != AssignOp::Assign && (!self.is_scalar(&left_type) || !self.is_scalar(&right_type)) {
                     self.report_error("复合赋值要求两边都是 int 或 float 类型", loc, ErrorCode::E3045_CompoundAssignType);
