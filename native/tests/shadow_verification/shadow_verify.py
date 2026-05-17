@@ -198,8 +198,16 @@ def run_with_cide(source: str) -> RunResult:
         dll.cide_session_destroy(session)
 
 
-def classify_compile_error(error_msg: str) -> str:
-    """根据 Cide 编译错误消息分类缺失特性"""
+def classify_compile_error(error_msg: str, expected_category: str = "unknown") -> str:
+    """根据 Cide 编译错误消息分类缺失特性
+    
+    优先使用用例本身的 expected_category（如果已知且不是 baseline），
+    再用错误信息关键词作为 fallback 分类。
+    """
+    # 如果用例已经标注了明确的缺失特性分类，优先使用
+    if expected_category and expected_category not in ("baseline", "unknown"):
+        return expected_category
+    
     err_lower = error_msg.lower()
     patterns = {
         "double": ["double"],
@@ -267,7 +275,7 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
     category_counts: Dict[str, int] = {}
     category_cases: Dict[str, List[str]] = {}
     for d in compile_gaps:
-        cat = classify_compile_error(d.cide_result.compile_error)
+        cat = classify_compile_error(d.cide_result.compile_error, d.expected_category)
         category_counts[cat] = category_counts.get(cat, 0) + 1
         if cat not in category_cases:
             category_cases[cat] = []
@@ -390,7 +398,7 @@ def main():
         diffs.append(diff)
 
         if diff.diff_type == "compile_gap":
-            cat = classify_compile_error(cide_res.compile_error)
+            cat = classify_compile_error(cide_res.compile_error, case.category)
             print(f"  => 编译缺口 [{cat}]")
         elif diff.diff_type == "match":
             print(f"  => 匹配 ✓")
@@ -426,7 +434,7 @@ def main():
     }
     for d in diffs:
         if d.diff_type == "compile_gap":
-            cat = classify_compile_error(d.cide_result.compile_error)
+            cat = classify_compile_error(d.cide_result.compile_error, d.expected_category)
             json_data["category_frequency"][cat] = json_data["category_frequency"].get(cat, 0) + 1
 
     json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
