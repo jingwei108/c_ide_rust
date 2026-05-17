@@ -68,9 +68,11 @@ class _FloatingPanelPopupState extends State<FloatingPanelPopup>
     final borderColor = widget.isDark ? const Color(0xFF3E3E55) : const Color(0xFFE0E0E8);
 
     return Positioned.fill(
-      child: GestureDetector(
-        onTap: _close,
-        child: AnimatedBuilder(
+      child: Material(
+        type: MaterialType.transparency,
+        child: GestureDetector(
+          onTap: _close,
+          child: AnimatedBuilder(
           animation: _controller,
           builder: (context, child) {
             return Container(
@@ -133,12 +135,14 @@ class _FloatingPanelPopupState extends State<FloatingPanelPopup>
                               ),
                             ),
                             const Spacer(),
-                            InkWell(
+                            GestureDetector(
                               onTap: _close,
-                              borderRadius: BorderRadius.circular(12),
-                              child: const Padding(
-                                padding: EdgeInsets.all(4),
-                                child: Icon(Icons.close, size: 18, color: Colors.grey),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.all(4),
+                                child: const Icon(Icons.close, size: 18, color: Colors.grey),
                               ),
                             ),
                           ],
@@ -152,6 +156,7 @@ class _FloatingPanelPopupState extends State<FloatingPanelPopup>
                 ),
               ),
             ),
+          ),
           ),
         ),
       ),

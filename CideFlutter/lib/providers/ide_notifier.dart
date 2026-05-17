@@ -99,9 +99,12 @@ class IdeNotifier extends Notifier<IdeState> {
   }
 
   Future<void> run() async {
-    if (state.hasErrors) {
-      state = state.copyWith(error: '请先修复编译错误');
-      return;
+    if (!state.isRunning) {
+      await compile();
+      if (state.hasErrors) {
+        state = state.copyWith(error: '请先修复编译错误');
+        return;
+      }
     }
     state = state.copyWith(isRunning: true, isStepMode: false, output: '', clearError: true);
     try {
@@ -118,9 +121,12 @@ class IdeNotifier extends Notifier<IdeState> {
   }
 
   Future<void> step() async {
-    if (state.hasErrors) {
-      state = state.copyWith(error: '请先修复编译错误');
-      return;
+    if (!state.isRunning) {
+      await compile();
+      if (state.hasErrors) {
+        state = state.copyWith(error: '请先修复编译错误');
+        return;
+      }
     }
     state = state.copyWith(isStepMode: true, isRunning: true, clearError: true);
     try {

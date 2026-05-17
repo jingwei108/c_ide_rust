@@ -161,6 +161,23 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     final scaffoldBg = isDark ? const Color(0xff121212) : const Color(0xfff5f5f5);
     final showCustomKeyboard = _showKeyboard && !_isSystemKeyboardActive;
 
+    // 监听错误信息并弹出提示
+    ref.listen(ideProvider, (prev, next) {
+      if (next.error != null && next.error != prev?.error) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(next.error!),
+                duration: const Duration(seconds: 3),
+                behavior: SnackBarBehavior.floating,
+              ),
+            );
+          }
+        });
+      }
+    });
+
     // 检测系统键盘真实可见性
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
     final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
