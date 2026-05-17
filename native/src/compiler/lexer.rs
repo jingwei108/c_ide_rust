@@ -274,6 +274,30 @@ impl Lexer {
             }
             return self.make_token(TokenType::Number, &text);
         }
+        // Octal literal: 0[0-7]+
+        if self.peek(0) == '0' && self.peek(1).is_ascii_digit() {
+            self.advance(); // '0'
+            let oct_start = self.pos;
+            while self.pos < self.chars.len() && self.peek(0) >= '0' && self.peek(0) <= '7' {
+                self.advance();
+            }
+            if self.pos > oct_start {
+                let text: String = self.chars[start..self.pos].iter().collect();
+                let oct_str = &text[1..];
+                if let Ok(val) = u64::from_str_radix(oct_str, 8) {
+                    if val > u32::MAX as u64 {
+                        self.errors.push(LexerError {
+                            message: format!("八进制数值 0{} 超出 int 范围", oct_str),
+                            line: self.line,
+                            column: self.column,
+                            code: ErrorCode::E1006_UnsupportedFeature as i32,
+                        });
+                        return self.make_token(TokenType::Number, "0");
+                    }
+                    return self.make_token(TokenType::Number, &val.to_string());
+                }
+            }
+        }
         while self.pos < self.chars.len() && self.peek(0).is_ascii_digit() {
             self.advance();
         }

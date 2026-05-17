@@ -937,6 +937,35 @@ impl BytecodeGen {
                 let result_is_long_long = ty.kind == TypeKind::LongLong;
                 let any_fp = result_is_double || result_is_float;
 
+                // Short-circuit evaluation for && and ||
+                if *op == BinaryOp::And || *op == BinaryOp::Or {
+                    self.gen_expr(left);
+                    match left.ty().kind {
+                        TypeKind::Float => self.emit(OpCode::CastF2I, 0, &loc),
+                        TypeKind::Double => self.emit(OpCode::CastD2I, 0, &loc),
+                        TypeKind::LongLong => self.emit(OpCode::CastQ2I, 0, &loc),
+                        _ => {}
+                    }
+                    self.emit(OpCode::Dup, 0, &loc);
+                    let end_jump = self.current_ip();
+                    if *op == BinaryOp::And {
+                        self.emit(OpCode::JumpIfZero, 0, &loc);
+                    } else {
+                        self.emit(OpCode::JumpIfNotZero, 0, &loc);
+                    }
+                    self.emit(OpCode::Pop, 0, &loc);
+                    self.gen_expr(right);
+                    match right.ty().kind {
+                        TypeKind::Float => self.emit(OpCode::CastF2I, 0, &loc),
+                        TypeKind::Double => self.emit(OpCode::CastD2I, 0, &loc),
+                        TypeKind::LongLong => self.emit(OpCode::CastQ2I, 0, &loc),
+                        _ => {}
+                    }
+                    let end_ip = self.current_ip();
+                    self.patch_jump(end_jump, end_ip);
+                    return;
+                }
+
                 self.gen_expr(left);
                 if any_fp && !left_is_ptr && left.ty().kind != TypeKind::Float && left.ty().kind != TypeKind::Double && left.ty().kind != TypeKind::LongLong {
                     if result_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
@@ -1057,13 +1086,12 @@ impl BytecodeGen {
                         else if result_is_long_long { self.emit(OpCode::GeQ, 0, &loc); }
                         else { self.emit(OpCode::Ge, 0, &loc); }
                     }
-                    BinaryOp::And => self.emit(OpCode::And, 0, &loc),
-                    BinaryOp::Or => self.emit(OpCode::Or, 0, &loc),
                     BinaryOp::BitAnd => self.emit(OpCode::BitAnd, 0, &loc),
                     BinaryOp::BitOr => self.emit(OpCode::BitOr, 0, &loc),
                     BinaryOp::BitXor => self.emit(OpCode::BitXor, 0, &loc),
                     BinaryOp::Shl => self.emit(OpCode::Shl, 0, &loc),
                     BinaryOp::Shr => self.emit(OpCode::Shr, 0, &loc),
+                    BinaryOp::And | BinaryOp::Or => {}, // handled above
                 }
             }
             Expr::Unary { op, operand, .. } => {

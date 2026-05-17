@@ -111,7 +111,10 @@ docs/                   设计文档、事故报告
 - **unsigned 类型提示（2026-05-10）**：Parser 保留 `is_unsigned` 标记；TypeChecker 遇到 `unsigned int x;` 时报告 `W3056` 提示"被映射为 int，暂不支持无符号语义"
 - **`float` 类型支持** — `float x = 3.14;`、`float a = 5;`（隐式 int→float 转换）、算术/比较/复合赋值、强制转换 `(float)`/`(int)`、`printf("%f")` / `scanf("%f")`
 - **函数调用参数隐式转换** — `void foo(float x) {} foo(5);` 自动插入 `(float)` cast；`bar(3.7f)` 传入 int 形参自动截断为 int，并发出 `W3053` 精度丢失警告
-- **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
+- **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、八进制 `077`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
+- **影子验证发现 bug #4（2026-05-17）**：八进制字面量 `077` 被误解析为十进制 77 → Lexer `number()` 新增八进制分支
+- **影子验证发现 bug #5（2026-05-17）**：`&&` / `||` 无短路求值，右侧表达式总是被求值 → BytecodeGen 新增 `Dup` + `JumpIfZero` / `JumpIfNotZero` 短路逻辑
+- **已知问题（2026-05-17）**：`for (int i = 0; ...)` 循环变量作用域未隔离外部同名变量；字符串字面量 `strlen` 手动计算长度与 Clang 不一致（Cide 输出 10 vs Clang 5）
 - **C 子集 P1 拓展（2026-05-10）**：复合赋值扩展到数组索引/指针解引用/结构体成员（`a[i]+=1`、`*p+=1`、`s.mem+=1`）、取地址扩展到复杂左值（`&a[i]`、`&s.mem`）、全局结构体变量成员访问、自增/自减扩展到复杂左值（`a[i]++`、`*p++`、`s.mem++`）→ BytecodeGen 全部支持，新增 7 个 E2E 测试
 - **C 子集 P2 拓展（2026-05-10）**：位运算符 `& | ^ ~ << >>` 全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM），新增 2 个 E2E 测试；三目运算符 `? :` 全管线支持，新增 1 个 E2E 测试
 - **BytecodeGen 指针步长修复（2026-05-10）**：`BinaryOp::Add` 指针+整数时硬编码 `PushConst 4` → 改用 `ptr_step_size()`，正确支持 `char*`（步长 1）和 `struct*`（步长为结构体大小）
