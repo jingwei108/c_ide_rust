@@ -180,21 +180,21 @@ fn infer_semantic_label(
         let func = if source_line.starts_with("printf") { "printf" } else { "scanf" };
         format!("调用 {}", func)
     } else if source_line.starts_with("return") {
-        format!("返回")
+        "返回".to_string()
     } else if source_line.contains("malloc") || source_line.contains("calloc") {
-        format!("内存分配")
+        "内存分配".to_string()
     } else if source_line.contains("free(") {
-        format!("释放内存")
+        "释放内存".to_string()
     } else if source_line.contains("getchar") || source_line.contains("putchar") {
-        format!("IO 操作")
+        "IO 操作".to_string()
     } else if source_line.contains("qsort(") {
-        format!("调用 qsort")
+        "调用 qsort".to_string()
     } else if is_func_call {
         // 尝试提取函数名
         if let Some(func) = extract_called_func(source_line) {
             format!("调用 {}", func)
         } else {
-            format!("函数调用")
+            "函数调用".to_string()
         }
     } else {
         format!("第 {} 行", code_line)

@@ -37,7 +37,7 @@ static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, &'static Mutex<UnifiedEngine
 fn current_unified_engine() -> std::sync::MutexGuard<'static, UnifiedEngine> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
-    let engine_ref: &'static Mutex<UnifiedEngine> = *engines.entry(id).or_insert_with(|| {
+    let engine_ref: &'static Mutex<UnifiedEngine> = engines.entry(id).or_insert_with(|| {
         &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())))
     });
     drop(engines);

@@ -886,7 +886,7 @@ impl CideVM {
                 let val_str = match base_kind {
                     TypeKind::Char => {
                         let b = self.memory[addr as usize];
-                        if b >= 32 && b <= 126 {
+                        if (32..=126).contains(&b) {
                             format!("'{}'", b as char)
                         } else {
                             format!("{}", b as i8)
