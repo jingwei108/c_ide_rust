@@ -630,7 +630,7 @@ impl Lexer {
             ty,
             text: text.to_string(),
             line: self.line,
-            column: self.column - text.chars().count() as i32,
+            column: self.column - text.len() as i32,
         }
     }
 }

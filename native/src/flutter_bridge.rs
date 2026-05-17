@@ -284,7 +284,7 @@ pub fn get_algorithm_matches() -> Vec<AlgorithmMatch> {
 /// 获取变量列表
 pub fn get_variables() -> Vec<VariableSnapshot> {
     let session = SESSION.lock().unwrap_or_else(|e| e.into_inner());
-    session.runtime.variable_snapshot.clone()
+    session.vm.as_ref().map(|vm| vm.get_variable_snapshot()).unwrap_or_default()
 }
 
 /// 获取内存区域

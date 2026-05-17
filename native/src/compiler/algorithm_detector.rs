@@ -154,86 +154,94 @@ struct FuncFeatures {
     compare_lines: Vec<(i32, i32, String)>, // (line, type, context)
 }
 
+const MAX_WALK_DEPTH: i32 = 512;
+
 fn extract_features(stmt: &Stmt) -> FuncFeatures {
     let mut f = FuncFeatures::default();
-    walk_stmt(stmt, &mut f, 0, "");
+    walk_stmt(stmt, &mut f, 0, "", 0);
     f.has_nested_loops = f.max_loop_depth >= 2;
     f.has_single_loop = f.max_loop_depth >= 1;
     f
 }
 
-fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str) {
+fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str, depth: i32) {
+    if depth > MAX_WALK_DEPTH {
+        return;
+    }
     match stmt {
         Stmt::Block { stmts, .. } => {
             for s in stmts {
-                walk_stmt(s, f, loop_depth, func_name);
+                walk_stmt(s, f, loop_depth, func_name, depth + 1);
             }
         }
         Stmt::If { cond, then_stmt, else_stmt, .. } => {
             check_compare_expr(cond, f, loop_depth);
-            walk_stmt(then_stmt, f, loop_depth, func_name);
+            walk_stmt(then_stmt, f, loop_depth, func_name, depth + 1);
             if let Some(e) = else_stmt {
-                walk_stmt(e, f, loop_depth, func_name);
+                walk_stmt(e, f, loop_depth, func_name, depth + 1);
             }
         }
         Stmt::While { cond, body, .. } => {
             check_compare_expr(cond, f, loop_depth);
             let new_depth = loop_depth + 1;
             f.max_loop_depth = f.max_loop_depth.max(new_depth);
-            walk_stmt(body, f, new_depth, func_name);
+            walk_stmt(body, f, new_depth, func_name, depth + 1);
         }
         Stmt::DoWhile { body, cond, .. } => {
             let new_depth = loop_depth + 1;
             f.max_loop_depth = f.max_loop_depth.max(new_depth);
-            walk_stmt(body, f, new_depth, func_name);
+            walk_stmt(body, f, new_depth, func_name, depth + 1);
             check_compare_expr(cond, f, loop_depth);
         }
         Stmt::For { init, cond, step, body, .. } => {
             let new_depth = loop_depth + 1;
             f.max_loop_depth = f.max_loop_depth.max(new_depth);
             if let Some(ref i) = init {
-                walk_stmt(i, f, loop_depth, func_name);
+                walk_stmt(i, f, loop_depth, func_name, depth + 1);
             }
             if let Some(c) = cond {
                 check_compare_expr(c, f, loop_depth);
             }
             if let Some(ref s) = step {
-                walk_expr(s, f, loop_depth, func_name);
+                walk_expr(s, f, loop_depth, func_name, depth + 1);
             }
-            walk_stmt(body, f, new_depth, func_name);
+            walk_stmt(body, f, new_depth, func_name, depth + 1);
         }
         Stmt::VarDecl { init, extra_vars, .. } => {
             if let Some(e) = init {
-                walk_expr(e, f, loop_depth, func_name);
+                walk_expr(e, f, loop_depth, func_name, depth + 1);
             }
             for (_, _, e2) in extra_vars {
                 if let Some(e) = e2 {
-                    walk_expr(e, f, loop_depth, func_name);
+                    walk_expr(e, f, loop_depth, func_name, depth + 1);
                 }
             }
         }
         Stmt::Expr { expr, .. } => {
-            walk_expr(expr, f, loop_depth, func_name);
+            walk_expr(expr, f, loop_depth, func_name, depth + 1);
         }
         Stmt::Return { value: Some(v), .. } => {
-            walk_expr(v, f, loop_depth, func_name);
+            walk_expr(v, f, loop_depth, func_name, depth + 1);
         }
         Stmt::Switch { cond, body, .. } => {
-            walk_expr(cond, f, loop_depth, func_name);
-            walk_stmt(body, f, loop_depth, func_name);
+            walk_expr(cond, f, loop_depth, func_name, depth + 1);
+            walk_stmt(body, f, loop_depth, func_name, depth + 1);
         }
         Stmt::Case { stmt: s, .. } => {
-            walk_stmt(s, f, loop_depth, func_name);
+            walk_stmt(s, f, loop_depth, func_name, depth + 1);
         }
         _ => {}
     }
 }
 
-fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str) {
+fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str, depth: i32) {
+    if depth > MAX_WALK_DEPTH {
+        return;
+    }
     match expr {
         Expr::Binary { op, left, right, .. } => {
-            walk_expr(left, f, loop_depth, func_name);
-            walk_expr(right, f, loop_depth, func_name);
+            walk_expr(left, f, loop_depth, func_name, depth + 1);
+            walk_expr(right, f, loop_depth, func_name, depth + 1);
 
             // 检测 mid 计算：left + (right - left) / 2 或 (left + right) / 2
             if matches!(op, BinaryOp::Add | BinaryOp::Div) {
@@ -246,11 +254,11 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             }
         }
         Expr::Unary { operand, .. } => {
-            walk_expr(operand, f, loop_depth, func_name);
+            walk_expr(operand, f, loop_depth, func_name, depth + 1);
         }
         Expr::Call { name, args, .. } => {
             for a in args {
-                walk_expr(a, f, loop_depth, func_name);
+                walk_expr(a, f, loop_depth, func_name, depth + 1);
             }
             // 递归调用
             if name == func_name {
@@ -266,15 +274,15 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             }
         }
         Expr::Index { array, index, .. } => {
-            walk_expr(array, f, loop_depth, func_name);
-            walk_expr(index, f, loop_depth, func_name);
+            walk_expr(array, f, loop_depth, func_name, depth + 1);
+            walk_expr(index, f, loop_depth, func_name, depth + 1);
         }
         Expr::Member { object, .. } => {
-            walk_expr(object, f, loop_depth, func_name);
+            walk_expr(object, f, loop_depth, func_name, depth + 1);
         }
         Expr::Assign { op, left, right, .. } => {
-            walk_expr(left, f, loop_depth, func_name);
-            walk_expr(right, f, loop_depth, func_name);
+            walk_expr(left, f, loop_depth, func_name, depth + 1);
+            walk_expr(right, f, loop_depth, func_name, depth + 1);
 
             // 检测交换模式
             if is_index_access(left) && is_index_access(right) {
@@ -297,19 +305,19 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             }
         }
         Expr::Ternary { cond, then_branch, else_branch, .. } => {
-            walk_expr(cond, f, loop_depth, func_name);
-            walk_expr(then_branch, f, loop_depth, func_name);
-            walk_expr(else_branch, f, loop_depth, func_name);
+            walk_expr(cond, f, loop_depth, func_name, depth + 1);
+            walk_expr(then_branch, f, loop_depth, func_name, depth + 1);
+            walk_expr(else_branch, f, loop_depth, func_name, depth + 1);
         }
         Expr::Cast { expr: e, .. } => {
-            walk_expr(e, f, loop_depth, func_name);
+            walk_expr(e, f, loop_depth, func_name, depth + 1);
         }
         Expr::Sizeof { operand: Some(e), .. } => {
-            walk_expr(e, f, loop_depth, func_name);
+            walk_expr(e, f, loop_depth, func_name, depth + 1);
         }
         Expr::InitList { elements, .. } => {
             for e in elements {
-                walk_expr(e, f, loop_depth, func_name);
+                walk_expr(e, f, loop_depth, func_name, depth + 1);
             }
         }
         _ => {}

@@ -189,5 +189,5 @@ fn test_parser_error_undeclared_no_panic() {
     // Parser should handle missing semicolons gracefully
     let (_, errors) = parse("int main() { int x return 0; }");
     // This will have parse errors but should not panic
-    assert!(!errors.is_empty() || true); // just ensure no panic
+    assert!(!errors.is_empty()); // should have parse errors but not panic
 }

@@ -321,6 +321,8 @@ impl BytecodeGen {
         if !self.current_func.is_empty() {
             if let Some(meta) = self.func_table.get_mut(&self.current_func) {
                 meta.local_count = self.next_local_offset;
+                // arg_count 在此处被覆盖为参数总字节数（以 4-byte words 计），
+                // 而非参数个数。VM 的 Call 指令按此值弹栈，因此功能正确。
                 meta.arg_count = meta.param_sizes.iter().sum();
             }
         }
@@ -869,7 +871,7 @@ impl BytecodeGen {
                 let addr = self.string_mem_offset;
                 let new_offset = addr + value.len() as u32 + 1;
                 let new_offset = (new_offset + 3) & !3;
-                if new_offset > 0x5000 {
+                if new_offset > 0x8000 {
                     self.report_error("字符串字面量过多，超出内存限制", &loc);
                     self.emit(OpCode::PushConst, addr as i32, &loc);
                 } else {

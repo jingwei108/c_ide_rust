@@ -274,35 +274,7 @@ fn align4(size: usize) -> usize {
 
 /// 从 MemoryState 分配原始内存（类似 host_malloc 但不操作 VM 栈）
 fn malloc_raw(memory: &mut MemoryState, aligned_size: usize, mem_size: u32) -> Option<u32> {
-    if aligned_size == 0 {
-        return Some(0);
-    }
-    let aligned_u32 = aligned_size as u32;
-    let mut addr = 0u32;
-    let mut found_idx = None;
-    for (i, block) in memory.free_list.iter().enumerate() {
-        if (block.size as u32) >= aligned_u32 {
-            addr = block.addr;
-            found_idx = Some(i);
-            break;
-        }
-    }
-    if let Some(idx) = found_idx {
-        let block = &mut memory.free_list[idx];
-        if (block.size as u32) > aligned_u32 {
-            block.addr += aligned_u32;
-            block.size -= aligned_u32 as i32;
-        } else {
-            memory.free_list.remove(idx);
-        }
-    } else {
-        addr = memory.heap_offset;
-        let new_offset = addr as u64 + aligned_size as u64;
-        if new_offset > mem_size as u64 || new_offset > u32::MAX as u64 {
-            return None;
-        }
-        memory.heap_offset = new_offset as u32;
-    }
+    let addr = memory.allocate_raw(aligned_size as u32, mem_size)?;
     // reuse or add region
     let mut reused = false;
     for r in &mut memory.regions {
@@ -337,27 +309,10 @@ fn free_raw(memory: &mut MemoryState, addr: u32) {
                 addr: r.addr,
                 size: aligned_size as i32,
             });
-            merge_free_list(&mut memory.free_list);
+            memory.merge_free_list();
             break;
         }
     }
-}
-
-fn merge_free_list(free_list: &mut Vec<FreeBlock>) {
-    free_list.sort_by_key(|b| b.addr);
-    let mut merged: Vec<FreeBlock> = Vec::new();
-    for block in free_list.drain(..) {
-        if let Some(last) = merged.last_mut() {
-            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                last.size += block.size;
-            } else {
-                merged.push(block);
-            }
-        } else {
-            merged.push(block);
-        }
-    }
-    *free_list = merged;
 }
 
 /// 为 VFS 文件扩容（类似 realloc，原地缩容/扩容）

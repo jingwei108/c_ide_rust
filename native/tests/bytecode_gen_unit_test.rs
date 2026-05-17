@@ -27,7 +27,7 @@ fn test_bytecode_gen_return_const() {
     let _main_idx = output.func_index["main"];
     let main_meta = &output.func_table["main"];
     // Find PushConst 42 and Return in the bytecode around main function
-    let start_ip = main_meta.ip as usize;
+    let start_ip = main_meta.ip;
     let mut found_push = false;
     let mut found_return = false;
     for i in start_ip..output.code.len() {
@@ -54,7 +54,7 @@ fn test_bytecode_gen_local_var() {
 fn test_bytecode_gen_binary_op() {
     let output = generate("int main() { return 1 + 2; }");
     let main_meta = &output.func_table["main"];
-    let start_ip = main_meta.ip as usize;
+    let start_ip = main_meta.ip;
     let mut found_add = false;
     for i in start_ip..output.code.len() {
         if output.code[i].op == OpCode::Add {
@@ -69,7 +69,7 @@ fn test_bytecode_gen_binary_op() {
 fn test_bytecode_gen_if_statement() {
     let output = generate("int main() { if (1) { return 1; } return 0; }");
     let main_meta = &output.func_table["main"];
-    let start_ip = main_meta.ip as usize;
+    let start_ip = main_meta.ip;
     let mut found_jump_if_zero = false;
     let mut found_jump = false;
     for i in start_ip..output.code.len() {
@@ -87,7 +87,7 @@ fn test_bytecode_gen_if_statement() {
 fn test_bytecode_gen_while_loop() {
     let output = generate("int main() { while (0) { } return 0; }");
     let main_meta = &output.func_table["main"];
-    let start_ip = main_meta.ip as usize;
+    let start_ip = main_meta.ip;
     let mut found_jump_if_zero = false;
     for i in start_ip..output.code.len() {
         if output.code[i].op == OpCode::JumpIfZero {
@@ -104,7 +104,7 @@ fn test_bytecode_gen_function_call() {
     assert!(output.func_index.contains_key("add"));
     assert!(output.func_index.contains_key("main"));
     let main_meta = &output.func_table["main"];
-    let start_ip = main_meta.ip as usize;
+    let start_ip = main_meta.ip;
     let mut found_call = false;
     for i in start_ip..output.code.len() {
         if output.code[i].op == OpCode::Call {

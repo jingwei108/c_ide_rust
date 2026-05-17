@@ -156,6 +156,60 @@ pub struct MemoryState {
     pub alloc_counter: i32,
 }
 
+impl MemoryState {
+    /// 从 free_list 或 heap 顶部分配 `aligned_size` 字节。
+    /// 成功返回地址，失败返回 None。
+    pub fn allocate_raw(&mut self, aligned_size: u32, mem_limit: u32) -> Option<u32> {
+        if aligned_size == 0 {
+            return Some(0);
+        }
+        let mut addr = 0u32;
+        let mut found_idx = None;
+        for (i, block) in self.free_list.iter().enumerate() {
+            if (block.size as u32) >= aligned_size {
+                addr = block.addr;
+                found_idx = Some(i);
+                break;
+            }
+        }
+        if let Some(idx) = found_idx {
+            let block = &mut self.free_list[idx];
+            if (block.size as u32) > aligned_size {
+                block.addr += aligned_size;
+                block.size -= aligned_size as i32;
+            } else {
+                self.free_list.remove(idx);
+            }
+        } else {
+            addr = self.heap_offset;
+            let new_offset = addr as u64 + aligned_size as u64;
+            if new_offset > mem_limit as u64 || new_offset > u32::MAX as u64 {
+                return None;
+            }
+            self.heap_offset = new_offset as u32;
+        }
+        Some(addr)
+    }
+
+    /// 合并 free_list 中地址相邻的空闲块。
+    pub fn merge_free_list(&mut self) {
+        self.free_list.sort_by_key(|b| b.addr);
+        let mut merged: Vec<FreeBlock> = Vec::new();
+        for block in self.free_list.drain(..) {
+            if let Some(last) = merged.last_mut() {
+                if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
+                    last.size += block.size;
+                } else {
+                    merged.push(block);
+                }
+            } else {
+                merged.push(block);
+            }
+        }
+        self.free_list = merged;
+    }
+}
+
 #[frb]
 #[derive(Debug, Clone)]
 pub struct CompileResult {

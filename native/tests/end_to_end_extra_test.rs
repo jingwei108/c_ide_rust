@@ -1204,8 +1204,8 @@ int main() {
     assert!(nums.len() >= 2, "Expected at least 2 numbers in output: {}", line);
     let a = nums[0];
     let b = nums[1];
-    assert!(a >= 0 && a <= 32767, "rand out of range: {}", a);
-    assert!(b >= 0 && b <= 32767, "rand out of range: {}", b);
+    assert!((0..=32767).contains(&a), "rand out of range: {}", a);
+    assert!((0..=32767).contains(&b), "rand out of range: {}", b);
     assert_ne!(a, b, "rand should produce different values");
 }
 

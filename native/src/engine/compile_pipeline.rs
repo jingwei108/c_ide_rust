@@ -3,14 +3,58 @@
 //! 为 `flutter_bridge.rs` 和 `capi/mod.rs` 提供统一的诊断推送、VM 初始化逻辑，
 //! 消除两端的代码重复。
 
-use crate::compiler::ast::SourceLoc as AstSourceLoc;
+use crate::compiler::ast::{SourceLoc as AstSourceLoc, StructField, Type, TypeKind};
 use crate::compiler::bytecode_gen::BytecodeGen;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::type_checker::TypeChecker;
 use crate::session::*;
 use crate::vm::vm::CideVM;
+use std::collections::HashMap;
 use std::slice;
+
+// ---------- 辅助函数：根据类型定义计算类型大小 ----------
+
+fn type_size(ty: &Type, struct_defs: &HashMap<String, Vec<StructField>>, union_defs: &HashMap<String, Vec<StructField>>) -> i32 {
+    match ty.kind {
+        TypeKind::Void => 0,
+        TypeKind::Int => 4,
+        TypeKind::Char => 1,
+        TypeKind::Float => 4,
+        TypeKind::Double | TypeKind::LongLong => 8,
+        TypeKind::Pointer => 4,
+        TypeKind::Array => {
+            let elem_count = ty.total_elements();
+            let elem_size = match ty.base_kind {
+                TypeKind::Char => 1,
+                TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
+                TypeKind::Double | TypeKind::LongLong => 8,
+                TypeKind::Struct => {
+                    struct_defs.get(&ty.name).map(|f| {
+                        f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).sum()
+                    }).unwrap_or(4)
+                }
+                TypeKind::Union => {
+                    union_defs.get(&ty.name).map(|f| {
+                        f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).max().unwrap_or(0)
+                    }).unwrap_or(4)
+                }
+                _ => 4,
+            };
+            elem_count * elem_size
+        }
+        TypeKind::Struct => {
+            struct_defs.get(&ty.name).map(|f| {
+                f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).sum()
+            }).unwrap_or(0)
+        }
+        TypeKind::Union => {
+            union_defs.get(&ty.name).map(|f| {
+                f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).max().unwrap_or(0)
+            }).unwrap_or(0)
+        }
+    }
+}
 
 // ========== 编译错误 trait ==========
 
@@ -91,8 +135,8 @@ pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], so
         err_str.push_str(&enriched_msg);
         err_str.push('\n');
     }
-    session.compile.errors = err_str.clone();
-    session.compile.errors_buffer = err_str;
+    session.compile.errors_buffer = err_str.clone();
+    session.compile.errors = err_str;
 }
 
 pub fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], source: &str) {
@@ -164,14 +208,15 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
 /// 将 C 风格字符串安全写入 VM 内存的指定地址。
 ///
 /// 内部验证边界条件：要求 `mem` 指向至少 `mem_size` 字节的有效内存，
-/// 且 `addr + s.len() < mem_size` 时才执行写入。
+/// 且 `addr + s.len() + 1 <= mem_size` 时才执行写入（含 null 终止符）。
 /// 自动追加 null 终止符。
 /// # Safety
 /// `mem` 必须指向至少 `mem_size` 字节的有效连续内存。
 pub unsafe fn write_string_to_vm_memory(mem: *mut u8, mem_size: usize, addr: u32, s: &str) {
     let a = addr as usize;
     let bytes = s.as_bytes();
-    if a + bytes.len() < mem_size {
+    #[allow(clippy::int_plus_one)]
+    if a + bytes.len() + 1 <= mem_size {
         unsafe {
             let dst = slice::from_raw_parts_mut(mem.add(a), bytes.len() + 1);
             dst[..bytes.len()].copy_from_slice(bytes);
@@ -289,20 +334,24 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         });
     }
 
-    for (name, fields) in output.struct_defs {
+    for (name, fields) in &output.struct_defs {
+        let mut offset = 0;
         let converted: Vec<(String, i32)> = fields
-            .into_iter()
-            .enumerate()
-            .map(|(i, f)| (f.name, i as i32 * 4))
+            .iter()
+            .map(|f| {
+                let current = offset;
+                offset += type_size(&f.ty, &output.struct_defs, &output.union_defs);
+                (f.name.clone(), current)
+            })
             .collect();
-        session.compile.struct_fields.insert(name, converted);
+        session.compile.struct_fields.insert(name.clone(), converted);
     }
-    for (name, fields) in output.union_defs {
+    for (name, fields) in &output.union_defs {
         let converted: Vec<(String, i32)> = fields
-            .into_iter()
-            .map(|f| (f.name, 0))
+            .iter()
+            .map(|f| (f.name.clone(), 0))
             .collect();
-        session.compile.struct_fields.insert(name, converted);
+        session.compile.struct_fields.insert(name.clone(), converted);
     }
 
     // 算法模式识别

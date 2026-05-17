@@ -141,8 +141,7 @@ impl Parser {
            self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
            self.check(TokenType::Long) || self.check(TokenType::Short) ||
            self.check(TokenType::Signed) || self.check(TokenType::Const) ||
-           self.check(TokenType::Union) ||
-           self.check(TokenType::LongLiteral) {
+           self.check(TokenType::Union) {
             return true;
         }
         if self.check(TokenType::Identifier) {

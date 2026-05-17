@@ -238,37 +238,13 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
         return;
     }
     let aligned_size = ((size as u32) + 3) & !3;
-    let mut addr = 0u32;
-    // first-fit from free list
-    let mut found_idx = None;
-    for (i, block) in session.memory.free_list.iter().enumerate() {
-        if (block.size as u32) >= aligned_size {
-            addr = block.addr;
-            found_idx = Some(i);
-            break;
-        }
-    }
-    if let Some(idx) = found_idx {
-        let block = &mut session.memory.free_list[idx];
-        if (block.size as u32) > aligned_size {
-            block.addr += aligned_size;
-            block.size -= aligned_size as i32;
-        } else {
-            session.memory.free_list.remove(idx);
-        }
-    } else {
-        addr = session.memory.heap_offset;
-        let new_offset = addr as u64 + aligned_size as u64;
-        if new_offset > vm.get_memory_size() as u64 {
+    let addr = match session.memory.allocate_raw(aligned_size, vm.get_memory_size()) {
+        Some(a) => a,
+        None => {
             vm.push(0);
             return;
         }
-        if new_offset > u32::MAX as u64 {
-            vm.push(0);
-            return;
-        }
-        session.memory.heap_offset = new_offset as u32;
-    }
+    };
     // reuse or add region
     let mut reused = false;
     for r in &mut session.memory.regions {
@@ -293,23 +269,6 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     vm.push(addr as u64);
 }
 
-fn merge_free_list(free_list: &mut Vec<crate::session::FreeBlock>) {
-    free_list.sort_by_key(|b| b.addr);
-    let mut merged: Vec<crate::session::FreeBlock> = Vec::new();
-    for block in free_list.drain(..) {
-        if let Some(last) = merged.last_mut() {
-            if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                last.size += block.size;
-            } else {
-                merged.push(block);
-            }
-        } else {
-            merged.push(block);
-        }
-    }
-    *free_list = merged;
-}
-
 fn host_free(vm: &mut CideVM, session: &mut Session) {
     let addr = vm.pop() as u32;
     for r in &mut session.memory.regions {
@@ -320,7 +279,7 @@ fn host_free(vm: &mut CideVM, session: &mut Session) {
                 addr: r.addr,
                 size: aligned_size as i32,
             });
-            merge_free_list(&mut session.memory.free_list);
+            session.memory.merge_free_list();
             break;
         }
     }
@@ -344,7 +303,7 @@ fn host_printf_1(vm: &mut CideVM, session: &mut Session) {
             if let Some(&next) = chars.peek() {
                 match next {
                     'd' => { out.push_str(&arg.to_string()); chars.next(); used = true; }
-                    'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); chars.next(); used = true; }
+                    'f' => { let f = f64::from_bits(arg); out.push_str(&format!("{:.6}", f)); chars.next(); used = true; }
                     's' => {
                         let s = read_cstring(vm, arg as u32);
                         out.push_str(&s);
@@ -378,7 +337,7 @@ fn host_printf_2(vm: &mut CideVM, session: &mut Session) {
                 let arg = if used == 0 { arg1 } else { arg2 };
                 match next {
                     'd' => { out.push_str(&arg.to_string()); chars.next(); used += 1; }
-                    'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); chars.next(); used += 1; }
+                    'f' => { let f = f64::from_bits(arg); out.push_str(&format!("{:.6}", f)); chars.next(); used += 1; }
                     's' => {
                         let s = read_cstring(vm, arg as u32);
                         out.push_str(&s);
@@ -761,7 +720,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                         addr: r.addr,
                         size: aligned_size as i32,
                     });
-                    merge_free_list(&mut session.memory.free_list);
+                    session.memory.merge_free_list();
                     break;
                 }
             }
@@ -809,7 +768,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                 addr: session.memory.heap_offset,
                 size: shrink_by as i32,
             });
-            merge_free_list(&mut session.memory.free_list);
+            session.memory.merge_free_list();
         }
         vm.push(old_addr as u64);
         return;
@@ -872,7 +831,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                 addr: r.addr,
                 size: aligned_old_size as i32,
             });
-            merge_free_list(&mut session.memory.free_list);
+            session.memory.merge_free_list();
             break;
         }
     }
