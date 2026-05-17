@@ -36,19 +36,19 @@ impl Default for Type {
 
 impl Type {
     pub fn int() -> Self {
-        Self { kind: TypeKind::Int, ..Self::default() }
+        Self { kind: TypeKind::Int, name: "int".to_string(), ..Self::default() }
     }
     pub fn unsigned_int() -> Self {
-        Self { kind: TypeKind::Int, is_unsigned: true, ..Self::default() }
+        Self { kind: TypeKind::Int, name: "int".to_string(), is_unsigned: true, ..Self::default() }
     }
     pub fn char() -> Self {
-        Self { kind: TypeKind::Char, ..Self::default() }
+        Self { kind: TypeKind::Char, name: "char".to_string(), ..Self::default() }
     }
     pub fn float() -> Self {
-        Self { kind: TypeKind::Float, ..Self::default() }
+        Self { kind: TypeKind::Float, name: "float".to_string(), ..Self::default() }
     }
     pub fn void() -> Self {
-        Self { kind: TypeKind::Void, ..Self::default() }
+        Self { kind: TypeKind::Void, name: "void".to_string(), ..Self::default() }
     }
     pub fn pointer(base: TypeKind, name: impl Into<String>) -> Self {
         Self { kind: TypeKind::Pointer, base_kind: base, name: name.into(), ..Self::default() }

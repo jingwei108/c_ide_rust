@@ -3081,11 +3081,11 @@ int main() {
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
     let out = filter_outputs(outputs);
-    // 宽度/精度/长度修饰符当前被忽略（不填充、不截断），但不应导致栈不平衡
+    // 宽度/长度修饰符当前被忽略（不填充），但精度修饰符已支持
     assert_eq!(out[0], "Result: 42");
-    assert_eq!(out[1], "Pi: 3.141590");
+    assert_eq!(out[1], "Pi: 3.14");
     assert_eq!(out[2], "Long: 42");
-    assert_eq!(out[3], "Mixed: 42 3.141590 42");
+    assert_eq!(out[3], "Mixed: 42 3.14 42");
 }
 
 #[test]

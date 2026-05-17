@@ -472,7 +472,13 @@ impl Parser {
             return params;
         }
         loop {
-            let (pty, pname) = self.parse_type_and_name();
+            let base_type = self.parse_base_type();
+            let (pty, pname) = if self.check(TokenType::Comma) || self.check(TokenType::RParen) {
+                // 无名参数（函数原型声明）：int foo(int);
+                (base_type, String::new())
+            } else {
+                self.parse_declarator(&base_type)
+            };
             params.push(Param { ty: pty, name: pname, loc: SourceLoc { line: self.current().line, column: self.current().column } });
             if !self.match_token(TokenType::Comma) { break; }
         }

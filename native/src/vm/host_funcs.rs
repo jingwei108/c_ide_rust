@@ -98,7 +98,7 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
                             break;
                         }
                     }
-                    // 跳过 width
+                    // 提取 width（忽略，不用于格式化）
                     while let Some(&c) = chars.peek() {
                         if c.is_ascii_digit() || c == '*' {
                             chars.next();
@@ -106,15 +106,24 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
                             break;
                         }
                     }
-                    // 跳过 precision
+                    // 提取 precision
+                    let mut precision: Option<usize> = None;
                     if let Some(&'.') = chars.peek() {
                         chars.next();
+                        let mut prec_str = String::new();
                         while let Some(&c) = chars.peek() {
-                            if c.is_ascii_digit() || c == '*' {
+                            if c.is_ascii_digit() {
+                                prec_str.push(c);
                                 chars.next();
+                            } else if c == '*' {
+                                chars.next();
+                                break;
                             } else {
                                 break;
                             }
+                        }
+                        if !prec_str.is_empty() {
+                            precision = prec_str.parse().ok();
                         }
                     }
                     // 跳过长度修饰符
@@ -133,7 +142,11 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[i32]) -> String {
                         let arg = args[used];
                         match spec {
                             'd' | 'i' => out.push_str(&arg.to_string()),
-                            'f' => { let f = f32::from_bits(arg as u32); out.push_str(&format!("{:.6}", f)); }
+                            'f' => {
+                                let f = f32::from_bits(arg as u32);
+                                let prec = precision.unwrap_or(6);
+                                out.push_str(&format!("{:.*}", prec, f));
+                            }
                             's' => {
                                 let s = read_cstring(vm, arg as u32);
                                 out.push_str(&s);
