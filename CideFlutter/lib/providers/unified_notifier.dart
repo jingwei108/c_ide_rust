@@ -28,6 +28,9 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
         return;
       }
 
+      // 获取算法检测信息
+      final algoMatches = await rust.getAlgorithmMatches();
+
       state = state.copyWith(
         phase: ExecutionPhase.collecting,
         isPlaying: true,
@@ -35,6 +38,7 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
         maxCollectedStep: 0,
         totalSteps: 0,
         frameCache: const [],
+        algorithmMatches: algoMatches,
         clearError: true,
       );
 
@@ -268,6 +272,7 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
         currentStep: 0,
         maxCollectedStep: 0,
         totalSteps: 0,
+        algorithmMatches: const [],
       );
     }
   }

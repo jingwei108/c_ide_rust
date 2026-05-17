@@ -1,3 +1,4 @@
+import 'package:cide/src/rust/session.dart' as rust_session;
 import 'package:cide/src/rust/unified/types.dart' as rust;
 
 enum ExecutionPhase {
@@ -24,6 +25,7 @@ class UnifiedState {
   final rust.HeatmapData? heatmap;
   final int currentLine;
   final String? trapMessage;
+  final List<rust_session.AlgorithmMatch> algorithmMatches;
 
   const UnifiedState({
     this.phase = ExecutionPhase.idle,
@@ -38,6 +40,7 @@ class UnifiedState {
     this.heatmap,
     this.currentLine = 0,
     this.trapMessage,
+    this.algorithmMatches = const [],
   });
 
   UnifiedState copyWith({
@@ -53,6 +56,7 @@ class UnifiedState {
     rust.HeatmapData? heatmap,
     int? currentLine,
     String? trapMessage,
+    List<rust_session.AlgorithmMatch>? algorithmMatches,
     bool clearError = false,
     bool clearTrap = false,
   }) {
@@ -69,6 +73,7 @@ class UnifiedState {
       heatmap: heatmap ?? this.heatmap,
       currentLine: currentLine ?? this.currentLine,
       trapMessage: clearTrap ? null : (trapMessage ?? this.trapMessage),
+      algorithmMatches: algorithmMatches ?? this.algorithmMatches,
     );
   }
 

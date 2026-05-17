@@ -38,6 +38,44 @@ class ExecutionControlPanel extends ConsumerWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 算法检测信息条
+        if (state.algorithmMatches.isNotEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+            color: Colors.indigo.shade800,
+            child: Row(
+              children: [
+                const Icon(Icons.psychology, color: Colors.white, size: 16),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        state.algorithmMatches.map((m) => m.displayName).join(' · '),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      if (state.algorithmMatches.first.suggestion.isNotEmpty)
+                        Text(
+                          state.algorithmMatches.first.suggestion,
+                          style: TextStyle(
+                            color: Colors.indigo.shade100,
+                            fontSize: 10,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
         // 运行时异常提示条
         if (state.trapMessage != null)
           Container(
