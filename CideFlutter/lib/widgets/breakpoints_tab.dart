@@ -6,8 +6,9 @@ import '../providers/ide_provider.dart';
 class BreakpointsTab extends ConsumerWidget {
   final IdeState state;
   final bool isDark;
+  final void Function(int line)? onScrollToLine;
 
-  const BreakpointsTab({super.key, required this.state, required this.isDark});
+  const BreakpointsTab({super.key, required this.state, required this.isDark, this.onScrollToLine});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,18 +41,21 @@ class BreakpointsTab extends ConsumerWidget {
             ? sourceLines[line - 1].trim()
             : '';
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: isDark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(
-              color: isDark ? const Color(0xff3e4451) : const Color(0xffe5e5e5),
+        return InkWell(
+          onTap: () => onScrollToLine?.call(line),
+          borderRadius: BorderRadius.circular(6),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isDark ? const Color(0xff3e4451) : const Color(0xffe5e5e5),
+              ),
             ),
-          ),
-          child: Row(
-            children: [
+            child: Row(
+              children: [
               const Icon(Icons.stop_circle, color: Colors.redAccent, size: 16),
               const SizedBox(width: 12),
               Expanded(
@@ -88,7 +92,8 @@ class BreakpointsTab extends ConsumerWidget {
               ),
             ],
           ),
-        );
+        ),
+      );
       },
     );
   }

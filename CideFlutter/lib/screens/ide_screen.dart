@@ -660,7 +660,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   Widget _buildBreakpointsTab(IdeState state, bool isDark) {
-    return BreakpointsTab(state: state, isDark: isDark);
+    return BreakpointsTab(state: state, isDark: isDark, onScrollToLine: _scrollToLine);
   }
 }
 
