@@ -107,6 +107,11 @@ docs/                   设计文档、事故报告
   - `UnifiedEngine` 批量自动执行 + Seek + Trap 回退（`unified/engine.rs`）
   - `StepCollector` 每步数据收集：变量快照、调用栈、可视化事件、语义标签、热力图（`unified/collector.rs`）
   - Flutter 前端：`UnifiedNotifier` 状态机 + `ExecutionControlPanel` 控制面板 + `VarHistoryTab` 变量历史趋势图
+- **数组排序动画增强** — `ArrayVisualizer` 高亮脉冲（缩放+发光）、交换金色光晕、值变化弹性弹跳；`ArrayVisTab` 解析 Swap 语义标签驱动交换动画
+- **链表可视化** — `LinkedListVisualizer` CustomPainter 绘制节点+箭头，支持 NodeCreate/Access/Delete 闪色；渐进式入场动画；`LinkedListVisTab` 集成统一模式，从 `StepPayload.localVars` 读取头指针驱动时间旅行
+- **二叉树可视化** — `TreeVisualizer` 满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制；`TreeVisTab` 集成统一模式
+- **变量级高亮** — `re_editor` `spanBuilder` 集成：当前执行行的被读变量名显示淡蓝底色、被写变量名显示淡橙底色，保留语法高亮；`VariablesTab` 值变化背景闪烁动画
+- **代码模板扩展** — 新增选择排序、插入排序、归并排序、线性查找、链表头插法/遍历、二叉树节点/先序遍历、栈（数组实现）等 8 个模板，总计 16 个
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护

@@ -1227,6 +1227,8 @@ Future<void> restoreSession() async {
 - [x] `AlgoCanvas` 柱状图 + 交换动画（`widgets/array_vis_tab.dart`）
 - [x] 进度条语义标签显示（`ExecutionControlPanel._buildSliderLabel`）
 - [x] 算法检测信息条（`ExecutionControlPanel` 顶部显示检测到的算法名称）
+- [x] **ArrayVisualizer 动画增强**：高亮脉冲（缩放+发光）、交换金色光晕、值变化弹性弹跳（`widgets/array_visualizer.dart`）
+- [x] **Swap 事件解析**：`ArrayVisTab` 从语义标签提取交换索引，驱动金色交换动画
 
 ### Phase 5：变量变化历史 + 零延迟面板 ✅
 - [x] `VarHistoryTab`（`widgets/var_history_tab.dart`：从 `frame_cache` 提取变量历史，绘制迷你趋势图）
@@ -1238,14 +1240,18 @@ Future<void> restoreSession() async {
 - [x] 异常诊断匹配 + 知识卡片（`ExecutionControlPanel` Trap 提示条 + "查看帮助" BottomSheet）
 - [x] 自动回退 UI 面板（红色异常条，显示 `trap_message`，提供重置按钮）
 
-### Phase 7：变量级高亮 🔄
-- [ ] `accessed_vars` 已收集（`StepPayload.accessed_vars`：Read/Write 标记）
-- [ ] `re_editor` 集成（下划线/边框/底色）— **待实现**
+### Phase 7：变量级高亮 ✅
+- [x] `accessed_vars` 已收集（`StepPayload.accessed_vars`：Read/Write 标记）
+- [x] `VariablesTab` 值变化背景闪烁动画（琥珀色渐变，600ms）
+- [x] `re_editor` 集成：`spanBuilder` 精确变量名底色高亮（Read=淡蓝，Write=淡橙，保留语法高亮）
+- [x] 行号 gutter R/W 标记保留（`EditorPanel._buildGutter`）
 
-### Phase 8：链表/树可视化增强 ⏳
-- [ ] `LinkedListVisualizer`
-- [ ] `TreeVisualizer`
-- [ ] 复用统一模式的所有基础设施
+### Phase 8：链表/树可视化增强 ✅
+- [x] `LinkedListVisualizer` 渐进式入场动画（节点依次滑入+淡入，箭头渐进绘制）
+- [x] `LinkedListVisTab` 集成到统一模式：从 `StepPayload.localVars` 读取链表头指针，`frameCache` 驱动时间旅行；复用 `LinkedListVisualizer` 渲染
+- [x] `TreeVisualizer` 二叉树可视化 + `TreeVisTab` 统一模式集成（满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制）
+- [ ] `LinkedListSnapshot` / `TreeSnapshot` 序列化到 `StepPayload`（后端预遍历，消除拖动时 VM 未恢复的不一致风险）— **低优先级**
+- [x] 复用统一模式的所有基础设施（`frameCache` + `localVars` + `visEvents`）
 
 **实际用时**：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）
 
