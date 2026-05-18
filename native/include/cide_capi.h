@@ -40,6 +40,7 @@ typedef enum {
     CIDE_E1004_UnsupportedOp      = 1004,
     CIDE_E1005_InvalidDefine      = 1005,
     CIDE_E1006_UnsupportedFeature = 1006,
+    CIDE_E1007_ComplexDeclarator = 1007,
     CIDE_E1010_UnterminatedComment = 1010,
 
     CIDE_E2001_ExpectedType       = 2001,

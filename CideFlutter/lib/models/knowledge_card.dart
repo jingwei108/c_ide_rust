@@ -122,6 +122,15 @@ class KnowledgeCard {
       wrongCode: 'if (a = 10) { ... }',
       relatedErrorCodes: [3050],
     ),
+    KnowledgeCard(
+      id: 'complex_declarator',
+      emoji: '🌀',
+      title: '复杂声明的建议',
+      explanation: '当声明中出现多层括号交叉（如 (*(*fp)[2])(int)），代码会变得难以阅读。C 语言提供了 typedef 来简化这种声明。这是专业 C 程序员处理复杂声明的标准做法。',
+      correctCode: 'typedef int (*FuncPtr)(int);\nFuncPtr (*fp)[2];',
+      wrongCode: 'int (*(*fp)[2])(int);',
+      relatedErrorCodes: [1007],
+    ),
     // ===== 运行时异常知识卡片 =====
     KnowledgeCard(
       id: 'array_out_of_bounds',

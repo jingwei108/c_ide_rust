@@ -150,6 +150,12 @@ docs/                   设计文档、事故报告
   - `realloc(ptr, new_size)`：完整支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
   - `qsort(base, nmemb, size, compar)`：支持用户自定义比较函数，通过 `vm.call_user_function` 在 host 上下文中调用用户函数
 - **函数指针基础支持**：TypeChecker 将函数名识别为 `int`（函数索引）；BytecodeGen 生成 `PushConst func_idx`；支持将函数名作为参数传递（如 `qsort(..., cmp)`）
+- **函数指针高级语法（2026-05-18）**：
+  - 多级函数指针：`int (**pp)(int) = &fp;`（指向函数指针的指针）
+  - 返回指针的函数指针：`int *(*fp)(int) = greet;`
+  - `sizeof` 函数指针类型：`sizeof(int (*)(int))`、`sizeof(int (**)(int))`
+  - `typedef` 函数指针：`typedef int (*Op)(int, int); Op ops[2] = {mul, divi};`
+  - `static` 局部变量：`static int arr[3] = {1, 2, 3};`（函数体内静态存储期）
 - **算法可视化事件 FRB 集成**：`VisEvent` 扩展 `context` 字段保留比较上下文（如 `arr[i]:arr[i+1]`）；Flutter 算法面板支持展开查看关键比较事件列表
 - **内存映射 Canvas 组件**：1MB 内存以 256×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet
 - **VS-style Enter 格式化**：`re_editor` 拦截 Enter 键，自动补充分号、大括号配对、智能缩进

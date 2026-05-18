@@ -97,14 +97,25 @@ class DiagnosticsTab extends StatelessWidget {
                     ],
                   ),
                 ],
-                // 应用修复按钮
-                if (diag.fixKind == 1 || diag.fixKind == 2 || diag.fixSuggestion.isNotEmpty)
+                // 应用修复 / 查看建议按钮
+                if (diag.fixKind == 1 || diag.fixKind == 2 || diag.fixKind == 4 || diag.fixSuggestion.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Align(
                       alignment: Alignment.centerLeft,
                       child: TextButton.icon(
                         onPressed: () async {
+                          if (diag.fixKind == 4) {
+                            // ManualHint: 只显示建议，不尝试自动替换
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text('💡 ${diag.fixSuggestion}'),
+                                duration: const Duration(seconds: 4),
+                              ),
+                            );
+                            return;
+                          }
                           final msg = await notifier.applyFix(diag);
                           if (!context.mounted) return;
                           if (msg != null) {
@@ -124,8 +135,14 @@ class DiagnosticsTab extends StatelessWidget {
                             );
                           }
                         },
-                        icon: const Icon(Icons.auto_fix_high, size: 14),
-                        label: const Text('应用修复', style: TextStyle(fontSize: 12)),
+                        icon: Icon(
+                          diag.fixKind == 4 ? Icons.lightbulb_outline : Icons.auto_fix_high,
+                          size: 14,
+                        ),
+                        label: Text(
+                          diag.fixKind == 4 ? '查看建议' : '应用修复',
+                          style: const TextStyle(fontSize: 12),
+                        ),
                         style: TextButton.styleFrom(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                           minimumSize: Size.zero,

@@ -3605,3 +3605,110 @@ int main() {
     assert_eq!(out[1], "2");
 }
 
+
+
+// ============================================================================
+// 函数指针高级测试（递归类型系统）
+// ============================================================================
+
+#[test]
+fn test_e2e_function_pointer_array() {
+    let src = r#"
+#include <stdio.h>
+int add(int a, int b) { return a + b; }
+int sub(int a, int b) { return a - b; }
+int main() {
+    int (*fp[2])(int, int) = {add, sub};
+    printf("%d %d\n", fp[0](3, 4), fp[1](7, 2));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "7 5");
+}
+
+#[test]
+fn test_e2e_pointer_to_function_pointer() {
+    let src = r#"
+#include <stdio.h>
+int greet(int x) { return x * 2; }
+int main() {
+    int (*fp)(int) = greet;
+    int (**pp)(int) = &fp;
+    printf("%d\n", (*pp)(5));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "10");
+}
+
+#[test]
+fn test_e2e_function_pointer_returning_pointer() {
+    let src = r#"
+#include <stdio.h>
+int* make_arr() {
+    static int arr[3] = {1, 2, 3};
+    return arr;
+}
+int main() {
+    int* (*fp)() = make_arr;
+    int* p = fp();
+    printf("%d %d %d\n", p[0], p[1], p[2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "1 2 3");
+}
+
+#[test]
+fn test_e2e_sizeof_function_pointer_types() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    printf("%d %d %d\n", sizeof(int (*)(int)), sizeof(int (**)(int)), sizeof(int *(*)(int)));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    // 所有函数指针/指向函数指针的指针都是 4 字节
+    assert_eq!(out[0], "4 4 4");
+}
+
+#[test]
+fn test_e2e_typedef_function_pointer_array() {
+    let src = r#"
+#include <stdio.h>
+int mul(int a, int b) { return a * b; }
+int divi(int a, int b) { return a / b; }
+typedef int (*Op)(int, int);
+int main() {
+    Op ops[2] = {mul, divi};
+    printf("%d %d\n", ops[0](3, 4), ops[1](8, 2));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "12 4");
+}

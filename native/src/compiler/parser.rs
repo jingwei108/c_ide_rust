@@ -188,6 +188,10 @@ impl Parser {
         false
     }
 
+    fn is_static_token(&self) -> bool {
+        self.check(TokenType::Identifier) && self.current().text == "static"
+    }
+
     // =========================================================================
     // Program
     // =========================================================================
@@ -536,7 +540,7 @@ impl Parser {
                     message: "声明符括号嵌套过深".to_string(),
                     line: self.current().line,
                     column: self.current().column,
-                    code: 1007,
+                    code: ErrorCode::E1007_ComplexDeclarator as i32,
                 });
                 while !self.check(TokenType::RParen) && !self.is_at_end() {
                     self.advance();
@@ -642,19 +646,6 @@ impl Parser {
                             is_const: false,
                         }
                     }
-                    DeclaratorNode::Function(func_inner, params) => {
-                        let return_ty = Self::interpret_declarator_node(func_inner, base_type);
-                        let ret = if matches!(func_inner.as_ref(), DeclaratorNode::Pointer(_)) {
-                            return_ty
-                        } else {
-                            Type::pointer_to(return_ty)
-                        };
-                        Type::Function {
-                            return_type: Box::new(ret),
-                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
-                            is_const: false,
-                        }
-                    }
                     _ => Type::pointer_to(inner_ty),
                 }
             }
@@ -691,27 +682,50 @@ impl Parser {
                 }
             }
             DeclaratorNode::Function(inner, params) => {
-                let inner_ty = Self::interpret_declarator_node(inner, base_type);
                 match inner.as_ref() {
                     DeclaratorNode::Pointer(ptr_inner) => {
-                        let return_ty = Self::interpret_declarator_node(ptr_inner, base_type);
+                        match ptr_inner.as_ref() {
+                            DeclaratorNode::Array(array_inner, size) => {
+                                // (*fp[N])(params) → function pointer array
+                                let elem_ty = Self::interpret_declarator_node(array_inner, base_type);
+                                Type::Array {
+                                    element: Box::new(Type::Pointer {
+                                        pointee: Box::new(Type::Function {
+                                            return_type: Box::new(elem_ty),
+                                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                                            is_const: false,
+                                        }),
+                                        is_const: false,
+                                    }),
+                                    array_size: *size,
+                                    dims: vec![*size],
+                                    is_const: false,
+                                }
+                            }
+                            _ => {
+                                let func_ptr_type = Type::Pointer {
+                                    pointee: Box::new(Type::Function {
+                                        return_type: Box::new(base_type.clone()),
+                                        param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                                        is_const: false,
+                                    }),
+                                    is_const: false,
+                                };
+                                Self::interpret_declarator_node(ptr_inner, &func_ptr_type)
+                            }
+                        }
+                    }
+                    _ => {
+                        let inner_ty = Self::interpret_declarator_node(inner, base_type);
                         Type::Pointer {
                             pointee: Box::new(Type::Function {
-                                return_type: Box::new(return_ty),
+                                return_type: Box::new(inner_ty),
                                 param_types: params.iter().map(|p| p.ty.clone()).collect(),
                                 is_const: false,
                             }),
                             is_const: false,
                         }
                     }
-                    _ => Type::Pointer {
-                        pointee: Box::new(Type::Function {
-                            return_type: Box::new(inner_ty),
-                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
-                            is_const: false,
-                        }),
-                        is_const: false,
-                    },
                 }
             }
         }
@@ -759,7 +773,12 @@ impl Parser {
             TokenType::Continue => self.parse_continue_stmt(),
             TokenType::Switch => self.parse_switch_stmt(),
             TokenType::Case | TokenType::Default => self.parse_case_stmt(),
-            _ if self.is_type_token() => self.parse_var_decl_stmt(),
+            _ if self.is_type_token() || self.is_static_token() => {
+                if self.is_static_token() {
+                    self.advance(); // consume 'static'
+                }
+                self.parse_var_decl_stmt()
+            }
             _ => {
                 let checkpoint = self.pos;
                 let stmt = self.parse_expr_stmt();
@@ -1193,22 +1212,80 @@ impl Parser {
         self.parse_postfix()
     }
 
+    fn parse_abstract_declarator(&mut self) -> Option<DeclaratorNode> {
+        let mut ptr_prefixes = 0;
+        while self.match_token(TokenType::Star) {
+            ptr_prefixes += 1;
+        }
+
+        let mut node = if self.match_token(TokenType::LParen) {
+            if let Some(inner_node) = self.parse_abstract_declarator() {
+                self.consume(TokenType::RParen, "预期 ')'");
+                inner_node
+            } else {
+                self.consume(TokenType::RParen, "预期 ')'");
+                DeclaratorNode::Base
+            }
+        } else {
+            DeclaratorNode::Base
+        };
+
+        let mut suffixes = Vec::new();
+        loop {
+            if self.match_token(TokenType::LBracket) {
+                let size = if self.check(TokenType::Number) {
+                    let size_tok = self.advance().clone();
+                    size_tok.text.parse::<i32>().unwrap_or(0)
+                } else if self.check(TokenType::RBracket) {
+                    -1
+                } else {
+                    self.errors.push(ParseError {
+                        message: "预期数组大小或 ']'".to_string(),
+                        line: self.current().line,
+                        column: self.current().column,
+                        code: ErrorCode::E2002_ExpectedArraySize as i32,
+                    });
+                    0
+                };
+                self.consume(TokenType::RBracket, "预期 ']'");
+                suffixes.push(DeclaratorSuffix::Array(size));
+            } else if self.match_token(TokenType::LParen) {
+                let params = self.parse_param_list();
+                self.consume(TokenType::RParen, "预期 ')'");
+                suffixes.push(DeclaratorSuffix::Function(params));
+            } else {
+                break;
+            }
+        }
+
+        for suffix in suffixes {
+            match suffix {
+                DeclaratorSuffix::Array(size) => node = DeclaratorNode::Array(Box::new(node), size),
+                DeclaratorSuffix::Function(params) => node = DeclaratorNode::Function(Box::new(node), params),
+            }
+        }
+
+        for _ in 0..ptr_prefixes {
+            node = DeclaratorNode::Pointer(Box::new(node));
+        }
+
+        if ptr_prefixes == 0 && matches!(node, DeclaratorNode::Base) {
+            None
+        } else {
+            Some(node)
+        }
+    }
+
     fn parse_sizeof(&mut self) -> Expr {
         let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
         if self.match_token(TokenType::LParen) {
             let checkpoint = self.pos;
             let mut is_type = false;
             let mut t = Type::default();
-            if self.check(TokenType::Int) || self.check(TokenType::Void) ||
-               self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
-               self.check(TokenType::Union) || self.check(TokenType::Enum) ||
-               self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
-               self.check(TokenType::Short) || self.check(TokenType::Signed) ||
-               self.check(TokenType::Const) ||
-               (self.check(TokenType::Identifier) && self.typedef_names.contains_key(&self.current().text)) {
+            if self.is_type_token() {
                 t = self.parse_base_type();
-                if self.match_token(TokenType::Star) {
-                    t = Type::pointer_to(t.clone());
+                if let Some(node) = self.parse_abstract_declarator() {
+                    t = Self::interpret_declarator_node(&node, &t);
                 }
                 if self.check(TokenType::RParen) {
                     is_type = true;
@@ -1435,10 +1512,10 @@ impl Parser {
 
     fn parse_typedef(&mut self) {
         self.advance();
-        let ty = self.parse_type_only();
-        let name_tok = self.consume(TokenType::Identifier, "typedef 后预期标识符名称").clone();
+        let base_type = self.parse_base_type();
+        let (ty, name) = self.parse_declarator(&base_type);
         self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
-        self.typedef_names.insert(name_tok.text, ty);
+        self.typedef_names.insert(name, ty);
     }
 
     fn parse_enum_decl(&mut self, program: &mut ProgramNode) {

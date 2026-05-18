@@ -56,6 +56,13 @@ static ERROR_INFO_MAP: LazyLock<HashMap<i32, ErrorInfo>> = LazyLock::new(|| {
             explanation: "你使用了当前 C IDE 子集尚未支持的语法。请查阅支持列表，使用替代写法。",
             common_causes: &["使用了当前编译器未实现的 C 特性"],
         }),
+        (1007, ErrorInfo {
+            code: 1007,
+            emoji: "🌀",
+            title: "声明过于复杂",
+            explanation: "此声明符的嵌套层数超出了当前编译器的直接支持范围。当声明中出现多层括号交叉（如 (*(*fp)[2])(int)），代码会变得难以阅读。建议拆分为 typedef 链。",
+            common_causes: &["多层括号与指针交叉嵌套", "函数指针数组直接声明"],
+        }),
         (1010, ErrorInfo {
             code: 1010,
             emoji: "💬",
@@ -520,6 +527,15 @@ pub fn generate_fix(
 
     match code {
         // ---- Lexer fixes ----
+        1007 => {
+            // Complex declarator: manual hint, no automatic replacement
+            (
+                "建议将复杂声明拆分为 typedef 链：\n1. 先定义函数指针类型\n2. 用类型别名声明变量".to_string(),
+                4,
+                0, 0, 0, 0,
+                String::new(),
+            )
+        }
         1002 => {
             // Unterminated string: insert closing quote at end of line
             (

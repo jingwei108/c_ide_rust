@@ -602,18 +602,29 @@ impl BytecodeGen {
                                             self.emit(OpCode::PushConst, addr_offset, loc);
                                             self.emit(OpCode::Add, 0, loc);
                                         }
-                                        if elem_size == 8 {
-                                            if let Some(elem) = elements.get_mut(i) {
+                                        if let Some(elem) = elements.get_mut(i) {
+                                            if elem_size == 8 {
                                                 self.gen_expr(elem);
+                                                self.emit(OpCode::StoreMemD, 0, loc);
+                                            } else if matches!(elem, Expr::Identifier { .. }) {
+                                                // 函数名等复杂表达式需要 gen_expr
+                                                self.gen_expr(elem);
+                                                self.emit(OpCode::StoreMem, 0, loc);
                                             } else {
+                                                let val = values.get(i).copied().unwrap_or(0);
+                                                self.emit(OpCode::PushConst, val, loc);
+                                                self.emit(OpCode::StoreMem, 0, loc);
+                                            }
+                                        } else {
+                                            if elem_size == 8 {
                                                 self.emit(OpCode::PushConst, 0, loc);
                                                 self.emit(OpCode::CastI2D, 0, loc);
+                                                self.emit(OpCode::StoreMemD, 0, loc);
+                                            } else {
+                                                let val = values.get(i).copied().unwrap_or(0);
+                                                self.emit(OpCode::PushConst, val, loc);
+                                                self.emit(OpCode::StoreMem, 0, loc);
                                             }
-                                            self.emit(OpCode::StoreMemD, 0, loc);
-                                        } else {
-                                            let val = values.get(i).copied().unwrap_or(0);
-                                            self.emit(OpCode::PushConst, val, loc);
-                                            self.emit(OpCode::StoreMem, 0, loc);
                                         }
                                     }
                                 }

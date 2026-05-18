@@ -239,3 +239,225 @@ test result: ok.   3 passed; 0 failed; 0 ignored   (test_snapshot)
 1. **Parser 重构必须跑全量回归**：`0863bcf` 修改了声明符解析，但未验证多维数组和字符串数组初始化路径。任何 Parser 改动都应触发全量 E2E 回归。
 2. **`Call` → `CallPtr` 统一时要同步字节码生成**：Parser 侧的统一（全部走 `CallPtr`）必须同步检查 `bytecode_gen.rs` 中所有涉及函数调用的分支，不能遗漏 `CastF2D`、`SplitD` 等参数处理差异。
 3. **64 位参数的 host/user 区分**：`SplitD`/`SplitQ` 的存在是为了适配 `Call` 指令的 4 字节参数字槽，host 函数不需要。后续新增 host 函数时需注意此边界。
+
+---
+
+## 附录：4 个高级函数指针 E2E 测试修复（后续追加）
+
+**日期**: 2026-05-18（同日追加）  
+**关联提交**: `90f546a`（Type 递归化 + DeclaratorGuard + 27 个回归测试修复）之后  
+**修复后状态**: `cargo test --test end_to_end_extra_test` 147 passed; 0 failed
+
+### 测试列表
+
+| 测试名 | 失败现象 |
+|--------|---------|
+| `test_e2e_pointer_to_function_pointer` | 运行时 `CallPtr: 未知函数索引 0`；TypeChecker 将 `int (**fp)(int)` 推导为"返回 `int*` 的函数指针" |
+| `test_e2e_function_pointer_returning_pointer` | Parser 不支持 `static` 局部变量；`static int arr[3]` 在函数体内被当作表达式语句解析，报"预期 ';'" |
+| `test_e2e_sizeof_function_pointer_types` | `sizeof(int (*)(int))` 中 `int (*)(int)` 被当作表达式解析，产生大量语法错误（"预期表达式"、"预期 ')'"） |
+| `test_e2e_typedef_function_pointer_array` | `typedef int (*Op)(int, int);` 报错"typedef 后预期标识符名称"；`parse_typedef` 不支持带声明符的复杂类型 |
+
+### 根因分析
+
+1. **`interpret_declarator_node` 的 `Function` 分支对多级指针处理错误**
+   - 原始代码：`Function(Pointer(ptr_inner), params)` 中把 `ptr_inner` 的推导结果当作**函数返回类型**。
+   - 例：`int (**pp)(int)` → node = `Function(Pointer(Pointer(Base)), [int])` → `ptr_inner = Pointer(Base)` → `return_ty = interpret(Pointer(Base), Int) = Pointer { pointee: Int }` → 被当作返回类型，得到 `Pointer { pointee: Function { return_type: Pointer { pointee: Int }, ... } }`（即 `int *(*)(int)`）。
+   - 正确语义：`ptr_inner` 应被递归解释为"以函数指针为基础类型的声明符"，得到 `Pointer { pointee: Pointer { pointee: Function { return_type: Int, ... } } }`。
+
+2. **Parser 不支持 `static` 存储类说明符**
+   - `static` 未被加入 `TokenType` 枚举，Lexer 将其作为普通 `Identifier` 输出。
+   - `parse_statement` 的 `is_type_token()` 分支无法匹配 `static`，导致进入 `parse_expr_stmt`，`static` 被当作变量名处理。
+
+3. **`parse_sizeof` 只支持基础类型 + 单级指针**
+   - 遇到 `sizeof(int (*)(int))` 时，`parse_base_type()` 消费 `int` 后，`match_token(Star)` 失败（当前是 `(`），且 `check(RParen)` 失败，于是回退到 `sizeof(expr)` 路径。
+   - `int (*)(int)` 作为表达式完全不合法，导致级联错误。
+
+4. **`parse_typedef` 使用 `parse_type_only()`（仅 base type + 可选单 `*`）**
+   - 遇到 `typedef int (*Op)(int, int);` 时，`parse_type_only()` 只消费 `int`，遇到 `(` 停止。
+   - 随后 `consume(Identifier)` 发现当前 token 是 `(`，报错。
+
+### 修复方案
+
+#### 1. `interpret_declarator_node` 的 `Function` 分支递归化
+
+```rust
+DeclaratorNode::Function(inner, params) => {
+    match inner.as_ref() {
+        DeclaratorNode::Pointer(ptr_inner) => {
+            match ptr_inner.as_ref() {
+                DeclaratorNode::Array(array_inner, size) => {
+                    // (*fp[N])(params) → function pointer array
+                    let elem_ty = Self::interpret_declarator_node(array_inner, base_type);
+                    Type::Array { element: ..., array_size: *size, ... }
+                }
+                _ => {
+                    let func_ptr_type = Type::Pointer {
+                        pointee: Box::new(Type::Function {
+                            return_type: Box::new(base_type.clone()),
+                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    };
+                    Self::interpret_declarator_node(ptr_inner, &func_ptr_type)
+                }
+            }
+        }
+        _ => {
+            let inner_ty = Self::interpret_declarator_node(inner, base_type);
+            Type::Pointer {
+                pointee: Box::new(Type::Function {
+                    return_type: Box::new(inner_ty),
+                    param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                    is_const: false,
+                }),
+                is_const: false,
+            }
+        }
+    }
+}
+```
+
+核心改动：`Pointer` case 的 `_` 子分支不再把 `ptr_inner` 当作返回类型，而是构造一个 `func_ptr_type`（函数指针基础类型），然后递归调用 `interpret_declarator_node(ptr_inner, &func_ptr_type)`。这样：
+- `ptr_inner = Base` → 返回 `func_ptr_type`（普通函数指针）
+- `ptr_inner = Pointer(Base)` → 返回 `Pointer { pointee: func_ptr_type }`（指向函数指针的指针）
+- `ptr_inner = Array(Base, N)` → 走 `Pointer` 分支的 `Array` case → `Array { element: Pointer { pointee: func_ptr_type }, size: N }`（函数指针数组）
+
+#### 2. `parse_statement` 支持 `static` 局部声明
+
+```rust
+fn is_static_token(&self) -> bool {
+    self.check(TokenType::Identifier) && self.current().text == "static"
+}
+
+// parse_statement:
+_ if self.is_type_token() || self.is_static_token() => {
+    if self.is_static_token() {
+        self.advance(); // skip 'static'
+    }
+    self.parse_var_decl_stmt()
+}
+```
+
+`static` 不改变类型语义，仅作为存储类说明符被跳过。
+
+#### 3. 新增 `parse_abstract_declarator()`
+
+抽象声明符 = 声明符去掉标识符名。用于 `sizeof(type)` 和强制类型转换 `(type)expr`。
+
+```rust
+fn parse_abstract_declarator(&mut self) -> Option<DeclaratorNode> {
+    let mut ptr_prefixes = 0;
+    while self.match_token(TokenType::Star) { ptr_prefixes += 1; }
+
+    let mut node = if self.match_token(TokenType::LParen) {
+        if let Some(inner) = self.parse_abstract_declarator() {
+            self.consume(TokenType::RParen, "预期 ')'");
+            inner
+        } else {
+            self.consume(TokenType::RParen, "预期 ')'");
+            DeclaratorNode::Base
+        }
+    } else { DeclaratorNode::Base };
+
+    // 收集后缀 [] / ()
+    let mut suffixes = Vec::new();
+    loop {
+        if self.match_token(TokenType::LBracket) {
+            let size = ...;
+            self.consume(TokenType::RBracket, "预期 ']'");
+            suffixes.push(DeclaratorSuffix::Array(size));
+        } else if self.match_token(TokenType::LParen) {
+            let params = self.parse_param_list();
+            self.consume(TokenType::RParen, "预期 ')'");
+            suffixes.push(DeclaratorSuffix::Function(params));
+        } else { break; }
+    }
+
+    // 应用后缀 → 前缀
+    for suffix in suffixes { ... }
+    for _ in 0..ptr_prefixes { node = DeclaratorNode::Pointer(Box::new(node)); }
+
+    if ptr_prefixes == 0 && matches!(node, DeclaratorNode::Base) { None } else { Some(node) }
+}
+```
+
+`parse_sizeof` 修改：
+```rust
+if self.is_type_token() {
+    t = self.parse_base_type();
+    if let Some(node) = self.parse_abstract_declarator() {
+        t = Self::interpret_declarator_node(&node, &t);
+    }
+    if self.check(TokenType::RParen) { is_type = true; }
+}
+```
+
+#### 4. `parse_typedef` 改用完整声明符解析
+
+```rust
+fn parse_typedef(&mut self) {
+    self.advance(); // consume 'typedef'
+    let base_type = self.parse_base_type();
+    let (ty, name) = self.parse_declarator(&base_type);
+    self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
+    self.typedef_names.insert(name, ty);
+}
+```
+
+### 回归修复
+
+在修复 `bytecode_gen.rs` 以支持函数指针数组初始化（`int (*fp[2])(int) = {f1, f2};`）时，引入了一个多维数组初始化 bug：
+
+**原始代码**（`elem_size != 8` 分支）：
+```rust
+let val = values.get(i).copied().unwrap_or(0);
+self.emit(OpCode::PushConst, val, loc);
+self.emit(OpCode::StoreMem, 0, loc);
+```
+
+**错误重构**：
+```rust
+if let Some(elem) = elements.get_mut(i) {
+    // ... 根据 elem 类型生成代码
+} else {
+    self.emit(OpCode::PushConst, 0, loc);  // ❌ 错误！
+    self.emit(OpCode::StoreMem, 0, loc);
+}
+```
+
+对于 `int arr[2][3] = {{1,2,3},{4,5,6}};`：
+- `elements` = `[InitList([1,2,3]), InitList([4,5,6])]`（长度为 2）
+- `count` = 6（总元素数）
+- `values` = `[1, 2, 3, 4, 5, 6]`（扁平化后）
+
+当 `i >= 2` 时，`elements.get_mut(i)` 为 `None`，走 `else` 分支 push `0`，但正确值应为 `values[i]`。
+
+**修复**：`else` 分支改为 `let val = values.get(i).copied().unwrap_or(0);`
+
+### 验证结果
+
+```bash
+cd native && cargo test --test end_to_end_extra_test
+```
+
+```
+running 147 tests
+test result: ok. 147 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+```
+
+全部测试套件：
+```
+test result: ok.   0 passed (empty)
+test result: ok.  10 passed (bytecode_gen_unit_test)
+test result: ok.  13 passed (compile_pipeline_test)
+test result: ok. 147 passed (end_to_end_extra_test)
+test result: ok.  23 passed (end_to_end_test)
+test result: ok.  10 passed (lexer_unit_test)
+test result: ok.  12 passed (parser_unit_test)
+test result: ok.  12 passed (type_checker_unit_test)
+test result: ok.   3 passed (test_snapshot)
+test result: ok.   7 passed (vm_memory_safety_test)
+```
+
+总计 **237 passed; 0 failed**。
