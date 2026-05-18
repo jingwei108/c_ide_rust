@@ -250,7 +250,7 @@ fn normalize_type(ty: Type) -> Type {
 2. **在新的 commit 中重构 `ast.rs`**：
    - 重写 `Type` 为完全递归
    - 重写 `TypeKind` 为纯分类标签
-   - 重写 serde（嵌套 JSON + 旧格式兼容）
+   - 删除手动 serde impl，改用 `#[derive(Serialize, Deserialize)]`
 3. **编译驱动修复**：按编译错误逐个修复 Parser、TypeChecker、BytecodeGen、CompilePipeline
 4. **回归测试**：确保全部 140+ E2E 测试通过
 5. **补全高级测试**：
