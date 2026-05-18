@@ -107,7 +107,7 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
       final visited = <int>{};
       var currentAddr = widget.headAddr;
       const nullTrapEnd = 64;
-      const linearMemorySize = 256 * 1024;
+      final linearMemorySize = await rust.getMemorySize();
 
       while (currentAddr != 0 &&
           currentAddr >= nullTrapEnd &&
@@ -130,16 +130,20 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
         currentAddr = nextValue;
       }
 
-      setState(() {
-        _nodes = nodes;
-        _loading = false;
-      });
-      _entranceController.forward(from: 0.0);
+      if (mounted) {
+        setState(() {
+          _nodes = nodes;
+          _loading = false;
+        });
+        _entranceController.forward(from: 0.0);
+      }
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 

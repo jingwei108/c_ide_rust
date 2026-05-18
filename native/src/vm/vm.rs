@@ -24,7 +24,10 @@ fn base_kind(ty: &Type) -> crate::compiler::ast::TypeKind {
 #[derive(Debug, Clone, Default)]
 pub struct FuncMeta {
     pub ip: usize,
+    /// 参数总 word 数（以 4-byte words 计），供 Call 指令弹栈使用。
     pub arg_count: i32,
+    /// 参数个数（供 call_user_function 使用，与总 word 数不同）。
+    pub param_count: i32,
     pub local_count: i32,
     pub param_sizes: Vec<i32>,
 }
@@ -282,7 +285,8 @@ impl CideVM {
     /// 恢复后的 VM 将无法继续执行。
     pub fn restore(&mut self, snap: &super::snapshot::VMSnapshot, session: &mut Session) {
         // VM 内存（1MB）
-        self.memory.copy_from_slice(&snap.memory);
+        let len = snap.memory.len().min(self.memory.len());
+        self.memory[..len].copy_from_slice(&snap.memory[..len]);
 
         // VM 栈与调用帧
         self.stack = snap.stack.clone();
@@ -363,12 +367,12 @@ impl CideVM {
         let locals_base = self.mem_stack_top;
         // Arguments: args[0] is first param, args[n-1] is last param.
         // VM Call convention: first param is at locals_base + 0
-        for i in 0..meta.arg_count {
+        for i in 0..meta.param_count {
             let arg = if (i as usize) < args.len() { args[i as usize] } else { 0 };
             let arg_addr = (locals_base as u64) + (i as u64) * 4;
             self.store_i32(arg_addr as u32, arg, &SourceLoc::default());
         }
-        for i in meta.arg_count..meta.local_count {
+        for i in meta.param_count..meta.local_count {
             let local_addr = (locals_base as u64) + (i as u64) * 4;
             self.store_i32(local_addr as u32, 0, &SourceLoc::default());
         }
@@ -1348,7 +1352,7 @@ impl CideVM {
     }
     fn execute_float(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
         match op {
-                        OpCode::PushConstF => { self.push(operand as u64); }
+                        OpCode::PushConstF => { self.push(operand as u32 as u64); }
                         OpCode::AddF => {
                             let b = f32::from_bits(self.pop() as u32);
                             let a = f32::from_bits(self.pop() as u32);
@@ -1403,7 +1407,13 @@ impl CideVM {
         match op {
                         OpCode::PushConstD => {
                             let idx = operand as usize;
-                            let val = self.f64_constants.get(idx).copied().unwrap_or(0.0);
+                            let val = match self.f64_constants.get(idx) {
+                                Some(&v) => v,
+                                None => {
+                                    self.trap(&format!("f64常量索引越界: {}", idx), loc);
+                                    return;
+                                }
+                            };
                             self.push(val.to_bits());
                         }
                         OpCode::AddD => {
@@ -1463,7 +1473,13 @@ impl CideVM {
         match op {
                         OpCode::PushConstQ => {
                             let idx = operand as usize;
-                            let val = self.i64_constants.get(idx).copied().unwrap_or(0);
+                            let val = match self.i64_constants.get(idx) {
+                                Some(&v) => v,
+                                None => {
+                                    self.trap(&format!("i64常量索引越界: {}", idx), loc);
+                                    return;
+                                }
+                            };
                             self.push(val as u64);
                         }
                         OpCode::AddQ => {

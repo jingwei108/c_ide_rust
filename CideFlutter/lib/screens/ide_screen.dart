@@ -148,6 +148,18 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     super.dispose();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 同步系统键盘状态：若系统已收起但标记仍为 active，自动恢复
+    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
+    final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
+    if (_isSystemKeyboardActive && !isSystemKeyboardReallyVisible) {
+      _isSystemKeyboardActive = false;
+      _editorKey.currentState?.setReadOnly(true);
+    }
+  }
+
   void _syncBarsAnimation() {
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
     final isSystemKeyboardVisible = viewInsetsBottom > 50;
@@ -230,19 +242,9 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
       }
     });
 
-    // 检测系统键盘真实可见性
+    // 检测系统键盘真实可见性（仅读取，副作用已移至 didChangeDependencies）
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
     final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
-
-    // 同步系统键盘状态：若系统已收起但标记仍为 active，自动恢复
-    if (_isSystemKeyboardActive && !isSystemKeyboardReallyVisible) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          setState(() => _isSystemKeyboardActive = false);
-          _editorKey.currentState?.setReadOnly(true);
-        }
-      });
-    }
 
     // 同步上下栏动画
     _syncBarsAnimation();

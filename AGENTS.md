@@ -53,7 +53,7 @@ docs/                   设计文档、事故报告
 | Phase 8 | `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ 诊断系统拓展 | ✅ 完成 |
 | Phase 9 | Flutter 前端从零搭建：IDE 界面 + 编辑器 + 调试面板 + 算法可视化 | ✅ 完成 |
 | Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
-| Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 44 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
+| Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 238 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
 | Phase 12 | `union` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ `sizeof(union U)` | ✅ 完成 |
 | Phase 13 | **统一模式 / 时间旅行**：VM 快照/恢复 + 检查点管理器 + 批量自动执行 + Seek 进度条 + 异常自动回退 + 语义标签 + 变量历史趋势图 | ✅ 完成 |
 
@@ -78,7 +78,7 @@ docs/                   设计文档、事故报告
 ## 已知限制
 
 ### 当前不支持
-- **匿名结构体变量声明** — `struct { int x; } v;`（变量声明中的匿名 struct 暂不支持，但 `typedef struct { ... } Name;` 已支持）
+- **匿名结构体变量声明** — `struct { int x; } v;`（直接以匿名 struct 类型声明变量暂不支持；仅支持通过 `typedef struct { ... } Name;` 间接使用）
 - **`double`** — ✅ **已完整支持**（64 位 f64，字节偏移架构，含 `sizeof(double)=8`、`printf("%f")` 读取 f64）
 - **函数调用参数的隐式转换提示** — 当前对 `printf` 格式字符串 `%f` 的参数不做类型检查，传入 int 不会自动转换（已知限制）
 

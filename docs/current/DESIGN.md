@@ -125,7 +125,7 @@
 | **安全隔离** | 自动内存隔离 | 自己检查边界，同等安全 |
 
 **CideVM 核心优势**：
-- 完全可控的指令集（~30 条指令），只实现教学子集真正用到的特性
+- 完全可控的指令集（106 条指令），只实现教学子集真正用到的特性
 - 局部变量映射到线性内存，支持 `&x` 取地址（这是 wasm3 架构下难以实现的）
 - 函数调用栈帧在 `memory_` 中分配，指针/数组/结构体语义与真实 C 完全一致
 - 零线程：单步在主线程同步执行，彻底消除线程泄漏风险
@@ -280,24 +280,24 @@ sizeof(int) / sizeof(struct S)  // sizeof
 源代码字符串
     |
     v
-Lexer::Tokenize() -> vector<Token>
+Lexer::tokenize() -> Vec<Token>
     |
     v
-Parser::Parse() -> unique_ptr<ProgramNode> (AST)
+Parser::parse() -> Box<Program> (AST)
     |
     v
 TypeChecker::Check()
     |
     v
-BytecodeGen::Generate() -> vector<Instruction> (CideVM 字节码)
+BytecodeGen::generate() -> Vec<Instruction> (CideVM 字节码)
     |
     v
 SourceMap 生成 + 字符串数据段收集
 ```
 
 **BytecodeGen 与旧 WasmCodeGen 的区别**：
-- 输出从 `vector<uint8_t>` (WASM 二进制) 改为 `vector<Instruction>` (扁平指令序列)
-- 指令集从 WASM 的 ~100 条压缩到教学子集实际需要的 ~30 条
+- 输出从 `Vec<u8>` (WASM 二进制) 改为 `Vec<Instruction>` (扁平指令序列)
+- 指令集从 WASM 的 ~100 条压缩到教学子集实际需要的 106 条
 - 函数调用从 WASM 的间接调用表改为直接索引调用
 - 新增 `StepEvent` 指令，天然支持单步调试，无需注入 host function
 
@@ -365,20 +365,21 @@ CideVM 使用 1MB 线性内存，划分如下：
 
 与 wasm3 时代不同，CideVM 将局部变量也存储在线性内存的栈区域中：
 
-```cpp
-// Call 指令：在 memory_ 中分配栈帧
-uint32_t frameSize = localCount * 4;
-memStackTop_ -= frameSize;           // 从高地址向下增长
-// 参数从表达式栈 pop 到 memory_ 帧中
+```rust
+// Call 指令：在 memory 中分配栈帧
+let frame_size = (local_count as u64) * 4;
+self.mem_stack_top -= frame_size as u32;  // 从高地址向下增长
+// 参数从表达式栈 pop 到 memory 帧中
 // 剩余局部变量零初始化
 
-// LoadLocal：从 memory_ 读取
-uint32_t addr = frame.localsBase + localIndex * 4;
-Push(ReadI32LE(memory_.data() + addr));
+// LoadLocal：从 memory 读取
+let addr = frame.locals_base + local_index * 4;
+self.push(self.load_i32(addr) as u64);
 
-// StoreLocal：向 memory_ 写入
-uint32_t addr = frame.localsBase + localIndex * 4;
-WriteI32LE(memory_.data() + addr, Pop());
+// StoreLocal：向 memory 写入
+let addr = frame.locals_base + local_index * 4;
+let val = self.pop() as i32;
+self.store_i32(addr, val, loc);
 ```
 
 这样做的好处：
@@ -716,7 +717,7 @@ void bubbleSort(int arr[], int n) {
 ### Phase 2: C 子集编译器 + VM（✅ 已完成）
 - [x] Lexer + Parser + AST + TypeChecker
 - [x] **BytecodeGen**（CideVM 扁平字节码）
-- [x] CideVM 核心实现（~30 条指令解释器）
+- [x] CideVM 核心实现（106 条指令解释器）
 - [x] 虚拟内存管理 + 指针追踪（局部变量映射到线性内存）
 - [x] Source Map 生成 + `StepEvent` 单步指令
 - [x] 安全加固：边界检查、除零捕获、步数熔断、NULL 区陷阱
@@ -779,7 +780,7 @@ void bubbleSort(int arr[], int n) {
 | 决策点 | 选择 | 理由 |
 |--------|------|------|
 | 执行引擎 | **自研 CideVM（替代 wasm3）** | 教学专用：完全可控的单步/诊断/内存可视化；局部变量映射到线性内存支持 `&x` |
-| 编译目标 | **自定义扁平字节码（替代 WASM）** | 只实现教学子集需要的 ~30 条指令；简化编译器和 VM 的耦合 |
+| 编译目标 | **自定义扁平字节码（替代 WASM）** | 只实现教学子集需要的 106 条指令；简化编译器和 VM 的耦合 |
 | 可视化方式 | **零侵入自动注入** | 初学者写纯 C，系统自动识别算法 |
 | 渲染引擎 | **Flutter CustomPainter + Widget** | 跨平台，算法可视化与内存映射 |
 | 动画稳定性 | **CancelAll + SnapToFinalState** | 参考 2048 修复经验 |

@@ -15,7 +15,10 @@ fn base_kind(ty: &Type) -> TypeKind {
 #[derive(Debug, Clone)]
 pub struct FuncMeta {
     pub ip: usize,
+    /// 参数总 word 数（以 4-byte words 计），供 Call 指令弹栈使用。
     pub arg_count: i32,
+    /// 参数个数（供 call_user_function 使用，与总 word 数不同）。
+    pub param_count: i32,
     pub local_count: i32,
     pub param_sizes: Vec<i32>,
     pub return_type: Type,
@@ -214,6 +217,7 @@ impl BytecodeGen {
             self.func_table.insert(f.name.clone(), FuncMeta {
                 ip: 0,
                 arg_count: f.params.len() as i32,
+                param_count: f.params.len() as i32,
                 local_count: 0,
                 param_sizes: param_sizes.clone(),
                 return_type: f.return_type.clone(),
@@ -329,9 +333,10 @@ impl BytecodeGen {
         if !self.current_func.is_empty() {
             if let Some(meta) = self.func_table.get_mut(&self.current_func) {
                 meta.local_count = self.next_local_offset;
-                // arg_count 在此处被覆盖为参数总字节数（以 4-byte words 计），
-                // 而非参数个数。VM 的 Call 指令按此值弹栈，因此功能正确。
+                // arg_count = 参数总 word 数（供 Call 指令弹栈）
                 meta.arg_count = meta.param_sizes.iter().sum();
+                // param_count = 参数个数（供 call_user_function 使用）
+                meta.param_count = meta.param_sizes.len() as i32;
             }
         }
         self.current_func.clear();

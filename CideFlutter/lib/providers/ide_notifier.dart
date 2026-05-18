@@ -10,6 +10,9 @@ import '../services/learning_progress_service.dart';
 import 'unified_provider.dart';
 
 class IdeNotifier extends Notifier<IdeState> {
+  // 注意：Riverpod 3.x 的 Notifier 没有 dispose() 生命周期，
+  // _outputController 在应用全局单例模式下不会释放。
+  // 若未来改为 AutoDisposeNotifier，可通过 ref.onDispose 释放。
   final _outputController = TextEditingController();
   TextEditingController get outputController => _outputController;
 

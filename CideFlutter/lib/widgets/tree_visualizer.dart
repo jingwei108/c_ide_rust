@@ -169,16 +169,20 @@ class _TreeVisualizerState extends State<TreeVisualizer>
         _layoutNodes(nodeMap, widget.rootAddr);
       }
 
-      setState(() {
-        _nodes = nodeMap.values.toList();
-        _loading = false;
-      });
-      _entranceController.forward(from: 0.0);
+      if (mounted) {
+        setState(() {
+          _nodes = nodeMap.values.toList();
+          _loading = false;
+        });
+        _entranceController.forward(from: 0.0);
+      }
     } catch (e) {
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 

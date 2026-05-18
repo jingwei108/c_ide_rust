@@ -163,6 +163,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
             vm.register_function(idx as u32, FuncMeta {
                 ip: meta.ip,
                 arg_count: meta.arg_count,
+                param_count: meta.param_count,
                 local_count: meta.local_count,
                 param_sizes: meta.param_sizes.clone(),
             });
@@ -205,6 +206,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.globals_init.clear();
     session.compile.globals_init_64.clear();
     session.compile.i64_constants.clear();
+    session.compile.f64_constants.clear();
     session.compile.diagnostics.clear();
     session.compile.source_map.clear();
     session.compile.func_table.clear();
@@ -284,6 +286,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
             FuncMeta {
                 ip: meta.ip,
                 arg_count: meta.arg_count,
+                param_count: meta.param_count,
                 local_count: meta.local_count,
                 param_sizes: meta.param_sizes,
             },
