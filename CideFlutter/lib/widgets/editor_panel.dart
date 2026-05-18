@@ -46,9 +46,10 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
   void initState() {
     super.initState();
     final source = ref.read(ideProvider).source;
-    _controller = CodeLineEditingController.fromText(
-      source,
-      const CodeLineOptions(indentSize: 4),
+    _controller = CodeLineEditingController(
+      codeLines: source.codeLines,
+      options: const CodeLineOptions(indentSize: 4),
+      spanBuilder: _buildVariableHighlightSpan,
     );
     _lastLineCount = _controller.lineCount;
     // 延迟添加 listener，避免 re_editor 初始化 delegate 时立即触发通知，
@@ -409,10 +410,58 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     const CodeKeywordPrompt(word: 'define'),
   ];
 
+  int _currentHighlightLine = 0;
+  List<rust_unified.AccessedVar> _currentAccessedVars = [];
+
+  /// re_editor spanBuilder：在当前执行行的变量名上添加底色高亮。
+  TextSpan _buildVariableHighlightSpan({
+    required BuildContext context,
+    required int index,
+    required CodeLine codeLine,
+    required TextSpan textSpan,
+    required TextStyle style,
+  }) {
+    final line = index + 1;
+    if (line != _currentHighlightLine || _currentAccessedVars.isEmpty) {
+      return textSpan;
+    }
+
+    final highlights = _currentAccessedVars.map((a) => _VarHighlight(
+      name: a.name,
+      color: a.accessType == 'Write'
+          ? Colors.orange.withValues(alpha: 0.25)
+          : Colors.blueAccent.withValues(alpha: 0.15),
+    )).toList();
+
+    final newChildren = _applyHighlightsToSpan(textSpan, highlights);
+    return TextSpan(
+      style: textSpan.style,
+      children: newChildren,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(ideProvider);
     final isDark = ref.watch(themeProvider) == ThemeMode.dark;
+    final unifiedState = ref.watch(unifiedProvider);
+
+    // 更新变量级高亮状态
+    int newHighlightLine = 0;
+    List<rust_unified.AccessedVar> newAccessedVars = [];
+    if (unifiedState.currentStep >= 0 &&
+        unifiedState.currentStep < unifiedState.frameCache.length) {
+      final payload = unifiedState.frameCache[unifiedState.currentStep];
+      newHighlightLine = payload.codeLine;
+      newAccessedVars = payload.accessedVars;
+    }
+    final hasHighlightChanged = newHighlightLine != _currentHighlightLine ||
+        !_accessedVarsEqual(newAccessedVars, _currentAccessedVars);
+    if (hasHighlightChanged) {
+      _currentHighlightLine = newHighlightLine;
+      _currentAccessedVars = List.from(newAccessedVars);
+      _controller.forceRepaint();
+    }
 
     // 调试时自动聚焦当前行
     if (state.isStepMode && state.currentLine > 0) {
@@ -1021,4 +1070,104 @@ class _MenuDivider extends StatelessWidget {
       margin: const EdgeInsets.symmetric(vertical: 10),
     );
   }
+}
+
+// ========== 变量级高亮辅助类（Phase 7） ==========
+
+class _VarHighlight {
+  final String name;
+  final Color color;
+  const _VarHighlight({required this.name, required this.color});
+}
+
+class _HighlightMatch {
+  final int start;
+  final int end;
+  final Color color;
+  const _HighlightMatch({required this.start, required this.end, required this.color});
+}
+
+List<InlineSpan> _applyHighlightsToSpan(InlineSpan span, List<_VarHighlight> highlights) {
+  if (span is! TextSpan) return [span];
+
+  final text = span.text;
+  if (text != null && text.isNotEmpty) {
+    return _splitTextSpan(span, text, highlights);
+  }
+
+  if (span.children == null || span.children!.isEmpty) {
+    return [span];
+  }
+
+  final newChildren = span.children!
+      .expand((child) => _applyHighlightsToSpan(child, highlights))
+      .toList();
+
+  return [
+    TextSpan(
+      style: span.style,
+      recognizer: span.recognizer,
+      mouseCursor: span.mouseCursor,
+      onEnter: span.onEnter,
+      onExit: span.onExit,
+      semanticsLabel: span.semanticsLabel,
+      locale: span.locale,
+      spellOut: span.spellOut,
+      children: newChildren,
+    ),
+  ];
+}
+
+List<InlineSpan> _splitTextSpan(TextSpan span, String text, List<_VarHighlight> highlights) {
+  final matches = <_HighlightMatch>[];
+  for (final h in highlights) {
+    final pattern = RegExp(r'\b' + RegExp.escape(h.name) + r'\b');
+    for (final m in pattern.allMatches(text)) {
+      matches.add(_HighlightMatch(start: m.start, end: m.end, color: h.color));
+    }
+  }
+
+  if (matches.isEmpty) return [span];
+
+  matches.sort((a, b) => a.start.compareTo(b.start));
+  final merged = <_HighlightMatch>[];
+  for (final m in matches) {
+    if (merged.isEmpty || m.start >= merged.last.end) {
+      merged.add(m);
+    } else if (m.end > merged.last.end) {
+      merged.last = _HighlightMatch(
+        start: merged.last.start,
+        end: m.end,
+        color: merged.last.color,
+      );
+    }
+  }
+
+  final result = <InlineSpan>[];
+  int pos = 0;
+  for (final m in merged) {
+    if (m.start > pos) {
+      result.add(TextSpan(text: text.substring(pos, m.start), style: span.style));
+    }
+    result.add(TextSpan(
+      text: text.substring(m.start, m.end),
+      style: (span.style ?? const TextStyle()).copyWith(
+        backgroundColor: m.color,
+        fontWeight: FontWeight.w600,
+      ),
+    ));
+    pos = m.end;
+  }
+  if (pos < text.length) {
+    result.add(TextSpan(text: text.substring(pos), style: span.style));
+  }
+  return result;
+}
+
+bool _accessedVarsEqual(List<rust_unified.AccessedVar> a, List<rust_unified.AccessedVar> b) {
+  if (a.length != b.length) return false;
+  for (int i = 0; i < a.length; i++) {
+    if (a[i].name != b[i].name || a[i].accessType != b[i].accessType) return false;
+  }
+  return true;
 }
