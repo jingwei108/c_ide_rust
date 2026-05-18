@@ -264,7 +264,18 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
             ty: "int".to_string(),
             is_heap: true,
             is_freed: false,
+            alloc_line: vm.get_current_line(),
+            alloc_by: "malloc".to_string(),
         });
+    } else {
+        // 复用已释放的 region 时更新分配信息
+        for r in &mut session.memory.regions {
+            if r.addr == addr && !r.is_freed {
+                r.alloc_line = vm.get_current_line();
+                r.alloc_by = "malloc".to_string();
+                break;
+            }
+        }
     }
     vm.push(addr as u64);
 }
@@ -795,6 +806,8 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
         ty: String::new(),
         is_heap: true,
         is_freed: false,
+        alloc_line: vm.get_current_line(),
+        alloc_by: "realloc".to_string(),
     });
 
     vm.push(new_addr as u64);
@@ -907,6 +920,8 @@ fn host_fopen(vm: &mut CideVM, session: &mut Session) {
                     ty: "int".to_string(),
                     is_heap: true,
                     is_freed: false,
+                    alloc_line: vm.get_current_line(),
+                    alloc_by: "fopen".to_string(),
                 });
             }
             // 写入 fd 到 FILE* 结构体

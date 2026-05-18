@@ -20,9 +20,13 @@ class _MemoryTabState extends State<MemoryTab> {
     _memoryFuture = Future.wait([
       rust.getMemoryRegions(),
       rust.getMemorySize(),
+      rust.getMemoryFragments(),
+      rust.getHeapStats(),
     ]).then((results) => {
       'regions': results[0] as List<rust.MemoryRegion>,
       'memorySize': results[1] as int,
+      'fragments': results[2] as List<rust.MemoryFragment>,
+      'heapStats': results[3] as rust.HeapStats,
     });
   }
 
@@ -33,6 +37,8 @@ class _MemoryTabState extends State<MemoryTab> {
       builder: (context, snapshot) {
         final regions = snapshot.data?['regions'] as List<rust.MemoryRegion>? ?? [];
         final memorySize = snapshot.data?['memorySize'] as int? ?? 1024 * 1024;
+        final fragments = snapshot.data?['fragments'] as List<rust.MemoryFragment>? ?? [];
+        final heapStats = snapshot.data?['heapStats'] as rust.HeapStats?;
         if (regions.isEmpty) {
           return Center(
             child: Column(
@@ -47,6 +53,8 @@ class _MemoryTabState extends State<MemoryTab> {
         }
         return MemoryMapVisualizer(
           regions: regions,
+          fragments: fragments,
+          heapStats: heapStats,
           isDark: widget.isDark,
           memorySize: memorySize,
         );

@@ -5,8 +5,8 @@ use flutter_rust_bridge::frb;
 // 与 session.rs 完全一致的类型直接 re-export，消除重复定义
 #[frb]
 pub use crate::session::{
-    AlgorithmMatch, CompileResult, Diagnostic, MemoryRegion, RunResult, StepResult, StepStatus,
-    TraceEntry, VisEvent,
+    AlgorithmMatch, CompileResult, Diagnostic, HeapStats, MemoryFragment, MemoryRegion, RunResult,
+    StepResult, StepStatus, TraceEntry, VisEvent,
 };
 
 // 统一模式类型 re-export
@@ -119,6 +119,16 @@ pub fn get_variables() -> Vec<VariableSnapshot> {
 #[frb]
 pub fn get_memory_regions() -> Vec<MemoryRegion> {
     crate::flutter_bridge::get_memory_regions()
+}
+
+#[frb]
+pub fn get_memory_fragments() -> Vec<MemoryFragment> {
+    crate::flutter_bridge::get_memory_fragments()
+}
+
+#[frb]
+pub fn get_heap_stats() -> HeapStats {
+    crate::flutter_bridge::get_heap_stats()
 }
 
 #[frb]

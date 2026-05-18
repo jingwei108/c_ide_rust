@@ -9,6 +9,7 @@ class _MemoryColors {
   static const code = Color(0xFFFF453A);
   static const free = Color(0xFF3A3A3C);
   static const trap = Color(0xFFBF5AF2);
+  static const fragment = Color(0xFFFFD60A); // 碎片区：金色
 }
 
 /// 内存映射可视化组件
@@ -17,12 +18,16 @@ class _MemoryColors {
 /// 点击某块可查看该范围内所有内存区域的详细信息。
 class MemoryMapVisualizer extends StatelessWidget {
   final List<rust.MemoryRegion> regions;
+  final List<rust.MemoryFragment> fragments;
+  final rust.HeapStats? heapStats;
   final bool isDark;
   final int memorySize;
 
   const MemoryMapVisualizer({
     super.key,
     required this.regions,
+    this.fragments = const [],
+    this.heapStats,
     this.isDark = false,
     this.memorySize = 1024 * 1024,
   });
@@ -44,7 +49,15 @@ class MemoryMapVisualizer extends StatelessWidget {
     return '区域';
   }
 
-  void _showBlockDetails(BuildContext context, int blockIndex, List<rust.MemoryRegion> blockRegions) {
+  String _getAllocInfo(rust.MemoryRegion region) {
+    if (!region.isHeap) return '';
+    if (region.allocLine > 0) {
+      return '分配于第 ${region.allocLine} 行 (${region.allocBy})';
+    }
+    return '分配来源: ${region.allocBy}';
+  }
+
+  void _showBlockDetails(BuildContext context, int blockIndex, List<rust.MemoryRegion> blockRegions, List<rust.MemoryFragment> blockFragments) {
     const blockSize = 4096;
     final addr = blockIndex * blockSize;
     showModalBottomSheet(
@@ -84,7 +97,7 @@ class MemoryMapVisualizer extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '${blockRegions.length} 个区域',
+                        '${blockRegions.length} 个区域 · ${blockFragments.length} 处碎片',
                         style: const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
@@ -93,48 +106,85 @@ class MemoryMapVisualizer extends StatelessWidget {
                 const SizedBox(height: 8),
                 const Divider(height: 1),
                 Expanded(
-                  child: blockRegions.isEmpty
-                      ? const Center(child: Text('该块暂无占用区域', style: TextStyle(color: Colors.grey)))
-                      : ListView.builder(
-                          controller: scrollController,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
-                          itemCount: blockRegions.length,
-                          itemBuilder: (context, i) {
-                            final r = blockRegions[i];
-                            final color = _getRegionColor(r);
-                            return ListTile(
-                              dense: true,
-                              leading: Container(
-                                width: 12,
-                                height: 12,
-                                decoration: BoxDecoration(
-                                  color: color,
-                                  borderRadius: BorderRadius.circular(3),
-                                ),
-                              ),
-                              title: Text(
-                                r.name.isEmpty ? '(未命名)' : r.name,
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              subtitle: Text(
+                  child: ListView.builder(
+                    controller: scrollController,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: blockRegions.length + blockFragments.length + (blockRegions.isEmpty && blockFragments.isEmpty ? 1 : 0),
+                    itemBuilder: (context, i) {
+                      if (blockRegions.isEmpty && blockFragments.isEmpty) {
+                        return const Center(
+                          child: Text('该块暂无占用区域', style: TextStyle(color: Colors.grey)),
+                        );
+                      }
+                      if (i < blockRegions.length) {
+                        final r = blockRegions[i];
+                        final color = _getRegionColor(r);
+                        return ListTile(
+                          dense: true,
+                          leading: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: color,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                          title: Text(
+                            r.name.isEmpty ? '(未命名)' : r.name,
+                            style: const TextStyle(fontSize: 14),
+                          ),
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
                                 '地址: 0x${r.addr.toRadixString(16).toUpperCase().padLeft(5, '0')} · 大小: ${r.size}B · 类型: ${r.ty.isEmpty ? '未知' : r.ty}',
                                 style: const TextStyle(fontSize: 11, color: Colors.grey),
                               ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (r.isHeap)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 4),
-                                      child: Text('堆', style: TextStyle(fontSize: 10, color: Colors.orangeAccent)),
-                                    ),
-                                  if (r.isFreed)
-                                    const Text('已释放', style: TextStyle(fontSize: 10, color: Colors.grey)),
-                                ],
-                              ),
-                            );
-                          },
-                        ),
+                              if (_getAllocInfo(r).isNotEmpty)
+                                Text(
+                                  _getAllocInfo(r),
+                                  style: const TextStyle(fontSize: 11, color: Colors.orangeAccent),
+                                ),
+                            ],
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (r.isHeap)
+                                const Padding(
+                                  padding: EdgeInsets.only(right: 4),
+                                  child: Text('堆', style: TextStyle(fontSize: 10, color: Colors.orangeAccent)),
+                                ),
+                              if (r.isFreed)
+                                const Text('已释放', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                            ],
+                          ),
+                        );
+                      } else {
+                        final f = blockFragments[i - blockRegions.length];
+                        return ListTile(
+                          dense: true,
+                          leading: Container(
+                            width: 12,
+                            height: 12,
+                            decoration: BoxDecoration(
+                              color: _MemoryColors.fragment,
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                          ),
+                          title: const Text(
+                            '碎片区（外部碎片）',
+                            style: TextStyle(fontSize: 14),
+                          ),
+                          subtitle: Text(
+                            '地址: 0x${f.addr.toRadixString(16).toUpperCase().padLeft(5, '0')} · 大小: ${f.size}B',
+                            style: const TextStyle(fontSize: 11, color: Colors.grey),
+                          ),
+                          trailing: const Text('碎片', style: TextStyle(fontSize: 10, color: Colors.amber)),
+                        );
+                      }
+                    },
+                  ),
                 ),
               ],
             );
@@ -149,10 +199,11 @@ class MemoryMapVisualizer extends StatelessWidget {
     const blockSize = 4096; // 每块 4KB
     final blockCount = memorySize ~/ blockSize;
 
-    // 构建块颜色和标签映射
+    // 构建块颜色、标签和区域映射
     final blockColors = List<Color>.filled(blockCount, _MemoryColors.free);
     final blockLabels = List<String?>.filled(blockCount, null);
     final blockRegions = List<List<rust.MemoryRegion>>.generate(blockCount, (_) => []);
+    final blockFragments = List<List<rust.MemoryFragment>>.generate(blockCount, (_) => []);
 
     for (final region in regions) {
       final startBlock = region.addr ~/ blockSize;
@@ -168,12 +219,111 @@ class MemoryMapVisualizer extends StatelessWidget {
       }
     }
 
+    // 碎片区覆盖（黄色）
+    for (final frag in fragments) {
+      final startBlock = frag.addr ~/ blockSize;
+      final endBlock = (frag.addr + frag.size) ~/ blockSize;
+      for (var i = startBlock; i <= endBlock && i < blockCount; i++) {
+        blockColors[i] = _MemoryColors.fragment;
+        blockFragments[i].add(frag);
+        if (blockLabels[i] == null) {
+          blockLabels[i] = '碎片';
+        }
+      }
+    }
+
+    // 基于 heapStats 的精确统计
+    final stats = heapStats;
+    final hasHeapStats = stats != null && stats.totalHeap > 0;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         const cols = 8;
 
         return Column(
           children: [
+            // 堆统计信息栏
+            if (hasHeapStats)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.black.withValues(alpha: 0.03),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isDark ? Colors.white12 : Colors.black12,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '堆内存统计',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _StatItem(
+                            label: '总堆空间',
+                            value: '${stats.totalHeap}B',
+                            color: _MemoryColors.heap,
+                          ),
+                        ),
+                        Expanded(
+                          child: _StatItem(
+                            label: '已分配',
+                            value: '${stats.allocated}B',
+                            color: Colors.orangeAccent,
+                          ),
+                        ),
+                        Expanded(
+                          child: _StatItem(
+                            label: '碎片',
+                            value: '${stats.fragmented}B',
+                            color: _MemoryColors.fragment,
+                          ),
+                        ),
+                        Expanded(
+                          child: _StatItem(
+                            label: '碎片率',
+                            value: '${stats.fragmentationRate}%',
+                            color: stats.fragmentationRate > 50 ? Colors.redAccent : Colors.greenAccent,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    // 可视化进度条
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: SizedBox(
+                        height: 6,
+                        child: Row(
+                          children: [
+                            if (stats.totalHeap > 0) ...[
+                              Flexible(
+                                flex: stats.allocated,
+                                child: Container(color: _MemoryColors.heap),
+                              ),
+                              Flexible(
+                                flex: stats.fragmented,
+                                child: Container(color: _MemoryColors.fragment),
+                              ),
+                              Flexible(
+                                flex: (stats.totalHeap - stats.allocated - stats.fragmented).clamp(0, stats.totalHeap),
+                                child: Container(color: _MemoryColors.free.withValues(alpha: 0.3)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             // 图例
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -186,6 +336,7 @@ class MemoryMapVisualizer extends StatelessWidget {
                   _LegendItem(color: _MemoryColors.global, label: '全局'),
                   _LegendItem(color: _MemoryColors.code, label: '代码/数据'),
                   _LegendItem(color: _MemoryColors.trap, label: 'NULL陷阱'),
+                  _LegendItem(color: _MemoryColors.fragment, label: '碎片区'),
                   _LegendItem(color: _MemoryColors.free.withValues(alpha: 0.3), label: '空闲/已释放'),
                 ],
               ),
@@ -206,7 +357,7 @@ class MemoryMapVisualizer extends StatelessWidget {
                   final color = blockColors[index];
                   final label = blockLabels[index];
                   return GestureDetector(
-                    onTap: () => _showBlockDetails(context, index, blockRegions[index]),
+                    onTap: () => _showBlockDetails(context, index, blockRegions[index], blockFragments[index]),
                     child: Tooltip(
                       message: label != null
                           ? '0x${addr.toRadixString(16).toUpperCase().padLeft(5, '0')} - $label'
@@ -262,6 +413,24 @@ class _LegendItem extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
+        Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
+    );
+  }
+}
+
+class _StatItem extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _StatItem({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color)),
         Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
       ],
     );

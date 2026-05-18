@@ -7,6 +7,46 @@ use crate::engine::compile_pipeline::setup_vm;
 use crate::session::Session;
 use crate::vm::vm::CideVM;
 
+/// 生成内存泄漏报告并追加到输出。
+///
+/// 遍历所有未释放的堆区域，按分配行号排序，
+/// 输出形如 "第 12 行的 malloc 未被 free" 的提示。
+pub fn append_leak_report(session: &mut Session) {
+    let leaks: Vec<_> = session
+        .memory
+        .regions
+        .iter()
+        .filter(|r| r.is_heap && !r.is_freed && r.alloc_by != "vfs")
+        .collect();
+
+    if leaks.is_empty() {
+        return;
+    }
+
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("\n===== 内存泄漏检测报告 =====".to_string());
+
+    let mut sorted = leaks.clone();
+    sorted.sort_by_key(|r| r.alloc_line);
+
+    let total_leaked: i32 = sorted.iter().map(|r| r.size).sum();
+    lines.push(format!("发现 {} 处未释放的堆内存，共 {} 字节：", sorted.len(), total_leaked));
+
+    for r in &sorted {
+        let by = if r.alloc_by.is_empty() { "malloc" } else { &r.alloc_by };
+        if r.alloc_line > 0 {
+            lines.push(format!("  • 第 {} 行的 {} 分配了 {} 字节 (addr=0x{:04X})，未被 free", r.alloc_line, by, r.size, r.addr));
+        } else {
+            lines.push(format!("  • {} 分配了 {} 字节 (addr=0x{:04X})，未被 free", by, r.size, r.addr));
+        }
+    }
+
+    lines.push("💡 提示：在 C 语言中，malloc 分配的内存需要对应 free 释放，否则会造成内存泄漏。".to_string());
+    lines.push("==============================".to_string());
+
+    session.runtime.output_lines.extend(lines);
+}
+
 /// 初始化程序运行环境（非 resume 场景）
 pub fn reset_runtime(session: &mut Session) {
     session.runtime.output_lines.clear();
@@ -68,6 +108,7 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
         Ok((ret, true))
     } else {
         session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
+        append_leak_report(session);
         session.runtime.running = false;
         session.vm = Some(vm);
         Ok((ret, false))

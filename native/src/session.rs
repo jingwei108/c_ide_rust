@@ -172,6 +172,30 @@ pub struct MemoryRegion {
     pub ty: String,
     pub is_heap: bool,
     pub is_freed: bool,
+    /// 分配时的源码行号（教学用途）
+    pub alloc_line: i32,
+    /// 分配方式，如 "malloc" / "realloc" / "fopen"
+    pub alloc_by: String,
+}
+
+#[frb]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MemoryFragment {
+    pub addr: u32,
+    pub size: i32,
+}
+
+#[frb]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct HeapStats {
+    /// 总堆空间（heap_offset - HEAP_START），字节
+    pub total_heap: i32,
+    /// 已分配且未释放的堆内存，字节
+    pub allocated: i32,
+    /// 外部碎片（free_list 中所有块之和），字节
+    pub fragmented: i32,
+    /// 碎片率（0~100）
+    pub fragmentation_rate: i32,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

@@ -297,6 +297,8 @@ fn malloc_raw(memory: &mut MemoryState, aligned_size: usize, mem_size: u32) -> O
             ty: "int".to_string(),
             is_heap: true,
             is_freed: false,
+            alloc_line: 0,
+            alloc_by: "vfs".to_string(),
         });
     }
     Some(addr)

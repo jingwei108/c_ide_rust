@@ -319,6 +319,46 @@ pub fn get_memory_regions() -> Vec<MemoryRegion> {
     session.memory.regions.clone()
 }
 
+/// 获取当前空闲碎片块（外部碎片）
+pub fn get_memory_fragments() -> Vec<crate::session::MemoryFragment> {
+    let session = current_session();
+    session
+        .memory
+        .free_list
+        .iter()
+        .map(|b| crate::session::MemoryFragment {
+            addr: b.addr,
+            size: b.size,
+        })
+        .collect()
+}
+
+/// 获取堆内存统计信息（总空间、已分配、碎片、碎片率）
+pub fn get_heap_stats() -> crate::session::HeapStats {
+    let session = current_session();
+    let mem = &session.memory;
+    let heap_start = crate::vm::vm::HEAP_START as i32;
+    let total_heap = (mem.heap_offset as i32).saturating_sub(heap_start);
+    let allocated: i32 = mem
+        .regions
+        .iter()
+        .filter(|r| r.is_heap && !r.is_freed)
+        .map(|r| r.size)
+        .sum();
+    let fragmented: i32 = mem.free_list.iter().map(|b| b.size).sum();
+    let fragmentation_rate = if total_heap > 0 {
+        ((fragmented as f64 / total_heap as f64) * 100.0) as i32
+    } else {
+        0
+    };
+    crate::session::HeapStats {
+        total_heap,
+        allocated,
+        fragmented,
+        fragmentation_rate,
+    }
+}
+
 /// 获取 VM 内存总大小（字节）
 pub fn get_memory_size() -> u32 {
     let session = current_session();

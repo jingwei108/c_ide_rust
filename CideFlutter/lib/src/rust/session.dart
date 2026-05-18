@@ -141,6 +141,62 @@ class Diagnostic {
           filename == other.filename;
 }
 
+class HeapStats {
+  /// 总堆空间（heap_offset - HEAP_START），字节
+  final int totalHeap;
+
+  /// 已分配且未释放的堆内存，字节
+  final int allocated;
+
+  /// 外部碎片（free_list 中所有块之和），字节
+  final int fragmented;
+
+  /// 碎片率（0~100）
+  final int fragmentationRate;
+
+  const HeapStats({
+    required this.totalHeap,
+    required this.allocated,
+    required this.fragmented,
+    required this.fragmentationRate,
+  });
+
+  @override
+  int get hashCode =>
+      totalHeap.hashCode ^
+      allocated.hashCode ^
+      fragmented.hashCode ^
+      fragmentationRate.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is HeapStats &&
+          runtimeType == other.runtimeType &&
+          totalHeap == other.totalHeap &&
+          allocated == other.allocated &&
+          fragmented == other.fragmented &&
+          fragmentationRate == other.fragmentationRate;
+}
+
+class MemoryFragment {
+  final int addr;
+  final int size;
+
+  const MemoryFragment({required this.addr, required this.size});
+
+  @override
+  int get hashCode => addr.hashCode ^ size.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is MemoryFragment &&
+          runtimeType == other.runtimeType &&
+          addr == other.addr &&
+          size == other.size;
+}
+
 class MemoryRegion {
   final int addr;
   final int size;
@@ -149,6 +205,12 @@ class MemoryRegion {
   final bool isHeap;
   final bool isFreed;
 
+  /// 分配时的源码行号（教学用途）
+  final int allocLine;
+
+  /// 分配方式，如 "malloc" / "realloc" / "fopen"
+  final String allocBy;
+
   const MemoryRegion({
     required this.addr,
     required this.size,
@@ -156,6 +218,8 @@ class MemoryRegion {
     required this.ty,
     required this.isHeap,
     required this.isFreed,
+    required this.allocLine,
+    required this.allocBy,
   });
 
   @override
@@ -165,7 +229,9 @@ class MemoryRegion {
       name.hashCode ^
       ty.hashCode ^
       isHeap.hashCode ^
-      isFreed.hashCode;
+      isFreed.hashCode ^
+      allocLine.hashCode ^
+      allocBy.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -177,7 +243,9 @@ class MemoryRegion {
           name == other.name &&
           ty == other.ty &&
           isHeap == other.isHeap &&
-          isFreed == other.isFreed;
+          isFreed == other.isFreed &&
+          allocLine == other.allocLine &&
+          allocBy == other.allocBy;
 }
 
 class RunResult {
