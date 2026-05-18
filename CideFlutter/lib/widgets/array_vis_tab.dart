@@ -27,6 +27,8 @@ class ArrayVisTab extends ConsumerWidget {
 
     // 解析 vis_events 中的比较上下文，高亮对应元素
     final highlighted = _parseHighlightedIndices(payload.visEvents);
+    // 解析语义标签中的交换索引
+    final swapped = _parseSwappedIndices(payload.semanticLabel);
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
@@ -38,6 +40,7 @@ class ArrayVisTab extends ConsumerWidget {
           elementTy: snap.elementTy,
           elements: snap.elements,
           highlightedIndices: highlighted[snap.name] ?? const {},
+          swappedIndices: swapped[snap.name] ?? const {},
           isDark: isDark,
         );
       },
@@ -74,6 +77,24 @@ class ArrayVisTab extends ConsumerWidget {
             result.putIfAbsent(arrName, () => <int>{}).add(idx);
           }
         }
+      }
+    }
+    return result;
+  }
+
+  /// 解析语义标签中的交换信息，如 "交换 arr[2]↔arr[3]" → { "arr": {2, 3} }
+  Map<String, Set<int>> _parseSwappedIndices(String semanticLabel) {
+    final result = <String, Set<int>>{};
+    if (semanticLabel.isEmpty) return result;
+
+    // 匹配 "交换 arr[i]↔arr[j]"
+    final swapMatch = RegExp(r'交换\s+(\w+)\[(\d+)\]↔\w+\[(\d+)\]').firstMatch(semanticLabel);
+    if (swapMatch != null) {
+      final arrName = swapMatch.group(1)!;
+      final i = int.tryParse(swapMatch.group(2)!) ?? -1;
+      final j = int.tryParse(swapMatch.group(3)!) ?? -1;
+      if (i >= 0 && j >= 0) {
+        result[arrName] = {i, j};
       }
     }
     return result;

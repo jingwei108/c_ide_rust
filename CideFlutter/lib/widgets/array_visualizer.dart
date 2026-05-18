@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 
 class ArrayVisualizer extends StatefulWidget {
   final String name;
   final String elementTy;
   final List<String> elements;
   final Set<int> highlightedIndices;
+  final Set<int> swappedIndices;
   final bool isDark;
 
   const ArrayVisualizer({
@@ -13,6 +15,7 @@ class ArrayVisualizer extends StatefulWidget {
     required this.elementTy,
     required this.elements,
     this.highlightedIndices = const {},
+    this.swappedIndices = const {},
     required this.isDark,
   });
 
@@ -20,8 +23,44 @@ class ArrayVisualizer extends StatefulWidget {
   State<ArrayVisualizer> createState() => _ArrayVisualizerState();
 }
 
-class _ArrayVisualizerState extends State<ArrayVisualizer> {
+class _ArrayVisualizerState extends State<ArrayVisualizer>
+    with SingleTickerProviderStateMixin {
   static const int _maxElements = 40;
+
+  late AnimationController _pulseController;
+  List<String> _prevElements = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant ArrayVisualizer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.elements.length != widget.elements.length ||
+        !_listEquals(oldWidget.elements, widget.elements)) {
+      _prevElements = List.from(oldWidget.elements);
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  bool _listEquals(List<String> a, List<String> b) {
+    if (a.length != b.length) return false;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +70,6 @@ class _ArrayVisualizerState extends State<ArrayVisualizer> {
 
     // 解析数值用于条形图高度
     final numbers = displayElements.map((e) {
-      // 去掉引号，如 "'5'" → "5"
       final clean = e.replaceAll("'", "");
       return double.tryParse(clean) ?? 0.0;
     }).toList();
@@ -90,31 +128,84 @@ class _ArrayVisualizerState extends State<ArrayVisualizer> {
                   final height = (ratio * barHeight).clamp(4.0, barHeight);
                   final isNegative = num < 0;
                   final isHighlighted = widget.highlightedIndices.contains(index);
+                  final isSwapped = widget.swappedIndices.contains(index);
+                  final changed = _prevElements.isNotEmpty &&
+                      index < _prevElements.length &&
+                      index < displayElements.length &&
+                      _prevElements[index] != displayElements[index];
 
                   Color barColor;
-                  if (isHighlighted) {
+                  if (isSwapped) {
                     barColor = Colors.amber;
+                  } else if (isHighlighted) {
+                    barColor = Colors.cyanAccent;
                   } else if (isNegative) {
                     barColor = Colors.redAccent.withValues(alpha: 0.7);
                   } else {
                     barColor = Colors.blueAccent.withValues(alpha: 0.7);
                   }
 
+                  Widget bar = AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    curve: Curves.easeInOut,
+                    width: 24,
+                    height: height,
+                    decoration: BoxDecoration(
+                      color: barColor,
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                      boxShadow: (isHighlighted || isSwapped)
+                          ? null // 脉冲动画会单独处理阴影
+                          : null,
+                    ),
+                  );
+
+                  // 高亮/交换脉冲动画
+                  if (isHighlighted || isSwapped) {
+                    bar = AnimatedBuilder(
+                      animation: _pulseController,
+                      builder: (context, child) {
+                        final t = _pulseController.value;
+                        final scale = isSwapped
+                            ? 1.0 + 0.10 * math.sin(t * math.pi * 4)
+                            : 1.0 + 0.06 * math.sin(t * math.pi * 2);
+                        final shadowOpacity = isSwapped
+                            ? 0.5 + 0.5 * math.sin(t * math.pi * 4).abs()
+                            : 0.3 + 0.3 * math.sin(t * math.pi * 2).abs();
+                        final shadowColor = isSwapped
+                            ? Colors.amber
+                            : Colors.cyanAccent;
+                        return Transform.scale(
+                          scale: scale,
+                          child: Container(
+                            decoration: BoxDecoration(
+                              boxShadow: [
+                                BoxShadow(
+                                  color: shadowColor.withValues(alpha: shadowOpacity),
+                                  blurRadius: 12,
+                                  spreadRadius: 3,
+                                ),
+                              ],
+                            ),
+                            child: child,
+                          ),
+                        );
+                      },
+                      child: bar,
+                    );
+                  }
+
+                  // 值变化弹跳动画
+                  if (changed) {
+                    bar = _BounceWidget(
+                      trigger: valStr,
+                      child: bar,
+                    );
+                  }
+
                   return Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        width: 24,
-                        height: height,
-                        decoration: BoxDecoration(
-                          color: barColor,
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
-                          boxShadow: isHighlighted
-                              ? [BoxShadow(color: Colors.amber.withValues(alpha: 0.6), blurRadius: 8, spreadRadius: 2)]
-                              : null,
-                        ),
-                      ),
+                      bar,
                       const SizedBox(height: 4),
                       Text(
                         valStr.length > 6 ? '${valStr.substring(0, 6)}..' : valStr,
@@ -122,15 +213,19 @@ class _ArrayVisualizerState extends State<ArrayVisualizer> {
                           fontSize: 10,
                           color: widget.isDark ? Colors.grey[400] : Colors.grey[700],
                           fontFamily: 'monospace',
-                          fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                          fontWeight: (isHighlighted || isSwapped) ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                       Text(
                         '[$index]',
                         style: TextStyle(
                           fontSize: 9,
-                          color: isHighlighted ? Colors.amber : Colors.grey[600],
-                          fontWeight: isHighlighted ? FontWeight.bold : FontWeight.normal,
+                          color: isSwapped
+                              ? Colors.amber
+                              : isHighlighted
+                                  ? Colors.cyanAccent
+                                  : Colors.grey[600],
+                          fontWeight: (isHighlighted || isSwapped) ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ],
@@ -141,6 +236,63 @@ class _ArrayVisualizerState extends State<ArrayVisualizer> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 值变化时的弹跳动画组件。
+class _BounceWidget extends StatefulWidget {
+  final String trigger;
+  final Widget child;
+
+  const _BounceWidget({required this.trigger, required this.child});
+
+  @override
+  State<_BounceWidget> createState() => _BounceWidgetState();
+}
+
+class _BounceWidgetState extends State<_BounceWidget>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _controller.forward(from: 0.0);
+  }
+
+  @override
+  void didUpdateWidget(covariant _BounceWidget oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.trigger != widget.trigger) {
+      _controller.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final v = _controller.value;
+        // 弹性衰减：1.2 → 1.0，带轻微震荡
+        final scale = 1.0 + 0.18 * (1.0 - v) * math.sin(v * math.pi * 2.5);
+        return Transform.scale(
+          scale: scale.clamp(1.0, 1.2),
+          child: child!,
+        );
+      },
+      child: widget.child,
     );
   }
 }

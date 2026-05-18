@@ -44,7 +44,12 @@ class VariablesTab extends ConsumerWidget {
         final v = localVars[index];
         final accessType = accessedMap[v.name];
         final prevValue = prevValues[v.name];
-        return _buildVarTile(v, accessType, prevValue, isDark);
+        return _VarTile(
+          v: v,
+          accessType: accessType,
+          prevValue: prevValue,
+          isDark: isDark,
+        );
       },
     );
   }
@@ -61,22 +66,73 @@ class VariablesTab extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _buildVarTile(
-    dynamic v, // ApiVariableSnapshot
-    String? accessType,
-    String? prevValue,
-    bool isDark,
-  ) {
-    final textColor = isDark ? const Color(0xffd4d4d4) : const Color(0xff383a42);
-    final subTextColor = isDark ? const Color(0xff5c6370) : const Color(0xffa0a1a7);
+class _VarTile extends StatefulWidget {
+  final dynamic v;
+  final String? accessType;
+  final String? prevValue;
+  final bool isDark;
+
+  const _VarTile({
+    required this.v,
+    this.accessType,
+    this.prevValue,
+    required this.isDark,
+  });
+
+  @override
+  State<_VarTile> createState() => _VarTileState();
+}
+
+class _VarTileState extends State<_VarTile> with SingleTickerProviderStateMixin {
+  late AnimationController _flashController;
+  String? _lastValue;
+
+  @override
+  void initState() {
+    super.initState();
+    _flashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 600),
+    );
+    _lastValue = widget.v.value as String?;
+    _triggerFlashIfChanged();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VarTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final currentValue = widget.v.value as String?;
+    if (_lastValue != currentValue) {
+      _lastValue = currentValue;
+      _triggerFlashIfChanged();
+    }
+  }
+
+  void _triggerFlashIfChanged() {
+    if (widget.prevValue != null && widget.prevValue != widget.v.value) {
+      _flashController.forward(from: 0.0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _flashController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textColor = widget.isDark ? const Color(0xffd4d4d4) : const Color(0xff383a42);
+    final subTextColor = widget.isDark ? const Color(0xff5c6370) : const Color(0xffa0a1a7);
 
     Color? borderColor;
     String? badgeText;
-    if (accessType == "Read") {
+    if (widget.accessType == "Read") {
       borderColor = Colors.blueAccent;
       badgeText = "读";
-    } else if (accessType == "Write") {
+    } else if (widget.accessType == "Write") {
       borderColor = Colors.orange;
       badgeText = "写";
     }
@@ -84,9 +140,11 @@ class VariablesTab extends ConsumerWidget {
     // 值变化检测
     String? changeIndicator;
     Color? changeColor;
-    if (prevValue != null && prevValue != v.value) {
+    final prevValue = widget.prevValue;
+    final currValue = widget.v.value as String?;
+    if (prevValue != null && prevValue != currValue) {
       final prevNum = double.tryParse(prevValue);
-      final currNum = double.tryParse(v.value);
+      final currNum = double.tryParse(currValue ?? '');
       if (prevNum != null && currNum != null) {
         if (currNum > prevNum) {
           changeIndicator = '↑';
@@ -101,18 +159,29 @@ class VariablesTab extends ConsumerWidget {
       }
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
-        borderRadius: BorderRadius.circular(6),
-        border: borderColor != null
-            ? Border.all(color: borderColor.withValues(alpha: 0.5), width: 1.5)
-            : Border.all(
-                color: isDark ? const Color(0xff3e4451) : const Color(0xffe5e5e5),
-              ),
-      ),
+    return AnimatedBuilder(
+      animation: _flashController,
+      builder: (context, child) {
+        final flashOpacity = (1.0 - _flashController.value) * 0.15;
+        return Container(
+          margin: const EdgeInsets.only(bottom: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Color.lerp(
+              widget.isDark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
+              Colors.amber,
+              flashOpacity,
+            ),
+            borderRadius: BorderRadius.circular(6),
+            border: borderColor != null
+                ? Border.all(color: borderColor.withValues(alpha: 0.5), width: 1.5)
+                : Border.all(
+                    color: widget.isDark ? const Color(0xff3e4451) : const Color(0xffe5e5e5),
+                  ),
+          ),
+          child: child,
+        );
+      },
       child: Row(
         children: [
           Expanded(
@@ -122,7 +191,7 @@ class VariablesTab extends ConsumerWidget {
                 Row(
                   children: [
                     Text(
-                      v.name,
+                      widget.v.name as String,
                       style: TextStyle(
                         fontFamily: 'monospace',
                         fontSize: 13,
@@ -134,14 +203,14 @@ class VariablesTab extends ConsumerWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xff2a2a2a) : const Color(0xffe5e5e5),
+                        color: widget.isDark ? const Color(0xff2a2a2a) : const Color(0xffe5e5e5),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        v.tyName,
+                        widget.v.tyName as String,
                         style: TextStyle(
                           fontSize: 10,
-                          color: isDark ? Colors.grey : Colors.black54,
+                          color: widget.isDark ? Colors.grey : Colors.black54,
                           fontFamily: 'monospace',
                         ),
                       ),
@@ -186,7 +255,7 @@ class VariablesTab extends ConsumerWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '值: ${v.value}  地址: 0x${v.addr.toRadixString(16).toUpperCase().padLeft(4, '0')}',
+                  '值: ${widget.v.value}  地址: 0x${(widget.v.addr as int).toRadixString(16).toUpperCase().padLeft(4, '0')}',
                   style: TextStyle(
                     fontSize: 11,
                     color: subTextColor,

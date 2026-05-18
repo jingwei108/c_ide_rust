@@ -168,18 +168,24 @@ class ExecutionControlPanel extends ConsumerWidget {
               tooltip: '单步',
               onPressed: controller.stepNext,
             ),
-          // 进度条
+          // 进度条（含事件标记）
           if (state.showSlider)
             Expanded(
-              child: Slider(
-                min: 0,
-                max: math.max(state.maxCollectedStep.toDouble(), 1),
-                value: state.currentStep.clamp(0, state.maxCollectedStep).toDouble(),
-                divisions: state.maxCollectedStep > 0 ? state.maxCollectedStep : null,
-                label: _buildSliderLabel(state),
-                onChangeStart: (_) => controller.pause(),
-                onChanged: (v) => controller.onSliderChanged(v.round()),
-                onChangeEnd: (v) => controller.seekTo(v.round()),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildEventMarkerStrip(state),
+                  Slider(
+                    min: 0,
+                    max: math.max(state.maxCollectedStep.toDouble(), 1),
+                    value: state.currentStep.clamp(0, state.maxCollectedStep).toDouble(),
+                    divisions: state.maxCollectedStep > 0 ? state.maxCollectedStep : null,
+                    label: _buildSliderLabel(state),
+                    onChangeStart: (_) => controller.pause(),
+                    onChanged: (v) => controller.onSliderChanged(v.round()),
+                    onChangeEnd: (v) => controller.seekTo(v.round()),
+                  ),
+                ],
               ),
             ),
           // 播放速度
@@ -233,6 +239,75 @@ class ExecutionControlPanel extends ConsumerWidget {
       }
     }
     return '第 ${state.currentStep} 步';
+  }
+
+  /// 在进度条上方绘制关键事件标记（交换/递归/调用/IO）。
+  Widget _buildEventMarkerStrip(UnifiedState state) {
+    if (state.frameCache.isEmpty || state.maxCollectedStep <= 0) {
+      return const SizedBox(height: 6);
+    }
+
+    final markers = <_EventMarker>[];
+    for (final payload in state.frameCache) {
+      final label = payload.semanticLabel;
+      if (label.isEmpty) continue;
+      Color? color;
+      String tooltip = label;
+      if (label.contains('交换')) {
+        color = Colors.amber;
+      } else if (label.contains('递归')) {
+        color = Colors.purpleAccent;
+      } else if (label.contains('调用') || label.contains('返回')) {
+        color = Colors.blueAccent;
+      } else if (label.contains('IO') || label.contains('printf') || label.contains('scanf')) {
+        color = Colors.greenAccent;
+      } else if (label.contains('内存') || label.contains('malloc') || label.contains('free')) {
+        color = Colors.cyanAccent;
+      }
+      if (color != null) {
+        markers.add(_EventMarker(step: payload.stepIndex, color: color, tooltip: tooltip));
+      }
+    }
+
+    if (markers.isEmpty) return const SizedBox(height: 6);
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final maxStep = state.maxCollectedStep.toDouble();
+        return SizedBox(
+          height: 6,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: markers.map((m) {
+              final left = maxStep > 0 ? (m.step / maxStep) * width : 0.0;
+              return Positioned(
+                left: left.clamp(0, width - 4),
+                top: 1,
+                child: Tooltip(
+                  message: m.tooltip,
+                  child: Container(
+                    width: 4,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: m.color,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: m.color.withValues(alpha: 0.6),
+                          blurRadius: 3,
+                          spreadRadius: 0.5,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildPlayPauseButton(
@@ -354,4 +429,12 @@ class ExecutionControlPanel extends ConsumerWidget {
       ),
     );
   }
+}
+
+class _EventMarker {
+  final int step;
+  final Color color;
+  final String tooltip;
+
+  const _EventMarker({required this.step, required this.color, required this.tooltip});
 }
