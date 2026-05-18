@@ -1757,7 +1757,12 @@ impl CideVM {
                             None
                         }
                         OpCode::TrapBounds => {
-                            let index = *self.stack.last().unwrap_or(&0) as i64;
+                            let index = if let Some(&val) = self.stack.last() {
+                                val as i64
+                            } else {
+                                self.trap("TrapBounds: 值栈为空，无法获取索引", loc);
+                                return Some(StepResult::Trap);
+                            };
                             let mut name = "数组".to_string();
                             let mut size = 0;
                             if operand >= 0 {

@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "com.example.cide"
+    namespace = "com.cide.app"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = "27.1.12297006"
 
@@ -20,10 +20,7 @@ android {
     }
 
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.cide"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId = "com.cide.app"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,6 +29,8 @@ android {
 
     buildTypes {
         release {
+            // 警告：Release 构建当前使用 debug 签名。
+            // 正式发布前必须配置独立的 release 签名（jks + signingConfigs.release）。
             signingConfig = signingConfigs.getByName("debug")
             isMinifyEnabled = true
             isShrinkResources = true

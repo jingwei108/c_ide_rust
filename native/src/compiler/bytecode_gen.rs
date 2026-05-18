@@ -1593,21 +1593,17 @@ impl BytecodeGen {
         }
     }
 
-    fn gen_struct_copy(&mut self, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
-        let size = self.type_size(left.ty());
+    /// 通用结构体/union 拷贝循环：通过闭包生成目标地址加载指令。
+    fn gen_struct_copy_common<F>(&mut self, size: i32, src_expr: &mut Expr, mut dst_emit: F, loc: &SourceLoc)
+    where
+        F: FnMut(&mut Self, &SourceLoc, i32),
+    {
         if size <= 0 { return; }
         let src_temp = self.get_temp_slot(0);
-        let dst_temp = self.get_temp_slot(1);
-        self.gen_addr(right, loc);
+        self.gen_addr(src_expr, loc);
         self.emit(OpCode::StoreLocal, src_temp, loc);
-        self.gen_addr(left, loc);
-        self.emit(OpCode::StoreLocal, dst_temp, loc);
         for i in 0..size / 4 {
-            self.emit(OpCode::LoadLocal, dst_temp, loc);
-            if i > 0 {
-                self.emit(OpCode::PushConst, i * 4, loc);
-                self.emit(OpCode::Add, 0, loc);
-            }
+            dst_emit(self, loc, i);
             self.emit(OpCode::LoadLocal, src_temp, loc);
             if i > 0 {
                 self.emit(OpCode::PushConst, i * 4, loc);
@@ -1618,24 +1614,27 @@ impl BytecodeGen {
         }
     }
 
+    fn gen_struct_copy(&mut self, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
+        let size = self.type_size(left.ty());
+        let dst_temp = self.get_temp_slot(1);
+        self.gen_addr(left, loc);
+        self.emit(OpCode::StoreLocal, dst_temp, loc);
+        self.gen_struct_copy_common(size, right, |gen, loc, i| {
+            gen.emit(OpCode::LoadLocal, dst_temp, loc);
+            if i > 0 {
+                gen.emit(OpCode::PushConst, i * 4, loc);
+                gen.emit(OpCode::Add, 0, loc);
+            }
+        }, loc);
+    }
+
     fn gen_struct_copy_to_local(&mut self, local_offset: i32, right: &mut Expr, loc: &SourceLoc) {
         let size = self.type_size(right.ty());
-        if size <= 0 { return; }
-        let src_temp = self.get_temp_slot(0);
-        self.gen_addr(right, loc);
-        self.emit(OpCode::StoreLocal, src_temp, loc);
-        for i in 0..size / 4 {
-            self.emit(OpCode::GetFrameBase, 0, loc);
-            self.emit(OpCode::PushConst, local_offset + i * 4, loc);
-            self.emit(OpCode::Add, 0, loc);
-            self.emit(OpCode::LoadLocal, src_temp, loc);
-            if i > 0 {
-                self.emit(OpCode::PushConst, i * 4, loc);
-                self.emit(OpCode::Add, 0, loc);
-            }
-            self.emit(OpCode::LoadMem, 0, loc);
-            self.emit(OpCode::StoreMem, 0, loc);
-        }
+        self.gen_struct_copy_common(size, right, |gen, loc, i| {
+            gen.emit(OpCode::GetFrameBase, 0, loc);
+            gen.emit(OpCode::PushConst, local_offset + i * 4, loc);
+            gen.emit(OpCode::Add, 0, loc);
+        }, loc);
     }
 
     fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {

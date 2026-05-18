@@ -363,7 +363,13 @@ pub unsafe extern "C" fn cide_callstack_get(
         return;
     }
     let session = &*s;
-    let frame = &session.vm.as_ref().unwrap().get_call_stack()[index as usize];
+    let frame = if let Some(ref vm) = session.vm {
+        &vm.get_call_stack()[index as usize]
+    } else {
+        if !name.is_null() && name_size > 0 { *name = 0; }
+        if !line.is_null() { *line = 0; }
+        return;
+    };
     write_str(name, name_size, &frame.func_name);
 
     let mut best_line = 0;

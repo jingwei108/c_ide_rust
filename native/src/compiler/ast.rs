@@ -351,6 +351,12 @@ pub enum Expr {
     InitList { elements: Vec<Expr>, loc: SourceLoc, ty: Type },
 }
 
+impl Default for Expr {
+    fn default() -> Self {
+        Expr::Literal { value: 0, loc: SourceLoc::default(), ty: Type::default() }
+    }
+}
+
 macro_rules! expr_field {
     ($self:expr, $field:ident) => {
         match $self {

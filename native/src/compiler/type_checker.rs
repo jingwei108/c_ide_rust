@@ -49,7 +49,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
             expr.set_ty(Type::double());
         } else {
             let loc = *expr.loc();
-            let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+            let old = std::mem::take(expr);
             *expr = Expr::Cast {
                 expr: Box::new(old),
                 target_type: Type::double(),
@@ -65,7 +65,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
             TypeKind::LongLong => Type::long_long(),
             _ => Type::int(),
         };
-        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        let old = std::mem::take(expr);
         *expr = Expr::Cast {
             expr: Box::new(old),
             target_type: target_ty.clone(),
@@ -74,7 +74,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
         };
     } else if target.kind() == TypeKind::Float && current_ty.kind() != TypeKind::Float && matches!(current_ty.kind(), TypeKind::Int | TypeKind::Char | TypeKind::LongLong) {
         let loc = *expr.loc();
-        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        let old = std::mem::take(expr);
         *expr = Expr::Cast {
             expr: Box::new(old),
             target_type: Type::float(),
@@ -88,7 +88,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
             TypeKind::LongLong => Type::long_long(),
             _ => Type::int(),
         };
-        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        let old = std::mem::take(expr);
         *expr = Expr::Cast {
             expr: Box::new(old),
             target_type: target_ty.clone(),
@@ -97,7 +97,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
         };
     } else if target.kind() == TypeKind::LongLong && current_ty.kind() != TypeKind::LongLong && matches!(current_ty.kind(), TypeKind::Int | TypeKind::Char) {
         let loc = *expr.loc();
-        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        let old = std::mem::take(expr);
         *expr = Expr::Cast {
             expr: Box::new(old),
             target_type: Type::long_long(),
@@ -107,7 +107,7 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     } else if target.kind() != TypeKind::LongLong && current_ty.kind() == TypeKind::LongLong && matches!(target.kind(), TypeKind::Int | TypeKind::Char) {
         let loc = *expr.loc();
         let target_ty = if target.kind() == TypeKind::Char { Type::char() } else { Type::int() };
-        let old = std::mem::replace(expr, Expr::Literal { value: 0, loc, ty: Type::int() });
+        let old = std::mem::take(expr);
         *expr = Expr::Cast {
             expr: Box::new(old),
             target_type: target_ty.clone(),
