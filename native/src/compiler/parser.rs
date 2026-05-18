@@ -520,49 +520,62 @@ impl Parser {
 
     fn parse_declarator(&mut self, base_type: &Type) -> (Type, String) {
         let mut guard = DeclaratorGuard::default();
-        let (node, name) = self.parse_declarator_node(&mut guard);
+        let (node, name) = self.parse_declarator_node(&mut guard, false);
+        let name = name.unwrap_or_default();
         let ty = Self::interpret_declarator_node(&node, base_type);
         (ty, name)
     }
 
     // 声明符节点树：按 C 螺旋规则从内到外解释
-    fn parse_declarator_node(&mut self, guard: &mut DeclaratorGuard) -> (DeclaratorNode, String) {
+    /// 解析声明符节点树（C 螺旋规则）。
+    /// `is_abstract = true` 时用于 `sizeof(type)` 等抽象声明符场景，不读取标识符且不检查复杂度。
+    fn parse_declarator_node(&mut self, guard: &mut DeclaratorGuard, is_abstract: bool) -> (DeclaratorNode, Option<String>) {
         let mut ptr_prefixes = 0;
         while self.match_token(TokenType::Star) {
             ptr_prefixes += 1;
-            guard.ptr_count += 1;
+            if !is_abstract {
+                guard.ptr_count += 1;
+            }
         }
 
         let (name, mut node) = if self.match_token(TokenType::LParen) {
-            guard.paren_depth += 1;
-            if guard.paren_depth > 2 {
-                self.errors.push(ParseError {
-                    message: "声明符括号嵌套过深".to_string(),
-                    line: self.current().line,
-                    column: self.current().column,
-                    code: ErrorCode::E1007_ComplexDeclarator as i32,
-                });
-                while !self.check(TokenType::RParen) && !self.is_at_end() {
-                    self.advance();
+            if !is_abstract {
+                guard.paren_depth += 1;
+                if guard.paren_depth > 2 {
+                    self.errors.push(ParseError {
+                        message: "声明符括号嵌套过深".to_string(),
+                        line: self.current().line,
+                        column: self.current().column,
+                        code: ErrorCode::E1007_ComplexDeclarator as i32,
+                    });
+                    while !self.check(TokenType::RParen) && !self.is_at_end() {
+                        self.advance();
+                    }
+                    self.match_token(TokenType::RParen);
+                    guard.paren_depth -= 1;
+                    return (DeclaratorNode::Base, Some(String::new()));
                 }
-                self.match_token(TokenType::RParen);
-                guard.paren_depth -= 1;
-                return (DeclaratorNode::Base, String::new());
             }
-            let (inner_node, inner_name) = self.parse_declarator_node(guard);
+            let (inner_node, inner_name) = self.parse_declarator_node(guard, is_abstract);
             self.consume(TokenType::RParen, "预期 ')'");
-            guard.paren_depth -= 1;
+            if !is_abstract {
+                guard.paren_depth -= 1;
+            }
             (inner_name, inner_node)
+        } else if is_abstract {
+            (None, DeclaratorNode::Base)
         } else {
             let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-            (name_tok.text, DeclaratorNode::Base)
+            (Some(name_tok.text), DeclaratorNode::Base)
         };
 
         // 收集后缀（它们绑定更紧）
         let mut suffixes = Vec::new();
         loop {
             if self.match_token(TokenType::LBracket) {
-                guard.suffix_count += 1;
+                if !is_abstract {
+                    guard.suffix_count += 1;
+                }
                 let size = if self.check(TokenType::Number) {
                     let size_tok = self.advance().clone();
                     match size_tok.text.parse::<i32>() {
@@ -591,7 +604,9 @@ impl Parser {
                 self.consume(TokenType::RBracket, "预期 ']'");
                 suffixes.push(DeclaratorSuffix::Array(size));
             } else if self.match_token(TokenType::LParen) {
-                guard.suffix_count += 1;
+                if !is_abstract {
+                    guard.suffix_count += 1;
+                }
                 let params = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
                 suffixes.push(DeclaratorSuffix::Function(params));
@@ -617,15 +632,17 @@ impl Parser {
             node = DeclaratorNode::Pointer(Box::new(node));
         }
 
-        guard.cross_count = node_cross_count(&node);
-        if guard.cross_count > 2 {
-            self.errors.push(ParseError {
-                message: "声明符过于复杂".to_string(),
-                line: self.current().line,
-                column: self.current().column,
-                code: 1007,
-            });
-            return (DeclaratorNode::Base, name);
+        if !is_abstract {
+            guard.cross_count = node_cross_count(&node);
+            if guard.cross_count > 2 {
+                self.errors.push(ParseError {
+                    message: "声明符过于复杂".to_string(),
+                    line: self.current().line,
+                    column: self.current().column,
+                    code: 1007,
+                });
+                return (DeclaratorNode::Base, name);
+            }
         }
 
         (node, name)
@@ -1218,63 +1235,9 @@ impl Parser {
     }
 
     fn parse_abstract_declarator(&mut self) -> Option<DeclaratorNode> {
-        let mut ptr_prefixes = 0;
-        while self.match_token(TokenType::Star) {
-            ptr_prefixes += 1;
-        }
-
-        let mut node = if self.match_token(TokenType::LParen) {
-            if let Some(inner_node) = self.parse_abstract_declarator() {
-                self.consume(TokenType::RParen, "预期 ')'");
-                inner_node
-            } else {
-                self.consume(TokenType::RParen, "预期 ')'");
-                DeclaratorNode::Base
-            }
-        } else {
-            DeclaratorNode::Base
-        };
-
-        let mut suffixes = Vec::new();
-        loop {
-            if self.match_token(TokenType::LBracket) {
-                let size = if self.check(TokenType::Number) {
-                    let size_tok = self.advance().clone();
-                    size_tok.text.parse::<i32>().unwrap_or(0)
-                } else if self.check(TokenType::RBracket) {
-                    -1
-                } else {
-                    self.errors.push(ParseError {
-                        message: "预期数组大小或 ']'".to_string(),
-                        line: self.current().line,
-                        column: self.current().column,
-                        code: ErrorCode::E2002_ExpectedArraySize as i32,
-                    });
-                    0
-                };
-                self.consume(TokenType::RBracket, "预期 ']'");
-                suffixes.push(DeclaratorSuffix::Array(size));
-            } else if self.match_token(TokenType::LParen) {
-                let params = self.parse_param_list();
-                self.consume(TokenType::RParen, "预期 ')'");
-                suffixes.push(DeclaratorSuffix::Function(params));
-            } else {
-                break;
-            }
-        }
-
-        for suffix in suffixes {
-            match suffix {
-                DeclaratorSuffix::Array(size) => node = DeclaratorNode::Array(Box::new(node), size),
-                DeclaratorSuffix::Function(params) => node = DeclaratorNode::Function(Box::new(node), params),
-            }
-        }
-
-        for _ in 0..ptr_prefixes {
-            node = DeclaratorNode::Pointer(Box::new(node));
-        }
-
-        if ptr_prefixes == 0 && matches!(node, DeclaratorNode::Base) {
+        let mut guard = DeclaratorGuard::default();
+        let (node, _) = self.parse_declarator_node(&mut guard, true);
+        if matches!(node, DeclaratorNode::Base) {
             None
         } else {
             Some(node)

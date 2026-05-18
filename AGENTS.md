@@ -121,7 +121,7 @@ docs/                   设计文档、事故报告
 - **TypeChecker 警告代码勘误（2026-05-10）**：`W3050`/`W3051` 被滥用于不相关场景 → 新增 `W3052`~`W3055`
 - **BytecodeGen char 数组初始化（2026-05-10）**：`char s[] = "hello"` 使用 `StoreLocal`（i32）导致字符间隔 3 字节零 → 改用 `StoreMemByte` 连续存储
 - **移动端内存泄漏**：JS interop 监听器未清理、CTS 未 Dispose、ConsoleOutput 无上限
-- **clippy 警告清零（2026-05-10）**：`Type::to_string` 改为 `Display`、`SourceLoc` clone 清理、`if_same_then_else`、`module_inception` 等 → `cargo clippy` 0 警告（`vm.rs` 中 `write_cstring` 的 `int_plus_one` 边界检查保留 `#[allow]` 手动抑制）
+- **clippy 警告清零（2026-05-18）**：`Type::to_string` 改为 `Display`、`SourceLoc` clone 清理、`if_same_then_else`、`module_inception` 等 → `cargo clippy -- -D warnings` 0 警告（含本次审查修复的 `needless_return`/`needless_borrow`）
 - **unsigned 类型提示（2026-05-10）**：Parser 保留 `is_unsigned` 标记；TypeChecker 遇到 `unsigned int x;` 时报告 `W3056` 提示"被映射为 int，暂不支持无符号语义"
 - **`float` 类型支持** — `float x = 3.14;`、`float a = 5;`（隐式 int→float 转换）、算术/比较/复合赋值、强制转换 `(float)`/`(int)`、`printf("%f")` / `scanf("%f")`
 - **函数调用参数隐式转换** — `void foo(float x) {} foo(5);` 自动插入 `(float)` cast；`bar(3.7f)` 传入 int 形参自动截断为 int，并发出 `W3053` 精度丢失警告
