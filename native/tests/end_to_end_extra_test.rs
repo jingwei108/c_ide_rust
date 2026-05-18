@@ -3604,3 +3604,4 @@ int main() {
     assert_eq!(out[0], "1");
     assert_eq!(out[1], "2");
 }
+

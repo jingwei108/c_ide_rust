@@ -867,7 +867,7 @@ pub unsafe extern "C" fn cide_variable_get_field(
     let v = &session.runtime.variable_snapshot[var_index as usize];
     let struct_name = match v.ty.kind() {
         crate::compiler::ast::TypeKind::Struct => v.ty.name().to_string(),
-        crate::compiler::ast::TypeKind::Pointer if matches!(v.ty.base_kind(), crate::compiler::ast::TypeKind::Struct) => v.ty.name().to_string(),
+        crate::compiler::ast::TypeKind::Pointer if matches!(v.ty, crate::compiler::ast::Type::Pointer { pointee: ref p, .. } if matches!(p.as_ref(), crate::compiler::ast::Type::Struct { .. })) => v.ty.name().to_string(),
         _ => return -1,
     };
     let fields = match session.compile.struct_fields.get(&struct_name) {

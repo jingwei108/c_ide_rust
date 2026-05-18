@@ -13,6 +13,14 @@ pub const STACK_START: u32 = MEM_SIZE;
 pub const SNAPSHOT_INTERVAL: i32 = 100_000;
 pub const MAX_STACK_DEPTH: usize = 10_000;
 
+fn base_kind(ty: &Type) -> crate::compiler::ast::TypeKind {
+    match ty {
+        Type::Pointer { pointee, .. } => pointee.kind(),
+        Type::Array { element, .. } => base_kind(element),
+        _ => ty.kind(),
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct FuncMeta {
     pub ip: usize,
@@ -653,7 +661,7 @@ impl CideVM {
                     continue;
                 }
             }
-            let elem_size = match sym.ty.base_kind() {
+            let elem_size = match base_kind(&sym.ty) {
                 crate::compiler::ast::TypeKind::Char => 1,
                 crate::compiler::ast::TypeKind::Double => 8,
                 _ => 4,
@@ -675,7 +683,7 @@ impl CideVM {
         }
 
         if let Some((sym, base, _)) = best_sym {
-            let elem_size = match sym.ty.base_kind() {
+            let elem_size = match base_kind(&sym.ty) {
                 crate::compiler::ast::TypeKind::Char => 1,
                 crate::compiler::ast::TypeKind::Double => 8,
                 _ => 4,
@@ -870,7 +878,7 @@ impl CideVM {
             if array_size <= 0 {
                 continue;
             }
-            let base_kind = sym.ty.base_kind();
+            let base_kind = base_kind(&sym.ty);
             let elem_size = match base_kind {
                 TypeKind::Char => 1,
                 TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,

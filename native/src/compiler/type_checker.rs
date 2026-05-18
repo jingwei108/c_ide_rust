@@ -252,35 +252,46 @@ impl TypeChecker {
 
     fn check_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if target == value { return true; }
-        if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Array)
-            && target.base_kind() == value.base_kind() && target.name() == value.name() {
-            self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
-            return true;
-        }
-        if matches!(target.kind(), TypeKind::Array) && matches!(value.kind(), TypeKind::Pointer)
-            && target.base_kind() == value.base_kind() {
-            return true;
-        }
-        if matches!(target.kind(), TypeKind::Array) && matches!(value.kind(), TypeKind::Array)
-            && target.base_kind() == value.base_kind() && target.name() == value.name() {
-            let check_count = target.dims().len().min(value.dims().len());
-            let mut dims_compatible = true;
-            for i in 0..check_count {
-                if target.dims()[i] > 0 && target.dims()[i] != value.dims()[i] {
-                    dims_compatible = false;
-                    break;
+        if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Array) {
+            if let (Type::Pointer { pointee: t_pointee, .. }, Type::Array { element: v_element, .. }) = (target, value) {
+                if t_pointee.as_ref() == v_element.as_ref() {
+                    self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+                    return true;
                 }
             }
-            if dims_compatible { return true; }
+        }
+        if matches!(target.kind(), TypeKind::Array) && matches!(value.kind(), TypeKind::Pointer) {
+            if let (Type::Array { element: t_element, .. }, Type::Pointer { pointee: v_pointee, .. }) = (target, value) {
+                if t_element == v_pointee {
+                    return true;
+                }
+            }
+        }
+        if matches!(target.kind(), TypeKind::Array) && matches!(value.kind(), TypeKind::Array) {
+            if let (Type::Array { element: t_element, .. }, Type::Array { element: v_element, .. }) = (target, value) {
+                if t_element == v_element {
+                    let check_count = target.dims().len().min(value.dims().len());
+                    let mut dims_compatible = true;
+                    for i in 0..check_count {
+                        if target.dims()[i] > 0 && target.dims()[i] != value.dims()[i] {
+                            dims_compatible = false;
+                            break;
+                        }
+                    }
+                    if dims_compatible { return true; }
+                }
+            }
         }
         if target.is_function_pointer() && value.is_function_pointer() {
             // Function pointer assignment: check return type and param count
-            if let (Type::FunctionPointer { return_type: t_ret, param_types: t_params, .. },
-                    Type::FunctionPointer { return_type: v_ret, param_types: v_params, .. }) = (target, value) {
-                if t_params.len() == v_params.len() {
-                    let params_compatible = t_params.iter().zip(v_params.iter()).all(|(a, b)| a == b);
-                    if params_compatible && t_ret == v_ret {
-                        return true;
+            if let (Type::Pointer { pointee: t_pointee, .. }, Type::Pointer { pointee: v_pointee, .. }) = (target, value) {
+                if let (Type::Function { return_type: t_ret, param_types: t_params, .. },
+                        Type::Function { return_type: v_ret, param_types: v_params, .. }) = (t_pointee.as_ref(), v_pointee.as_ref()) {
+                    if t_params.len() == v_params.len() {
+                        let params_compatible = t_params.iter().zip(v_params.iter()).all(|(a, b)| a == b);
+                        if params_compatible && t_ret == v_ret {
+                            return true;
+                        }
                     }
                 }
             }
@@ -329,9 +340,11 @@ impl TypeChecker {
             self.report_warning("整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。", loc, ErrorCode::W3054_IntToPointerCast);
             return true;
         }
-        if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Pointer) && value.name().is_empty() {
-            if value.base_kind() == TypeKind::Void {
-                self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
+        if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Pointer) {
+            if let Type::Pointer { pointee: v_pointee, .. } = value {
+                if matches!(v_pointee.as_ref(), Type::Void { .. }) {
+                    self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
+                }
             }
             return true;
         }
@@ -410,19 +423,14 @@ impl TypeChecker {
         }
     }
 
-    fn validate_nested_init_list(&mut self, dims: &[i32], init: &mut Expr, loc: &SourceLoc, base_kind: &TypeKind, struct_name: &str) -> bool {
+    fn validate_nested_init_list(&mut self, dims: &[i32], init: &mut Expr, loc: &SourceLoc, element_type: &Type) -> bool {
         if dims.is_empty() {
-            let expected = match base_kind {
-                TypeKind::Struct => Type::struct_type(struct_name),
-                TypeKind::Char => Type::char(),
-                _ => Type::int(),
-            };
             let e_type = self.resolve_expr_type(init);
-            if !self.check_assignable(&expected, &e_type, loc) {
-                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", expected, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+            if !self.check_assignable(element_type, &e_type, loc) {
+                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", element_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
                 return false;
             }
-            insert_implicit_cast(init, &expected);
+            insert_implicit_cast(init, element_type);
             return true;
         }
         if !matches!(init, Expr::InitList { .. }) {
@@ -438,7 +446,7 @@ impl TypeChecker {
             self.report_error("初始化列表元素数量超过数组维度大小", loc, ErrorCode::E3005_ArrayInitTooMany);
         }
         for elem in elements {
-            if !self.validate_nested_init_list(&dims[1..], elem, loc, base_kind, struct_name) {
+            if !self.validate_nested_init_list(&dims[1..], elem, loc, element_type) {
                 return false;
             }
         }
@@ -446,11 +454,7 @@ impl TypeChecker {
     }
 
     fn check_array_initializer(&mut self, arr_type: &mut Type, init: &mut Expr, loc: &SourceLoc) {
-        let elem_type = if arr_type.base_kind() == TypeKind::Struct {
-            Type::struct_type(arr_type.name())
-        } else {
-            Type::from_base_kind(arr_type.base_kind(), arr_type.name().to_string())
-        };
+        let elem_type = arr_type.innermost_element_type();
 
         if !arr_type.dims().is_empty() && arr_type.dims().len() > 1 {
             if let Expr::InitList { elements, .. } = init {
@@ -461,9 +465,7 @@ impl TypeChecker {
                         *array_size = total_elems;
                     }
                     let dims_copy = dims.clone();
-                    let base = arr_type.base_kind();
-                    let name = arr_type.name().to_string();
-                    self.validate_nested_init_list(&dims_copy, init, loc, &base, &name);
+                    self.validate_nested_init_list(&dims_copy, init, loc, &elem_type);
                 }
             } else {
                 let init_type = self.resolve_expr_type(init);
@@ -744,7 +746,7 @@ impl TypeChecker {
                 }
                 let then_type = self.resolve_expr_type(then_branch);
                 let else_type = self.resolve_expr_type(else_branch);
-                if then_type.kind() != else_type.kind() || then_type.name() != else_type.name() || then_type.base_kind() != else_type.base_kind() {
+                if then_type.kind() != else_type.kind() || then_type.name() != else_type.name() || then_type != else_type {
                     self.report_error("三目运算符分支类型不匹配", loc, ErrorCode::E3004_TypeMismatch);
                 }
                 *ty = then_type;
@@ -774,16 +776,17 @@ impl TypeChecker {
                         Type::int()
                     }
                     UnaryOp::Addr => {
-                        Type::Pointer { base_kind: operand_type.kind(), name: operand_type.name().to_string(), is_unsigned: false, is_const: false }
+                        Type::pointer_to(operand_type.clone())
                     }
                     UnaryOp::Deref => {
                         if !operand_type.is_pointer() && !operand_type.is_array() {
                             self.report_error("解引用要求指针类型", loc, ErrorCode::E3021_DerefNonPointer);
                             Type::int()
-                        } else if operand_type.base_kind() == TypeKind::Struct {
-                            Type::struct_type(operand_type.name())
                         } else {
-                            Type::from_base_kind(operand_type.base_kind(), operand_type.name().to_string())
+                            match operand_type {
+                                Type::Pointer { pointee, .. } | Type::Array { element: pointee, .. } => *pointee.clone(),
+                                _ => Type::int(),
+                            }
                         }
                     }
                     UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
@@ -809,17 +812,13 @@ impl TypeChecker {
             Expr::Literal { .. } => Type::int(),
             Expr::FloatLiteral { .. } => Type::float(),
             Expr::LongLiteral { .. } => Type::long_long(),
-            Expr::StringLiteral { .. } => Type::pointer(TypeKind::Char, "char"),
+            Expr::StringLiteral { .. } => Type::pointer_to(Type::char()),
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
                     *ty = sym.ty;
                 } else if let Some(sym) = self.funcs.get(name).cloned() {
                     // Function name used as value (function pointer)
-                    *ty = Type::FunctionPointer {
-                        return_type: Box::new(sym.return_type),
-                        param_types: sym.param_types,
-                        is_const: false,
-                    };
+                    *ty = Type::function_pointer(sym.return_type, sym.param_types);
                 } else {
                     self.report_error(&format!("未声明的变量 '{}'", name), loc, ErrorCode::E3023_UndeclaredVar);
                     *ty = Type::int();
@@ -839,8 +838,8 @@ impl TypeChecker {
                     }
                 }
                 let callee_ty = self.resolve_expr_type(callee);
-                match callee_ty {
-                    Type::FunctionPointer { param_types, return_type, .. } => {
+                if let Type::Pointer { pointee, .. } = &callee_ty {
+                    if let Type::Function { param_types, return_type, .. } = pointee.as_ref() {
                         if args.len() != param_types.len() {
                             self.report_error(&format!("函数指针调用参数数量不匹配：期望 {}，实际 {}", param_types.len(), args.len()), loc, ErrorCode::E3037_FuncArgCount);
                         } else {
@@ -854,18 +853,16 @@ impl TypeChecker {
                             }
                         }
                         *ty = return_type.as_ref().clone();
-                    }
-                    _ if callee_ty.is_pointer() => {
+                    } else {
                         // Allow calling through generic pointer (with warning)
                         self.report_warning("通过通用指针调用函数，建议显式转换为函数指针", loc, ErrorCode::W3055_VoidPointerCast);
                         for arg in args.iter_mut() { self.resolve_expr_type(arg); }
                         *ty = Type::int();
                     }
-                    _ => {
-                        self.report_error("不能对非函数指针类型进行调用", loc, ErrorCode::E3045_CompoundAssignType);
-                        for arg in args.iter_mut() { self.resolve_expr_type(arg); }
-                        *ty = Type::int();
-                    }
+                } else {
+                    self.report_error("不能对非函数指针类型进行调用", loc, ErrorCode::E3045_CompoundAssignType);
+                    for arg in args.iter_mut() { self.resolve_expr_type(arg); }
+                    *ty = Type::int();
                 }
                 ty.clone()
             }
@@ -878,12 +875,10 @@ impl TypeChecker {
                 } else if !arr_type.is_array() && !arr_type.is_pointer() {
                     self.report_error("不能对非数组/指针类型进行索引", loc, ErrorCode::E3040_IndexNonArray);
                     *ty = Type::int();
-                } else if (arr_type.is_array() && !arr_type.dims().is_empty()) || arr_type.is_pointer() {
+                } else if arr_type.is_array() {
                     *ty = arr_type.subscript_type();
-                } else if arr_type.base_kind() == TypeKind::Struct {
-                    *ty = Type::struct_type(arr_type.name());
-                } else if arr_type.base_kind() == TypeKind::Char {
-                    *ty = Type::char();
+                } else if let Type::Pointer { pointee, .. } = arr_type {
+                    *ty = *pointee.clone();
                 } else {
                     *ty = Type::int();
                 }
@@ -891,10 +886,20 @@ impl TypeChecker {
             }
             Expr::Member { object, member, loc, ty } => {
                 let obj_type = self.resolve_expr_type(object);
-                let (type_name, is_union) = if obj_type.is_struct() || (obj_type.is_pointer() && !obj_type.name().is_empty() && obj_type.base_kind() == TypeKind::Struct) {
+                let (type_name, is_union) = if obj_type.is_struct() {
                     (obj_type.name().to_string(), false)
-                } else if obj_type.is_union() || (obj_type.is_pointer() && !obj_type.name().is_empty() && obj_type.base_kind() == TypeKind::Union) {
+                } else if obj_type.is_union() {
                     (obj_type.name().to_string(), true)
+                } else if let Type::Pointer { pointee, .. } = &obj_type {
+                    if let Type::Struct { name, .. } = pointee.as_ref() {
+                        (name.clone(), false)
+                    } else if let Type::Union { name, .. } = pointee.as_ref() {
+                        (name.clone(), true)
+                    } else {
+                        self.report_error("'.' 和 '->' 只能用于结构体或联合体类型", loc, ErrorCode::E3041_MemberNonStruct);
+                        *ty = Type::int();
+                        return ty.clone();
+                    }
                 } else {
                     self.report_error("'.' 和 '->' 只能用于结构体或联合体类型", loc, ErrorCode::E3041_MemberNonStruct);
                     *ty = Type::int();
@@ -1019,7 +1024,7 @@ impl TypeChecker {
                 insert_implicit_cast(&mut args[0], &expected);
             }
         }
-        Type::pointer(TypeKind::Void, "")
+        Type::pointer_to(Type::void())
     }
 
     fn check_builtin_free(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -1244,7 +1249,7 @@ impl TypeChecker {
                 }
             }
         }
-        Type::pointer(TypeKind::Void, "")
+        Type::pointer_to(Type::void())
     }
 
     fn check_builtin_exit(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -1277,7 +1282,7 @@ impl TypeChecker {
                 }
             }
         }
-        Type::pointer(TypeKind::Char, "char")
+        Type::pointer_to(Type::char())
     }
 
     fn check_builtin_atoi(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -1357,7 +1362,7 @@ impl TypeChecker {
                 insert_implicit_cast(&mut args[1], &Type::int());
             }
         }
-        Type::pointer(TypeKind::Void, "")
+        Type::pointer_to(Type::void())
     }
 
     fn check_builtin_qsort(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -1411,7 +1416,7 @@ impl TypeChecker {
                 }
             }
         }
-        Type::pointer(TypeKind::Void, "")
+        Type::pointer_to(Type::void())
     }
 
     fn check_builtin_fread(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {

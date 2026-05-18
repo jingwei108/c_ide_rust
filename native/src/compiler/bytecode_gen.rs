@@ -4,6 +4,14 @@ use crate::vm::opcode::OpCode;
 use crate::vm::vm::VMSymbol;
 use std::collections::HashMap;
 
+fn base_kind(ty: &Type) -> TypeKind {
+    match ty {
+        Type::Pointer { pointee, .. } => pointee.kind(),
+        Type::Array { element, .. } => base_kind(element),
+        _ => ty.kind(),
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FuncMeta {
     pub ip: usize,
@@ -109,7 +117,7 @@ impl BytecodeGen {
             if let Some(ref init) = g.init {
                 match init {
                     Expr::InitList { elements, .. } => {
-                        if g.ty.base_kind() == TypeKind::Char {
+                        if base_kind(&g.ty) == TypeKind::Char {
                             let values = flatten_init_list(elements, &mut self.errors);
                             for i in 0..sz as usize {
                                 self.globals_init_32.push((offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
@@ -359,7 +367,7 @@ impl BytecodeGen {
 
     fn get_member_offset(&self, object_type: &Type, member_name: &str) -> i32 {
         match object_type.kind() {
-            TypeKind::Union | TypeKind::Pointer if object_type.base_kind() == TypeKind::Union => {
+            TypeKind::Union | TypeKind::Pointer if base_kind(object_type) == TypeKind::Union => {
                 // All union members start at offset 0
                 let _ = member_name;
                 0
@@ -378,7 +386,7 @@ impl BytecodeGen {
                 }
                 0
             }
-            TypeKind::Pointer if object_type.base_kind() == TypeKind::Struct => {
+            TypeKind::Pointer if base_kind(object_type) == TypeKind::Struct => {
                 let fields = match self.struct_defs.get(object_type.name()) {
                     Some(f) => f,
                     None => return 0,
@@ -411,7 +419,7 @@ impl BytecodeGen {
     fn ptr_step_size(&self, ty: &Type) -> i32 {
         match ty.kind() {
             TypeKind::Pointer => {
-                match ty.base_kind() {
+                match base_kind(ty) {
                     TypeKind::Char => 1,
                     TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
                     TypeKind::Double | TypeKind::LongLong => 8,
@@ -434,7 +442,7 @@ impl BytecodeGen {
     }
 
     fn elem_type_size(&self, arr_type: &Type) -> i32 {
-        match arr_type.base_kind() {
+        match base_kind(arr_type) {
             TypeKind::Char => 1,
             TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
             TypeKind::Double | TypeKind::LongLong => 8,
@@ -512,7 +520,7 @@ impl BytecodeGen {
             TypeKind::Char => 1,
             TypeKind::Float => 4,
             TypeKind::Double | TypeKind::LongLong => 8,
-            TypeKind::Pointer | TypeKind::FunctionPointer => 4,
+            TypeKind::Pointer | TypeKind::Function => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
                 let elem_size = self.elem_type_size(ty);
@@ -564,7 +572,7 @@ impl BytecodeGen {
                         if vty.is_array() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let values = flatten_init_list(elements, &mut self.errors);
-                                if vty.base_kind() == TypeKind::Char {
+                                if base_kind(vty) == TypeKind::Char {
                                     let base_temp = self.get_temp_slot(0);
                                     self.emit(OpCode::GetFrameBase, 0, loc);
                                     self.emit(OpCode::PushConst, local_offset, loc);
@@ -1201,7 +1209,7 @@ impl BytecodeGen {
                     UnaryOp::Deref => {
                         self.gen_expr(operand);
                         let base_ty = if operand.ty().is_pointer() {
-                            operand.ty().base_kind()
+                            base_kind(operand.ty())
                         } else {
                             TypeKind::Int
                         };
@@ -1297,7 +1305,7 @@ impl BytecodeGen {
                     let arg_ty_kind = arg.ty().kind();
                     let arg_ty = arg.ty();
                     if arg_ty.is_struct() {
-                        let sz = self.type_size(arg_ty);
+                        let sz = self.type_size(&arg_ty);
                         let words = (sz + 3) / 4;
                         if let Expr::Identifier { name: arg_name, .. } = arg {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
@@ -1405,9 +1413,9 @@ impl BytecodeGen {
                     false
                 };
                 for arg in args.iter_mut().rev() {
-                    let arg_ty = arg.ty();
+                    let arg_ty = arg.ty().clone();
                     if arg_ty.is_struct() {
-                        let sz = self.type_size(arg_ty);
+                        let sz = self.type_size(&arg_ty);
                         let words = (sz + 3) / 4;
                         if let Expr::Identifier { name: arg_name, .. } = arg {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
@@ -1433,17 +1441,20 @@ impl BytecodeGen {
                     } else if arg_ty.kind() == TypeKind::Double {
                         self.gen_expr(arg);
                         if is_direct_call {
-                            // For direct call, we know the callee; but CallPtr assumes user func
-                            // Actually direct call uses Call opcode which handles param_sizes from func_table
-                            // No need for SplitD if callee is host func... but we don't know here.
-                            // For safety, always split for CallPtr; for Call, let original logic handle.
+                            self.emit(OpCode::SplitD, 0, &loc);
                         }
-                        self.emit(OpCode::SplitD, 0, &loc);
                     } else if arg_ty.kind() == TypeKind::LongLong {
                         self.gen_expr(arg);
-                        self.emit(OpCode::SplitQ, 0, &loc);
+                        if is_direct_call {
+                            self.emit(OpCode::SplitQ, 0, &loc);
+                        }
                     } else {
                         self.gen_expr(arg);
+                        if let Expr::Identifier { name, .. } = callee.as_ref() {
+                            if (name == "printf" || name == "fprintf") && arg_ty.kind() == TypeKind::Float {
+                                self.emit(OpCode::CastF2D, 0, &loc);
+                            }
+                        }
                     }
                 }
                 if let Expr::Identifier { name, .. } = callee.as_ref() {

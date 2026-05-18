@@ -14,6 +14,13 @@ use std::collections::HashMap;
 
 // ---------- 辅助函数：根据类型定义计算类型大小 ----------
 
+fn base_element_type(ty: &Type) -> &Type {
+    match ty {
+        Type::Array { element, .. } => base_element_type(element),
+        _ => ty,
+    }
+}
+
 fn type_size(ty: &Type, struct_defs: &HashMap<String, Vec<StructField>>, union_defs: &HashMap<String, Vec<StructField>>) -> i32 {
     match ty.kind() {
         TypeKind::Void => 0,
@@ -21,25 +28,11 @@ fn type_size(ty: &Type, struct_defs: &HashMap<String, Vec<StructField>>, union_d
         TypeKind::Char => 1,
         TypeKind::Float => 4,
         TypeKind::Double | TypeKind::LongLong => 8,
-        TypeKind::Pointer | TypeKind::FunctionPointer => 4,
+        TypeKind::Pointer | TypeKind::Function => 4,
         TypeKind::Array => {
             let elem_count = ty.total_elements();
-            let elem_size = match ty.base_kind() {
-                TypeKind::Char => 1,
-                TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
-                TypeKind::Double | TypeKind::LongLong => 8,
-                TypeKind::Struct => {
-                    struct_defs.get(ty.name()).map(|f| {
-                        f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).sum()
-                    }).unwrap_or(4)
-                }
-                TypeKind::Union => {
-                    union_defs.get(ty.name()).map(|f| {
-                        f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).max().unwrap_or(0)
-                    }).unwrap_or(4)
-                }
-                _ => 4,
-            };
+            let base_elem = base_element_type(ty);
+            let elem_size = type_size(base_elem, struct_defs, union_defs);
             elem_count * elem_size
         }
         TypeKind::Struct => {
