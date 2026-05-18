@@ -76,4 +76,6 @@ pub enum ErrorCode {
     W3055_VoidPointerCast = 3055,
     W3056_UnsignedToInt = 3056,
     H3057_ImplicitConversionHint = 3057,
+    E3058_StaticFuncAccess = 3058,
+    E3059_StaticGlobalAccess = 3059,
 }

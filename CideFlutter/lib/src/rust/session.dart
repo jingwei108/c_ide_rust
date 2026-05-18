@@ -87,6 +87,7 @@ class Diagnostic {
   final int replaceEndLine;
   final int replaceEndColumn;
   final String replacementText;
+  final String filename;
 
   const Diagnostic({
     required this.line,
@@ -101,6 +102,7 @@ class Diagnostic {
     required this.replaceEndLine,
     required this.replaceEndColumn,
     required this.replacementText,
+    required this.filename,
   });
 
   @override
@@ -116,7 +118,8 @@ class Diagnostic {
       replaceStartColumn.hashCode ^
       replaceEndLine.hashCode ^
       replaceEndColumn.hashCode ^
-      replacementText.hashCode;
+      replacementText.hashCode ^
+      filename.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -134,7 +137,8 @@ class Diagnostic {
           replaceStartColumn == other.replaceStartColumn &&
           replaceEndLine == other.replaceEndLine &&
           replaceEndColumn == other.replaceEndColumn &&
-          replacementText == other.replacementText;
+          replacementText == other.replacementText &&
+          filename == other.filename;
 }
 
 class MemoryRegion {

@@ -167,6 +167,12 @@ docs/                   设计文档、事故报告
   - `SharedPreferences` 本地持久化
   - Flutter「学习进度」面板：5 个维度卡片（连续活跃、编译统计、错误修复、知识卡片、算法验证）+ 线性进度条 + 重置按钮
   - 自动追踪：编译后更新错误统计、修复后记录、算法验证后记录、查看知识卡片后记录
+- **多文件/项目模式**：
+  - 前端文件标签栏：新建/删除/切换文件
+  - 后端多文件 AST 合并编译：`main.c + utils.c + sort.c → merge → compile`
+  - `static` 函数作用域隔离：跨文件访问 static 函数报 `E3058`
+  - 诊断信息携带 `filename` 字段，前端正确渲染多文件错误位置
+  - 算法验证、统一模式、单步执行全部支持多文件
 - **TypeChecker 指针关系运算（2026-05-10）**：`< <= > >=` 拒绝指针比较 → 允许同类型指针（含数组退化）间比较
 - **Lexer UTF-8 安全加固（2026-05-10）**：`peek()`/`advance()` 使用 `as_bytes()[i] as char` → 改用 `source[pos..].chars().nth()` 和 `char.len_utf8()`，正确跳过多字节 UTF-8 字符（如中文注释）
 - **BytecodeGen 错误消息勘误（2026-05-10）**：`gen_member_addr` 中"全局结构体暂不支持" → 改为"未声明的结构体变量"（该分支实际处理的是变量未找到）
@@ -238,6 +244,15 @@ docs/                   设计文档、事故报告
   - `const` 语义：`const int MAX = 100;` 现在会阻止后续赋值和自增/自减，新增错误码 `E3049_AssignToConst`
   - VM 新增 `finished`/`exit_code` 机制，支持 `exit(code)` 提前终止并记录返回值
   - 新增 10 个端到端测试覆盖上述全部特性
+- **多文件/项目模式（2026-05-18）**：
+  - 后端：`FuncDecl`/`GlobalDecl` 新增 `is_static` + `source_file` 字段
+  - Parser：全局级别保留 `static` 标记（函数/全局变量）
+  - `run_multi_file_pipeline`：合并多文件源码、独立 Lexer→Parser、AST 合并、行号→文件名映射
+  - TypeChecker：`static_funcs` 按文件隔离，跨文件访问报 `E3058_StaticFuncAccess`
+  - `Diagnostic` 新增 `filename` 字段，FRB 两端同步
+  - FRB API：`compileMulti` / `compileAndRunMulti` + `CodeFile` 类型
+  - Flutter：文件标签栏 `FileTabBar`、多文件状态管理、编译/运行/修复全适配
+  - 新增 5 个 E2E 测试覆盖多文件编译与 static 隔离
 - **审阅报告修复（2026-05-18）**：
   - Parser `LongLiteral` 误用作类型关键字：4 处 `TokenType::LongLiteral` → `TokenType::Long`
   - VFS `fwrite` unwrap 风险：`files.get_mut()` 改为安全匹配，缺失时返回 `0`

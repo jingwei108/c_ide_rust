@@ -34,10 +34,13 @@ pub struct TypeChecker {
     warnings: Vec<TypeError>,
     hints: Vec<TypeError>,
     funcs: HashMap<String, FuncSymbol>,
+    static_func_sigs: HashMap<String, FuncSymbol>,
+    static_func_files: HashMap<String, Vec<String>>,
     structs: HashMap<String, StructSymbol>,
     unions: HashMap<String, StructSymbol>,
     scopes: Vec<HashMap<String, VarSymbol>>,
     current_func_return: Type,
+    current_file: String,
     loop_depth: i32,
     switch_depth: i32,
 }
@@ -144,13 +147,24 @@ impl TypeChecker {
                 return_type: f.return_type.clone(),
                 param_types: f.params.iter().map(|p| p.ty.clone()).collect(),
             };
-            if let Some(existing) = self.funcs.get(&f.name) {
-                if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
-                    self.report_error(&format!("函数 '{}' 的声明与之前定义签名不一致", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
+            if f.is_static {
+                if let Some(existing) = self.static_func_sigs.get(&f.name) {
+                    if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
+                        self.report_error(&format!("函数 '{}' 的声明与之前定义签名不一致", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
+                    }
+                } else {
+                    self.static_func_sigs.insert(f.name.clone(), new_sym);
                 }
-                continue;
+                self.static_func_files.entry(f.name.clone()).or_default().push(f.source_file.clone());
+            } else {
+                if let Some(existing) = self.funcs.get(&f.name) {
+                    if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
+                        self.report_error(&format!("函数 '{}' 的声明与之前定义签名不一致", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
+                    }
+                    continue;
+                }
+                self.funcs.insert(f.name.clone(), new_sym);
             }
-            self.funcs.insert(f.name.clone(), new_sym);
         }
 
         // Pass 2.5: Register globals and check initializers
@@ -515,6 +529,7 @@ impl TypeChecker {
     // =========================================================================
 
     fn visit_func_decl(&mut self, node: &mut FuncDecl) {
+        self.current_file = node.source_file.clone();
         self.current_func_return = node.return_type.clone();
         self.enter_scope();
         for p in &node.params {
@@ -832,7 +847,7 @@ impl TypeChecker {
             Expr::CallPtr { callee, args, loc, ty } => {
                 // Direct named function call: identifier is a known function
                 if let Expr::Identifier { name, .. } = callee.as_ref() {
-                    if self.funcs.contains_key(name) || self.is_builtin_func(name) {
+                    if self.funcs.contains_key(name) || self.static_func_sigs.contains_key(name) || self.is_builtin_func(name) {
                         *ty = self.visit_call(name, args, loc);
                         return ty.clone();
                     }
@@ -1515,14 +1530,55 @@ impl TypeChecker {
                     }
                 }
             }
-            sym.return_type.clone()
-        } else {
-            self.report_error(
-                &format!("未定义的函数 '{}'", name),
-                loc,
-                ErrorCode::E3036_UndefinedFunc,
-            );
-            Type::void()
+            return sym.return_type.clone();
         }
+
+        if let Some(sym) = self.static_func_sigs.get(name).cloned() {
+            if let Some(files) = self.static_func_files.get(name) {
+                if !files.contains(&self.current_file) {
+                    self.report_error(
+                        &format!("static 函数 '{}' 在其他文件中不可见", name),
+                        loc,
+                        ErrorCode::E3058_StaticFuncAccess,
+                    );
+                    return Type::void();
+                }
+            }
+            if args.len() != sym.param_types.len() {
+                self.report_error(
+                    &format!(
+                        "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                        name,
+                        sym.param_types.len(),
+                        args.len()
+                    ),
+                    loc,
+                    ErrorCode::E3037_FuncArgCount,
+                );
+            } else {
+                for (i, (arg, expected)) in
+                    args.iter_mut().zip(sym.param_types.iter()).enumerate()
+                {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !self.check_assignable(expected, &arg_type, loc) {
+                        self.report_error(
+                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
+                            loc,
+                            ErrorCode::E3038_FuncArgType,
+                        );
+                    } else {
+                        insert_implicit_cast(arg, expected);
+                    }
+                }
+            }
+            return sym.return_type.clone();
+        }
+
+        self.report_error(
+            &format!("未定义的函数 '{}'", name),
+            loc,
+            ErrorCode::E3036_UndefinedFunc,
+        );
+        Type::void()
     }
 }

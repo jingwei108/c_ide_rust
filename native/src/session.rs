@@ -11,6 +11,12 @@ pub struct CompileUnit {
     pub source: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct CodeFile {
+    pub filename: String,
+    pub source: String,
+}
+
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diagnostic {
@@ -26,6 +32,7 @@ pub struct Diagnostic {
     pub replace_end_line: i32,
     pub replace_end_column: i32,
     pub replacement_text: String,
+    pub filename: String,
 }
 
 

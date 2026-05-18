@@ -64,6 +64,31 @@ pub fn compile(source: String) -> CompileResult {
 }
 
 #[frb]
+#[derive(Debug, Clone)]
+pub struct CodeFile {
+    pub filename: String,
+    pub source: String,
+}
+
+#[frb]
+pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
+    let files = files.into_iter().map(|f| crate::session::CodeFile {
+        filename: f.filename,
+        source: f.source,
+    }).collect();
+    crate::flutter_bridge::compile_multi(files)
+}
+
+#[frb]
+pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
+    let files = files.into_iter().map(|f| crate::session::CodeFile {
+        filename: f.filename,
+        source: f.source,
+    }).collect();
+    crate::flutter_bridge::compile_and_run_multi(files)
+}
+
+#[frb]
 pub fn run_code() -> RunResult {
     crate::flutter_bridge::run_code()
 }

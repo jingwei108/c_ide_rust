@@ -234,7 +234,7 @@ impl Parser {
                 if is_enum_decl {
                     self.parse_enum_decl(&mut program);
                 } else {
-                    self.parse_global_var_or_func(&mut program);
+                    self.parse_global_var_or_func(&mut program, false);
                 }
             } else if self.check(TokenType::Struct) {
                 let checkpoint = self.pos;
@@ -253,17 +253,21 @@ impl Parser {
                     } else {
                         self.pos = checkpoint;
                         self.errors.truncate(errors_checkpoint);
-                        self.parse_global_var_or_func(&mut program);
+                        self.parse_global_var_or_func(&mut program, false);
                     }
                 } else {
                     self.pos = checkpoint;
                     self.errors.truncate(errors_checkpoint);
-                    self.parse_global_var_or_func(&mut program);
+                    self.parse_global_var_or_func(&mut program, false);
                 }
             } else if self.check(TokenType::Union) {
                 program.unions.push(self.parse_union_decl());
-            } else if self.is_type_token() {
-                self.parse_global_var_or_func(&mut program);
+            } else if self.is_type_token() || self.is_static_token() {
+                let is_static = self.is_static_token();
+                if is_static {
+                    self.advance(); // consume 'static'
+                }
+                self.parse_global_var_or_func(&mut program, is_static);
             } else {
                 self.errors.push(ParseError {
                     message: format!("预期 struct、函数或全局变量声明，找到: {}", self.current().text),
@@ -278,7 +282,7 @@ impl Parser {
         Some(program)
     }
 
-    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode) {
+    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode, is_static: bool) {
         let checkpoint = self.pos;
         let base_type = self.parse_base_type();
         // 前瞻：跳过前导 *，检查是否是 identifier (
@@ -292,7 +296,7 @@ impl Parser {
             && self.tokens[lookahead + 1].ty == TokenType::LParen;
         if is_func_decl {
             self.pos = checkpoint;
-            program.funcs.push(self.parse_func_decl());
+            program.funcs.push(self.parse_func_decl(is_static));
         } else {
             let (ty, _name) = self.parse_declarator(&base_type);
             let name_tok = self.previous().clone();
@@ -306,6 +310,8 @@ impl Parser {
             program.globals.push(GlobalDecl {
                 loc: SourceLoc { line: name_tok.line, column: name_tok.column },
                 ty: ty.clone(), name: name_tok.text, init,
+                is_static,
+                source_file: String::new(),
             });
             while self.match_token(TokenType::Comma) {
                 let (extra_ty, _) = self.parse_declarator(&base_type);
@@ -320,6 +326,8 @@ impl Parser {
                 program.globals.push(GlobalDecl {
                     loc: SourceLoc { line: extra_name_tok.line, column: extra_name_tok.column },
                     ty: extra_ty, name: extra_name_tok.text, init: extra_init,
+                    is_static,
+                    source_file: String::new(),
                 });
             }
             self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
@@ -394,7 +402,7 @@ impl Parser {
         self.typedef_names.insert(alias_tok.text, Type::struct_type(name));
     }
 
-    fn parse_func_decl(&mut self) -> FuncDecl {
+    fn parse_func_decl(&mut self, is_static: bool) -> FuncDecl {
         let base_type = self.parse_base_type();
 
         let mut ret_type = base_type.clone();
@@ -420,6 +428,8 @@ impl Parser {
             name: name_tok.text,
             params,
             body,
+            is_static,
+            source_file: String::new(),
         }
     }
 
@@ -1501,6 +1511,8 @@ impl Parser {
                 ty: Type::int(),
                 name: member_tok.text,
                 init: Some(Expr::Literal { value: next_value, loc: SourceLoc { line: member_tok.line, column: member_tok.column }, ty: Type::int() }),
+                is_static: false,
+                source_file: String::new(),
             });
             next_value += 1;
             if !self.match_token(TokenType::Comma) { break; }

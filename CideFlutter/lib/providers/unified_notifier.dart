@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
+import '../models/ide_state.dart';
 import '../models/unified_state.dart';
 import 'ide_provider.dart';
 
@@ -16,10 +17,16 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
   // ========== 编译与启动 ==========
 
   Future<void> compileAndRun(String source) async {
+    await compileAndRunMulti([CodeFile(filename: 'main.c', source: source)]);
+  }
+
+  Future<void> compileAndRunMulti(List<CodeFile> files) async {
     state = state.copyWith(phase: ExecutionPhase.compiling, clearError: true);
 
     try {
-      final result = await rust.compileAndRun(source: source);
+      final result = await rust.compileAndRunMulti(
+        files: files.map((f) => rust.CodeFile(filename: f.filename, source: f.source)).toList(),
+      );
       if (!result.success) {
         state = state.copyWith(
           phase: ExecutionPhase.error,

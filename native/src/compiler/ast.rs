@@ -430,6 +430,8 @@ pub struct FuncDecl {
     pub name: String,
     pub params: Vec<Param>,
     pub body: Option<Stmt>,
+    pub is_static: bool,
+    pub source_file: String,
 }
 
 #[derive(Debug, Clone)]
@@ -451,6 +453,8 @@ pub struct GlobalDecl {
     pub ty: Type,
     pub name: String,
     pub init: Option<Expr>,
+    pub is_static: bool,
+    pub source_file: String,
 }
 
 // ============================================================================

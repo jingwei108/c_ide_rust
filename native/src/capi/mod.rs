@@ -6,7 +6,7 @@ use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 use std::slice;
 
-use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
+use crate::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime_for_step};
 
 /// 将 C 字符串指针安全转换为 Rust &str。
@@ -160,17 +160,8 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     }
     let session = &mut *s;
 
-    // 拼接所有编译单元（避免末尾多余换行导致行号偏移）
-    let mut full_source = String::new();
-    for unit in &session.compile.compile_units {
-        full_source.push_str(&unit.source);
-        if !unit.source.ends_with('\n') {
-            full_source.push('\n');
-        }
-    }
-
-    // 运行编译管线
-    if run_compile_pipeline(session, &full_source).is_err() {
+    let units = session.compile.compile_units.clone();
+    if run_multi_file_pipeline(session, units).is_err() {
         return -1;
     }
     0

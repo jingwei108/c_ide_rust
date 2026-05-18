@@ -63,13 +63,61 @@ class IdeNotifier extends Notifier<IdeState> {
   }
 
   void updateSource(String value) {
-    state = state.copyWith(source: value);
+    final newFiles = state.files.map((f) {
+      if (f.filename == state.currentFile) {
+        return f.copyWith(source: value);
+      }
+      return f;
+    }).toList();
+    state = state.copyWith(source: value, files: newFiles);
+  }
+
+  void addFile(String filename) {
+    if (state.files.any((f) => f.filename == filename)) return;
+    final newFiles = List<CodeFile>.from(state.files)
+      ..add(CodeFile(filename: filename, source: ''));
+    state = state.copyWith(files: newFiles, currentFile: filename, source: '');
+  }
+
+  void removeFile(String filename) {
+    if (state.files.length <= 1) return;
+    final newFiles = state.files.where((f) => f.filename != filename).toList();
+    String newCurrent = state.currentFile;
+    String newSource = state.source;
+    if (state.currentFile == filename) {
+      newCurrent = newFiles.first.filename;
+      newSource = newFiles.first.source;
+    }
+    state = state.copyWith(
+      files: newFiles,
+      currentFile: newCurrent,
+      source: newSource,
+    );
+  }
+
+  void switchFile(String filename) {
+    final file = state.files.firstWhere(
+      (f) => f.filename == filename,
+      orElse: () => state.files.first,
+    );
+    state = state.copyWith(currentFile: filename, source: file.source);
   }
 
   Future<void> compile() async {
     state = state.copyWith(isCompiling: true, output: '', clearError: true);
     try {
-      final result = await rust.compile(source: state.source);
+      // 同步当前编辑器内容到 files
+      final syncFiles = state.files.map((f) {
+        if (f.filename == state.currentFile) {
+          return f.copyWith(source: state.source);
+        }
+        return f;
+      }).toList();
+      state = state.copyWith(files: syncFiles);
+
+      final result = await rust.compileMulti(
+        files: syncFiles.map((f) => rust.CodeFile(filename: f.filename, source: f.source)).toList(),
+      );
       final diags = result.diagnostics;
 
       // 更新学习进度
@@ -102,7 +150,7 @@ class IdeNotifier extends Notifier<IdeState> {
       // 编译成功后启动统一模式
       if (result.success) {
         final unifiedNotifier = ref.read(unifiedProvider.notifier);
-        await unifiedNotifier.compileAndRun(state.source);
+        await unifiedNotifier.compileAndRunMulti(syncFiles);
       }
     } catch (e) {
       state = state.copyWith(isCompiling: false, error: '编译异常: $e');
@@ -423,7 +471,13 @@ class IdeNotifier extends Notifier<IdeState> {
   // ========== 应用修复 ==========
 
   Future<String?> applyFix(rust.Diagnostic diag) async {
-    final source = state.source;
+    final targetFilename = diag.filename;
+    final file = state.files.firstWhere(
+      (f) => f.filename == targetFilename,
+      orElse: () => state.files.firstWhere((f) => f.filename == state.currentFile),
+    );
+    var source = file.source;
+
     // 1. 尝试结构化替换
     if ((diag.fixKind == 1 || diag.fixKind == 2) && diag.replaceStartLine > 0) {
       final lines = source.replaceAll('\r\n', '\n').split('\n');
@@ -439,9 +493,9 @@ class IdeNotifier extends Notifier<IdeState> {
             final after = line.substring(endCol);
             lines[startLine] = before + diag.replacementText + after;
             final newSource = lines.join('\n');
-            state = state.copyWith(source: newSource);
+            _setFileSource(targetFilename, newSource);
             await _recordFix(diag.errorCode);
-            return '已应用修复（第${diag.line}行）';
+            return '已应用修复（${diag.filename}:${diag.line}）';
           }
         }
       }
@@ -537,12 +591,26 @@ class IdeNotifier extends Notifier<IdeState> {
 
     if (applied) {
       final newSource = lines.join('\n');
-      state = state.copyWith(source: newSource);
+      _setFileSource(targetFilename, newSource);
       await _recordFix(diag.errorCode);
-      return '已应用修复（第${diag.line}行）：$fix';
+      return '已应用修复（${diag.filename}:${diag.line}）：$fix';
     }
 
     return null;
+  }
+
+  void _setFileSource(String filename, String source) {
+    final newFiles = state.files.map((f) {
+      if (f.filename == filename) {
+        return f.copyWith(source: source);
+      }
+      return f;
+    }).toList();
+    if (state.currentFile == filename) {
+      state = state.copyWith(files: newFiles, source: source);
+    } else {
+      state = state.copyWith(files: newFiles);
+    }
   }
 
   Future<void> _recordFix(int errorCode) async {

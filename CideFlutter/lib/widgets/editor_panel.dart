@@ -446,6 +446,13 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     final isDark = ref.watch(themeProvider) == ThemeMode.dark;
     final unifiedState = ref.watch(unifiedProvider);
 
+    // 同步外部 source 变更（如文件切换）
+    if (_controller.text != state.source) {
+      _controller.removeListener(_onChanged);
+      _controller.text = state.source;
+      _controller.addListener(_onChanged);
+    }
+
     // 更新变量级高亮状态
     int newHighlightLine = 0;
     List<rust_unified.AccessedVar> newAccessedVars = [];

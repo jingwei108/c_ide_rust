@@ -13,6 +13,7 @@ import '../widgets/editor_panel.dart';
 import '../widgets/floating_orb_widget.dart';
 import '../widgets/floating_panel_popup.dart';
 import '../widgets/height_resizable_panel.dart';
+import '../widgets/file_tab_bar.dart';
 import '../widgets/intro_overlay.dart';
 import '../widgets/linked_list_vis_tab.dart';
 import '../widgets/tree_vis_tab.dart';
@@ -207,6 +208,46 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     _editorKey.currentState?.setReadOnly(true);
   }
 
+  void _showAddFileDialog(BuildContext context, IdeNotifier notifier) {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('新建文件'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '输入文件名（如 utils.c）',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (value) {
+            if (value.isNotEmpty) {
+              notifier.addFile(value);
+            }
+            Navigator.of(context).pop();
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty) {
+                notifier.addFile(value);
+              }
+              Navigator.of(context).pop();
+            },
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _insertText(String text) => _editorKey.currentState?.insertText(text);
   void _insertPair(String open, String close) => _editorKey.currentState?.insertPair(open, close);
   void _undo() => _editorKey.currentState?.undo();
@@ -286,6 +327,13 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                       child: _buildToolbar(state, notifier, isDark),
                     ),
                     _buildExecutionControl(state, notifier),
+                    FileTabBar(
+                      files: state.files,
+                      currentFile: state.currentFile,
+                      onSwitch: (filename) => notifier.switchFile(filename),
+                      onClose: (filename) => notifier.removeFile(filename),
+                      onAdd: () => _showAddFileDialog(context, notifier),
+                    ),
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),

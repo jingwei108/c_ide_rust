@@ -2,7 +2,23 @@ import 'package:cide/src/rust/api/types.dart' as rust;
 import 'knowledge_card.dart';
 import 'learning_progress.dart';
 
+class CodeFile {
+  final String filename;
+  final String source;
+
+  const CodeFile({required this.filename, required this.source});
+
+  CodeFile copyWith({String? filename, String? source}) {
+    return CodeFile(
+      filename: filename ?? this.filename,
+      source: source ?? this.source,
+    );
+  }
+}
+
 class IdeState {
+  final List<CodeFile> files;
+  final String currentFile;
   final String source;
   final bool isCompiling;
   final bool isRunning;
@@ -31,6 +47,8 @@ class IdeState {
   final LearningProgress learningProgress;
 
   const IdeState({
+    this.files = _defaultFiles,
+    this.currentFile = 'main.c',
     this.source = _defaultCode,
     this.isCompiling = false,
     this.isRunning = false,
@@ -61,8 +79,13 @@ class IdeState {
   static const _defaultFloatingSlots = [
     'knowledge', 'pointer', 'arrayVis', 'linkedListVis', 'treeVis', 'memory', 'variables', 'watch', 'callstack', 'progress', 'varHistory',
   ];
+  static const List<CodeFile> _defaultFiles = [
+    CodeFile(filename: 'main.c', source: _defaultCode),
+  ];
 
   IdeState copyWith({
+    List<CodeFile>? files,
+    String? currentFile,
     String? source,
     bool? isCompiling,
     bool? isRunning,
@@ -90,6 +113,8 @@ class IdeState {
     bool clearError = false,
   }) {
     return IdeState(
+      files: files ?? this.files,
+      currentFile: currentFile ?? this.currentFile,
       source: source ?? this.source,
       isCompiling: isCompiling ?? this.isCompiling,
       isRunning: isRunning ?? this.isRunning,

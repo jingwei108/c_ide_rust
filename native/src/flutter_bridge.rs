@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Mutex;
 
-use crate::session::*;
+use crate::session::{CodeFile, *};
 use crate::unified::engine::UnifiedEngine;
 use crate::unified::types::*;
 
@@ -98,33 +98,32 @@ fn current_session() -> std::sync::MutexGuard<'static, Session> {
 
 // ========== 辅助函数 ==========
 
-use crate::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
+use crate::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime_for_step};
 
 // ========== 公开 API ==========
 
-/// 设置源码并编译
+/// 设置源码并编译（单文件，向后兼容）
 pub fn compile(source: String) -> CompileResult {
+    compile_multi(vec![CodeFile { filename: "main.c".to_string(), source }])
+}
+
+/// 多文件编译
+pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
     let mut session = current_session();
 
     // 设置编译单元
     session.compile.compile_units.clear();
-    session.compile.compile_units.push(CompileUnit {
-        filename: "main.c".to_string(),
-        source: source.clone(),
-    });
-
-    // 拼接源码
-    let mut full_source = String::new();
-    for unit in &session.compile.compile_units {
-        full_source.push_str(&unit.source);
-        if !unit.source.ends_with('\n') {
-            full_source.push('\n');
-        }
+    for file in &files {
+        session.compile.compile_units.push(CompileUnit {
+            filename: file.filename.clone(),
+            source: file.source.clone(),
+        });
     }
 
-    // 运行编译管线
-    if run_compile_pipeline(&mut session, &full_source).is_err() {
+    // 运行多文件编译管线
+    let units = session.compile.compile_units.clone();
+    if run_multi_file_pipeline(&mut session, units).is_err() {
         return CompileResult {
             success: false,
             diagnostics: session.compile.diagnostics.clone(),
@@ -448,25 +447,26 @@ pub fn reset_session() {
 
 // ========== 统一模式 API ==========
 
-/// 编译并初始化统一模式执行环境。
+/// 编译并初始化统一模式执行环境（单文件，向后兼容）
 pub fn compile_and_run(source: String) -> UnifiedRunResult {
+    compile_and_run_multi(vec![CodeFile { filename: "main.c".to_string(), source }])
+}
+
+/// 多文件编译并初始化统一模式执行环境
+pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
     let mut session = current_session();
 
     // 编译
     session.compile.compile_units.clear();
-    session.compile.compile_units.push(CompileUnit {
-        filename: "main.c".to_string(),
-        source: source.clone(),
-    });
-    let mut full_source = String::new();
-    for unit in &session.compile.compile_units {
-        full_source.push_str(&unit.source);
-        if !unit.source.ends_with('\n') {
-            full_source.push('\n');
-        }
+    for file in &files {
+        session.compile.compile_units.push(CompileUnit {
+            filename: file.filename.clone(),
+            source: file.source.clone(),
+        });
     }
 
-    if run_compile_pipeline(&mut session, &full_source).is_err() {
+    let units = session.compile.compile_units.clone();
+    if run_multi_file_pipeline(&mut session, units).is_err() {
         return UnifiedRunResult {
             success: false,
             error: Some(session.compile.errors.clone()),
