@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (2026-05-18 审查报告修复)
+- **Rust 后端 P0 Bug（5 个严重问题）**：
+  - `call_user_function` 循环次数错误：拆分 `arg_count` 为 `param_count`（参数个数）和 `param_words`（总 word 数）
+  - `restore()` 快照恢复：`.copy_from_slice()` → 安全边界拷贝，防止不同内存配置下 panic
+  - 复编译时 `f64_constants` 残留：添加 `clear()` 防止旧常量污染
+  - 常量索引越界：`.unwrap_or(0)` → `trap` 报告越界错误
+  - `PushConstF` 符号扩展：`operand as u64` → `operand as u32 as u64`，修复负 float 值损坏
+- **VM 安全加固**：
+  - `TrapBounds`：栈为空时 `trap` 而非静默返回 0
+  - C API `cide_get_call_frame`：`vm.as_ref().unwrap()` → 安全匹配
+  - `write_cstring`：移除 `#[allow(clippy::int_plus_one)]`，改写边界条件
+- **代码质量与重构**：
+  - 统一宿主函数名→ID 映射：`host_func_id::by_user_name()` / `is_builtin()` 消除 3 处重复
+  - 合并 `gen_struct_copy` / `gen_struct_copy_to_local` → `gen_struct_copy_common`
+  - 合并 `parse_abstract_declarator` / `parse_declarator_node`（新增 `is_abstract` 标志）
+  - 删除 `Session.errors_buffer` 冗余字段
+  - `insert_implicit_cast`：`std::mem::replace` + dummy Literal → `std::mem::take`
+  - 删除未使用的 `parse_call_expr`
+  - `cargo clippy -- -D warnings` 完全通过（无手动抑制）
+- **工程化**：
+  - 检查点内存上限：默认最大 50 个快照，防止长程序内存无限增长
+  - 字符串字面量上限：`0x8000` (32KB) → `MEM_SIZE / 16` (64KB)
+  - CI 新增 Release 构建验证 + Flutter 测试
+  - Android `applicationId`：`com.example.cide` → `com.cide.app`
+  - `re_editor` 锁定确切版本 `0.8.0`，添加私有 API 依赖注释
+  - NDK 配置添加环境变量说明
+- **文档同步**：
+  - `DESIGN.md`：指令集 `~30 条` → `106 条`，C++ 伪代码 → Rust
+  - `AGENTS.md` / `CHANGELOG.md`：测试数量 `44` → `238`
+  - `ROADMAP.md`：知识图谱标记为未启动，函数指针标记为已完成
+  - `CideFlutter/README.md`：重写为项目说明
+- **Flutter 前端加固**：
+  - `LinkedListVisualizer` / `TreeVisualizer`：异步 `setState()` 前加 `mounted` 检查
+  - `LinkedListVisualizer`：内存上限改为 `rust.getMemorySize()` 动态获取
+  - `MemoryTab`：`StatelessWidget` → `StatefulWidget` 缓存 Future
+  - `IdeScreen`：键盘状态同步从 `build()` 移至 `didChangeDependencies`
+
 ### Added
 - **键盘弹出时沉浸编辑模式**（Flutter）：
   - 自定义键盘或系统键盘弹出时，顶部工具栏、模板栏、底部面板通过 `SizeTransition` 平滑收起，编辑器自动拉伸占满剩余空间。
