@@ -35,14 +35,20 @@ class LinkedListVisualizer extends StatefulWidget {
   State<LinkedListVisualizer> createState() => _LinkedListVisualizerState();
 }
 
-class _LinkedListVisualizerState extends State<LinkedListVisualizer> {
+class _LinkedListVisualizerState extends State<LinkedListVisualizer>
+    with SingleTickerProviderStateMixin {
   List<_NodeData> _nodes = [];
   bool _loading = true;
   String? _error;
+  late AnimationController _entranceController;
 
   @override
   void initState() {
     super.initState();
+    _entranceController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
     _loadNodes();
   }
 
@@ -53,6 +59,12 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer> {
         oldWidget.visEvents.length != widget.visEvents.length) {
       _loadNodes();
     }
+  }
+
+  @override
+  void dispose() {
+    _entranceController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadNodes() async {
@@ -122,6 +134,7 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer> {
         _nodes = nodes;
         _loading = false;
       });
+      _entranceController.forward(from: 0.0);
     } catch (e) {
       setState(() {
         _error = e.toString();
@@ -145,12 +158,18 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer> {
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.all(16),
-      child: CustomPaint(
-        size: Size(_nodes.length * 100.0 + 40, 80),
-        painter: _LinkedListPainter(
-          nodes: _nodes,
-          isDark: widget.isDark,
-        ),
+      child: AnimatedBuilder(
+        animation: _entranceController,
+        builder: (context, child) {
+          return CustomPaint(
+            size: Size(_nodes.length * 100.0 + 40, 80),
+            painter: _LinkedListPainter(
+              nodes: _nodes,
+              isDark: widget.isDark,
+              progress: _entranceController.value,
+            ),
+          );
+        },
       ),
     );
   }
@@ -159,8 +178,13 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer> {
 class _LinkedListPainter extends CustomPainter {
   final List<_NodeData> nodes;
   final bool isDark;
+  final double progress;
 
-  _LinkedListPainter({required this.nodes, required this.isDark});
+  _LinkedListPainter({
+    required this.nodes,
+    required this.isDark,
+    this.progress = 1.0,
+  });
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -189,87 +213,137 @@ class _LinkedListPainter extends CustomPainter {
     const spacing = 40.0;
 
     for (var i = 0; i < nodes.length; i++) {
+      // 渐进式入场：每个节点延迟 0.1 的进度
+      final nodeProgress = ((progress - i * 0.08) / 0.5).clamp(0.0, 1.0);
+      if (nodeProgress <= 0) continue;
+
       final x = 20.0 + i * (nodeWidth + spacing);
       const y = 20.0;
       final node = nodes[i];
 
+      // 入场动画：从下方滑入 + 淡入
+      final slideY = y + (1.0 - nodeProgress) * 20.0;
+      final alpha = nodeProgress;
+
       final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, nodeWidth, nodeHeight),
+        Rect.fromLTWH(x, slideY, nodeWidth, nodeHeight),
         const Radius.circular(4),
       );
 
-      // 背景
-      canvas.drawRRect(rect, nodePaint);
+      // 背景（带透明度）
+      final bgPaint = Paint()
+        ..color = nodePaint.color.withValues(alpha: alpha)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(rect, bgPaint);
 
-      // 闪色边框
+      // 闪色边框或普通边框
       if (node.flashColor != null) {
         final flashPaint = Paint()
-          ..color = node.flashColor!
+          ..color = node.flashColor!.withValues(alpha: alpha)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2;
         canvas.drawRRect(rect, flashPaint);
       } else {
-        canvas.drawRRect(rect, borderPaint);
+        final bPaint = Paint()
+          ..color = borderPaint.color.withValues(alpha: alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.5;
+        canvas.drawRRect(rect, bPaint);
       }
 
-      // 数据文本
-      final textSpan = TextSpan(text: '${node.data}', style: textStyle);
+      // 数据文本（带透明度）
+      final textSpan = TextSpan(
+        text: '${node.data}',
+        style: textStyle.copyWith(
+          color: textStyle.color?.withValues(alpha: alpha),
+        ),
+      );
       final textPainter = TextPainter(
         text: textSpan,
         textDirection: TextDirection.ltr,
         textAlign: TextAlign.center,
       );
       textPainter.layout(minWidth: nodeWidth, maxWidth: nodeWidth);
-      textPainter.paint(canvas, Offset(x, y + (nodeHeight - textPainter.height) / 2));
+      textPainter.paint(
+        canvas,
+        Offset(x, slideY + (nodeHeight - textPainter.height) / 2),
+      );
 
       // 地址标签
       final addrSpan = TextSpan(
         text: '0x${node.address.toRadixString(16).toUpperCase()}',
         style: TextStyle(
-          color: isDark ? Colors.grey[600] : Colors.grey[400],
+          color: (isDark ? Colors.grey[600] : Colors.grey[400])?.withValues(alpha: alpha),
           fontSize: 8,
           fontFamily: 'monospace',
         ),
       );
       final addrPainter = TextPainter(text: addrSpan, textDirection: TextDirection.ltr);
       addrPainter.layout();
-      addrPainter.paint(canvas, Offset(x + (nodeWidth - addrPainter.width) / 2, y - 14));
+      addrPainter.paint(
+        canvas,
+        Offset(x + (nodeWidth - addrPainter.width) / 2, slideY - 14),
+      );
 
-      // 绘制箭头到下一个节点
+      // 绘制箭头到下一个节点（带渐进动画）
       if (node.nextAddress != null && i < nodes.length - 1) {
-        final startX = x + nodeWidth;
-        final startY = y + nodeHeight / 2;
-        final endX = x + nodeWidth + spacing;
-        final endY = startY;
+        final arrowProgress = ((progress - i * 0.08 - 0.3) / 0.3).clamp(0.0, 1.0);
+        if (arrowProgress > 0) {
+          final startX = x + nodeWidth;
+          final startY = slideY + nodeHeight / 2;
+          final endX = x + nodeWidth + spacing;
+          final endY = startY;
+          final currentEndX = startX + (endX - startX - 8) * arrowProgress;
 
-        final path = Path()
-          ..moveTo(startX, startY)
-          ..lineTo(endX - 8, endY);
-        canvas.drawPath(path, arrowPaint);
+          final aPaint = Paint()
+            ..color = arrowPaint.color.withValues(alpha: alpha * arrowProgress)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5;
 
-        // 箭头头部
-        final arrowHead = Path()
-          ..moveTo(endX - 8, endY - 4)
-          ..lineTo(endX, endY)
-          ..lineTo(endX - 8, endY + 4);
-        canvas.drawPath(arrowHead, arrowPaint);
+          final path = Path()
+            ..moveTo(startX, startY)
+            ..lineTo(currentEndX, endY);
+          canvas.drawPath(path, aPaint);
+
+          if (arrowProgress > 0.8) {
+            // 箭头头部
+            final headProgress = (arrowProgress - 0.8) / 0.2;
+            final headAlpha = alpha * headProgress;
+            final headPaint = Paint()
+              ..color = arrowPaint.color.withValues(alpha: headAlpha)
+              ..style = PaintingStyle.stroke
+              ..strokeWidth = 1.5;
+            final arrowHead = Path()
+              ..moveTo(endX - 8, endY - 4)
+              ..lineTo(endX, endY)
+              ..lineTo(endX - 8, endY + 4);
+            canvas.drawPath(arrowHead, headPaint);
+          }
+        }
       } else if (node.nextAddress == null) {
         // NULL 终止符
         final nullSpan = TextSpan(
           text: 'NULL',
           style: TextStyle(
-            color: isDark ? Colors.grey[600] : Colors.grey[400],
+            color: (isDark ? Colors.grey[600] : Colors.grey[400])?.withValues(alpha: alpha),
             fontSize: 10,
             fontFamily: 'monospace',
           ),
         );
         final nullPainter = TextPainter(text: nullSpan, textDirection: TextDirection.ltr);
         nullPainter.layout();
-        nullPainter.paint(canvas, Offset(x + nodeWidth + 8, y + (nodeHeight - nullPainter.height) / 2));
+        nullPainter.paint(
+          canvas,
+          Offset(x + nodeWidth + 8, slideY + (nodeHeight - nullPainter.height) / 2),
+        );
       }
     }
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _LinkedListPainter oldDelegate) {
+    return oldDelegate.nodes != nodes ||
+        oldDelegate.isDark != isDark ||
+        oldDelegate.progress != progress;
+  }
 }

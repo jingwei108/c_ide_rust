@@ -20,6 +20,8 @@ class PanelItem {
   static const knowledge = PanelItem._(id: 'knowledge', label: '知识卡片', icon: Icons.menu_book);
   static const pointer = PanelItem._(id: 'pointer', label: '指针视图', icon: Icons.polyline);
   static const arrayVis = PanelItem._(id: 'arrayVis', label: '数组可视化', icon: Icons.bar_chart);
+  static const linkedListVis = PanelItem._(id: 'linkedListVis', label: '链表可视化', icon: Icons.linear_scale);
+  static const treeVis = PanelItem._(id: 'treeVis', label: '树可视化', icon: Icons.account_tree);
   static const memory = PanelItem._(id: 'memory', label: '内存区域', icon: Icons.memory);
   static const variables = PanelItem._(id: 'variables', label: '局部变量', icon: Icons.data_object);
   static const watch = PanelItem._(id: 'watch', label: '监视变量', icon: Icons.visibility);
@@ -31,7 +33,7 @@ class PanelItem {
   /// 全部 13 个面板元素
   static const List<PanelItem> all = [
     output, diagnostics, algorithm,
-    knowledge, pointer, arrayVis, memory, variables, watch, callstack, progress, varHistory, breakpoints,
+    knowledge, pointer, arrayVis, linkedListVis, treeVis, memory, variables, watch, callstack, progress, varHistory, breakpoints,
   ];
 
   /// 根据 id 查找

@@ -14,6 +14,8 @@ import '../widgets/floating_orb_widget.dart';
 import '../widgets/floating_panel_popup.dart';
 import '../widgets/height_resizable_panel.dart';
 import '../widgets/intro_overlay.dart';
+import '../widgets/linked_list_vis_tab.dart';
+import '../widgets/tree_vis_tab.dart';
 import '../widgets/panel_drag_data.dart';
 import '../widgets/algorithm_tab.dart';
 import '../widgets/array_vis_tab.dart';
@@ -490,6 +492,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
         return _buildPointerVisTab(state, isDark);
       case 'arrayVis':
         return _buildArrayVisTab(state, isDark);
+      case 'linkedListVis':
+        return _buildLinkedListVisTab(isDark);
+      case 'treeVis':
+        return _buildTreeVisTab(isDark);
       case 'memory':
         return _buildMemoryTab(state, isDark);
       case 'variables':
@@ -581,6 +587,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
         return _buildPointerVisTab(state, isDark);
       case 'arrayVis':
         return _buildArrayVisTab(state, isDark);
+      case 'linkedListVis':
+        return _buildLinkedListVisTab(isDark);
+      case 'treeVis':
+        return _buildTreeVisTab(isDark);
       case 'memory':
         return _buildMemoryTab(state, isDark);
       case 'variables':
@@ -635,6 +645,14 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     return ArrayVisTab(isDark: isDark);
   }
 
+  Widget _buildLinkedListVisTab(bool isDark) {
+    return LinkedListVisTab(isDark: isDark);
+  }
+
+  Widget _buildTreeVisTab(bool isDark) {
+    return TreeVisTab(isDark: isDark);
+  }
+
   Widget _buildWatchTab(IdeState state, bool isDark) {
     return WatchTab(watchExpressions: state.watchExpressions, isDark: isDark);
   }
@@ -648,7 +666,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   Widget _buildCallstackTab(IdeState state, bool isDark) {
-    return const CallstackTab();
+    return CallstackTab(isDark: isDark);
   }
 
   Widget _buildVarHistoryTab(bool isDark) {

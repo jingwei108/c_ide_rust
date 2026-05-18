@@ -59,7 +59,7 @@ class IdeState {
 
   static const _defaultBottomSlots = ['output', 'diagnostics', 'algorithm'];
   static const _defaultFloatingSlots = [
-    'knowledge', 'pointer', 'arrayVis', 'memory', 'variables', 'watch', 'callstack', 'progress', 'varHistory',
+    'knowledge', 'pointer', 'arrayVis', 'linkedListVis', 'treeVis', 'memory', 'variables', 'watch', 'callstack', 'progress', 'varHistory',
   ];
 
   IdeState copyWith({
