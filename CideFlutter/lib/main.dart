@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/frb_generated.dart';
 import 'providers/theme_provider.dart';
 import 'screens/ide_screen.dart';
+import 'screens/editor_poc_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -23,6 +24,8 @@ class MyApp extends ConsumerWidget {
       themeMode: themeMode,
       theme: _buildLightTheme(),
       darkTheme: _buildDarkTheme(),
+      // Phase 0 POC 入口：临时切换到 EditorPocScreen 验证 Gesture Proxy
+      // home: const EditorPocScreen(),
       home: const IdeScreen(),
     );
   }
