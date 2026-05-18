@@ -182,6 +182,38 @@ docs/                   设计文档、事故报告
 - **文档同步（2026-05-10）**：`DESIGN.md` / `ROADMAP.md` 仍描述 C++ 后端（CMake/Clang/WasmCodeGen）→ 全面更新为 Rust 后端（Cargo/自定义字节码）
 - **C 头文件同步（2026-05-10）**：`cide_capi.h` 缺失 `E2007`/`E2008`/`E3048`/`W3051`~`W3056` → 补全；注释"分号分隔"改为"换行分隔"
 - **CI/CD 初始化（2026-05-10）**：零 CI/CD → 新增 `.github/workflows/ci.yml`，覆盖 Rust 编译/测试/clippy + Flutter 构建
+- **审阅报告修复（2026-05-18）——P0 严重 Bug（5 个）**：
+  - `call_user_function` 循环次数错误：`exit_function()` 将 `arg_count` 覆盖为总 word 数，`call_user_function` 误将其当作参数个数 → `FuncMeta` 拆分 `param_count`（参数个数）与 `arg_count`（总 word 数）
+  - `restore()` 快照大小不匹配 panic：`copy_from_slice` 要求长度严格相等 → 改为 `min` + 切片安全拷贝
+  - 复编译时 `f64_constants` 残留：`run_compile_pipeline` 清空 `i64_constants` 但遗漏 `f64_constants` → 添加 `f64_constants.clear()`
+  - 常量索引越界静默返回 0：`PushConstD` / `PushConstQ` 使用 `.unwrap_or(0)` → 改为 `trap` 报告越界错误
+  - `PushConstF` 符号扩展导致负 float 损坏：`operand as u64` 对负 i32 做符号扩展 → 改为 `operand as u32 as u64`
+- **审阅报告修复（2026-05-18）——VM/安全/代码质量**：
+  - `TrapBounds` 栈为空时静默返回 0 → `trap` 报告"值栈为空"
+  - C API `cide_get_call_frame`：`session.vm.as_ref().unwrap()` → 安全匹配，VM 未初始化时优雅返回
+  - `write_cstring`：`#[allow(clippy::int_plus_one)]` 移除，边界条件改写为 `a + bytes.len() < self.memory.len()`
+  - 统一宿主函数名→ID 映射：`host_func_id.rs` 新增 `by_user_name()` / `is_builtin()`，消除 `bytecode_gen.rs` 与 `type_checker.rs` 的 3 处重复
+  - 检查点内存无限增长：`CheckpointManager` 新增 `max_checkpoints = 50`，超过时移除最旧检查点
+  - `Session.errors_buffer` 冗余字段：与 `errors` 完全重复 → 删除 `errors_buffer`，C API 直接使用 `errors`
+  - 字符串字面量上限：`0x8000` (32KB) → `MEM_SIZE / 16` (64KB)
+  - `gen_struct_copy` / `gen_struct_copy_to_local` 重复 → 提取 `gen_struct_copy_common` 闭包机制
+  - `parse_abstract_declarator` / `parse_declarator_node` ~90% 重复 → `parse_declarator_node` 新增 `is_abstract` 标志，抽象声明符复用同一函数
+  - `insert_implicit_cast` 中间 `Box` 分配：`std::mem::replace` + dummy `Expr::Literal` → `Expr` 实现 `Default`，改用 `std::mem::take`
+  - 删除未使用的 `parse_call_expr`，消除 clippy `dead_code` 警告
+  - `cargo clippy -- -D warnings` 完全通过（含 `needless_return`、`needless_borrow` 修复）
+- **审阅报告修复（2026-05-18）——工程化/文档/Flutter**：
+  - Android `applicationId`：`com.example.cide` → `com.cide.app`，Release 签名添加警告注释
+  - `re_editor` 锁定确切版本 `0.8.0`，添加私有 API 依赖注释
+  - NDK 配置添加环境变量说明注释
+  - CI 增强：新增 Release 构建验证 + Flutter 测试
+  - `DESIGN.md`：指令集 `~30 条` → `106 条`，C++ 伪代码 → Rust 风格
+  - `AGENTS.md` / `CHANGELOG.md`：测试数量 `44` → `238`
+  - `ROADMAP.md`：知识图谱标记为未启动，函数指针标记为已完成
+  - `CideFlutter/README.md`：重写为项目说明
+  - `LinkedListVisualizer` / `TreeVisualizer`：异步 `setState()` 前添加 `mounted` 检查
+  - `LinkedListVisualizer`：内存上限硬编码 256KB → `rust.getMemorySize()` 动态获取
+  - `MemoryTab`：`StatelessWidget` → `StatefulWidget`，`initState` 缓存 Future 避免重复 FFI
+  - `IdeScreen`：键盘状态同步从 `build()` 移至 `didChangeDependencies`，消除潜在循环重建
 - **Parser 匿名 struct typedef 支持（2026-05-10）**：`typedef struct { ... } Name;` 和 `typedef struct Name { ... } Alias;` 原报"预期结构体名称"级联错误 → 全面支持，新增 `E1006_UnsupportedFeature` 错误码用于友好提示其他暂不支持语法
 - **诊断与修复系统全面拓展（2026-05-10）**：
   - 新增 `native/src/diagnostics/error_catalog.rs`：为全部 56+ 个错误/警告码提供中文标题、emoji、通俗解释、常见原因
