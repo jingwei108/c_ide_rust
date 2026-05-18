@@ -154,7 +154,7 @@ docs/                   设计文档、事故报告
   - 多级函数指针：`int (**pp)(int) = &fp;`（指向函数指针的指针）
   - 返回指针的函数指针：`int *(*fp)(int) = greet;`
   - `sizeof` 函数指针类型：`sizeof(int (*)(int))`、`sizeof(int (**)(int))`
-  - `typedef` 函数指针：`typedef int (*Op)(int, int); Op ops[2] = {mul, divi};`
+  - `typedef` 函数指针（全局/局部均支持）：`typedef int (*Op)(int, int); Op op = mul; Op ops[2] = {mul, divi};`
   - `static` 局部变量：`static int arr[3] = {1, 2, 3};`（函数体内静态存储期）
 - **算法可视化事件 FRB 集成**：`VisEvent` 扩展 `context` 字段保留比较上下文（如 `arr[i]:arr[i+1]`）；Flutter 算法面板支持展开查看关键比较事件列表
 - **内存映射 Canvas 组件**：1MB 内存以 256×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet

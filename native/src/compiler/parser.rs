@@ -802,6 +802,11 @@ impl Parser {
         let mut stmts = Vec::new();
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             let stmt_checkpoint = self.pos;
+            // 局部 typedef 声明不产生运行时语句
+            if self.check(TokenType::Typedef) {
+                self.parse_typedef();
+                continue;
+            }
             stmts.push(self.parse_statement());
             if self.pos == stmt_checkpoint {
                 self.advance();

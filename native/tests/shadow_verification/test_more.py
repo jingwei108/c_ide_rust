@@ -103,6 +103,24 @@ cases = [
     ("matrix_trace", 'int main() { int a[2][2] = {{1,2},{3,4}}; int trace = a[0][0] + a[1][1]; printf("%d", trace); return 0; }'),
     ("pointer_to_const", 'int main() { int x = 5; const int* p = &x; printf("%d", *p); return 0; }'),
     ("const_ptr_assign", 'int main() { int x = 5, y = 10; const int* p = &x; p = &y; printf("%d", *p); return 0; }'),
+    # ---- 函数指针 (C子集新增) ----
+    ("function_pointer_decl", 'int add(int a, int b) { return a+b; } int main() { int (*fp)(int,int) = add; printf("%d", fp(1,2)); return 0; }'),
+    ("function_pointer_array", 'int f1() { return 1; } int f2() { return 2; } int main() { int (*fp[2])() = {f1,f2}; printf("%d %d", fp[0](), fp[1]()); return 0; }'),
+    ("function_pointer_arg", 'int apply(int (*op)(int), int x) { return op(x); } int inc(int n) { return n+1; } int main() { printf("%d", apply(inc, 5)); return 0; }'),
+    ("function_pointer_typedef", 'typedef int (*Op)(int, int); int add(int a, int b) { return a+b; } int main() { Op op = add; printf("%d", op(2,3)); return 0; }'),
+    ("function_pointer_sizeof", 'int main() { printf("%d", sizeof(int (*)(int))); return 0; }'),
+    ("function_pointer_multi_level", 'int add(int a) { return a+1; } int main() { int (*fp)(int) = add; int (**pp)(int) = &fp; printf("%d", (*pp)(5)); return 0; }'),
+    ("function_pointer_return_ptr", 'int* greet(int x) { static int r = 0; r = x; return &r; } int main() { int* (*fp)(int) = greet; int* p = fp(42); printf("%d", *p); return 0; }'),
+    ("function_pointer_array_direct", 'int mul(int a, int b) { return a*b; } int divi(int a, int b) { return a/b; } int main() { int (*ops[2])(int, int) = {mul, divi}; printf("%d %d", ops[0](3,4), ops[1](8,2)); return 0; }'),
+    ("function_pointer_local_typedef", 'int add(int a, int b) { return a+b; } int main() { typedef int (*Op)(int, int); Op op = add; printf("%d", op(2,3)); return 0; }'),
+    # ---- double (C子集新增) ----
+    ("double_basic", 'int main() { double d = 3.1415926535; printf("%.10f", d); return 0; }'),
+    ("double_arr", 'int main() { double arr[3] = {1.1, 2.2, 3.3}; printf("%.1f", arr[1]); return 0; }'),
+    ("double_printf_lf", 'int main() { double d = 3.14; printf("%lf", d); return 0; }'),
+    ("double_arith", 'int main() { double a = 1.5, b = 2.5; printf("%.1f", a + b); return 0; }'),
+    ("double_mul", 'int main() { double a = 2.0, b = 3.0; printf("%.1f", a * b); return 0; }'),
+    ("double_cast_int", 'int main() { double d = 3.9; printf("%d", (int)d); return 0; }'),
+    ("double_cmp_eq", 'int main() { double a = 2.5, b = 2.5; printf("%d", a == b); return 0; }'),
 ]
 for name, src in cases:
     test(name, src)
