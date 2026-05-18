@@ -5,6 +5,7 @@ on:
     branches: [main, master]
   pull_request:
     branches: [main, master]
+  workflow_dispatch:
 
 jobs:
   rust:
@@ -52,8 +53,15 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
+
       - name: Get Flutter dependencies
         run: flutter pub get
+        working-directory: CideFlutter
+
+      - name: Generate FRB bindings
+        run: flutter_rust_bridge_codegen generate
         working-directory: CideFlutter
 
       - name: Run Flutter tests

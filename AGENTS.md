@@ -58,6 +58,7 @@ docs/                   设计文档、事故报告
 | Phase 13 | **统一模式 / 时间旅行**：VM 快照/恢复 + 检查点管理器 + 批量自动执行 + Seek 进度条 + 异常自动回退 + 语义标签 + 变量历史趋势图 | ✅ 完成 |
 | Phase 14 | **堆内存可视化增强**：malloc 分配行号追踪 + 外部碎片（free_list）可视化 + 程序结束泄漏检测报告 | ✅ 完成 |
 | Phase 15 | **指针追踪动画**：统一模式每步收集 `PointerSnapshot`，前端 `PointerArrowWidget` 实时绘制指针箭头；支持 Valid/Freed/Null/Dangling 四种状态可视化 | ✅ 完成 |
+| Phase 16 | **算法步骤语义标注**：为 6 种检测到的算法预定义步骤模板，运行时结合源码行特征 + 变量值生成教学描述（如冒泡排序"第 {i} 趟：将第 {n-i} 大的元素放到正确位置"）；前端 `ExecutionControlPanel` 实时展示步骤横幅 + `AlgorithmTab` 静态流程预览 + `ArrayVisTab` 已排序边界高亮 | ✅ 完成 |
 
 ## 编码约定
 
@@ -114,6 +115,9 @@ docs/                   设计文档、事故报告
   - 后端：`StepCollector::collect_pointer_snapshots` 遍历变量快照，解析指针值，结合 `session.memory.regions` 判断是否为已释放堆内存
   - 前端：`PointerArrowWidget` 使用 `CustomPainter` 绘制箭头，左右卡片布局，状态色编码
 - **数组排序动画增强** — `ArrayVisualizer` 高亮脉冲（缩放+发光）、交换金色光晕、值变化弹性弹跳；`ArrayVisTab` 解析 Swap 语义标签驱动交换动画
+- **算法步骤语义标注** — 为 6 种算法（冒泡/选择/插入/快速/归并/二分）预定义步骤模板，运行时根据源码行特征和变量值推断当前阶段并生成中文教学描述
+  - 后端：`unified/algorithm_steps.rs` 推断引擎，每种算法独立推断逻辑；`StepPayload` 新增 `algorithm_step` 字段
+  - 前端：`ExecutionControlPanel` 步骤横幅（按 phase 着色：outer_loop 蓝、swap 琥珀、compare 紫、finish 绿等）；`AlgorithmTab` 静态步骤流程预览（带运行时高亮）；`ArrayVisTab` 已排序边界绿色高亮（冒泡右侧/选择左侧/插入左侧）
 - **链表可视化** — `LinkedListVisualizer` CustomPainter 绘制节点+箭头，支持 NodeCreate/Access/Delete 闪色；渐进式入场动画；`LinkedListVisTab` 集成统一模式，从 `StepPayload.localVars` 读取头指针驱动时间旅行
 - **二叉树可视化** — `TreeVisualizer` 满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制；`TreeVisTab` 集成统一模式
 - **变量级高亮** — `re_editor` `spanBuilder` 集成：当前执行行的被读变量名显示淡蓝底色、被写变量名显示淡橙底色，保留语法高亮；`VariablesTab` 值变化背景闪烁动画

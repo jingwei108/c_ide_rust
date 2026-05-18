@@ -2,7 +2,6 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/knowledge_card.dart';
-import '../models/unified_state.dart';
 import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import 'knowledge_card_item.dart';
@@ -26,6 +25,9 @@ class ExecutionControlPanel extends ConsumerWidget {
 
     // 获取当前步的算法可视化事件上下文
     String? visContext;
+    final algorithmStep = state.currentStep >= 0 && state.currentStep < state.frameCache.length
+        ? state.frameCache[state.currentStep].algorithmStep
+        : null;
     if (state.currentStep >= 0 && state.currentStep < state.frameCache.length) {
       final payload = state.frameCache[state.currentStep];
       if (payload.visEvents.isNotEmpty) {
@@ -72,6 +74,42 @@ class ExecutionControlPanel extends ConsumerWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        // 算法步骤语义标注条
+        if (algorithmStep != null)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            color: _phaseColor(algorithmStep.phase),
+            child: Row(
+              children: [
+                Icon(_phaseIcon(algorithmStep.phase), color: Colors.white, size: 14),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    algorithmStep.description,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    algorithmStep.displayName,
+                    style: const TextStyle(color: Colors.white, fontSize: 10),
                   ),
                 ),
               ],
@@ -428,6 +466,85 @@ class ExecutionControlPanel extends ConsumerWidget {
         ),
       ),
     );
+  }
+
+  Color _phaseColor(String phase) {
+    switch (phase) {
+      case 'outer_loop':
+        return Colors.blue.shade700;
+      case 'inner_loop':
+        return Colors.indigo.shade600;
+      case 'compare':
+        return Colors.purple.shade600;
+      case 'swap':
+        return Colors.amber.shade700;
+      case 'insert':
+        return Colors.orange.shade700;
+      case 'partition_init':
+        return Colors.pink.shade700;
+      case 'partition_scan':
+        return Colors.pink.shade600;
+      case 'partition_swap':
+        return Colors.pink.shade800;
+      case 'recursive':
+      case 'recursive_split':
+        return Colors.teal.shade700;
+      case 'merge':
+        return Colors.green.shade700;
+      case 'loop':
+        return Colors.blueGrey.shade700;
+      case 'mid_calc':
+        return Colors.cyan.shade700;
+      case 'narrow_left':
+      case 'narrow_right':
+        return Colors.lightBlue.shade700;
+      case 'found':
+        return Colors.green.shade800;
+      case 'not_found':
+        return Colors.red.shade700;
+      case 'finish':
+        return Colors.green.shade600;
+      default:
+        return Colors.grey.shade700;
+    }
+  }
+
+  IconData _phaseIcon(String phase) {
+    switch (phase) {
+      case 'outer_loop':
+      case 'inner_loop':
+      case 'loop':
+        return Icons.loop;
+      case 'compare':
+        return Icons.compare_arrows;
+      case 'swap':
+      case 'partition_swap':
+        return Icons.swap_horiz;
+      case 'insert':
+        return Icons.input;
+      case 'partition_init':
+        return Icons.adjust;
+      case 'partition_scan':
+        return Icons.search;
+      case 'recursive':
+      case 'recursive_split':
+        return Icons.call_split;
+      case 'merge':
+        return Icons.merge_type;
+      case 'mid_calc':
+        return Icons.calculate;
+      case 'narrow_left':
+      case 'narrow_right':
+        return Icons.zoom_in;
+      case 'found':
+        return Icons.check_circle;
+      case 'not_found':
+        return Icons.cancel;
+      case 'finish':
+        return Icons.done_all;
+      default:
+        return Icons.auto_graph;
+    }
   }
 }
 

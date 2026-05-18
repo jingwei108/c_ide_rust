@@ -1,5 +1,15 @@
 use flutter_rust_bridge::frb;
 
+/// 算法步骤语义快照（用于前端步骤标注）。
+#[frb]
+#[derive(Debug, Clone)]
+pub struct AlgorithmStepSnapshot {
+    pub algorithm_name: String,
+    pub display_name: String,
+    pub phase: String,
+    pub description: String,
+}
+
 /// 每步的轻量数据包，传输到 Flutter 前端作为 FrameCache。
 #[frb]
 #[derive(Debug, Clone)]
@@ -8,6 +18,7 @@ pub struct StepPayload {
     pub code_line: i32,
     pub func_name: String,
     pub semantic_label: String,
+    pub algorithm_step: Option<AlgorithmStepSnapshot>,
     pub local_vars: Vec<ApiVariableSnapshot>,
     pub call_stack: Vec<ApiFrameInfo>,
     pub vis_events: Vec<crate::session::VisEvent>,

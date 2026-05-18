@@ -1,4 +1,5 @@
 use crate::session::Session;
+use crate::unified::algorithm_steps::infer_algorithm_step;
 use crate::unified::types::{AccessedVar, ApiFrameInfo, ApiVariableSnapshot, PointerSnapshot, PointerStatus, StepPayload};
 use crate::vm::vm::CideVM;
 
@@ -51,6 +52,7 @@ impl StepCollector {
             .unwrap_or(0);
 
         let semantic_label = infer_semantic_label(code_line, &local_vars, &func_name, session);
+        let algorithm_step = infer_algorithm_step(code_line, &local_vars, &func_name, session);
 
         let accessed_vars = vm
             .get_last_accessed_vars()
@@ -80,6 +82,7 @@ impl StepCollector {
             accessed_vars,
             array_snapshots,
             pointer_snapshots,
+            algorithm_step,
         }
     }
 }

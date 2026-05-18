@@ -7,6 +7,7 @@ class ArrayVisualizer extends StatefulWidget {
   final List<String> elements;
   final Set<int> highlightedIndices;
   final Set<int> swappedIndices;
+  final Set<int> sortedIndices;
   final bool isDark;
 
   const ArrayVisualizer({
@@ -16,6 +17,7 @@ class ArrayVisualizer extends StatefulWidget {
     required this.elements,
     this.highlightedIndices = const {},
     this.swappedIndices = const {},
+    this.sortedIndices = const {},
     required this.isDark,
   });
 
@@ -129,6 +131,7 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
                   final isNegative = num < 0;
                   final isHighlighted = widget.highlightedIndices.contains(index);
                   final isSwapped = widget.swappedIndices.contains(index);
+                  final isSorted = widget.sortedIndices.contains(index);
                   final changed = _prevElements.isNotEmpty &&
                       index < _prevElements.length &&
                       index < displayElements.length &&
@@ -139,6 +142,8 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
                     barColor = Colors.amber;
                   } else if (isHighlighted) {
                     barColor = Colors.cyanAccent;
+                  } else if (isSorted) {
+                    barColor = Colors.greenAccent.withValues(alpha: 0.85);
                   } else if (isNegative) {
                     barColor = Colors.redAccent.withValues(alpha: 0.7);
                   } else {
@@ -224,8 +229,10 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
                               ? Colors.amber
                               : isHighlighted
                                   ? Colors.cyanAccent
-                                  : Colors.grey[600],
-                          fontWeight: (isHighlighted || isSwapped) ? FontWeight.bold : FontWeight.normal,
+                                  : isSorted
+                                      ? Colors.greenAccent
+                                      : Colors.grey[600],
+                          fontWeight: (isHighlighted || isSwapped || isSorted) ? FontWeight.bold : FontWeight.normal,
                         ),
                       ),
                     ],

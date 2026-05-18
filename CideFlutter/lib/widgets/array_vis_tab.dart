@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/unified_provider.dart';
+import '../src/rust/unified/types.dart';
 import 'array_visualizer.dart';
 
 class ArrayVisTab extends ConsumerWidget {
@@ -29,6 +30,8 @@ class ArrayVisTab extends ConsumerWidget {
     final highlighted = _parseHighlightedIndices(payload.visEvents);
     // 解析语义标签中的交换索引
     final swapped = _parseSwappedIndices(payload.semanticLabel);
+    // 根据算法步骤推断已排序边界
+    final sorted = _getSortedIndices(payload);
 
     return ListView.builder(
       padding: const EdgeInsets.all(12),
@@ -41,6 +44,7 @@ class ArrayVisTab extends ConsumerWidget {
           elements: snap.elements,
           highlightedIndices: highlighted[snap.name] ?? const {},
           swappedIndices: swapped[snap.name] ?? const {},
+          sortedIndices: sorted[snap.name] ?? const {},
           isDark: isDark,
         );
       },
@@ -96,6 +100,55 @@ class ArrayVisTab extends ConsumerWidget {
       if (i >= 0 && j >= 0) {
         result[arrName] = {i, j};
       }
+    }
+    return result;
+  }
+
+  /// 根据算法步骤和局部变量推断已排序边界。
+  Map<String, Set<int>> _getSortedIndices(StepPayload payload) {
+    final result = <String, Set<int>>{};
+    final step = payload.algorithmStep;
+    if (step == null) return result;
+
+    // 从 localVars 构建变量映射
+    final vars = <String, String>{};
+    for (final v in payload.localVars) {
+      vars[v.name] = v.value;
+    }
+
+    final i = int.tryParse(vars['i'] ?? '') ?? -1;
+    final n = int.tryParse(vars['n'] ?? vars['len'] ?? vars['size'] ?? '') ?? -1;
+
+    // 假设数组名称为 arr 或 a（覆盖最常见的情况）
+    switch (step.algorithmName) {
+      case 'bubble_sort':
+        // 冒泡排序：右侧 i 个元素已排序（或第 i 趟后）
+        if (i >= 0 && n > 0) {
+          final sorted = <int>{};
+          final sortedCount = i + 1;
+          for (int k = 0; k < sortedCount && n - 1 - k >= 0; k++) {
+            sorted.add(n - 1 - k);
+          }
+          if (sorted.isNotEmpty) {
+            result['arr'] = sorted;
+            result['a'] = sorted;
+          }
+        }
+        break;
+      case 'selection_sort':
+      case 'insertion_sort':
+        // 选择/插入排序：左侧 i 个元素已排序
+        if (i >= 1) {
+          final sorted = <int>{};
+          for (int k = 0; k < i; k++) {
+            sorted.add(k);
+          }
+          if (sorted.isNotEmpty) {
+            result['arr'] = sorted;
+            result['a'] = sorted;
+          }
+        }
+        break;
     }
     return result;
   }

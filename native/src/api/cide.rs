@@ -12,8 +12,8 @@ pub use crate::session::{
 // 统一模式类型 re-export
 #[frb]
 pub use crate::unified::types::{
-    ApiFrameInfo, ApiVariableSnapshot, AutoStepResult, HeatmapData, HeatmapDelta, PointerSnapshot,
-    PointerStatus, SeekResult, StepMeta, StepPayload, UnifiedRunResult,
+    AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, AutoStepResult, HeatmapData,
+    HeatmapDelta, PointerSnapshot, PointerStatus, SeekResult, StepMeta, StepPayload, UnifiedRunResult,
 };
 
 #[frb]

@@ -1238,6 +1238,22 @@ impl SseDecode for crate::session::AlgorithmMatch {
     }
 }
 
+impl SseDecode for crate::unified::types::AlgorithmStepSnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_algorithmName = <String>::sse_decode(deserializer);
+        let mut var_displayName = <String>::sse_decode(deserializer);
+        let mut var_phase = <String>::sse_decode(deserializer);
+        let mut var_description = <String>::sse_decode(deserializer);
+        return crate::unified::types::AlgorithmStepSnapshot {
+            algorithm_name: var_algorithmName,
+            display_name: var_displayName,
+            phase: var_phase,
+            description: var_description,
+        };
+    }
+}
+
 impl SseDecode for crate::unified::types::ApiFrameInfo {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1678,6 +1694,17 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<crate::unified::types::AlgorithmStepSnapshot> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::unified::types::AlgorithmStepSnapshot>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::unified::types::StepPayload> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1769,6 +1796,7 @@ impl SseDecode for crate::unified::types::StepPayload {
         let mut var_codeLine = <i32>::sse_decode(deserializer);
         let mut var_funcName = <String>::sse_decode(deserializer);
         let mut var_semanticLabel = <String>::sse_decode(deserializer);
+        let mut var_algorithmStep = <Option<crate::unified::types::AlgorithmStepSnapshot>>::sse_decode(deserializer);
         let mut var_localVars = <Vec<crate::unified::types::ApiVariableSnapshot>>::sse_decode(deserializer);
         let mut var_callStack = <Vec<crate::unified::types::ApiFrameInfo>>::sse_decode(deserializer);
         let mut var_visEvents = <Vec<crate::session::VisEvent>>::sse_decode(deserializer);
@@ -1782,6 +1810,7 @@ impl SseDecode for crate::unified::types::StepPayload {
             code_line: var_codeLine,
             func_name: var_funcName,
             semantic_label: var_semanticLabel,
+            algorithm_step: var_algorithmStep,
             local_vars: var_localVars,
             call_stack: var_callStack,
             vis_events: var_visEvents,
@@ -2030,6 +2059,26 @@ impl flutter_rust_bridge::IntoDart for crate::session::AlgorithmMatch {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::session::AlgorithmMatch {}
 impl flutter_rust_bridge::IntoIntoDart<crate::session::AlgorithmMatch> for crate::session::AlgorithmMatch {
     fn into_into_dart(self) -> crate::session::AlgorithmMatch {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::unified::types::AlgorithmStepSnapshot {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.algorithm_name.into_into_dart().into_dart(),
+            self.display_name.into_into_dart().into_dart(),
+            self.phase.into_into_dart().into_dart(),
+            self.description.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::unified::types::AlgorithmStepSnapshot {}
+impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::AlgorithmStepSnapshot>
+    for crate::unified::types::AlgorithmStepSnapshot
+{
+    fn into_into_dart(self) -> crate::unified::types::AlgorithmStepSnapshot {
         self
     }
 }
@@ -2321,6 +2370,7 @@ impl flutter_rust_bridge::IntoDart for crate::unified::types::StepPayload {
             self.code_line.into_into_dart().into_dart(),
             self.func_name.into_into_dart().into_dart(),
             self.semantic_label.into_into_dart().into_dart(),
+            self.algorithm_step.into_into_dart().into_dart(),
             self.local_vars.into_into_dart().into_dart(),
             self.call_stack.into_into_dart().into_dart(),
             self.vis_events.into_into_dart().into_dart(),
@@ -2488,6 +2538,16 @@ impl SseEncode for crate::session::AlgorithmMatch {
         <String>::sse_encode(self.suggestion, serializer);
         <i32>::sse_encode(self.line, serializer);
         <Vec<crate::session::VisEvent>>::sse_encode(self.vis_events, serializer);
+    }
+}
+
+impl SseEncode for crate::unified::types::AlgorithmStepSnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.algorithm_name, serializer);
+        <String>::sse_encode(self.display_name, serializer);
+        <String>::sse_encode(self.phase, serializer);
+        <String>::sse_encode(self.description, serializer);
     }
 }
 
@@ -2822,6 +2882,16 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<crate::unified::types::AlgorithmStepSnapshot> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::unified::types::AlgorithmStepSnapshot>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::unified::types::StepPayload> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2896,6 +2966,7 @@ impl SseEncode for crate::unified::types::StepPayload {
         <i32>::sse_encode(self.code_line, serializer);
         <String>::sse_encode(self.func_name, serializer);
         <String>::sse_encode(self.semantic_label, serializer);
+        <Option<crate::unified::types::AlgorithmStepSnapshot>>::sse_encode(self.algorithm_step, serializer);
         <Vec<crate::unified::types::ApiVariableSnapshot>>::sse_encode(self.local_vars, serializer);
         <Vec<crate::unified::types::ApiFrameInfo>>::sse_encode(self.call_stack, serializer);
         <Vec<crate::session::VisEvent>>::sse_encode(self.vis_events, serializer);

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/types.dart' as rust;
+import 'package:cide/src/rust/unified/types.dart' show AlgorithmStepSnapshot;
 import '../models/algorithm_validation.dart';
 import '../providers/ide_provider.dart';
+import '../providers/unified_provider.dart';
 
 class AlgorithmTab extends ConsumerWidget {
   final List<rust.AlgorithmMatch> matches;
@@ -10,8 +12,43 @@ class AlgorithmTab extends ConsumerWidget {
 
   const AlgorithmTab({super.key, required this.matches, required this.isDark});
 
+  static const _algorithmPhaseFlows = {
+    'bubble_sort': ['outer_loop', 'inner_loop', 'compare', 'swap', 'finish'],
+    'selection_sort': ['outer_loop', 'inner_loop', 'compare', 'swap', 'finish'],
+    'insertion_sort': ['outer_loop', 'compare', 'inner_loop', 'insert', 'finish'],
+    'quick_sort': ['recursive', 'partition_init', 'partition_scan', 'partition_swap', 'finish'],
+    'merge_sort': ['recursive_split', 'merge', 'finish'],
+    'binary_search': ['loop', 'mid_calc', 'compare', 'narrow_left', 'narrow_right', 'found', 'not_found'],
+  };
+
+  static const _phaseDisplayNames = {
+    'outer_loop': '外层循环',
+    'inner_loop': '内层循环',
+    'compare': '比较',
+    'swap': '交换',
+    'insert': '插入',
+    'partition_init': '选取枢轴',
+    'partition_scan': '分区扫描',
+    'partition_swap': '分区交换',
+    'recursive': '递归分割',
+    'recursive_split': '递归分割',
+    'merge': '合并',
+    'loop': '搜索范围',
+    'mid_calc': '计算中点',
+    'narrow_left': '缩左边界',
+    'narrow_right': '缩右边界',
+    'found': '找到结果',
+    'not_found': '未找到',
+    'finish': '完成',
+  };
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final unifiedState = ref.watch(unifiedProvider);
+    final currentStep = unifiedState.currentStep >= 0 && unifiedState.currentStep < unifiedState.frameCache.length
+        ? unifiedState.frameCache[unifiedState.currentStep].algorithmStep
+        : null;
+
     if (matches.isEmpty) {
       return Center(
         child: Column(
@@ -137,6 +174,8 @@ class AlgorithmTab extends ConsumerWidget {
                         ],
                       ),
                     ),
+                  // 算法步骤流程预览
+                  _buildPhaseFlow(match, currentStep, isDark),
                   if (isVisExpanded && match.visEvents.isNotEmpty)
                     Container(
                       margin: const EdgeInsets.only(top: 6),
@@ -185,6 +224,79 @@ class AlgorithmTab extends ConsumerWidget {
           },
         );
       },
+    );
+  }
+
+  Widget _buildPhaseFlow(rust.AlgorithmMatch match, AlgorithmStepSnapshot? currentStep, bool isDark) {
+    final phases = _algorithmPhaseFlows[match.name];
+    if (phases == null || phases.isEmpty) return const SizedBox.shrink();
+
+    final isActive = currentStep != null && currentStep.algorithmName == match.name;
+
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF252527) : const Color(0xFFF0F0F2),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            '步骤流程',
+            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+          ),
+          const SizedBox(height: 6),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: phases.asMap().entries.map((entry) {
+                final idx = entry.key;
+                final phase = entry.value;
+                final isCurrent = isActive && currentStep.phase == phase;
+                final display = _phaseDisplayNames[phase] ?? phase;
+
+                final bgColor = isCurrent
+                    ? Colors.blueAccent
+                    : (isDark ? const Color(0xFF3A3A3C) : const Color(0xFFE0E0E2));
+                final fgColor = isCurrent
+                    ? Colors.white
+                    : (isDark ? Colors.grey[400] : Colors.grey[700]);
+
+                return Row(
+                  children: [
+                    if (idx > 0)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          Icons.arrow_forward,
+                          size: 12,
+                          color: isDark ? Colors.grey[600] : Colors.grey[400],
+                        ),
+                      ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: bgColor,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        display,
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: fgColor,
+                          fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

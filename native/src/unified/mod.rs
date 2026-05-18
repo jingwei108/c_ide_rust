@@ -1,3 +1,4 @@
+pub mod algorithm_steps;
 pub mod checkpoint;
 pub mod collector;
 pub mod engine;

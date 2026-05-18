@@ -26,6 +26,38 @@ class AccessedVar {
           accessType == other.accessType;
 }
 
+/// 算法步骤语义快照（用于前端步骤标注）。
+class AlgorithmStepSnapshot {
+  final String algorithmName;
+  final String displayName;
+  final String phase;
+  final String description;
+
+  const AlgorithmStepSnapshot({
+    required this.algorithmName,
+    required this.displayName,
+    required this.phase,
+    required this.description,
+  });
+
+  @override
+  int get hashCode =>
+      algorithmName.hashCode ^
+      displayName.hashCode ^
+      phase.hashCode ^
+      description.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is AlgorithmStepSnapshot &&
+          runtimeType == other.runtimeType &&
+          algorithmName == other.algorithmName &&
+          displayName == other.displayName &&
+          phase == other.phase &&
+          description == other.description;
+}
+
 /// FRB 友好的调用帧信息。
 class ApiFrameInfo {
   final String funcName;
@@ -251,6 +283,7 @@ class StepPayload {
   final int codeLine;
   final String funcName;
   final String semanticLabel;
+  final AlgorithmStepSnapshot? algorithmStep;
   final List<ApiVariableSnapshot> localVars;
   final List<ApiFrameInfo> callStack;
   final List<VisEvent> visEvents;
@@ -265,6 +298,7 @@ class StepPayload {
     required this.codeLine,
     required this.funcName,
     required this.semanticLabel,
+    this.algorithmStep,
     required this.localVars,
     required this.callStack,
     required this.visEvents,
@@ -281,6 +315,7 @@ class StepPayload {
       codeLine.hashCode ^
       funcName.hashCode ^
       semanticLabel.hashCode ^
+      algorithmStep.hashCode ^
       localVars.hashCode ^
       callStack.hashCode ^
       visEvents.hashCode ^
@@ -299,6 +334,7 @@ class StepPayload {
           codeLine == other.codeLine &&
           funcName == other.funcName &&
           semanticLabel == other.semanticLabel &&
+          algorithmStep == other.algorithmStep &&
           localVars == other.localVars &&
           callStack == other.callStack &&
           visEvents == other.visEvents &&
