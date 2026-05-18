@@ -21,7 +21,7 @@ fn type_size(ty: &Type, struct_defs: &HashMap<String, Vec<StructField>>, union_d
         TypeKind::Char => 1,
         TypeKind::Float => 4,
         TypeKind::Double | TypeKind::LongLong => 8,
-        TypeKind::Pointer => 4,
+        TypeKind::Pointer | TypeKind::FunctionPointer => 4,
         TypeKind::Array => {
             let elem_count = ty.total_elements();
             let elem_size = match ty.base_kind() {

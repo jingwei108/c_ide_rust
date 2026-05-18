@@ -11,6 +11,7 @@ pub enum TypeKind {
     Array,
     Struct,
     Union,
+    FunctionPointer,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -37,6 +38,11 @@ pub enum Type {
     },
     Struct { name: String, is_const: bool },
     Union { name: String, is_const: bool },
+    FunctionPointer {
+        return_type: Box<Type>,
+        param_types: Vec<Type>,
+        is_const: bool,
+    },
 }
 
 impl Default for Type {
@@ -83,6 +89,9 @@ impl Type {
     pub fn union_type(name: impl Into<String>) -> Self {
         Type::Union { name: name.into(), is_const: false }
     }
+    pub fn function_pointer(return_type: Type, param_types: Vec<Type>) -> Self {
+        Type::FunctionPointer { return_type: Box::new(return_type), param_types, is_const: false }
+    }
 
     // 兼容访问器
     pub fn kind(&self) -> TypeKind {
@@ -97,6 +106,7 @@ impl Type {
             Type::Array { .. } => TypeKind::Array,
             Type::Struct { .. } => TypeKind::Struct,
             Type::Union { .. } => TypeKind::Union,
+            Type::FunctionPointer { .. } => TypeKind::FunctionPointer,
         }
     }
 
@@ -109,6 +119,7 @@ impl Type {
             Type::Float { .. } => "float",
             Type::Double { .. } => "double",
             Type::LongLong { .. } => "long long",
+            Type::FunctionPointer { .. } => "fn",
         }
     }
 
@@ -143,6 +154,7 @@ impl Type {
             Type::Array { is_const, .. } => *is_const,
             Type::Struct { is_const, .. } => *is_const,
             Type::Union { is_const, .. } => *is_const,
+            Type::FunctionPointer { is_const, .. } => *is_const,
         }
     }
 
@@ -158,6 +170,7 @@ impl Type {
             Type::Array { is_const, .. } => *is_const = value,
             Type::Struct { is_const, .. } => *is_const = value,
             Type::Union { is_const, .. } => *is_const = value,
+            Type::FunctionPointer { is_const, .. } => *is_const = value,
         }
     }
 
@@ -165,7 +178,10 @@ impl Type {
         matches!(self.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
     }
     pub fn is_pointer(&self) -> bool {
-        matches!(self.kind(), TypeKind::Pointer)
+        matches!(self.kind(), TypeKind::Pointer | TypeKind::FunctionPointer)
+    }
+    pub fn is_function_pointer(&self) -> bool {
+        matches!(self.kind(), TypeKind::FunctionPointer)
     }
     pub fn is_array(&self) -> bool {
         matches!(self.kind(), TypeKind::Array)
@@ -233,6 +249,7 @@ impl Type {
                 Type::Pointer { base_kind: inferred_base, name, is_unsigned: false, is_const: false }
             }
             TypeKind::Array => Type::Array { base_kind: TypeKind::Void, name, array_size: 0, dims: vec![], is_unsigned: false, is_const: false },
+            TypeKind::FunctionPointer => Type::FunctionPointer { return_type: Box::new(Type::int()), param_types: vec![], is_const: false },
         }
     }
 
@@ -275,6 +292,18 @@ impl Type {
                 }
             }
             TypeKind::Struct => format!("struct {}", self.name()),
+            TypeKind::FunctionPointer => {
+                if let Type::FunctionPointer { return_type, param_types, .. } = self {
+                    let mut params = String::new();
+                    for (i, p) in param_types.iter().enumerate() {
+                        if i > 0 { params.push_str(", "); }
+                        params.push_str(&p.format_string());
+                    }
+                    format!("{} (*)({})", return_type.format_string(), params)
+                } else {
+                    "fn(*)".to_string()
+                }
+            }
         }
     }
 }
@@ -306,7 +335,26 @@ impl serde::Serialize for Type {
         map.serialize_entry("base_kind", &base_kind)?;
         map.serialize_entry("dims", &dims)?;
         map.serialize_entry("is_unsigned", &is_unsigned)?;
-        map.serialize_entry("is_const", &is_const)?;
+        match self {
+            Type::FunctionPointer { return_type, param_types: _, is_const } => {
+                map.serialize_entry("kind", &TypeKind::Pointer)?;
+                map.serialize_entry("name", return_type.name())?;
+                map.serialize_entry("array_size", &0)?;
+                map.serialize_entry("base_kind", &TypeKind::FunctionPointer)?;
+                map.serialize_entry("dims", &Vec::<i32>::new())?;
+                map.serialize_entry("is_unsigned", &false)?;
+                map.serialize_entry("is_const", is_const)?;
+            }
+            _ => {
+                map.serialize_entry("kind", &kind)?;
+                map.serialize_entry("name", name)?;
+                map.serialize_entry("array_size", &array_size)?;
+                map.serialize_entry("base_kind", &base_kind)?;
+                map.serialize_entry("dims", &dims)?;
+                map.serialize_entry("is_unsigned", &is_unsigned)?;
+                map.serialize_entry("is_const", &is_const)?;
+            }
+        }
         map.end()
     }
 }
@@ -345,7 +393,11 @@ impl<'de> serde::Deserialize<'de> for Type {
             TypeKind::Array => Type::Array { base_kind: helper.base_kind, name: helper.name, array_size: helper.array_size, dims: helper.dims, is_unsigned: helper.is_unsigned, is_const: helper.is_const },
             TypeKind::Struct => Type::Struct { name: helper.name, is_const: helper.is_const },
             TypeKind::Union => Type::Union { name: helper.name, is_const: helper.is_const },
+            TypeKind::FunctionPointer => Type::FunctionPointer { return_type: Box::new(Type::int()), param_types: vec![], is_const: helper.is_const },
         })
+        // Note: FunctionPointer is serialized as Pointer with base_kind=FunctionPointer
+        // When deserializing Pointer with base_kind=FunctionPointer, we reconstruct a default FunctionPointer
+        // Type info will be restored on recompile
     }
 }
 
@@ -387,6 +439,7 @@ pub enum Expr {
     StringLiteral { value: String, loc: SourceLoc, ty: Type },
     Identifier { name: String, loc: SourceLoc, ty: Type },
     Call { name: String, args: Vec<Expr>, loc: SourceLoc, ty: Type },
+    CallPtr { callee: Box<Expr>, args: Vec<Expr>, loc: SourceLoc, ty: Type },
     Index { array: Box<Expr>, index: Box<Expr>, loc: SourceLoc, ty: Type },
     Member { object: Box<Expr>, member: String, loc: SourceLoc, ty: Type },
     Assign { op: AssignOp, left: Box<Expr>, right: Box<Expr>, loc: SourceLoc, ty: Type },
@@ -407,6 +460,7 @@ macro_rules! expr_field {
             Expr::StringLiteral { $field, .. } => $field,
             Expr::Identifier { $field, .. } => $field,
             Expr::Call { $field, .. } => $field,
+            Expr::CallPtr { $field, .. } => $field,
             Expr::Index { $field, .. } => $field,
             Expr::Member { $field, .. } => $field,
             Expr::Assign { $field, .. } => $field,

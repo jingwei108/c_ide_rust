@@ -123,4 +123,5 @@ define_opcode! {
     LoadMemQ = 108,
     StoreMemQ = 109,
     SplitQ = 110,
+    CallPtr = 111,
 }

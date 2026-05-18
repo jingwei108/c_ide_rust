@@ -273,6 +273,29 @@ impl TypeChecker {
             }
             if dims_compatible { return true; }
         }
+        if target.is_function_pointer() && value.is_function_pointer() {
+            // Function pointer assignment: check return type and param count
+            if let (Type::FunctionPointer { return_type: t_ret, param_types: t_params, .. },
+                    Type::FunctionPointer { return_type: v_ret, param_types: v_params, .. }) = (target, value) {
+                if t_params.len() == v_params.len() {
+                    let params_compatible = t_params.iter().zip(v_params.iter()).all(|(a, b)| a == b);
+                    if params_compatible && t_ret == v_ret {
+                        return true;
+                    }
+                }
+            }
+            self.report_warning("函数指针类型不完全匹配，赋值可能存在风险", loc, ErrorCode::W3053_ImplicitScalarConversion);
+            return true;
+        }
+        if target.is_pointer() && value.is_function_pointer() {
+            // Allow assigning function pointer to generic pointer
+            return true;
+        }
+        if target.is_function_pointer() && value.is_pointer() {
+            // Allow assigning generic pointer to function pointer (with warning)
+            self.report_warning("将通用指针赋值给函数指针，建议显式转换", loc, ErrorCode::W3055_VoidPointerCast);
+            return true;
+        }
         if (matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)) && (matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)) {
             // 警告可能丢失精度的情况
             if matches!(target.kind(), TypeKind::Char) && matches!(value.kind(), TypeKind::Int | TypeKind::Float | TypeKind::Double) {
@@ -790,9 +813,13 @@ impl TypeChecker {
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
                     *ty = sym.ty;
-                } else if self.funcs.contains_key(name) {
+                } else if let Some(sym) = self.funcs.get(name).cloned() {
                     // Function name used as value (function pointer)
-                    *ty = Type::int();
+                    *ty = Type::FunctionPointer {
+                        return_type: Box::new(sym.return_type),
+                        param_types: sym.param_types,
+                        is_const: false,
+                    };
                 } else {
                     self.report_error(&format!("未声明的变量 '{}'", name), loc, ErrorCode::E3023_UndeclaredVar);
                     *ty = Type::int();
@@ -801,6 +828,45 @@ impl TypeChecker {
             }
             Expr::Call { name, args, loc, ty } => {
                 *ty = self.visit_call(name, args, loc);
+                ty.clone()
+            }
+            Expr::CallPtr { callee, args, loc, ty } => {
+                // Direct named function call: identifier is a known function
+                if let Expr::Identifier { name, .. } = callee.as_ref() {
+                    if self.funcs.contains_key(name) || self.is_builtin_func(name) {
+                        *ty = self.visit_call(name, args, loc);
+                        return ty.clone();
+                    }
+                }
+                let callee_ty = self.resolve_expr_type(callee);
+                match callee_ty {
+                    Type::FunctionPointer { param_types, return_type, .. } => {
+                        if args.len() != param_types.len() {
+                            self.report_error(&format!("函数指针调用参数数量不匹配：期望 {}，实际 {}", param_types.len(), args.len()), loc, ErrorCode::E3037_FuncArgCount);
+                        } else {
+                            for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
+                                let arg_type = self.resolve_expr_type(arg);
+                                if !self.check_assignable(expected, &arg_type, loc) {
+                                    self.report_error(&format!("函数指针调用第 {} 个参数类型不匹配", i + 1), loc, ErrorCode::E3038_FuncArgType);
+                                } else {
+                                    insert_implicit_cast(arg, expected);
+                                }
+                            }
+                        }
+                        *ty = return_type.as_ref().clone();
+                    }
+                    _ if callee_ty.is_pointer() => {
+                        // Allow calling through generic pointer (with warning)
+                        self.report_warning("通过通用指针调用函数，建议显式转换为函数指针", loc, ErrorCode::W3055_VoidPointerCast);
+                        for arg in args.iter_mut() { self.resolve_expr_type(arg); }
+                        *ty = Type::int();
+                    }
+                    _ => {
+                        self.report_error("不能对非函数指针类型进行调用", loc, ErrorCode::E3045_CompoundAssignType);
+                        for arg in args.iter_mut() { self.resolve_expr_type(arg); }
+                        *ty = Type::int();
+                    }
+                }
                 ty.clone()
             }
             Expr::Index { array, index, loc, ty } => {
@@ -895,6 +961,16 @@ impl TypeChecker {
                 ty.clone()
             }
         }
+    }
+
+    fn is_builtin_func(&self, name: &str) -> bool {
+        matches!(name,
+            "malloc" | "free" | "print_int" | "__cide_output" | "__cide_step" |
+            "printf" | "scanf" | "strlen" | "strcpy" | "strcmp" |
+            "getchar" | "putchar" | "rand" | "srand" | "memset" |
+            "exit" | "strcat" | "atoi" | "fopen" | "fread" | "fwrite" |
+            "fclose" | "feof" | "fprintf" | "realloc" | "qsort"
+        )
     }
 
     fn visit_call(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {

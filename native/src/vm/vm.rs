@@ -1609,6 +1609,63 @@ impl CideVM {
                             }
                             None
                         }
+                        OpCode::CallPtr => {
+                            if self.stack.is_empty() {
+                                self.trap("CallPtr: 栈下溢（缺少函数索引）", loc);
+                            } else {
+                                let func_idx = self.pop() as u32;
+                                let idx = func_idx as usize;
+                                if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
+                                    self.trap(&format!("CallPtr: 未知函数索引 {}", func_idx), loc);
+                                } else {
+                                    let meta = self.func_table[idx].clone();
+                                    let frame_size = meta.local_count as u64;
+                                    if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
+                                        self.trap("CallPtr: 栈溢出", loc);
+                                    } else {
+                                        let frame_size_u32 = frame_size as u32;
+                                        if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
+                                            self.trap("CallPtr: 栈溢出", loc);
+                                        } else {
+                                            let heap_limit = session.memory.heap_offset;
+                                            if self.mem_stack_top - frame_size_u32 < heap_limit {
+                                                self.trap("CallPtr: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", loc);
+                                            } else {
+                                                self.mem_stack_top -= frame_size_u32;
+                                                let locals_base = self.mem_stack_top;
+                                                let mut word_offset = 0;
+                                                for word_count in meta.param_sizes.iter() {
+                                                    let words = *word_count as u32;
+                                                    let addr = locals_base + word_offset * 4;
+                                                    for w in (0..words).rev() {
+                                                        let val = self.pop() as i32;
+                                                        self.store_i32(addr + w * 4, val, loc);
+                                                    }
+                                                    word_offset += words;
+                                                }
+                                                let arg_bytes = word_offset * 4;
+                                                for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
+                                                    self.memory[addr as usize] = 0;
+                                                }
+                                                let func_name = if idx < self.func_names.len() {
+                                                    self.func_names[idx].clone()
+                                                } else {
+                                                    format!("func_{}", func_idx)
+                                                };
+                                                self.call_stack.push(CallFrame {
+                                                    return_ip: self.ip,
+                                                    locals_base,
+                                                    local_count: meta.local_count,
+                                                    func_name,
+                                                });
+                                                self.ip = meta.ip;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            None
+                        }
                         OpCode::CallHost => {
                             execute_host_func(self, session, operand as u32);
                             if session.runtime.waiting_input {
@@ -1812,7 +1869,7 @@ impl CideVM {
             }
 
             OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero |
-            OpCode::Call | OpCode::CallHost | OpCode::Ret | OpCode::RetVoid => {
+            OpCode::Call | OpCode::CallPtr | OpCode::CallHost | OpCode::Ret | OpCode::RetVoid => {
                 if let Some(r) = self.execute_control_flow(inst.op, inst.operand, &inst.loc, session) {
                     return r;
                 }

@@ -452,6 +452,59 @@ impl BytecodeGen {
         }
     }
 
+    fn resolve_host_func_id(&self, name: &str) -> i32 {
+        let host_name = match name {
+            "print_int" => "__cide_output",
+            "printf" => "__cide_printf_n",
+            "scanf" => "__cide_scanf_n",
+            "strlen" => "strlen",
+            "strcpy" => "strcpy",
+            "strcmp" => "strcmp",
+            "getchar" => "getchar",
+            "putchar" => "putchar",
+            "rand" => "rand",
+            "srand" => "srand",
+            "memset" => "memset",
+            "exit" => "exit",
+            "strcat" => "strcat",
+            "atoi" => "atoi",
+            "fprintf" => "fprintf",
+            "realloc" => "realloc",
+            "qsort" => "qsort",
+            _ => name,
+        };
+        match host_name {
+            "__cide_output" => crate::vm::host_func_id::OUTPUT as i32,
+            "__cide_step" => crate::vm::host_func_id::STEP as i32,
+            "malloc" => crate::vm::host_func_id::MALLOC as i32,
+            "free" => crate::vm::host_func_id::FREE as i32,
+            "__cide_printf_0" => crate::vm::host_func_id::PRINTF_0 as i32,
+            "__cide_printf_1" => crate::vm::host_func_id::PRINTF_1 as i32,
+            "__cide_printf_n" => crate::vm::host_func_id::PRINTF_N as i32,
+            "__cide_scanf_n" => crate::vm::host_func_id::SCANF_N as i32,
+            "strlen" => crate::vm::host_func_id::STRLEN as i32,
+            "strcpy" => crate::vm::host_func_id::STRCPY as i32,
+            "strcmp" => crate::vm::host_func_id::STRCMP as i32,
+            "getchar" => crate::vm::host_func_id::GETCHAR as i32,
+            "putchar" => crate::vm::host_func_id::PUTCHAR as i32,
+            "rand" => crate::vm::host_func_id::RAND as i32,
+            "srand" => crate::vm::host_func_id::SRAND as i32,
+            "memset" => crate::vm::host_func_id::MEMSET as i32,
+            "exit" => crate::vm::host_func_id::EXIT as i32,
+            "strcat" => crate::vm::host_func_id::STRCAT as i32,
+            "atoi" => crate::vm::host_func_id::ATOI as i32,
+            "fopen" => crate::vm::host_func_id::FOPEN as i32,
+            "fread" => crate::vm::host_func_id::FREAD as i32,
+            "fwrite" => crate::vm::host_func_id::FWRITE as i32,
+            "fclose" => crate::vm::host_func_id::FCLOSE as i32,
+            "feof" => crate::vm::host_func_id::FEOF as i32,
+            "fprintf" => crate::vm::host_func_id::FPRINTF as i32,
+            "realloc" => crate::vm::host_func_id::REALLOC as i32,
+            "qsort" => crate::vm::host_func_id::QSORT as i32,
+            _ => -1,
+        }
+    }
+
     fn type_size(&self, ty: &Type) -> i32 {
         match ty.kind() {
             TypeKind::Void => 0,
@@ -459,7 +512,7 @@ impl BytecodeGen {
             TypeKind::Char => 1,
             TypeKind::Float => 4,
             TypeKind::Double | TypeKind::LongLong => 8,
-            TypeKind::Pointer => 4,
+            TypeKind::Pointer | TypeKind::FunctionPointer => 4,
             TypeKind::Array => {
                 let elem_count = ty.total_elements();
                 let elem_size = self.elem_type_size(ty);
@@ -1343,6 +1396,70 @@ impl BytecodeGen {
                     };
                     self.emit(OpCode::CallHost, host_id as i32, &loc);
                 }
+            }
+            Expr::CallPtr { callee, args, .. } => {
+                // Optimization: direct named call can use Call instead of CallPtr
+                let is_direct_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
+                    self.func_index.contains_key(name)
+                } else {
+                    false
+                };
+                for arg in args.iter_mut().rev() {
+                    let arg_ty = arg.ty();
+                    if arg_ty.is_struct() {
+                        let sz = self.type_size(arg_ty);
+                        let words = (sz + 3) / 4;
+                        if let Expr::Identifier { name: arg_name, .. } = arg {
+                            if let Some(&offset) = self.local_indices.get(arg_name) {
+                                for i in (0..words).rev() {
+                                    self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                }
+                            } else if let Some(&offset) = self.global_indices.get(arg_name) {
+                                for i in (0..words).rev() {
+                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                }
+                            } else {
+                                self.gen_expr(arg);
+                                for _ in 1..words {
+                                    self.emit(OpCode::PushConst, 0, &loc);
+                                }
+                            }
+                        } else {
+                            self.gen_expr(arg);
+                            for _ in 1..words {
+                                self.emit(OpCode::PushConst, 0, &loc);
+                            }
+                        }
+                    } else if arg_ty.kind() == TypeKind::Double {
+                        self.gen_expr(arg);
+                        if is_direct_call {
+                            // For direct call, we know the callee; but CallPtr assumes user func
+                            // Actually direct call uses Call opcode which handles param_sizes from func_table
+                            // No need for SplitD if callee is host func... but we don't know here.
+                            // For safety, always split for CallPtr; for Call, let original logic handle.
+                        }
+                        self.emit(OpCode::SplitD, 0, &loc);
+                    } else if arg_ty.kind() == TypeKind::LongLong {
+                        self.gen_expr(arg);
+                        self.emit(OpCode::SplitQ, 0, &loc);
+                    } else {
+                        self.gen_expr(arg);
+                    }
+                }
+                if let Expr::Identifier { name, .. } = callee.as_ref() {
+                    if let Some(&idx) = self.func_index.get(name) {
+                        self.emit(OpCode::Call, idx, &loc);
+                        return;
+                    }
+                    // Host function: direct CallHost
+                    let host_id = self.resolve_host_func_id(name);
+                    if host_id >= 0 {
+                        self.emit(OpCode::CallHost, host_id, &loc);
+                        return;
+                    }
+                }
+                self.gen_expr(callee);
+                self.emit(OpCode::CallPtr, args.len() as i32, &loc);
             }
             Expr::Index { array, index, ty, .. } => {
                 self.gen_index(array, index, ty, &loc, false);

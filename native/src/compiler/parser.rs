@@ -11,6 +11,20 @@ pub struct ParseError {
     pub code: i32,
 }
 
+#[derive(Debug, Clone)]
+enum DeclaratorNode {
+    Base,
+    Pointer(Box<DeclaratorNode>),
+    Array(Box<DeclaratorNode>, i32),
+    Function(Box<DeclaratorNode>, Vec<Param>),
+}
+
+#[derive(Debug, Clone)]
+enum DeclaratorSuffix {
+    Array(i32),
+    Function(Vec<Param>),
+}
+
 pub struct Parser {
     tokens: Vec<Token>,
     errors: Vec<ParseError>,
@@ -239,12 +253,21 @@ impl Parser {
     fn parse_global_var_or_func(&mut self, program: &mut ProgramNode) {
         let checkpoint = self.pos;
         let base_type = self.parse_base_type();
-        let (ty, _name) = self.parse_declarator(&base_type);
-        let name_tok = self.previous().clone();
-        if self.check(TokenType::LParen) {
+        // 前瞻：跳过前导 *，检查是否是 identifier (
+        let mut lookahead = self.pos;
+        while lookahead < self.tokens.len() && self.tokens[lookahead].ty == TokenType::Star {
+            lookahead += 1;
+        }
+        let is_func_decl = lookahead < self.tokens.len()
+            && self.tokens[lookahead].ty == TokenType::Identifier
+            && lookahead + 1 < self.tokens.len()
+            && self.tokens[lookahead + 1].ty == TokenType::LParen;
+        if is_func_decl {
             self.pos = checkpoint;
             program.funcs.push(self.parse_func_decl());
         } else {
+            let (ty, _name) = self.parse_declarator(&base_type);
+            let name_tok = self.previous().clone();
             let init = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
@@ -468,51 +491,159 @@ impl Parser {
     }
 
     fn parse_declarator(&mut self, base_type: &Type) -> (Type, String) {
-        let is_ptr = self.match_token(TokenType::Star);
-        let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
-        let mut dims = Vec::new();
-        while self.match_token(TokenType::LBracket) {
-            if self.check(TokenType::Number) {
-                let size_tok = self.advance().clone();
-                match size_tok.text.parse::<i32>() {
-                    Ok(size) => dims.push(size),
-                    Err(_) => {
-                        self.errors.push(ParseError {
-                            message: format!("数组维度 '{}' 不是有效的编译期常量整数", size_tok.text),
-                            line: size_tok.line,
-                            column: size_tok.column,
-                            code: ErrorCode::E2002_ExpectedArraySize as i32,
-                        });
-                        dims.push(0);
+        let (node, name) = self.parse_declarator_node();
+        let ty = Self::interpret_declarator_node(&node, base_type);
+        (ty, name)
+    }
+
+    // 声明符节点树：按 C 螺旋规则从内到外解释
+    fn parse_declarator_node(&mut self) -> (DeclaratorNode, String) {
+        let mut ptr_prefixes = 0;
+        while self.match_token(TokenType::Star) {
+            ptr_prefixes += 1;
+        }
+
+        let (name, mut node) = if self.match_token(TokenType::LParen) {
+            let (inner_node, inner_name) = self.parse_declarator_node();
+            self.consume(TokenType::RParen, "预期 ')'");
+            (inner_name, inner_node)
+        } else {
+            let name_tok = self.consume(TokenType::Identifier, "预期标识符名称").clone();
+            (name_tok.text, DeclaratorNode::Base)
+        };
+
+        // 收集后缀（它们绑定更紧）
+        let mut suffixes = Vec::new();
+        loop {
+            if self.match_token(TokenType::LBracket) {
+                let size = if self.check(TokenType::Number) {
+                    let size_tok = self.advance().clone();
+                    match size_tok.text.parse::<i32>() {
+                        Ok(s) => s,
+                        Err(_) => {
+                            self.errors.push(ParseError {
+                                message: format!("数组维度 '{}' 不是有效的编译期常量整数", size_tok.text),
+                                line: size_tok.line,
+                                column: size_tok.column,
+                                code: ErrorCode::E2002_ExpectedArraySize as i32,
+                            });
+                            0
+                        }
+                    }
+                } else if self.check(TokenType::RBracket) {
+                    -1
+                } else {
+                    self.errors.push(ParseError {
+                        message: "预期数组大小或 ']'".to_string(),
+                        line: self.current().line,
+                        column: self.current().column,
+                        code: ErrorCode::E2002_ExpectedArraySize as i32,
+                    });
+                    0
+                };
+                self.consume(TokenType::RBracket, "预期 ']'");
+                suffixes.push(DeclaratorSuffix::Array(size));
+            } else if self.match_token(TokenType::LParen) {
+                let params = self.parse_param_list();
+                self.consume(TokenType::RParen, "预期 ')'");
+                suffixes.push(DeclaratorSuffix::Function(params));
+            } else {
+                break;
+            }
+        }
+
+        // 先应用后缀（它们绑定到标识符更紧）
+        for suffix in suffixes {
+            match suffix {
+                DeclaratorSuffix::Array(size) => {
+                    node = DeclaratorNode::Array(Box::new(node), size);
+                }
+                DeclaratorSuffix::Function(params) => {
+                    node = DeclaratorNode::Function(Box::new(node), params);
+                }
+            }
+        }
+
+        // 再应用前缀指针（从外到内，但解释时从内到外）
+        for _ in 0..ptr_prefixes {
+            node = DeclaratorNode::Pointer(Box::new(node));
+        }
+
+        (node, name)
+    }
+
+    fn interpret_declarator_node(node: &DeclaratorNode, base_type: &Type) -> Type {
+        match node {
+            DeclaratorNode::Base => base_type.clone(),
+            DeclaratorNode::Pointer(inner) => {
+                let inner_ty = Self::interpret_declarator_node(inner, base_type);
+                match inner.as_ref() {
+                    DeclaratorNode::Array(array_inner, size) => {
+                        let elem_ty = Self::interpret_declarator_node(array_inner, base_type);
+                        Type::Array {
+                            base_kind: TypeKind::Pointer,
+                            name: elem_ty.name().to_string(),
+                            array_size: *size,
+                            dims: vec![*size],
+                            is_unsigned: false,
+                            is_const: false,
+                        }
+                    }
+                    DeclaratorNode::Function(func_inner, params) => {
+                        let return_ty = Self::interpret_declarator_node(func_inner, base_type);
+                        Type::FunctionPointer {
+                            return_type: Box::new(Type::Pointer {
+                                base_kind: return_ty.kind(),
+                                name: return_ty.name().to_string(),
+                                is_unsigned: false,
+                                is_const: false,
+                            }),
+                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                            is_const: false,
+                        }
+                    }
+                    _ => {
+                        Type::Pointer {
+                            base_kind: inner_ty.kind(),
+                            name: inner_ty.name().to_string(),
+                            is_unsigned: false,
+                            is_const: false,
+                        }
                     }
                 }
-            } else if self.check(TokenType::RBracket) {
-                dims.push(-1);
-            } else {
-                self.errors.push(ParseError {
-                    message: "预期数组大小或 ']'".to_string(),
-                    line: self.current().line,
-                    column: self.current().column,
-                    code: ErrorCode::E2002_ExpectedArraySize as i32,
-                });
             }
-            self.consume(TokenType::RBracket, "预期 ']'");
-        }
-        if is_ptr {
-            let ptr_type = Type::Pointer { base_kind: base_type.kind(), name: base_type.name().to_string(), is_const: base_type.is_const(), is_unsigned: base_type.is_unsigned() };
-            if !dims.is_empty() {
-                let has_unknown = dims.iter().any(|&d| d <= 0);
-                let total = if has_unknown { 0 } else { dims.iter().product() };
-                return (Type::Array { base_kind: TypeKind::Pointer, name: ptr_type.name().to_string(), array_size: total, dims, is_unsigned: base_type.is_unsigned(), is_const: base_type.is_const() }, name_tok.text);
+            DeclaratorNode::Array(inner, size) => {
+                let inner_ty = Self::interpret_declarator_node(inner, base_type);
+                Type::Array {
+                    base_kind: inner_ty.kind(),
+                    name: inner_ty.name().to_string(),
+                    array_size: *size,
+                    dims: vec![*size],
+                    is_unsigned: false,
+                    is_const: false,
+                }
             }
-            return (ptr_type, name_tok.text);
+            DeclaratorNode::Function(inner, params) => {
+                let inner_ty = Self::interpret_declarator_node(inner, base_type);
+                match inner.as_ref() {
+                    DeclaratorNode::Pointer(ptr_inner) => {
+                        let return_ty = Self::interpret_declarator_node(ptr_inner, base_type);
+                        Type::FunctionPointer {
+                            return_type: Box::new(return_ty),
+                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                            is_const: false,
+                        }
+                    }
+                    _ => {
+                        Type::FunctionPointer {
+                            return_type: Box::new(inner_ty),
+                            param_types: params.iter().map(|p| p.ty.clone()).collect(),
+                            is_const: false,
+                        }
+                    }
+                }
+            }
         }
-        if !dims.is_empty() {
-            let has_unknown = dims.iter().any(|&d| d <= 0);
-            let total = if has_unknown { 0 } else { dims.iter().product() };
-            return (Type::Array { base_kind: base_type.kind(), name: base_type.name().to_string(), array_size: total, dims, is_unsigned: base_type.is_unsigned(), is_const: base_type.is_const() }, name_tok.text);
-        }
-        (base_type.clone(), name_tok.text)
     }
 
     fn parse_type_and_name(&mut self) -> (Type, String) {
@@ -1041,6 +1172,12 @@ impl Parser {
                 self.consume(TokenType::RBracket, "预期 ']'");
                 let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
                 expr = Expr::Index { array: Box::new(expr), index: Box::new(index), loc, ty: Type::default() };
+            } else if self.match_token(TokenType::LParen) {
+                // Function call: direct named call or function pointer call
+                let args = self.parse_arg_list();
+                self.consume(TokenType::RParen, "预期 ')'");
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                expr = Expr::CallPtr { callee: Box::new(expr), args, loc, ty: Type::default() };
             } else if self.match_token(TokenType::Dot) || self.match_token(TokenType::Arrow) {
                 let member_tok = self.consume(TokenType::Identifier, "预期成员名称").clone();
                 let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
@@ -1144,9 +1281,6 @@ impl Parser {
         }
         if self.check(TokenType::Identifier) {
             let name_tok = self.advance().clone();
-            if self.check(TokenType::LParen) {
-                return self.parse_call_expr(name_tok.text);
-            }
             let loc = SourceLoc { line: name_tok.line, column: name_tok.column };
             return Expr::Identifier { name: name_tok.text, loc, ty: Type::default() };
         }

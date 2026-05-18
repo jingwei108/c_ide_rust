@@ -3542,3 +3542,65 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out[0], "1 1 2 3");
 }
+
+
+#[test]
+fn test_e2e_function_pointer_basic() {
+    let src = r#"
+#include <stdio.h>
+int add(int a, int b) { return a + b; }
+int main() {
+    int (*fp)(int, int) = add;
+    printf("%d\n", fp(3, 4));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "7");
+}
+
+#[test]
+fn test_e2e_function_pointer_as_arg() {
+    let src = r#"
+#include <stdio.h>
+int apply(int (*op)(int), int x) { return op(x); }
+int inc(int n) { return n + 1; }
+int main() {
+    printf("%d\n", apply(inc, 5));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "6");
+}
+
+#[test]
+fn test_e2e_function_pointer_reassign() {
+    let src = r#"
+#include <stdio.h>
+int f1() { return 1; }
+int f2() { return 2; }
+int main() {
+    int (*fp)() = f1;
+    printf("%d\n", fp());
+    fp = f2;
+    printf("%d\n", fp());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "1");
+    assert_eq!(out[1], "2");
+}

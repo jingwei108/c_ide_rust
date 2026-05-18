@@ -493,6 +493,7 @@ fn expr_to_string(expr: &Expr) -> String {
             let elems: Vec<String> = elements.iter().map(expr_to_string).collect();
             format!("{{{}}}", elems.join(", "))
         }
+        Expr::CallPtr { .. } => "fp(...)".to_string(),
     }
 }
 
