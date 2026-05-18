@@ -29,6 +29,8 @@ import '../widgets/pointer_vis_tab.dart';
 import '../widgets/progress_tab.dart';
 import '../widgets/custom_keyboard.dart';
 import '../widgets/template_bar.dart';
+import '../widgets/template_param_dialog.dart';
+import '../widgets/template_tutorial_panel.dart';
 import '../widgets/execution_control_panel.dart';
 import '../widgets/toolbar.dart';
 import '../widgets/breakpoints_tab.dart';
@@ -257,6 +259,50 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   void _backspace() => _editorKey.currentState?.backspace();
   void _insertNewline() => _editorKey.currentState?.insertNewline();
 
+  void _handleTemplateSelect(CodeTemplate template) {
+    final notifier = ref.read(ideProvider.notifier);
+
+    // 无参数且无教程：直接插入（旧行为）
+    if (template.params.isEmpty && template.tutorialSteps.isEmpty) {
+      _insertText(template.code);
+      return;
+    }
+
+    // 有参数：先弹参数对话框
+    if (template.params.isNotEmpty) {
+      showTemplateParamDialog(
+        context: context,
+        template: template,
+        onConfirm: (params) {
+          final generated = template.buildCode(params);
+          if (template.tutorialSteps.isNotEmpty) {
+            // 启动教程
+            notifier.startTutorial(template, generated);
+            _scrollToTutorialFocus();
+          } else {
+            // 无教程，直接插入
+            _insertText(generated);
+          }
+        },
+      );
+      return;
+    }
+
+    // 无参数但有教程
+    notifier.startTutorial(template, template.code);
+    _scrollToTutorialFocus();
+  }
+
+  void _scrollToTutorialFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final tutorial = ref.read(ideProvider).activeTutorial;
+      if (tutorial != null && tutorial.focusLines.isNotEmpty) {
+        _scrollToLine(tutorial.focusLines.first);
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(ideProvider);
@@ -345,18 +391,39 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                         ),
                       ),
                     ),
-                    // 模板栏：键盘弹出时平滑收起
-                    SizeTransition(
-                      sizeFactor: _barsAnimation,
-                      axisAlignment: 1,
-                      child: _buildTemplateBar(state, notifier),
-                    ),
-                    // 底部面板：键盘弹出时平滑收起
-                    SizeTransition(
-                      sizeFactor: _barsAnimation,
-                      axisAlignment: 1,
-                      child: _buildBottomPanel(state, notifier, isDark),
-                    ),
+                    // 教程激活时显示教程面板，否则显示模板栏+底部面板
+                    if (state.activeTutorial != null)
+                      TemplateTutorialPanel(
+                        templateName: state.activeTutorial!.templateKey,
+                        currentStep: state.activeTutorial!.stepIndex,
+                        totalSteps: state.activeTutorial!.steps.length,
+                        step: state.activeTutorial!.steps[state.activeTutorial!.stepIndex],
+                        isDark: isDark,
+                        onNext: () {
+                          notifier.nextTutorialStep();
+                          _scrollToTutorialFocus();
+                        },
+                        onPrev: () {
+                          notifier.prevTutorialStep();
+                          _scrollToTutorialFocus();
+                        },
+                        onSkip: notifier.skipTutorial,
+                        onRun: () => notifier.completeTutorial(),
+                      )
+                    else ...[
+                      // 模板栏：键盘弹出时平滑收起
+                      SizeTransition(
+                        sizeFactor: _barsAnimation,
+                        axisAlignment: 1,
+                        child: _buildTemplateBar(state, notifier),
+                      ),
+                      // 底部面板：键盘弹出时平滑收起
+                      SizeTransition(
+                        sizeFactor: _barsAnimation,
+                        axisAlignment: 1,
+                        child: _buildBottomPanel(state, notifier, isDark),
+                      ),
+                    ],
                   ],
                 ),
                 // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
@@ -435,7 +502,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   Widget _buildTemplateBar(IdeState state, IdeNotifier notifier) {
     return TemplateBar(
       templates: CodeTemplate.defaults,
-      onSelectTemplate: _insertText,
+      onSelectTemplate: _handleTemplateSelect,
     );
   }
 

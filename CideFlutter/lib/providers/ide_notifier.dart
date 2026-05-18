@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/types.dart' as rust;
 import '../models/algorithm_validation.dart';
+import '../models/code_template.dart';
 import '../models/ide_state.dart';
 import '../models/knowledge_card.dart';
 import '../models/learning_progress.dart';
@@ -693,6 +694,90 @@ class IdeNotifier extends Notifier<IdeState> {
 
   void hideIntro() {
     state = state.copyWith(showIntro: false);
+  }
+
+  // ========== 模板教程 ==========
+
+  void startTutorial(CodeTemplate template, String generatedCode) {
+    final steps = template.tutorialSteps;
+    if (steps.isEmpty) return;
+    final focusLines = steps.first.focusLines;
+    state = state.copyWith(
+      activeTutorial: TutorialSession(
+        templateKey: template.key,
+        generatedCode: generatedCode,
+        stepIndex: 0,
+        focusLines: focusLines,
+        steps: steps,
+      ),
+    );
+  }
+
+  void nextTutorialStep() {
+    final tutorial = state.activeTutorial;
+    if (tutorial == null) return;
+    final nextIndex = tutorial.stepIndex + 1;
+    if (nextIndex >= tutorial.steps.length) {
+      completeTutorial();
+      return;
+    }
+    final nextStep = tutorial.steps[nextIndex];
+    state = state.copyWith(
+      activeTutorial: tutorial.copyWith(
+        stepIndex: nextIndex,
+        focusLines: nextStep.focusLines,
+      ),
+    );
+  }
+
+  void prevTutorialStep() {
+    final tutorial = state.activeTutorial;
+    if (tutorial == null) return;
+    final prevIndex = tutorial.stepIndex - 1;
+    if (prevIndex < 0) return;
+    final prevStep = tutorial.steps[prevIndex];
+    state = state.copyWith(
+      activeTutorial: tutorial.copyWith(
+        stepIndex: prevIndex,
+        focusLines: prevStep.focusLines,
+      ),
+    );
+  }
+
+  void skipTutorial() {
+    completeTutorial();
+  }
+
+  Future<void> completeTutorial() async {
+    final tutorial = state.activeTutorial;
+    if (tutorial == null) return;
+
+    // 记录已完成
+    final progress = state.learningProgress;
+    final newCompleted = Set<String>.from(progress.completedTutorials)
+      ..add(tutorial.templateKey);
+
+    state = state.copyWith(
+      activeTutorial: null,
+      source: tutorial.generatedCode,
+      learningProgress: progress.copyWith(
+        completedTutorials: newCompleted,
+      ),
+    );
+
+    // 同步 source 到当前文件
+    final newFiles = state.files.map((f) {
+      if (f.filename == state.currentFile) {
+        return f.copyWith(source: tutorial.generatedCode);
+      }
+      return f;
+    }).toList();
+    state = state.copyWith(files: newFiles);
+
+    await _saveProgress();
+
+    // 自动编译运行（会启动统一模式）
+    await compile();
   }
 
   // ========== 算法验证 ==========

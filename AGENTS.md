@@ -59,6 +59,7 @@ docs/                   设计文档、事故报告
 | Phase 14 | **堆内存可视化增强**：malloc 分配行号追踪 + 外部碎片（free_list）可视化 + 程序结束泄漏检测报告 | ✅ 完成 |
 | Phase 15 | **指针追踪动画**：统一模式每步收集 `PointerSnapshot`，前端 `PointerArrowWidget` 实时绘制指针箭头；支持 Valid/Freed/Null/Dangling 四种状态可视化 | ✅ 完成 |
 | Phase 16 | **算法步骤语义标注**：为 6 种检测到的算法预定义步骤模板，运行时结合源码行特征 + 变量值生成教学描述（如冒泡排序"第 {i} 趟：将第 {n-i} 大的元素放到正确位置"）；前端 `ExecutionControlPanel` 实时展示步骤横幅 + `AlgorithmTab` 静态流程预览 + `ArrayVisTab` 已排序边界高亮 | ✅ 完成 |
+| Phase 17 | **代码模板参数化 + 交互式教程**：模板支持 `{{key:default}}` 占位符（数组长度、查找目标等）；选择模板后弹出参数对话框；填入参数后启动 `TemplateTutorialPanel` 逐行引导理解；关键行带 💡 可展开解释；教程完成自动编译运行并启动统一模式 | ✅ 完成 |
 
 ## 编码约定
 
@@ -122,6 +123,7 @@ docs/                   设计文档、事故报告
 - **二叉树可视化** — `TreeVisualizer` 满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制；`TreeVisTab` 集成统一模式
 - **变量级高亮** — `re_editor` `spanBuilder` 集成：当前执行行的被读变量名显示淡蓝底色、被写变量名显示淡橙底色，保留语法高亮；`VariablesTab` 值变化背景闪烁动画
 - **代码模板扩展** — 新增选择排序、插入排序、归并排序、线性查找、链表头插法/遍历、二叉树节点/先序遍历、栈（数组实现）等 8 个模板，总计 16 个
+- **代码模板参数化 + 交互式教程** — 核心算法模板（冒泡/选择/插入/快速/归并/二分/线性查找）支持参数占位符（如 `{{n:5}}`、`{{target:3}}`）；`TemplateParamDialog` 底部弹窗收集参数；`TemplateTutorialPanel` 逐步骤高亮代码行并展示教学描述；每步骤的关键行带 💡 `ExpansionTile` 可展开查看详细解释；教程最后一步点击"运行代码"自动插入生成代码、编译并启动统一模式；`LearningProgress` 记录 `completedTutorials`
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护

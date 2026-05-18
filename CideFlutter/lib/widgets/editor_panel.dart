@@ -412,8 +412,9 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
 
   int _currentHighlightLine = 0;
   List<rust_unified.AccessedVar> _currentAccessedVars = [];
+  Set<int> _currentTutorialLines = {};
 
-  /// re_editor spanBuilder：在当前执行行的变量名上添加底色高亮。
+  /// re_editor spanBuilder：变量高亮 + 教程行高亮。
   TextSpan _buildVariableHighlightSpan({
     required BuildContext context,
     required int index,
@@ -422,22 +423,35 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
     required TextStyle style,
   }) {
     final line = index + 1;
-    if (line != _currentHighlightLine || _currentAccessedVars.isEmpty) {
-      return textSpan;
+    TextSpan result = textSpan;
+
+    // 1. 变量级高亮（统一模式）
+    if (line == _currentHighlightLine && _currentAccessedVars.isNotEmpty) {
+      final highlights = _currentAccessedVars.map((a) => _VarHighlight(
+        name: a.name,
+        color: a.accessType == 'Write'
+            ? Colors.orange.withValues(alpha: 0.25)
+            : Colors.blueAccent.withValues(alpha: 0.15),
+      )).toList();
+
+      final newChildren = _applyHighlightsToSpan(textSpan, highlights);
+      result = TextSpan(
+        style: textSpan.style,
+        children: newChildren,
+      );
     }
 
-    final highlights = _currentAccessedVars.map((a) => _VarHighlight(
-      name: a.name,
-      color: a.accessType == 'Write'
-          ? Colors.orange.withValues(alpha: 0.25)
-          : Colors.blueAccent.withValues(alpha: 0.15),
-    )).toList();
+    // 2. 教程行高亮
+    if (_currentTutorialLines.contains(line)) {
+      result = TextSpan(
+        style: (result.style ?? const TextStyle()).copyWith(
+          backgroundColor: Colors.amber.withValues(alpha: 0.10),
+        ),
+        children: result.children,
+      );
+    }
 
-    final newChildren = _applyHighlightsToSpan(textSpan, highlights);
-    return TextSpan(
-      style: textSpan.style,
-      children: newChildren,
-    );
+    return result;
   }
 
   @override
@@ -462,11 +476,18 @@ class EditorPanelState extends ConsumerState<EditorPanel> {
       newHighlightLine = payload.codeLine;
       newAccessedVars = payload.accessedVars;
     }
+
+    // 更新教程行高亮状态
+    final newTutorialLines = state.activeTutorial?.focusLines.toSet() ?? <int>{};
+
     final hasHighlightChanged = newHighlightLine != _currentHighlightLine ||
-        !_accessedVarsEqual(newAccessedVars, _currentAccessedVars);
+        !_accessedVarsEqual(newAccessedVars, _currentAccessedVars) ||
+        !_tutorialLinesEqual(newTutorialLines, _currentTutorialLines);
+
     if (hasHighlightChanged) {
       _currentHighlightLine = newHighlightLine;
       _currentAccessedVars = List.from(newAccessedVars);
+      _currentTutorialLines = newTutorialLines;
       _controller.forceRepaint();
     }
 
@@ -1177,4 +1198,9 @@ bool _accessedVarsEqual(List<rust_unified.AccessedVar> a, List<rust_unified.Acce
     if (a[i].name != b[i].name || a[i].accessType != b[i].accessType) return false;
   }
   return true;
+}
+
+bool _tutorialLinesEqual(Set<int> a, Set<int> b) {
+  if (a.length != b.length) return false;
+  return a.containsAll(b);
 }

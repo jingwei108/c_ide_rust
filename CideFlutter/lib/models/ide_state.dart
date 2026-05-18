@@ -1,4 +1,5 @@
 import 'package:cide/src/rust/api/types.dart' as rust;
+import 'code_template.dart';
 import 'knowledge_card.dart';
 import 'learning_progress.dart';
 
@@ -12,6 +13,39 @@ class CodeFile {
     return CodeFile(
       filename: filename ?? this.filename,
       source: source ?? this.source,
+    );
+  }
+}
+
+/// 当前激活的教程会话
+class TutorialSession {
+  final String templateKey;
+  final String generatedCode;
+  final int stepIndex;
+  final List<int> focusLines;
+  final List<TutorialStep> steps;
+
+  const TutorialSession({
+    required this.templateKey,
+    required this.generatedCode,
+    required this.stepIndex,
+    required this.focusLines,
+    required this.steps,
+  });
+
+  TutorialSession copyWith({
+    String? templateKey,
+    String? generatedCode,
+    int? stepIndex,
+    List<int>? focusLines,
+    List<TutorialStep>? steps,
+  }) {
+    return TutorialSession(
+      templateKey: templateKey ?? this.templateKey,
+      generatedCode: generatedCode ?? this.generatedCode,
+      stepIndex: stepIndex ?? this.stepIndex,
+      focusLines: focusLines ?? this.focusLines,
+      steps: steps ?? this.steps,
     );
   }
 }
@@ -45,6 +79,7 @@ class IdeState {
   final int executionSpeed; // 0~500 ms
   final bool showIntro;
   final LearningProgress learningProgress;
+  final TutorialSession? activeTutorial;
 
   const IdeState({
     this.files = _defaultFiles,
@@ -73,6 +108,7 @@ class IdeState {
     this.executionSpeed = 0,
     this.showIntro = false,
     this.learningProgress = const LearningProgress(),
+    this.activeTutorial,
   });
 
   static const _defaultBottomSlots = ['output', 'diagnostics', 'algorithm'];
@@ -110,6 +146,7 @@ class IdeState {
     int? executionSpeed,
     bool? showIntro,
     LearningProgress? learningProgress,
+    TutorialSession? activeTutorial,
     bool clearError = false,
   }) {
     return IdeState(
@@ -139,6 +176,7 @@ class IdeState {
       executionSpeed: executionSpeed ?? this.executionSpeed,
       showIntro: showIntro ?? this.showIntro,
       learningProgress: learningProgress ?? this.learningProgress,
+      activeTutorial: activeTutorial ?? this.activeTutorial,
     );
   }
 

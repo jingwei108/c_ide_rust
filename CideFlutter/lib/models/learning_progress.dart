@@ -19,6 +19,7 @@ class LearningProgress {
   final int totalTraps;
   final int totalSeeks;
   final int maxStepsInSingleRun;
+  final Set<String> completedTutorials;
 
   const LearningProgress({
     this.totalCompiles = 0,
@@ -36,6 +37,7 @@ class LearningProgress {
     this.totalTraps = 0,
     this.totalSeeks = 0,
     this.maxStepsInSingleRun = 0,
+    this.completedTutorials = const {},
   });
 
   double get successRate => totalCompiles == 0 ? 0.0 : successfulCompiles / totalCompiles;
@@ -66,6 +68,7 @@ class LearningProgress {
     int? totalTraps,
     int? totalSeeks,
     int? maxStepsInSingleRun,
+    Set<String>? completedTutorials,
   }) {
     return LearningProgress(
       totalCompiles: totalCompiles ?? this.totalCompiles,
@@ -83,6 +86,7 @@ class LearningProgress {
       totalTraps: totalTraps ?? this.totalTraps,
       totalSeeks: totalSeeks ?? this.totalSeeks,
       maxStepsInSingleRun: maxStepsInSingleRun ?? this.maxStepsInSingleRun,
+      completedTutorials: completedTutorials ?? this.completedTutorials,
     );
   }
 
@@ -103,6 +107,7 @@ class LearningProgress {
       'totalTraps': totalTraps,
       'totalSeeks': totalSeeks,
       'maxStepsInSingleRun': maxStepsInSingleRun,
+      'completedTutorials': completedTutorials.toList(),
     };
   }
 
@@ -140,6 +145,10 @@ class LearningProgress {
       totalTraps: json['totalTraps'] as int? ?? 0,
       totalSeeks: json['totalSeeks'] as int? ?? 0,
       maxStepsInSingleRun: json['maxStepsInSingleRun'] as int? ?? 0,
+      completedTutorials: (json['completedTutorials'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toSet() ??
+          const {},
     );
   }
 

@@ -4,7 +4,7 @@ import 'template_chip.dart';
 
 class TemplateBar extends StatelessWidget {
   final List<CodeTemplate> templates;
-  final void Function(String code) onSelectTemplate;
+  final void Function(CodeTemplate template) onSelectTemplate;
 
   const TemplateBar({
     super.key,
@@ -27,7 +27,7 @@ class TemplateBar extends StatelessWidget {
         children: templates.map((tmpl) {
           return TemplateChip(
             label: tmpl.displayName,
-            onTap: () => onSelectTemplate(tmpl.code),
+            onTap: () => onSelectTemplate(tmpl),
           );
         }).toList(),
       ),
