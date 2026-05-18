@@ -2109,9 +2109,18 @@ void print_list(Node *head) {
     printf("\n");
 }
 
+void free_list(Node *head) {
+    while (head) {
+        Node *tmp = head;
+        head = head->next;
+        free(tmp);
+    }
+}
+
 int main() {
     Node *list = create_list(5);
     print_list(list);
+    free_list(list);
     return 0;
 }
 "#;
@@ -3734,4 +3743,50 @@ int main() {
     assert_eq!(ret, 0);
     let out = filter_outputs(outputs);
     assert_eq!(out[0], "12 4");
+}
+
+
+#[test]
+fn test_e2e_memory_leak_report() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(sizeof(int) * 4);
+    p[0] = 1;
+    printf("ok\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    // 确认输出包含泄漏报告
+    let joined = out.join("\n");
+    assert!(joined.contains("内存泄漏检测报告"), "应包含泄漏报告标题");
+    assert!(joined.contains("未被 free"), "应提示未被 free");
+}
+
+#[test]
+fn test_e2e_no_leak_when_freed() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(sizeof(int) * 4);
+    p[0] = 1;
+    printf("ok\n");
+    free(p);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    let joined = out.join("\n");
+    assert!(!joined.contains("内存泄漏检测报告"), "已 free 不应报告泄漏");
 }
