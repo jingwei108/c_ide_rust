@@ -102,9 +102,9 @@ fn collect_pointer_snapshots(
 
         let status = if target_addr == 0 {
             PointerStatus::Null
-        } else if target_addr < crate::vm::vm::NULL_TRAP_SIZE {
-            PointerStatus::Dangling
-        } else if target_addr >= crate::vm::vm::MEM_SIZE {
+        } else if !(crate::vm::vm::NULL_TRAP_SIZE..crate::vm::vm::MEM_SIZE)
+            .contains(&target_addr)
+        {
             PointerStatus::Dangling
         } else if is_freed_heap(&session.memory.regions, target_addr) {
             PointerStatus::Freed
