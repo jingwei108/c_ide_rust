@@ -138,3 +138,69 @@ int main() {
         loop_count
     );
 }
+
+#[test]
+fn test_snapshot_restore_safe() {
+    // 回归测试：restore() 使用安全拷贝，不应因内存大小不匹配而 panic
+    let source = r#"
+int main() {
+    int x = 1;
+    return x;
+}
+"#;
+    let mut session = make_session(source);
+    let mut vm = setup_vm_for_session(&mut session);
+
+    // 执行若干步后创建快照
+    for _ in 0..5 {
+        let _ = vm.step(&mut session);
+    }
+    let snap = vm.snapshot(&session);
+
+    // 继续执行改变状态
+    for _ in 0..5 {
+        let _ = vm.step(&mut session);
+    }
+
+    // 恢复不应 panic
+    vm.restore(&snap, &mut session);
+
+    // 恢复后 VM 应能继续执行而不 trap
+    let result = vm.step(&mut session);
+    assert!(!matches!(result, cide_native::vm::vm::StepResult::Trap), "VM should continue after restore, got trap: {}", vm.get_error());
+}
+
+#[test]
+fn test_f64_constants_cleared_on_recompile() {
+    // 回归测试：复编译时 f64_constants 必须被清空
+    let source1 = r#"
+#include <stdio.h>
+int main() {
+    double a = 3.14159265358979;
+    printf("%.14f", a);
+    return 0;
+}
+"#;
+    let mut session = make_session(source1);
+    let f64_count_after_first = session.compile.f64_constants.len();
+    assert!(f64_count_after_first > 0, "First compile should produce f64 constants");
+
+    // 重新编译不含 double 的代码
+    let source2 = r#"
+int main() {
+    return 42;
+}
+"#;
+    let mut full_source = source2.to_string();
+    if !full_source.ends_with('\n') {
+        full_source.push('\n');
+    }
+    run_compile_pipeline(&mut session, &full_source).expect("second compile failed");
+
+    // 验证 f64_constants 被清空
+    assert!(
+        session.compile.f64_constants.is_empty(),
+        "f64_constants should be cleared after recompile, but still has {} entries",
+        session.compile.f64_constants.len()
+    );
+}
