@@ -1,153 +1,165 @@
 import 'package:flutter/material.dart';
-import 'package:cide/src/rust/api/types.dart' as rust;
-import 'linked_list_visualizer.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/unified/types.dart' as rust_types;
+import '../providers/unified_provider.dart';
+import 'pointer_arrow_painter.dart';
 
-class PointerVisTab extends StatelessWidget {
+class PointerVisTab extends ConsumerWidget {
   final bool isDark;
 
   const PointerVisTab({super.key, required this.isDark});
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<List<rust.VariableSnapshot>>(
-      future: rust.getVariables(),
-      builder: (context, snapshot) {
-        final vars = snapshot.data ?? [];
-        const nullTrapEnd = 64;
-        const linearMemorySize = 256 * 1024;
-        final pointers = vars.where((v) {
-          final val = int.tryParse(v.value) ?? 0;
-          return v.tyName.contains('*') &&
-              val > nullTrapEnd &&
-              val < linearMemorySize;
-        }).toList();
+  Widget build(BuildContext context, WidgetRef ref) {
+    final unifiedState = ref.watch(unifiedProvider);
+    final frameCache = unifiedState.frameCache;
+    final currentStep = unifiedState.currentStep;
 
-        // 查找链表头节点（struct Node* 类型）
-        final headVars = pointers.where((v) {
-          return v.tyName.toLowerCase().contains('struct') &&
-              v.tyName.toLowerCase().contains('node');
-        }).toList();
+    // 统一模式：从 frameCache 读取指针快照
+    if (frameCache.isNotEmpty && currentStep >= 0 && currentStep < frameCache.length) {
+      final payload = frameCache[currentStep];
+      final pointers = payload.pointerSnapshots;
 
-        if (pointers.isEmpty && headVars.isEmpty) {
-          return Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.polyline, size: 40, color: Colors.grey[500]),
-                const SizedBox(height: 12),
-                Text('未检测到指针变量', style: TextStyle(fontSize: 14, color: Colors.grey[500])),
-              ],
-            ),
+      if (pointers.isEmpty) {
+        return _buildEmpty('当前步未检测到指针变量');
+      }
+
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: pointers.length,
+        itemBuilder: (context, index) {
+          final p = pointers[index];
+          return PointerArrowWidget(
+            name: p.name,
+            addr: p.addr,
+            tyName: p.tyName,
+            targetAddr: p.targetAddr,
+            targetName: p.targetName,
+            status: _mapStatus(p.status),
+            isDark: isDark,
           );
-        }
+        },
+      );
+    }
 
-        return Column(
-          children: [
-            // 链表可视化区域
-            if (headVars.isNotEmpty)
-              FutureBuilder<List<rust.VisEvent>>(
-                future: rust.getVisEvents(),
-                builder: (context, visSnapshot) {
-                  final visEvents = visSnapshot.data ?? [];
-                  return SizedBox(
-                    height: 120,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      itemCount: headVars.length,
-                      itemBuilder: (context, idx) {
-                        final hv = headVars[idx];
-                        return Container(
-                          margin: const EdgeInsets.only(right: 16),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Text(
-                                  '${hv.name} (${hv.tyName})',
-                                  style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
-                                ),
-                              ),
-                              Expanded(
-                                child: LinkedListVisualizer(
-                                  headAddr: int.tryParse(hv.value) ?? 0,
-                                  structName: 'Node',
-                                  visEvents: visEvents,
-                                  isDark: isDark,
-                                ),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  );
-                },
-              ),
-            // 指针列表
-            Expanded(
-              child: ListView.builder(
-                padding: const EdgeInsets.all(12),
-                itemCount: pointers.length,
-                itemBuilder: (context, index) {
-                  final p = pointers[index];
-                  String targetName = '';
-                  final targetAddr = int.tryParse(p.value) ?? 0;
-                  for (final v in vars) {
-                    if (v.addr == targetAddr) {
-                      targetName = v.name;
-                      break;
-                    }
-                  }
-                  return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.1)),
-                      ),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.arrow_forward, size: 16, color: Colors.blueAccent),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                p.name,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontFamily: 'monospace',
-                                  color: isDark ? const Color(0xffd4d4d4) : const Color(0xff333333),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                '0x${p.addr.toRadixString(16).toUpperCase().padLeft(4, '0')} → 0x${targetAddr.toRadixString(16).toUpperCase().padLeft(4, '0')} ${targetName.isNotEmpty ? '($targetName)' : ''}',
-                                style: const TextStyle(fontSize: 11, color: Colors.grey, fontFamily: 'monospace'),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.blueAccent.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(p.tyName, style: const TextStyle(fontSize: 10, color: Colors.blueAccent, fontFamily: 'monospace')),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+    // 非统一模式（单步调试/直接运行）：回退到实时读取变量
+    return _buildLegacyView();
+  }
+
+  Widget _buildLegacyView() {
+    return FutureBuilder<List<_LegacyPointer>>(
+      future: _fetchLegacyPointers(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return _buildEmpty('运行程序以查看指针追踪');
+        }
+        final pointers = snapshot.data!;
+        return ListView.builder(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          itemCount: pointers.length,
+          itemBuilder: (context, index) {
+            final p = pointers[index];
+            return PointerArrowWidget(
+              name: p.name,
+              addr: p.addr,
+              tyName: p.tyName,
+              targetAddr: p.targetAddr,
+              targetName: p.targetName,
+              status: p.status,
+              isDark: isDark,
+            );
+          },
         );
       },
     );
   }
+
+  Future<List<_LegacyPointer>> _fetchLegacyPointers() async {
+    try {
+      final vars = await rust.getVariables();
+      const nullTrapEnd = 64;
+      const linearMemorySize = 256 * 1024;
+      final pointers = <_LegacyPointer>[];
+
+      for (final v in vars) {
+        if (!v.tyName.contains('*')) continue;
+        final val = int.tryParse(v.value) ?? 0;
+        if (val < 0 || val > linearMemorySize) continue;
+
+        PointerStatus status;
+        if (val == 0) {
+          status = PointerStatus.null_;
+        } else if (val < nullTrapEnd) {
+          status = PointerStatus.dangling;
+        } else {
+          status = PointerStatus.valid;
+        }
+
+        String targetName = '';
+        for (final other in vars) {
+          if (other.addr == val) {
+            targetName = other.name;
+            break;
+          }
+        }
+
+        pointers.add(_LegacyPointer(
+          name: v.name,
+          addr: v.addr,
+          tyName: v.tyName,
+          targetAddr: val,
+          targetName: targetName,
+          status: status,
+        ));
+      }
+      return pointers;
+    } catch (_) {
+      return [];
+    }
+  }
+
+  Widget _buildEmpty(String message) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.polyline, size: 40, color: Colors.grey[500]),
+          const SizedBox(height: 12),
+          Text(message, style: TextStyle(fontSize: 14, color: Colors.grey[500])),
+        ],
+      ),
+    );
+  }
+
+  PointerStatus _mapStatus(rust_types.PointerStatus s) {
+    switch (s) {
+      case rust_types.PointerStatus.valid:
+        return PointerStatus.valid;
+      case rust_types.PointerStatus.freed:
+        return PointerStatus.freed;
+      case rust_types.PointerStatus.null_:
+        return PointerStatus.null_;
+      case rust_types.PointerStatus.dangling:
+        return PointerStatus.dangling;
+    }
+  }
+}
+
+class _LegacyPointer {
+  final String name;
+  final int addr;
+  final String tyName;
+  final int targetAddr;
+  final String targetName;
+  final PointerStatus status;
+
+  _LegacyPointer({
+    required this.name,
+    required this.addr,
+    required this.tyName,
+    required this.targetAddr,
+    required this.targetName,
+    required this.status,
+  });
 }

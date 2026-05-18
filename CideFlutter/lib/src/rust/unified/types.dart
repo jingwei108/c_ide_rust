@@ -169,6 +169,61 @@ class HeatmapData {
           maxCount == other.maxCount;
 }
 
+/// 指针变量快照（用于指针追踪动画）。
+class PointerSnapshot {
+  final String name;
+  final int addr;
+  final String tyName;
+  final int targetAddr;
+  final String targetName;
+  final PointerStatus status;
+
+  const PointerSnapshot({
+    required this.name,
+    required this.addr,
+    required this.tyName,
+    required this.targetAddr,
+    required this.targetName,
+    required this.status,
+  });
+
+  @override
+  int get hashCode =>
+      name.hashCode ^
+      addr.hashCode ^
+      tyName.hashCode ^
+      targetAddr.hashCode ^
+      targetName.hashCode ^
+      status.hashCode;
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is PointerSnapshot &&
+          runtimeType == other.runtimeType &&
+          name == other.name &&
+          addr == other.addr &&
+          tyName == other.tyName &&
+          targetAddr == other.targetAddr &&
+          targetName == other.targetName &&
+          status == other.status;
+}
+
+/// 指针状态。
+enum PointerStatus {
+  /// 指向有效内存（栈、全局、已分配堆）。
+  valid,
+
+  /// 指向已释放的堆内存。
+  freed,
+
+  /// NULL 指针。
+  null_,
+
+  /// 悬空指针（越界或未初始化）。
+  dangling,
+}
+
 /// Seek 到指定步的返回结果。
 class SeekResult {
   final bool success;
@@ -203,6 +258,7 @@ class StepPayload {
   final BigInt heatmapCount;
   final List<AccessedVar> accessedVars;
   final List<ArraySnapshot> arraySnapshots;
+  final List<PointerSnapshot> pointerSnapshots;
 
   const StepPayload({
     required this.stepIndex,
@@ -216,6 +272,7 @@ class StepPayload {
     required this.heatmapCount,
     required this.accessedVars,
     required this.arraySnapshots,
+    required this.pointerSnapshots,
   });
 
   @override
@@ -230,7 +287,8 @@ class StepPayload {
       heatmapLine.hashCode ^
       heatmapCount.hashCode ^
       accessedVars.hashCode ^
-      arraySnapshots.hashCode;
+      arraySnapshots.hashCode ^
+      pointerSnapshots.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -247,7 +305,8 @@ class StepPayload {
           heatmapLine == other.heatmapLine &&
           heatmapCount == other.heatmapCount &&
           accessedVars == other.accessedVars &&
-          arraySnapshots == other.arraySnapshots;
+          arraySnapshots == other.arraySnapshots &&
+          pointerSnapshots == other.pointerSnapshots;
 }
 
 /// 编译并启动统一模式的返回结果。

@@ -15,6 +15,33 @@ pub struct StepPayload {
     pub heatmap_count: u64,
     pub accessed_vars: Vec<AccessedVar>,
     pub array_snapshots: Vec<ArraySnapshot>,
+    pub pointer_snapshots: Vec<PointerSnapshot>,
+}
+
+/// 指针变量快照（用于指针追踪动画）。
+#[frb]
+#[derive(Debug, Clone)]
+pub struct PointerSnapshot {
+    pub name: String,
+    pub addr: u32,
+    pub ty_name: String,
+    pub target_addr: u32,
+    pub target_name: String,
+    pub status: PointerStatus,
+}
+
+/// 指针状态。
+#[frb]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PointerStatus {
+    /// 指向有效内存（栈、全局、已分配堆）。
+    Valid,
+    /// 指向已释放的堆内存。
+    Freed,
+    /// NULL 指针。
+    Null,
+    /// 悬空指针（越界或未初始化）。
+    Dangling,
 }
 
 /// 当前步访问的变量（用于变量级高亮）。

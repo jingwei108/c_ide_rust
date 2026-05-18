@@ -1526,6 +1526,18 @@ impl SseDecode for Vec<crate::session::MemoryRegion> {
     }
 }
 
+impl SseDecode for Vec<crate::unified::types::PointerSnapshot> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::unified::types::PointerSnapshot>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<i32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1677,6 +1689,40 @@ impl SseDecode for Option<crate::unified::types::StepPayload> {
     }
 }
 
+impl SseDecode for crate::unified::types::PointerSnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_name = <String>::sse_decode(deserializer);
+        let mut var_addr = <u32>::sse_decode(deserializer);
+        let mut var_tyName = <String>::sse_decode(deserializer);
+        let mut var_targetAddr = <u32>::sse_decode(deserializer);
+        let mut var_targetName = <String>::sse_decode(deserializer);
+        let mut var_status = <crate::unified::types::PointerStatus>::sse_decode(deserializer);
+        return crate::unified::types::PointerSnapshot {
+            name: var_name,
+            addr: var_addr,
+            ty_name: var_tyName,
+            target_addr: var_targetAddr,
+            target_name: var_targetName,
+            status: var_status,
+        };
+    }
+}
+
+impl SseDecode for crate::unified::types::PointerStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut inner = <i32>::sse_decode(deserializer);
+        return match inner {
+            0 => crate::unified::types::PointerStatus::Valid,
+            1 => crate::unified::types::PointerStatus::Freed,
+            2 => crate::unified::types::PointerStatus::Null,
+            3 => crate::unified::types::PointerStatus::Dangling,
+            _ => unreachable!("Invalid variant for PointerStatus: {}", inner),
+        };
+    }
+}
+
 impl SseDecode for (i32, u64) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1730,6 +1776,7 @@ impl SseDecode for crate::unified::types::StepPayload {
         let mut var_heatmapCount = <u64>::sse_decode(deserializer);
         let mut var_accessedVars = <Vec<crate::unified::types::AccessedVar>>::sse_decode(deserializer);
         let mut var_arraySnapshots = <Vec<crate::unified::types::ArraySnapshot>>::sse_decode(deserializer);
+        let mut var_pointerSnapshots = <Vec<crate::unified::types::PointerSnapshot>>::sse_decode(deserializer);
         return crate::unified::types::StepPayload {
             step_index: var_stepIndex,
             code_line: var_codeLine,
@@ -1742,6 +1789,7 @@ impl SseDecode for crate::unified::types::StepPayload {
             heatmap_count: var_heatmapCount,
             accessed_vars: var_accessedVars,
             array_snapshots: var_arraySnapshots,
+            pointer_snapshots: var_pointerSnapshots,
         };
     }
 }
@@ -2191,6 +2239,46 @@ impl flutter_rust_bridge::IntoIntoDart<crate::session::MemoryRegion> for crate::
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::unified::types::PointerSnapshot {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.name.into_into_dart().into_dart(),
+            self.addr.into_into_dart().into_dart(),
+            self.ty_name.into_into_dart().into_dart(),
+            self.target_addr.into_into_dart().into_dart(),
+            self.target_name.into_into_dart().into_dart(),
+            self.status.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::unified::types::PointerSnapshot {}
+impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::PointerSnapshot>
+    for crate::unified::types::PointerSnapshot
+{
+    fn into_into_dart(self) -> crate::unified::types::PointerSnapshot {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::unified::types::PointerStatus {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        match self {
+            Self::Valid => 0.into_dart(),
+            Self::Freed => 1.into_dart(),
+            Self::Null => 2.into_dart(),
+            Self::Dangling => 3.into_dart(),
+            _ => unreachable!(),
+        }
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::unified::types::PointerStatus {}
+impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::PointerStatus> for crate::unified::types::PointerStatus {
+    fn into_into_dart(self) -> crate::unified::types::PointerStatus {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::session::RunResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2240,6 +2328,7 @@ impl flutter_rust_bridge::IntoDart for crate::unified::types::StepPayload {
             self.heatmap_count.into_into_dart().into_dart(),
             self.accessed_vars.into_into_dart().into_dart(),
             self.array_snapshots.into_into_dart().into_dart(),
+            self.pointer_snapshots.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2611,6 +2700,16 @@ impl SseEncode for Vec<crate::session::MemoryRegion> {
     }
 }
 
+impl SseEncode for Vec<crate::unified::types::PointerSnapshot> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::unified::types::PointerSnapshot>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<i32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2733,6 +2832,36 @@ impl SseEncode for Option<crate::unified::types::StepPayload> {
     }
 }
 
+impl SseEncode for crate::unified::types::PointerSnapshot {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.name, serializer);
+        <u32>::sse_encode(self.addr, serializer);
+        <String>::sse_encode(self.ty_name, serializer);
+        <u32>::sse_encode(self.target_addr, serializer);
+        <String>::sse_encode(self.target_name, serializer);
+        <crate::unified::types::PointerStatus>::sse_encode(self.status, serializer);
+    }
+}
+
+impl SseEncode for crate::unified::types::PointerStatus {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(
+            match self {
+                crate::unified::types::PointerStatus::Valid => 0,
+                crate::unified::types::PointerStatus::Freed => 1,
+                crate::unified::types::PointerStatus::Null => 2,
+                crate::unified::types::PointerStatus::Dangling => 3,
+                _ => {
+                    unimplemented!("");
+                }
+            },
+            serializer,
+        );
+    }
+}
+
 impl SseEncode for (i32, u64) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2774,6 +2903,7 @@ impl SseEncode for crate::unified::types::StepPayload {
         <u64>::sse_encode(self.heatmap_count, serializer);
         <Vec<crate::unified::types::AccessedVar>>::sse_encode(self.accessed_vars, serializer);
         <Vec<crate::unified::types::ArraySnapshot>>::sse_encode(self.array_snapshots, serializer);
+        <Vec<crate::unified::types::PointerSnapshot>>::sse_encode(self.pointer_snapshots, serializer);
     }
 }
 

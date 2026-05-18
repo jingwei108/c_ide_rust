@@ -1,5 +1,5 @@
 use crate::session::Session;
-use crate::unified::types::{AccessedVar, ApiFrameInfo, ApiVariableSnapshot, StepPayload};
+use crate::unified::types::{AccessedVar, ApiFrameInfo, ApiVariableSnapshot, PointerSnapshot, PointerStatus, StepPayload};
 use crate::vm::vm::CideVM;
 
 /// 每步数据收集器：从 VM 和 Session 中提取轻量 `StepPayload`。
@@ -65,6 +65,7 @@ impl StepCollector {
             .collect();
 
         let array_snapshots = vm.get_array_snapshots();
+        let pointer_snapshots = collect_pointer_snapshots(vm, session, &local_vars);
 
         StepPayload {
             step_index,
@@ -78,8 +79,77 @@ impl StepCollector {
             heatmap_count,
             accessed_vars,
             array_snapshots,
+            pointer_snapshots,
         }
     }
+}
+
+/// 从变量快照中提取指针变量，并判断其状态。
+fn collect_pointer_snapshots(
+    _vm: &CideVM,
+    session: &Session,
+    local_vars: &[ApiVariableSnapshot],
+) -> Vec<PointerSnapshot> {
+    let mut result = Vec::new();
+    for v in local_vars {
+        if !is_pointer_type(&v.ty_name) {
+            continue;
+        }
+        let target_addr = match parse_addr(&v.value) {
+            Some(a) => a,
+            None => continue,
+        };
+
+        let status = if target_addr == 0 {
+            PointerStatus::Null
+        } else if target_addr < crate::vm::vm::NULL_TRAP_SIZE {
+            PointerStatus::Dangling
+        } else if target_addr >= crate::vm::vm::MEM_SIZE {
+            PointerStatus::Dangling
+        } else if is_freed_heap(&session.memory.regions, target_addr) {
+            PointerStatus::Freed
+        } else {
+            PointerStatus::Valid
+        };
+
+        let target_name = find_var_name_at_addr(local_vars, target_addr);
+
+        result.push(PointerSnapshot {
+            name: v.name.clone(),
+            addr: v.addr,
+            ty_name: v.ty_name.clone(),
+            target_addr,
+            target_name,
+            status,
+        });
+    }
+    result
+}
+
+fn is_pointer_type(ty_name: &str) -> bool {
+    ty_name.contains('*') || ty_name.contains("Pointer")
+}
+
+fn parse_addr(value: &str) -> Option<u32> {
+    // 支持 "0x1234" 和十进制 "4660"
+    if value.starts_with("0x") || value.starts_with("0X") {
+        u32::from_str_radix(&value[2..], 16).ok()
+    } else {
+        value.parse::<i64>().ok().and_then(|n| if n >= 0 { Some(n as u32) } else { None })
+    }
+}
+
+fn is_freed_heap(regions: &[crate::session::MemoryRegion], addr: u32) -> bool {
+    regions.iter().any(|r| r.is_heap && r.addr == addr && r.is_freed)
+}
+
+fn find_var_name_at_addr(local_vars: &[ApiVariableSnapshot], addr: u32) -> String {
+    for v in local_vars {
+        if v.addr == addr {
+            return v.name.clone();
+        }
+    }
+    String::new()
 }
 
 fn format_value(v: &crate::session::VariableSnapshot) -> String {

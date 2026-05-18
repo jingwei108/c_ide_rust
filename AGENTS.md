@@ -57,6 +57,7 @@ docs/                   设计文档、事故报告
 | Phase 12 | `union` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ `sizeof(union U)` | ✅ 完成 |
 | Phase 13 | **统一模式 / 时间旅行**：VM 快照/恢复 + 检查点管理器 + 批量自动执行 + Seek 进度条 + 异常自动回退 + 语义标签 + 变量历史趋势图 | ✅ 完成 |
 | Phase 14 | **堆内存可视化增强**：malloc 分配行号追踪 + 外部碎片（free_list）可视化 + 程序结束泄漏检测报告 | ✅ 完成 |
+| Phase 15 | **指针追踪动画**：统一模式每步收集 `PointerSnapshot`，前端 `PointerArrowWidget` 实时绘制指针箭头；支持 Valid/Freed/Null/Dangling 四种状态可视化 | ✅ 完成 |
 
 ## 编码约定
 
@@ -108,6 +109,10 @@ docs/                   设计文档、事故报告
   - `UnifiedEngine` 批量自动执行 + Seek + Trap 回退（`unified/engine.rs`）
   - `StepCollector` 每步数据收集：变量快照、调用栈、可视化事件、语义标签、热力图（`unified/collector.rs`）
   - Flutter 前端：`UnifiedNotifier` 状态机 + `ExecutionControlPanel` 控制面板 + `VarHistoryTab` 变量历史趋势图
+- **指针追踪动画** — `PointerVisTab` + `PointerArrowWidget` 实时绘制指针箭头；统一模式每步自动收集 `PointerSnapshot`（名称/类型/自身地址/目标地址/目标变量名/状态），支持时间旅行回溯查看任意历史时刻的指针状态
+  - `PointerStatus` 四种状态：Valid（蓝色实线箭头）/ Freed（灰色虚线箭头）/ Null（接地符号空箭头）/ Dangling（红色虚线箭头）
+  - 后端：`StepCollector::collect_pointer_snapshots` 遍历变量快照，解析指针值，结合 `session.memory.regions` 判断是否为已释放堆内存
+  - 前端：`PointerArrowWidget` 使用 `CustomPainter` 绘制箭头，左右卡片布局，状态色编码
 - **数组排序动画增强** — `ArrayVisualizer` 高亮脉冲（缩放+发光）、交换金色光晕、值变化弹性弹跳；`ArrayVisTab` 解析 Swap 语义标签驱动交换动画
 - **链表可视化** — `LinkedListVisualizer` CustomPainter 绘制节点+箭头，支持 NodeCreate/Access/Delete 闪色；渐进式入场动画；`LinkedListVisTab` 集成统一模式，从 `StepPayload.localVars` 读取头指针驱动时间旅行
 - **二叉树可视化** — `TreeVisualizer` 满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制；`TreeVisTab` 集成统一模式
