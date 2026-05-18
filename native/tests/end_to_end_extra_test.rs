@@ -1510,6 +1510,29 @@ int main() {
 }
 
 #[test]
+fn test_e2e_float_negative() {
+    // 回归测试：PushConstF 符号扩展 bug（负 float 值被错误地符号扩展为 64 位）
+    let src = r#"
+#include <stdio.h>
+int main() {
+    float a = -1.5;
+    float b = -2.0;
+    printf("%.1f", a);
+    printf("%.1f", b);
+    printf("%.1f", a + b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("-1.5")), "Outputs: {:?}", outputs);
+    assert!(outputs.iter().any(|l| l.contains("-2.0")), "Outputs: {:?}", outputs);
+    assert!(outputs.iter().any(|l| l.contains("-3.5")), "Outputs: {:?}", outputs);
+}
+
+#[test]
 fn test_e2e_double_basic() {
     let src = r#"
 #include <stdio.h>
