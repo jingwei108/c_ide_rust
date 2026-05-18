@@ -53,7 +53,7 @@ docs/                   设计文档、事故报告
 | Phase 8 | `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ 诊断系统拓展 | ✅ 完成 |
 | Phase 9 | Flutter 前端从零搭建：IDE 界面 + 编辑器 + 调试面板 + 算法可视化 | ✅ 完成 |
 | Phase 10 | 内存映射 Canvas + 算法可视化事件 FRB 集成 + 交互增强 | ✅ 完成 |
-| Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 239 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
+| Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 241 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
 | Phase 12 | `union` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ `sizeof(union U)` | ✅ 完成 |
 | Phase 13 | **统一模式 / 时间旅行**：VM 快照/恢复 + 检查点管理器 + 批量自动执行 + Seek 进度条 + 异常自动回退 + 语义标签 + 变量历史趋势图 | ✅ 完成 |
 
@@ -207,7 +207,7 @@ docs/                   设计文档、事故报告
   - NDK 配置添加环境变量说明注释
   - CI 增强：新增 Release 构建验证 + Flutter 测试
   - `DESIGN.md`：指令集 `~30 条` → `106 条`，C++ 伪代码 → Rust 风格
-  - `AGENTS.md` / `CHANGELOG.md`：测试数量 `44` → `239`
+  - `AGENTS.md` / `CHANGELOG.md`：测试数量 `44` → `241`
   - `ROADMAP.md`：知识图谱标记为未启动，函数指针标记为已完成
   - `CideFlutter/README.md`：重写为项目说明
   - `LinkedListVisualizer` / `TreeVisualizer`：异步 `setState()` 前添加 `mounted` 检查
