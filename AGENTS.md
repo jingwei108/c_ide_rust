@@ -56,6 +56,7 @@ docs/                   设计文档、事故报告
 | Phase 11 | 代码审查修复 + 工程规范（`rustfmt.toml`/`CHANGELOG.md`）+ 240 个单元测试 + Flutter 前端全面模块化拆分 | ✅ 完成 |
 | Phase 12 | `union` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）+ `sizeof(union U)` | ✅ 完成 |
 | Phase 13 | **统一模式 / 时间旅行**：VM 快照/恢复 + 检查点管理器 + 批量自动执行 + Seek 进度条 + 异常自动回退 + 语义标签 + 变量历史趋势图 | ✅ 完成 |
+| Phase 14 | **堆内存可视化增强**：malloc 分配行号追踪 + 外部碎片（free_list）可视化 + 程序结束泄漏检测报告 | ✅ 完成 |
 
 ## 编码约定
 
@@ -158,6 +159,11 @@ docs/                   设计文档、事故报告
   - `static` 局部变量：`static int arr[3] = {1, 2, 3};`（函数体内静态存储期）
 - **算法可视化事件 FRB 集成**：`VisEvent` 扩展 `context` 字段保留比较上下文（如 `arr[i]:arr[i+1]`）；Flutter 算法面板支持展开查看关键比较事件列表
 - **内存映射 Canvas 组件**：1MB 内存以 256×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet
+- **堆内存可视化增强**：
+  - `malloc` / `realloc` / `fopen` 分配时记录源码行号（`MemoryRegion.alloc_line` / `alloc_by`）
+  - 外部碎片可视化：`free_list` 中的空闲块以金色高亮显示在内存网格中，BottomSheet 中可查看碎片地址和大小
+  - 程序结束时自动泄漏检测：遍历未释放的堆区域，输出 "第 X 行的 malloc 分配了 Y 字节，未被 free" 报告，并统计泄漏总字节数
+  - 堆内存统计面板：实时显示总堆空间、已分配、碎片字节数及碎片率（0~100%），并以彩色进度条可视化占比
 - **VS-style Enter 格式化**：`re_editor` 拦截 Enter 键，自动补充分号、大括号配对、智能缩进
 - **教程引导 overlay**：`IntroOverlay` 组件支持多步骤引导，带跳过/下一步按钮
 - **Touch swipe tabs**：底部和悬浮面板支持水平滑动手势（60px 阈值）切换 Tab
