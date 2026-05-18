@@ -123,7 +123,7 @@ impl Parser {
             }
             if self.previous().ty == TokenType::Semicolon { return; }
             match current {
-                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float | TokenType::Double | TokenType::LongLiteral |
+                TokenType::Int | TokenType::Void | TokenType::Char | TokenType::Float | TokenType::Double |
                 TokenType::If | TokenType::While | TokenType::Do | TokenType::For |
                 TokenType::Return | TokenType::Break | TokenType::Continue |
                 TokenType::Struct | TokenType::Switch | TokenType::Case |
@@ -410,8 +410,11 @@ impl Parser {
             } else {
                 Type::union_type("")
             }
-        } else if self.check(TokenType::LongLiteral) {
+        } else if self.check(TokenType::Long) {
             self.advance();
+            if self.check(TokenType::Long) {
+                self.advance();
+            }
             Type::long_long()
         } else if self.match_token(TokenType::Char) {
             if is_unsigned { Type::Char { is_unsigned: true, is_const: false } } else { Type::char() }
@@ -471,8 +474,18 @@ impl Parser {
         while self.match_token(TokenType::LBracket) {
             if self.check(TokenType::Number) {
                 let size_tok = self.advance().clone();
-                let size: i32 = size_tok.text.parse().unwrap_or(0);
-                dims.push(size);
+                match size_tok.text.parse::<i32>() {
+                    Ok(size) => dims.push(size),
+                    Err(_) => {
+                        self.errors.push(ParseError {
+                            message: format!("数组维度 '{}' 不是有效的编译期常量整数", size_tok.text),
+                            line: size_tok.line,
+                            column: size_tok.column,
+                            code: ErrorCode::E2002_ExpectedArraySize as i32,
+                        });
+                        dims.push(0);
+                    }
+                }
             } else if self.check(TokenType::RBracket) {
                 dims.push(-1);
             } else {
@@ -551,7 +564,7 @@ impl Parser {
                 if self.pos == checkpoint {
                     self.synchronize(&[
                         TokenType::Semicolon, TokenType::RBrace,
-                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float, TokenType::Double, TokenType::LongLiteral,
+                        TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float, TokenType::Double, TokenType::Long,
                         TokenType::If, TokenType::While, TokenType::Do, TokenType::For,
                         TokenType::Return, TokenType::Break, TokenType::Continue,
                         TokenType::Struct, TokenType::Switch, TokenType::Typedef,
@@ -987,7 +1000,7 @@ impl Parser {
             if self.check(TokenType::Int) || self.check(TokenType::Void) ||
                self.check(TokenType::Char) || self.check(TokenType::Float) || self.check(TokenType::Double) || self.check(TokenType::Struct) ||
                self.check(TokenType::Union) || self.check(TokenType::Enum) ||
-               self.check(TokenType::Unsigned) || self.check(TokenType::Long) || self.check(TokenType::LongLiteral) ||
+               self.check(TokenType::Unsigned) || self.check(TokenType::Long) ||
                self.check(TokenType::Short) || self.check(TokenType::Signed) ||
                self.check(TokenType::Const) ||
                (self.check(TokenType::Identifier) && self.typedef_names.contains_key(&self.current().text)) {
@@ -1065,23 +1078,59 @@ impl Parser {
 
     fn parse_primary(&mut self) -> Expr {
         if self.match_token(TokenType::Number) {
-            let value: i32 = self.previous().text.parse().unwrap_or(0);
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            let prev = self.previous().clone();
+            let value: i32 = prev.text.parse().unwrap_or_else(|_| {
+                self.errors.push(ParseError {
+                    message: format!("整数常量 '{}' 超出 int 表示范围", prev.text),
+                    line: prev.line,
+                    column: prev.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                0
+            });
+            let loc = SourceLoc { line: prev.line, column: prev.column };
             return Expr::Literal { value, loc, ty: Type::int() };
         }
         if self.match_token(TokenType::LongLiteral) {
-            let value: i64 = self.previous().text.parse().unwrap_or(0);
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            let prev = self.previous().clone();
+            let value: i64 = prev.text.parse().unwrap_or_else(|_| {
+                self.errors.push(ParseError {
+                    message: format!("long long 常量 '{}' 超出范围", prev.text),
+                    line: prev.line,
+                    column: prev.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                0
+            });
+            let loc = SourceLoc { line: prev.line, column: prev.column };
             return Expr::LongLiteral { value, loc, ty: Type::long_long() };
         }
         if self.match_token(TokenType::FloatLiteral) {
-            let value: f64 = self.previous().text.parse().unwrap_or(0.0);
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            let prev = self.previous().clone();
+            let value: f64 = prev.text.parse().unwrap_or_else(|_| {
+                self.errors.push(ParseError {
+                    message: format!("浮点常量 '{}' 格式无效", prev.text),
+                    line: prev.line,
+                    column: prev.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                0.0
+            });
+            let loc = SourceLoc { line: prev.line, column: prev.column };
             return Expr::FloatLiteral { value, loc, ty: Type::float() };
         }
         if self.match_token(TokenType::CharLiteral) {
-            let value: i32 = self.previous().text.parse().unwrap_or(0);
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            let prev = self.previous().clone();
+            let value: i32 = prev.text.parse().unwrap_or_else(|_| {
+                self.errors.push(ParseError {
+                    message: format!("字符常量 '{}' 解析失败", prev.text),
+                    line: prev.line,
+                    column: prev.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                0
+            });
+            let loc = SourceLoc { line: prev.line, column: prev.column };
             return Expr::Literal { value, loc, ty: Type::char() };
         }
         if self.match_token(TokenType::String) {

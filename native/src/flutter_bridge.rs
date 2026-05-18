@@ -37,9 +37,15 @@ static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, &'static Mutex<UnifiedEngine
 fn current_unified_engine() -> std::sync::MutexGuard<'static, UnifiedEngine> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
-    let engine_ref: &'static Mutex<UnifiedEngine> = engines.entry(id).or_insert_with(|| {
-        &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())))
-    });
+    let engine_ref: &'static Mutex<UnifiedEngine> = engines
+        .get(&id)
+        .or_else(|| engines.get(&0))
+        .copied()
+        .unwrap_or_else(|| {
+            let e: &'static Mutex<UnifiedEngine> = &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())));
+            engines.insert(id, e);
+            e
+        });
     drop(engines);
     engine_ref.lock().unwrap_or_else(|e| e.into_inner())
 }
@@ -57,7 +63,9 @@ pub fn create_session() -> u64 {
 pub fn destroy_session(session_id: u64) {
     let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
     sessions.remove(&session_id);
-    // 注意：Box::leak 的内存不会真正释放，但对于教学 IDE 的 session 数量是可接受的
+    let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
+    engines.remove(&session_id);
+    // 注意：Box::leak 的内存不会真正释放；后续建议迁移到 Arc<Mutex<Session>> 以实现完全释放
 }
 
 /// 切换当前操作的 Session ID
@@ -72,11 +80,16 @@ pub fn get_current_session_id() -> u64 {
 
 fn current_session() -> std::sync::MutexGuard<'static, Session> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
-    let sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
     let session_ref: &'static Mutex<Session> = sessions
         .get(&id)
         .or_else(|| sessions.get(&0))
-        .expect("session not found");
+        .copied()
+        .unwrap_or_else(|| {
+            let s: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
+            sessions.insert(id, s);
+            s
+        });
     drop(sessions);
     session_ref.lock().unwrap_or_else(|e| e.into_inner())
 }

@@ -110,7 +110,7 @@ impl BytecodeGen {
                 match init {
                     Expr::InitList { elements, .. } => {
                         if g.ty.base_kind() == TypeKind::Char {
-                            let values = flatten_init_list(elements);
+                            let values = flatten_init_list(elements, &mut self.errors);
                             for i in 0..sz as usize {
                                 self.globals_init_32.push((offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
                             }
@@ -151,7 +151,7 @@ impl BytecodeGen {
                                     self.globals_init_64.push((addr, val64));
                                 }
                             } else {
-                                let values = flatten_init_list(elements);
+                                let values = flatten_init_list(elements, &mut self.errors);
                                 for i in 0..count as usize {
                                     let addr = offset as u32 + (i as u32) * elem_size as u32;
                                     let val = values.get(i).copied().unwrap_or(0);
@@ -510,7 +510,7 @@ impl BytecodeGen {
                     if let Some(ref mut e) = init {
                         if vty.is_array() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
-                                let values = flatten_init_list(elements);
+                                let values = flatten_init_list(elements, &mut self.errors);
                                 if vty.base_kind() == TypeKind::Char {
                                     let base_temp = self.get_temp_slot(0);
                                     self.emit(OpCode::GetFrameBase, 0, loc);
@@ -1783,19 +1783,31 @@ fn stmt_loc(stmt: &Stmt) -> SourceLoc {
     }
 }
 
-fn flatten_init_list(elements: &[Expr]) -> Vec<i32> {
+fn flatten_init_list(elements: &[Expr], errors: &mut Vec<String>) -> Vec<i32> {
     let mut result = Vec::new();
     for elem in elements {
         match elem {
             Expr::Literal { value, .. } => result.push(*value),
-            Expr::LongLiteral { value, .. } => result.push(*value as i32),
+            Expr::LongLiteral { value, .. } => {
+                if *value < i32::MIN as i64 || *value > i32::MAX as i64 {
+                    errors.push(format!("初始化列表中的 long long 常量 {} 超出 int 范围，无法用于此上下文", value));
+                    result.push(0);
+                } else {
+                    result.push(*value as i32);
+                }
+            }
             Expr::FloatLiteral { value, .. } => result.push((*value as f32).to_bits() as i32),
-            Expr::InitList { elements: sub, .. } => result.extend(flatten_init_list(sub)),
+            Expr::InitList { elements: sub, .. } => result.extend(flatten_init_list(sub, errors)),
             Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
                 if let Expr::Literal { value, .. } = operand.as_ref() {
                     result.push(-*value);
                 } else if let Expr::LongLiteral { value, .. } = operand.as_ref() {
-                    result.push(-*value as i32);
+                    if *value < i32::MIN as i64 || *value > i32::MAX as i64 {
+                        errors.push(format!("初始化列表中的 long long 常量 {} 超出 int 范围，无法用于此上下文", value));
+                        result.push(0);
+                    } else {
+                        result.push(-*value as i32);
+                    }
                 } else {
                     result.push(0);
                 }

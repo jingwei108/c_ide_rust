@@ -965,6 +965,751 @@ impl CideVM {
     }
 
 
+
+    fn execute_stack(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::PushConst => {
+                            self.push(operand as u64);
+                        }
+                        OpCode::Pop => {
+                            self.pop();
+                        }
+                        OpCode::Dup => {
+                            if let Some(&v) = self.stack.last() {
+                                self.push(v);
+                            } else {
+                                self.trap("Dup: 栈空", loc);
+                            }
+                        }
+                        OpCode::Swap => {
+                            let len = self.stack.len();
+                            if len >= 2 {
+                                self.stack.swap(len - 1, len - 2);
+                            } else {
+                                self.trap("Swap: 栈不足", loc);
+                            }
+                        }
+            _ => {}
+        }
+    }
+    fn execute_local(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::LoadLocal => {
+                            let var_name = self.symbols.iter()
+                                .find(|s| s.is_local && s.addr == operand as u32)
+                                .map(|s| s.name.clone())
+                                .unwrap_or_else(|| format!("local_{}", operand));
+                            self.last_accessed_vars.push(VariableAccess {
+                                name: var_name,
+                                access_type: AccessType::Read,
+                            });
+                            if let Some(frame) = self.call_stack.last() {
+                                let addr = frame.locals_base + operand as u32;
+                                if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                    self.trap("LoadLocal: 地址越界", loc);
+                                } else {
+                                    let val = self.load_i32(addr, loc);
+                                    self.push(val as u64);
+                                }
+                            } else {
+                                self.trap("LoadLocal: 无调用帧", loc);
+                            }
+                        }
+                        OpCode::StoreLocal => {
+                            let var_name = self.symbols.iter()
+                                .find(|s| s.is_local && s.addr == operand as u32)
+                                .map(|s| s.name.clone())
+                                .unwrap_or_else(|| format!("local_{}", operand));
+                            self.last_accessed_vars.push(VariableAccess {
+                                name: var_name,
+                                access_type: AccessType::Write,
+                            });
+                            if let Some(frame) = self.call_stack.last() {
+                                let addr = frame.locals_base + operand as u32;
+                                if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                    self.trap("StoreLocal: 地址越界", loc);
+                                } else {
+                                    let val = self.pop() as i32;
+                                    self.store_i32(addr, val, loc);
+                                }
+                            } else {
+                                self.trap("StoreLocal: 无调用帧", loc);
+                            }
+                        }
+                        OpCode::LoadLocalD => {
+                            if let Some(frame) = self.call_stack.last() {
+                                let addr = frame.locals_base + operand as u32;
+                                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                    self.trap("LoadLocalD: 地址越界", loc);
+                                } else {
+                                    let val = self.load_i64(addr, loc);
+                                    self.push(val);
+                                }
+                            } else {
+                                self.trap("LoadLocalD: 无调用帧", loc);
+                            }
+                        }
+                        OpCode::StoreLocalD => {
+                            if let Some(frame) = self.call_stack.last() {
+                                let addr = frame.locals_base + operand as u32;
+                                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                    self.trap("StoreLocalD: 地址越界", loc);
+                                } else {
+                                    let val = self.pop();
+                                    self.store_i64(addr, val, loc);
+                                }
+                            } else {
+                                self.trap("StoreLocalD: 无调用帧", loc);
+                            }
+                        }
+                        OpCode::GetFrameBase => {
+                            if let Some(frame) = self.call_stack.last() {
+                                self.push(frame.locals_base as u64);
+                            } else {
+                                self.trap("GetFrameBase: 无调用帧", loc);
+                            }
+                        }
+                        OpCode::LoadLocalQ => {
+                            if let Some(frame) = self.call_stack.last() {
+                                let addr = frame.locals_base + operand as u32;
+                                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                    self.trap("LoadLocalQ: 地址越界", loc);
+                                } else {
+                                    let val = self.load_i64(addr, loc);
+                                    self.push(val);
+                                }
+                            } else {
+                                self.trap("LoadLocalQ: 无调用帧", loc);
+                            }
+                        }
+                        OpCode::StoreLocalQ => {
+                            if let Some(frame) = self.call_stack.last() {
+                                let addr = frame.locals_base + operand as u32;
+                                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                    self.trap("StoreLocalQ: 地址越界", loc);
+                                } else {
+                                    let val = self.pop();
+                                    self.store_i64(addr, val, loc);
+                                }
+                            } else {
+                                self.trap("StoreLocalQ: 无调用帧", loc);
+                            }
+                        }
+            _ => {}
+        }
+    }
+    fn execute_global(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::LoadGlobal => {
+                            let var_name = self.symbols.iter()
+                                .find(|s| !s.is_local && s.addr == operand as u32)
+                                .map(|s| s.name.clone())
+                                .unwrap_or_else(|| format!("global_{}", operand));
+                            self.last_accessed_vars.push(VariableAccess {
+                                name: var_name,
+                                access_type: AccessType::Read,
+                            });
+                            let addr = GLOBAL_START + operand as u32;
+                            if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                self.trap("LoadGlobal: 地址越界", loc);
+                            } else {
+                                let val = self.load_i32(addr, loc);
+                                self.push(val as u64);
+                            }
+                        }
+                        OpCode::StoreGlobal => {
+                            let var_name = self.symbols.iter()
+                                .find(|s| !s.is_local && s.addr == operand as u32)
+                                .map(|s| s.name.clone())
+                                .unwrap_or_else(|| format!("global_{}", operand));
+                            self.last_accessed_vars.push(VariableAccess {
+                                name: var_name,
+                                access_type: AccessType::Write,
+                            });
+                            let addr = GLOBAL_START + operand as u32;
+                            if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                self.trap("StoreGlobal: 地址越界", loc);
+                            } else {
+                                let val = self.pop() as i32;
+                                self.store_i32(addr, val, loc);
+                            }
+                        }
+                        OpCode::LoadGlobalD => {
+                            let addr = GLOBAL_START + operand as u32;
+                            if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                self.trap("LoadGlobalD: 地址越界", loc);
+                            } else {
+                                let val = self.load_i64(addr, loc);
+                                self.push(val);
+                            }
+                        }
+                        OpCode::StoreGlobalD => {
+                            let addr = GLOBAL_START + operand as u32;
+                            if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                self.trap("StoreGlobalD: 地址越界", loc);
+                            } else {
+                                let val = self.pop();
+                                self.store_i64(addr, val, loc);
+                            }
+                        }
+                        OpCode::LoadGlobalQ => {
+                            let addr = GLOBAL_START + operand as u32;
+                            if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                self.trap("LoadGlobalQ: 地址越界", loc);
+                            } else {
+                                let val = self.load_i64(addr, loc);
+                                self.push(val);
+                            }
+                        }
+                        OpCode::StoreGlobalQ => {
+                            let addr = GLOBAL_START + operand as u32;
+                            if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
+                                self.trap("StoreGlobalQ: 地址越界", loc);
+                            } else {
+                                let val = self.pop();
+                                self.store_i64(addr, val, loc);
+                            }
+                        }
+            _ => {}
+        }
+    }
+    fn execute_memory(&mut self, op: OpCode, _operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::LoadMem => {
+                            let addr = self.pop() as u32;
+                            let val = self.load_i32(addr, loc);
+                            self.push(val as u64);
+                        }
+                        OpCode::StoreMem => {
+                            let val = self.pop() as i32;
+                            let addr = self.pop() as u32;
+                            self.store_i32(addr, val, loc);
+                        }
+                        OpCode::LoadMemD => {
+                            let addr = self.pop() as u32;
+                            let val = self.load_i64(addr, loc);
+                            self.push(val);
+                        }
+                        OpCode::StoreMemD => {
+                            let val = self.pop();
+                            let addr = self.pop() as u32;
+                            self.store_i64(addr, val, loc);
+                        }
+                        OpCode::SplitD => {
+                            let val = self.pop();
+                            let low = (val & 0xFFFFFFFF) as i32;
+                            let high = ((val >> 32) & 0xFFFFFFFF) as i32;
+                            self.push(low as u64);
+                            self.push(high as u64);
+                        }
+                        OpCode::LoadMemByte => {
+                            let addr = self.pop() as u32;
+                            let val = self.load_i8(addr, loc);
+                            self.push(val as u64);
+                        }
+                        OpCode::StoreMemByte => {
+                            let val = self.pop() as i32;
+                            let addr = self.pop() as u32;
+                            self.store_i8(addr, val, loc);
+                        }
+                        OpCode::LoadMemQ => {
+                            let addr = self.pop() as u32;
+                            let val = self.load_i64(addr, loc);
+                            self.push(val);
+                        }
+                        OpCode::StoreMemQ => {
+                            let val = self.pop();
+                            let addr = self.pop() as u32;
+                            self.store_i64(addr, val, loc);
+                        }
+                        OpCode::SplitQ => {
+                            let val = self.pop();
+                            let low = (val & 0xFFFFFFFF) as i32;
+                            let high = ((val >> 32) & 0xFFFFFFFF) as i32;
+                            self.push(low as u64);
+                            self.push(high as u64);
+                        }
+            _ => {}
+        }
+    }
+    fn execute_arithmetic(&mut self, op: OpCode, _operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::Add => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            let r = (a as i64) + (b as i64);
+                            if r > i32::MAX as i64 || r < i32::MIN as i64 {
+                                self.trap("整数加法溢出。两个很大的正数（或很小的负数）相加超出了 int 能表示的范围。", loc);
+                            } else {
+                                self.push(r as u64);
+                            }
+                        }
+                        OpCode::Sub => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            let r = (a as i64) - (b as i64);
+                            if r > i32::MAX as i64 || r < i32::MIN as i64 {
+                                self.trap("整数减法溢出。被减数太小而减数太大，结果超出了 int 能表示的范围。", loc);
+                            } else {
+                                self.push(r as u64);
+                            }
+                        }
+                        OpCode::Mul => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            let r = (a as i64) * (b as i64);
+                            if r > i32::MAX as i64 || r < i32::MIN as i64 {
+                                self.trap("整数乘法溢出。乘积太大，超出了 int 能表示的范围。", loc);
+                            } else {
+                                self.push(r as u64);
+                            }
+                        }
+                        OpCode::Div => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            if b == 0 {
+                                let msg = self.format_div_zero_error(a, b);
+                                self.trap(&msg, loc);
+                            } else if a == i32::MIN && b == -1 {
+                                self.trap("整数除法溢出。INT_MIN / -1 的结果超出了 int 能表示的范围。", loc);
+                            } else {
+                                self.push((a / b) as u64);
+                            }
+                        }
+                        OpCode::Mod => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            if b == 0 {
+                                let msg = self.format_div_zero_error(a, b);
+                                self.trap(&msg, loc);
+                            } else {
+                                self.push((a % b) as u64);
+                            }
+                        }
+                        OpCode::Neg => {
+                            let a = self.pop() as i32;
+                            if a == i32::MIN {
+                                self.trap("整数取反溢出。-INT_MIN 的结果超出了 int 能表示的范围。", loc);
+                            } else {
+                                self.push((-a) as u64);
+                            }
+                        }
+            _ => {}
+        }
+    }
+    fn execute_comparison(&mut self, op: OpCode, _operand: i32, _loc: &SourceLoc) {
+        match op {
+                        OpCode::Eq => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a == b { 1 } else { 0 }); }
+                        OpCode::Ne => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != b { 1 } else { 0 }); }
+                        OpCode::Lt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a < b { 1 } else { 0 }); }
+                        OpCode::Le => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a <= b { 1 } else { 0 }); }
+                        OpCode::Gt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a > b { 1 } else { 0 }); }
+                        OpCode::Ge => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a >= b { 1 } else { 0 }); }
+                        OpCode::And => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 && b != 0 { 1 } else { 0 }); }
+                        OpCode::Or  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 || b != 0 { 1 } else { 0 }); }
+                        OpCode::Not => { let a = self.pop() as i32; self.push(if a != 0 { 0 } else { 1 }); }
+            _ => {}
+        }
+    }
+    fn execute_bitwise(&mut self, op: OpCode, _operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::BitAnd => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a & b) as u64); }
+                        OpCode::BitOr  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a | b) as u64); }
+                        OpCode::BitXor => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a ^ b) as u64); }
+                        OpCode::BitNot => { let a = self.pop() as i32; self.push((!a) as u64); }
+                        OpCode::Shl => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            if !(0..32).contains(&b) {
+                                self.trap(&format!("Shl 移位量越界：{}（必须是 0~31）", b), loc);
+                            } else {
+                                self.push((a << b) as u64);
+                            }
+                        }
+                        OpCode::Shr => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            if !(0..32).contains(&b) {
+                                self.trap(&format!("Shr 移位量越界：{}（必须是 0~31）", b), loc);
+                            } else {
+                                self.push((a >> b) as u64);
+                            }
+                        }
+            _ => {}
+        }
+    }
+    fn execute_float(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::PushConstF => { self.push(operand as u64); }
+                        OpCode::AddF => {
+                            let b = f32::from_bits(self.pop() as u32);
+                            let a = f32::from_bits(self.pop() as u32);
+                            let r = a + b;
+                            self.push(r.to_bits() as u64);
+                        }
+                        OpCode::SubF => {
+                            let b = f32::from_bits(self.pop() as u32);
+                            let a = f32::from_bits(self.pop() as u32);
+                            let r = a - b;
+                            self.push(r.to_bits() as u64);
+                        }
+                        OpCode::MulF => {
+                            let b = f32::from_bits(self.pop() as u32);
+                            let a = f32::from_bits(self.pop() as u32);
+                            let r = a * b;
+                            self.push(r.to_bits() as u64);
+                        }
+                        OpCode::DivF => {
+                            let b = f32::from_bits(self.pop() as u32);
+                            let a = f32::from_bits(self.pop() as u32);
+                            if b == 0.0 {
+                                self.trap("浮点数除以零", loc);
+                            } else {
+                                let r = a / b;
+                                self.push(r.to_bits() as u64);
+                            }
+                        }
+                        OpCode::NegF => {
+                            let a = f32::from_bits(self.pop() as u32);
+                            let r = -a;
+                            self.push(r.to_bits() as u64);
+                        }
+                        OpCode::EqF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a == b { 1 } else { 0 }); }
+                        OpCode::NeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a != b { 1 } else { 0 }); }
+                        OpCode::LtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a < b { 1 } else { 0 }); }
+                        OpCode::LeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a <= b { 1 } else { 0 }); }
+                        OpCode::GtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a > b { 1 } else { 0 }); }
+                        OpCode::GeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a >= b { 1 } else { 0 }); }
+                        OpCode::CastI2F => {
+                            let a = self.pop() as i32;
+                            self.push((a as f32).to_bits() as u64);
+                        }
+                        OpCode::CastF2I => {
+                            let a = f32::from_bits(self.pop() as u32);
+                            self.push(a as i32 as u64);
+                        }
+            _ => {}
+        }
+    }
+    fn execute_double(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::PushConstD => {
+                            let idx = operand as usize;
+                            let val = self.f64_constants.get(idx).copied().unwrap_or(0.0);
+                            self.push(val.to_bits());
+                        }
+                        OpCode::AddD => {
+                            let b = f64::from_bits(self.pop());
+                            let a = f64::from_bits(self.pop());
+                            self.push((a + b).to_bits());
+                        }
+                        OpCode::SubD => {
+                            let b = f64::from_bits(self.pop());
+                            let a = f64::from_bits(self.pop());
+                            self.push((a - b).to_bits());
+                        }
+                        OpCode::MulD => {
+                            let b = f64::from_bits(self.pop());
+                            let a = f64::from_bits(self.pop());
+                            self.push((a * b).to_bits());
+                        }
+                        OpCode::DivD => {
+                            let b = f64::from_bits(self.pop());
+                            let a = f64::from_bits(self.pop());
+                            if b == 0.0 {
+                                self.trap("double 除以零", loc);
+                            } else {
+                                self.push((a / b).to_bits());
+                            }
+                        }
+                        OpCode::NegD => {
+                            let a = f64::from_bits(self.pop());
+                            self.push((-a).to_bits());
+                        }
+                        OpCode::CastI2D => {
+                            let a = self.pop() as i32;
+                            self.push((a as f64).to_bits());
+                        }
+                        OpCode::CastF2D => {
+                            let a = f32::from_bits(self.pop() as u32);
+                            self.push((a as f64).to_bits());
+                        }
+                        OpCode::CastD2I => {
+                            let a = f64::from_bits(self.pop());
+                            self.push(a as i32 as u64);
+                        }
+                        OpCode::CastD2F => {
+                            let a = f64::from_bits(self.pop());
+                            self.push((a as f32).to_bits() as u64);
+                        }
+                        OpCode::EqD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a == b { 1 } else { 0 }); }
+                        OpCode::NeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a != b { 1 } else { 0 }); }
+                        OpCode::LtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a < b { 1 } else { 0 }); }
+                        OpCode::LeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a <= b { 1 } else { 0 }); }
+                        OpCode::GtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a > b { 1 } else { 0 }); }
+                        OpCode::GeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a >= b { 1 } else { 0 }); }
+            _ => {}
+        }
+    }
+    fn execute_longlong(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
+        match op {
+                        OpCode::PushConstQ => {
+                            let idx = operand as usize;
+                            let val = self.i64_constants.get(idx).copied().unwrap_or(0);
+                            self.push(val as u64);
+                        }
+                        OpCode::AddQ => {
+                            let b = self.pop() as i64;
+                            let a = self.pop() as i64;
+                            self.push((a.wrapping_add(b)) as u64);
+                        }
+                        OpCode::SubQ => {
+                            let b = self.pop() as i64;
+                            let a = self.pop() as i64;
+                            self.push((a.wrapping_sub(b)) as u64);
+                        }
+                        OpCode::MulQ => {
+                            let b = self.pop() as i64;
+                            let a = self.pop() as i64;
+                            self.push((a.wrapping_mul(b)) as u64);
+                        }
+                        OpCode::DivQ => {
+                            let b = self.pop() as i64;
+                            let a = self.pop() as i64;
+                            if b == 0 {
+                                self.trap("long long 除以零", loc);
+                            } else {
+                                self.push((a / b) as u64);
+                            }
+                        }
+                        OpCode::ModQ => {
+                            let b = self.pop() as i64;
+                            let a = self.pop() as i64;
+                            if b == 0 {
+                                self.trap("long long 取模除以零", loc);
+                            } else {
+                                self.push((a % b) as u64);
+                            }
+                        }
+                        OpCode::NegQ => {
+                            let a = self.pop() as i64;
+                            self.push((-a) as u64);
+                        }
+                        OpCode::CastI2Q => {
+                            let a = self.pop() as i32;
+                            self.push(a as i64 as u64);
+                        }
+                        OpCode::CastQ2I => {
+                            let a = self.pop() as i64;
+                            self.push(a as i32 as u64);
+                        }
+                        OpCode::CastQ2D => {
+                            let a = self.pop() as i64;
+                            self.push((a as f64).to_bits());
+                        }
+                        OpCode::CastD2Q => {
+                            let a = f64::from_bits(self.pop());
+                            self.push(a as i64 as u64);
+                        }
+                        OpCode::EqQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a == b { 1 } else { 0 }); }
+                        OpCode::NeQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a != b { 1 } else { 0 }); }
+                        OpCode::LtQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a < b { 1 } else { 0 }); }
+                        OpCode::LeQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a <= b { 1 } else { 0 }); }
+                        OpCode::GtQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a > b { 1 } else { 0 }); }
+                        OpCode::GeQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a >= b { 1 } else { 0 }); }
+            _ => {}
+        }
+    }
+    fn execute_control_flow(&mut self, op: OpCode, operand: i32, loc: &SourceLoc, session: &mut Session) -> Option<StepResult> {
+        match op {
+                        OpCode::Jump => {
+                            let target = operand as usize;
+                            if target >= self.code.len() {
+                                self.trap(&format!("Jump 目标越界：{}（代码长度：{}）", target, self.code.len()), loc);
+                            } else {
+                                self.ip = target;
+                            }
+                            None
+                        }
+                        OpCode::JumpIfZero => {
+                            let val = self.pop();
+                            if val == 0 {
+                                let target = operand as usize;
+                                if target >= self.code.len() {
+                                    self.trap(&format!("JumpIfZero 目标越界：{}（代码长度：{}）", target, self.code.len()), loc);
+                                } else {
+                                    self.ip = target;
+                                }
+                            }
+                            None
+                        }
+                        OpCode::JumpIfNotZero => {
+                            let val = self.pop();
+                            if val != 0 {
+                                let target = operand as usize;
+                                if target >= self.code.len() {
+                                    self.trap(&format!("JumpIfNotZero 目标越界：{}（代码长度：{}）", target, self.code.len()), loc);
+                                } else {
+                                    self.ip = target;
+                                }
+                            }
+                            None
+                        }
+                        OpCode::Call => {
+                            let func_idx = operand as u32;
+                            let idx = func_idx as usize;
+                            if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
+                                self.trap(&format!("Call: 未知函数索引 {}", func_idx), loc);
+                            } else {
+                                let meta = self.func_table[idx].clone();
+                                let frame_size = meta.local_count as u64;
+                                if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
+                                    self.trap("Call: 栈溢出", loc);
+                                } else {
+                                    let frame_size_u32 = frame_size as u32;
+                                    if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
+                                        self.trap("Call: 栈溢出", loc);
+                                    } else {
+                                        let heap_limit = session.memory.heap_offset;
+                                        if self.mem_stack_top - frame_size_u32 < heap_limit {
+                                            self.trap("Call: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", loc);
+                                        } else {
+                                            self.mem_stack_top -= frame_size_u32;
+                                            let locals_base = self.mem_stack_top;
+            
+                                            let mut word_offset = 0;
+                                            for word_count in meta.param_sizes.iter() {
+                                                let words = *word_count as u32;
+                                                let addr = locals_base + word_offset * 4;
+                                                for w in (0..words).rev() {
+                                                    let val = self.pop() as i32;
+                                                    self.store_i32(addr + w * 4, val, loc);
+                                                }
+                                                word_offset += words;
+                                            }
+                                            let arg_bytes = word_offset * 4;
+                                            for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
+                                                self.memory[addr as usize] = 0;
+                                            }
+                                            let func_name = if (func_idx as usize) < self.func_names.len() {
+                                                self.func_names[func_idx as usize].clone()
+                                            } else {
+                                                format!("func_{}", func_idx)
+                                            };
+                                            self.call_stack.push(CallFrame {
+                                                return_ip: self.ip,
+                                                locals_base,
+                                                local_count: meta.local_count,
+                                                func_name,
+                                            });
+                                            self.ip = meta.ip;
+                                        }
+                                    }
+                                }
+                            }
+                            None
+                        }
+                        OpCode::CallHost => {
+                            execute_host_func(self, session, operand as u32);
+                            if session.runtime.waiting_input {
+                                self.ip -= 1;
+                                return Some(StepResult::WaitingInput);
+                            }
+                            None
+                        }
+                        OpCode::Ret => {
+                            if self.call_stack.is_empty() {
+                                return Some(StepResult::Finished);
+                            }
+                            let ret_val = self.pop();
+                            let frame = self.call_stack.pop().unwrap();
+                            const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
+                            if frame.return_ip == HOST_CALLBACK_SENTINEL {
+                                self.mem_stack_top = frame.locals_base;
+                                self.push(ret_val);
+                                return Some(StepResult::Finished);
+                            }
+                            self.ip = frame.return_ip;
+                            self.mem_stack_top = frame.locals_base;
+                            self.push(ret_val);
+                            None
+                        }
+                        OpCode::RetVoid => {
+                            if self.call_stack.is_empty() {
+                                return Some(StepResult::Finished);
+                            }
+                            let frame = self.call_stack.pop().unwrap();
+                            const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
+                            if frame.return_ip == HOST_CALLBACK_SENTINEL {
+                                self.mem_stack_top = frame.locals_base;
+                                return Some(StepResult::Finished);
+                            }
+                            self.ip = frame.return_ip;
+                            self.mem_stack_top = frame.locals_base;
+                            None
+                        }
+            _ => None,
+        }
+    }
+    fn execute_debug(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) -> Option<StepResult> {
+        match op {
+                        OpCode::StepEvent => {
+                            self.current_line = operand;
+                            if self.breakpoints.contains(&self.current_line) {
+                                self.paused = true;
+                            }
+                            self.step_event_hit = true;
+                            for &(line, ty, ref ctx) in &self.vis_event_lines {
+                                if line == operand {
+                                    self.vis_event_queue.push(VisEvent {
+                                        ty,
+                                        line: operand,
+                                        extra0: 0,
+                                        extra1: 0,
+                                        extra2: 0,
+                                        context: ctx.clone(),
+                                    });
+                                }
+                            }
+                            if self.paused {
+                                return Some(StepResult::Paused);
+                            }
+                            None
+                        }
+                        OpCode::TrapBounds => {
+                            let index = *self.stack.last().unwrap_or(&0) as i64;
+                            let mut name = "数组".to_string();
+                            let mut size = 0;
+                            if operand >= 0 {
+                                let sym_idx = operand as usize;
+                                if sym_idx < self.symbols.len() {
+                                    let sym = &self.symbols[sym_idx];
+                                    name = sym.name.clone();
+                                    size = sym.ty.array_size();
+                                }
+                            } else {
+                                size = -operand;
+                            }
+                            if index < 0 || index >= size as i64 {
+                                let diag = if operand >= 0 {
+                                    format!(
+                                        "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
+                                        name, index, name, size, size.saturating_sub(1), size.saturating_sub(1)
+                                    )
+                                } else {
+                                    format!(
+                                        "🚫 数组越界：索引 {} 超出了合法范围 0~{}。\n\n💡 原因：数组索引超出了合法范围。",
+                                        index, size.saturating_sub(1)
+                                    )
+                                };
+                                self.trap(&diag, loc);
+                            }
+                            None
+                        }
+            _ => None,
+        }
+    }
+
     // --- Step (execute one instruction) ---
 
     pub fn step(&mut self, session: &mut Session) -> StepResult {
@@ -1013,720 +1758,69 @@ impl CideVM {
         match inst.op {
             OpCode::Nop => {}
 
-            OpCode::PushConst => {
-                self.push(inst.operand as u64);
+            OpCode::PushConst | OpCode::Pop | OpCode::Dup | OpCode::Swap => {
+                self.execute_stack(inst.op, inst.operand, &inst.loc);
             }
 
-            OpCode::LoadLocal => {
-                let var_name = self.symbols.iter()
-                    .find(|s| s.is_local && s.addr == inst.operand as u32)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| format!("local_{}", inst.operand));
-                self.last_accessed_vars.push(VariableAccess {
-                    name: var_name,
-                    access_type: AccessType::Read,
-                });
-                if let Some(frame) = self.call_stack.last() {
-                    let addr = frame.locals_base + inst.operand as u32;
-                    if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                        self.trap("LoadLocal: 地址越界", &inst.loc);
-                    } else {
-                        let val = self.load_i32(addr, &inst.loc);
-                        self.push(val as u64);
-                    }
-                } else {
-                    self.trap("LoadLocal: 无调用帧", &inst.loc);
+            OpCode::LoadLocal | OpCode::StoreLocal | OpCode::LoadLocalD | OpCode::StoreLocalD |
+            OpCode::LoadLocalQ | OpCode::StoreLocalQ | OpCode::GetFrameBase => {
+                self.execute_local(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::LoadGlobal | OpCode::StoreGlobal | OpCode::LoadGlobalD | OpCode::StoreGlobalD |
+            OpCode::LoadGlobalQ | OpCode::StoreGlobalQ => {
+                self.execute_global(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::LoadMem | OpCode::StoreMem | OpCode::LoadMemD | OpCode::StoreMemD |
+            OpCode::LoadMemByte | OpCode::StoreMemByte | OpCode::LoadMemQ | OpCode::StoreMemQ |
+            OpCode::SplitD | OpCode::SplitQ => {
+                self.execute_memory(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg => {
+                self.execute_arithmetic(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge |
+            OpCode::And | OpCode::Or | OpCode::Not => {
+                self.execute_comparison(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor | OpCode::BitNot |
+            OpCode::Shl | OpCode::Shr => {
+                self.execute_bitwise(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::PushConstF | OpCode::AddF | OpCode::SubF | OpCode::MulF | OpCode::DivF |
+            OpCode::NegF | OpCode::EqF | OpCode::NeF | OpCode::LtF | OpCode::LeF |
+            OpCode::GtF | OpCode::GeF | OpCode::CastI2F | OpCode::CastF2I => {
+                self.execute_float(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::PushConstD | OpCode::AddD | OpCode::SubD | OpCode::MulD | OpCode::DivD |
+            OpCode::NegD | OpCode::CastI2D | OpCode::CastF2D | OpCode::CastD2I | OpCode::CastD2F |
+            OpCode::EqD | OpCode::NeD | OpCode::LtD | OpCode::LeD | OpCode::GtD | OpCode::GeD => {
+                self.execute_double(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::PushConstQ | OpCode::AddQ | OpCode::SubQ | OpCode::MulQ | OpCode::DivQ |
+            OpCode::ModQ | OpCode::NegQ | OpCode::CastI2Q | OpCode::CastQ2I | OpCode::CastQ2D |
+            OpCode::CastD2Q | OpCode::EqQ | OpCode::NeQ | OpCode::LtQ | OpCode::LeQ |
+            OpCode::GtQ | OpCode::GeQ => {
+                self.execute_longlong(inst.op, inst.operand, &inst.loc);
+            }
+
+            OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero |
+            OpCode::Call | OpCode::CallHost | OpCode::Ret | OpCode::RetVoid => {
+                if let Some(r) = self.execute_control_flow(inst.op, inst.operand, &inst.loc, session) {
+                    return r;
                 }
             }
 
-            OpCode::StoreLocal => {
-                let var_name = self.symbols.iter()
-                    .find(|s| s.is_local && s.addr == inst.operand as u32)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| format!("local_{}", inst.operand));
-                self.last_accessed_vars.push(VariableAccess {
-                    name: var_name,
-                    access_type: AccessType::Write,
-                });
-                if let Some(frame) = self.call_stack.last() {
-                    let addr = frame.locals_base + inst.operand as u32;
-                    if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                        self.trap("StoreLocal: 地址越界", &inst.loc);
-                    } else {
-                        let val = self.pop() as i32;
-                        self.store_i32(addr, val, &inst.loc);
-                    }
-                } else {
-                    self.trap("StoreLocal: 无调用帧", &inst.loc);
-                }
-            }
-
-            OpCode::LoadLocalD => {
-                if let Some(frame) = self.call_stack.last() {
-                    let addr = frame.locals_base + inst.operand as u32;
-                    if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                        self.trap("LoadLocalD: 地址越界", &inst.loc);
-                    } else {
-                        let val = self.load_i64(addr, &inst.loc);
-                        self.push(val);
-                    }
-                } else {
-                    self.trap("LoadLocalD: 无调用帧", &inst.loc);
-                }
-            }
-
-            OpCode::StoreLocalD => {
-                if let Some(frame) = self.call_stack.last() {
-                    let addr = frame.locals_base + inst.operand as u32;
-                    if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                        self.trap("StoreLocalD: 地址越界", &inst.loc);
-                    } else {
-                        let val = self.pop();
-                        self.store_i64(addr, val, &inst.loc);
-                    }
-                } else {
-                    self.trap("StoreLocalD: 无调用帧", &inst.loc);
-                }
-            }
-
-            OpCode::GetFrameBase => {
-                if let Some(frame) = self.call_stack.last() {
-                    self.push(frame.locals_base as u64);
-                } else {
-                    self.trap("GetFrameBase: 无调用帧", &inst.loc);
-                }
-            }
-
-            OpCode::LoadGlobal => {
-                let var_name = self.symbols.iter()
-                    .find(|s| !s.is_local && s.addr == inst.operand as u32)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| format!("global_{}", inst.operand));
-                self.last_accessed_vars.push(VariableAccess {
-                    name: var_name,
-                    access_type: AccessType::Read,
-                });
-                let addr = GLOBAL_START + inst.operand as u32;
-                if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                    self.trap("LoadGlobal: 地址越界", &inst.loc);
-                } else {
-                    let val = self.load_i32(addr, &inst.loc);
-                    self.push(val as u64);
-                }
-            }
-
-            OpCode::StoreGlobal => {
-                let var_name = self.symbols.iter()
-                    .find(|s| !s.is_local && s.addr == inst.operand as u32)
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| format!("global_{}", inst.operand));
-                self.last_accessed_vars.push(VariableAccess {
-                    name: var_name,
-                    access_type: AccessType::Write,
-                });
-                let addr = GLOBAL_START + inst.operand as u32;
-                if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                    self.trap("StoreGlobal: 地址越界", &inst.loc);
-                } else {
-                    let val = self.pop() as i32;
-                    self.store_i32(addr, val, &inst.loc);
-                }
-            }
-
-            OpCode::LoadGlobalD => {
-                let addr = GLOBAL_START + inst.operand as u32;
-                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                    self.trap("LoadGlobalD: 地址越界", &inst.loc);
-                } else {
-                    let val = self.load_i64(addr, &inst.loc);
-                    self.push(val);
-                }
-            }
-
-            OpCode::StoreGlobalD => {
-                let addr = GLOBAL_START + inst.operand as u32;
-                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                    self.trap("StoreGlobalD: 地址越界", &inst.loc);
-                } else {
-                    let val = self.pop();
-                    self.store_i64(addr, val, &inst.loc);
-                }
-            }
-
-            OpCode::Pop => {
-                self.pop();
-            }
-
-            OpCode::Dup => {
-                if let Some(&v) = self.stack.last() {
-                    self.push(v);
-                } else {
-                    self.trap("Dup: 栈空", &inst.loc);
-                }
-            }
-
-            OpCode::Swap => {
-                let len = self.stack.len();
-                if len >= 2 {
-                    self.stack.swap(len - 1, len - 2);
-                } else {
-                    self.trap("Swap: 栈不足", &inst.loc);
-                }
-            }
-
-            OpCode::LoadMem => {
-                let addr = self.pop() as u32;
-                let val = self.load_i32(addr, &inst.loc);
-                self.push(val as u64);
-            }
-
-            OpCode::StoreMem => {
-                let val = self.pop() as i32;
-                let addr = self.pop() as u32;
-                self.store_i32(addr, val, &inst.loc);
-            }
-
-            OpCode::LoadMemD => {
-                let addr = self.pop() as u32;
-                let val = self.load_i64(addr, &inst.loc);
-                self.push(val);
-            }
-
-            OpCode::StoreMemD => {
-                let val = self.pop();
-                let addr = self.pop() as u32;
-                self.store_i64(addr, val, &inst.loc);
-            }
-
-            OpCode::SplitD => {
-                let val = self.pop();
-                let low = (val & 0xFFFFFFFF) as i32;
-                let high = ((val >> 32) & 0xFFFFFFFF) as i32;
-                self.push(low as u64);
-                self.push(high as u64);
-            }
-
-            OpCode::LoadMemByte => {
-                let addr = self.pop() as u32;
-                let val = self.load_i8(addr, &inst.loc);
-                self.push(val as u64);
-            }
-
-            OpCode::StoreMemByte => {
-                let val = self.pop() as i32;
-                let addr = self.pop() as u32;
-                self.store_i8(addr, val, &inst.loc);
-            }
-
-            OpCode::Add => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                let r = (a as i64) + (b as i64);
-                if r > i32::MAX as i64 || r < i32::MIN as i64 {
-                    self.trap("整数加法溢出。两个很大的正数（或很小的负数）相加超出了 int 能表示的范围。", &inst.loc);
-                } else {
-                    self.push(r as u64);
-                }
-            }
-
-            OpCode::Sub => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                let r = (a as i64) - (b as i64);
-                if r > i32::MAX as i64 || r < i32::MIN as i64 {
-                    self.trap("整数减法溢出。被减数太小而减数太大，结果超出了 int 能表示的范围。", &inst.loc);
-                } else {
-                    self.push(r as u64);
-                }
-            }
-
-            OpCode::Mul => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                let r = (a as i64) * (b as i64);
-                if r > i32::MAX as i64 || r < i32::MIN as i64 {
-                    self.trap("整数乘法溢出。乘积太大，超出了 int 能表示的范围。", &inst.loc);
-                } else {
-                    self.push(r as u64);
-                }
-            }
-
-            OpCode::Div => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                if b == 0 {
-                    let msg = self.format_div_zero_error(a, b);
-                    self.trap(&msg, &inst.loc);
-                } else if a == i32::MIN && b == -1 {
-                    self.trap("整数除法溢出。INT_MIN / -1 的结果超出了 int 能表示的范围。", &inst.loc);
-                } else {
-                    self.push((a / b) as u64);
-                }
-            }
-
-            OpCode::Mod => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                if b == 0 {
-                    let msg = self.format_div_zero_error(a, b);
-                    self.trap(&msg, &inst.loc);
-                } else {
-                    self.push((a % b) as u64);
-                }
-            }
-
-            OpCode::Neg => {
-                let a = self.pop() as i32;
-                if a == i32::MIN {
-                    self.trap("整数取反溢出。-INT_MIN 的结果超出了 int 能表示的范围。", &inst.loc);
-                } else {
-                    self.push((-a) as u64);
-                }
-            }
-
-            OpCode::Eq => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a == b { 1 } else { 0 }); }
-            OpCode::Ne => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != b { 1 } else { 0 }); }
-            OpCode::Lt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a < b { 1 } else { 0 }); }
-            OpCode::Le => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a <= b { 1 } else { 0 }); }
-            OpCode::Gt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a > b { 1 } else { 0 }); }
-            OpCode::Ge => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a >= b { 1 } else { 0 }); }
-
-            OpCode::And => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 && b != 0 { 1 } else { 0 }); }
-            OpCode::Or  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 || b != 0 { 1 } else { 0 }); }
-            OpCode::Not => { let a = self.pop() as i32; self.push(if a != 0 { 0 } else { 1 }); }
-            OpCode::BitAnd => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a & b) as u64); }
-            OpCode::BitOr  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a | b) as u64); }
-            OpCode::BitXor => { let b = self.pop() as i32; let a = self.pop() as i32; self.push((a ^ b) as u64); }
-            OpCode::BitNot => { let a = self.pop() as i32; self.push((!a) as u64); }
-            OpCode::Shl => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                if !(0..32).contains(&b) {
-                    self.trap(&format!("Shl 移位量越界：{}（必须是 0~31）", b), &inst.loc);
-                } else {
-                    self.push((a << b) as u64);
-                }
-            }
-            OpCode::Shr => {
-                let b = self.pop() as i32;
-                let a = self.pop() as i32;
-                if !(0..32).contains(&b) {
-                    self.trap(&format!("Shr 移位量越界：{}（必须是 0~31）", b), &inst.loc);
-                } else {
-                    self.push((a >> b) as u64);
-                }
-            }
-
-            OpCode::PushConstF => { self.push(inst.operand as u64); }
-
-            OpCode::AddF => {
-                let b = f32::from_bits(self.pop() as u32);
-                let a = f32::from_bits(self.pop() as u32);
-                let r = a + b;
-                self.push(r.to_bits() as u64);
-            }
-            OpCode::SubF => {
-                let b = f32::from_bits(self.pop() as u32);
-                let a = f32::from_bits(self.pop() as u32);
-                let r = a - b;
-                self.push(r.to_bits() as u64);
-            }
-            OpCode::MulF => {
-                let b = f32::from_bits(self.pop() as u32);
-                let a = f32::from_bits(self.pop() as u32);
-                let r = a * b;
-                self.push(r.to_bits() as u64);
-            }
-            OpCode::DivF => {
-                let b = f32::from_bits(self.pop() as u32);
-                let a = f32::from_bits(self.pop() as u32);
-                if b == 0.0 {
-                    self.trap("浮点数除以零", &inst.loc);
-                } else {
-                    let r = a / b;
-                    self.push(r.to_bits() as u64);
-                }
-            }
-            OpCode::NegF => {
-                let a = f32::from_bits(self.pop() as u32);
-                let r = -a;
-                self.push(r.to_bits() as u64);
-            }
-            OpCode::EqF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a == b { 1 } else { 0 }); }
-            OpCode::NeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a != b { 1 } else { 0 }); }
-            OpCode::LtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a < b { 1 } else { 0 }); }
-            OpCode::LeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a <= b { 1 } else { 0 }); }
-            OpCode::GtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a > b { 1 } else { 0 }); }
-            OpCode::GeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a >= b { 1 } else { 0 }); }
-            OpCode::CastI2F => {
-                let a = self.pop() as i32;
-                self.push((a as f32).to_bits() as u64);
-            }
-            OpCode::CastF2I => {
-                let a = f32::from_bits(self.pop() as u32);
-                self.push(a as i32 as u64);
-            }
-
-            OpCode::PushConstD => {
-                let idx = inst.operand as usize;
-                let val = self.f64_constants.get(idx).copied().unwrap_or(0.0);
-                self.push(val.to_bits());
-            }
-            OpCode::AddD => {
-                let b = f64::from_bits(self.pop());
-                let a = f64::from_bits(self.pop());
-                self.push((a + b).to_bits());
-            }
-            OpCode::SubD => {
-                let b = f64::from_bits(self.pop());
-                let a = f64::from_bits(self.pop());
-                self.push((a - b).to_bits());
-            }
-            OpCode::MulD => {
-                let b = f64::from_bits(self.pop());
-                let a = f64::from_bits(self.pop());
-                self.push((a * b).to_bits());
-            }
-            OpCode::DivD => {
-                let b = f64::from_bits(self.pop());
-                let a = f64::from_bits(self.pop());
-                if b == 0.0 {
-                    self.trap("double 除以零", &inst.loc);
-                } else {
-                    self.push((a / b).to_bits());
-                }
-            }
-            OpCode::NegD => {
-                let a = f64::from_bits(self.pop());
-                self.push((-a).to_bits());
-            }
-            OpCode::CastI2D => {
-                let a = self.pop() as i32;
-                self.push((a as f64).to_bits());
-            }
-            OpCode::CastF2D => {
-                let a = f32::from_bits(self.pop() as u32);
-                self.push((a as f64).to_bits());
-            }
-            OpCode::CastD2I => {
-                let a = f64::from_bits(self.pop());
-                self.push(a as i32 as u64);
-            }
-            OpCode::CastD2F => {
-                let a = f64::from_bits(self.pop());
-                self.push((a as f32).to_bits() as u64);
-            }
-            OpCode::EqD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a == b { 1 } else { 0 }); }
-            OpCode::NeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a != b { 1 } else { 0 }); }
-            OpCode::LtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a < b { 1 } else { 0 }); }
-            OpCode::LeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a <= b { 1 } else { 0 }); }
-            OpCode::GtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a > b { 1 } else { 0 }); }
-            OpCode::GeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a >= b { 1 } else { 0 }); }
-
-            // --- LongLong (64-bit integer) instructions ---
-            OpCode::PushConstQ => {
-                let idx = inst.operand as usize;
-                let val = self.i64_constants.get(idx).copied().unwrap_or(0);
-                self.push(val as u64);
-            }
-            OpCode::AddQ => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                self.push((a.wrapping_add(b)) as u64);
-            }
-            OpCode::SubQ => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                self.push((a.wrapping_sub(b)) as u64);
-            }
-            OpCode::MulQ => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                self.push((a.wrapping_mul(b)) as u64);
-            }
-            OpCode::DivQ => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                if b == 0 {
-                    self.trap("long long 除以零", &inst.loc);
-                } else {
-                    self.push((a / b) as u64);
-                }
-            }
-            OpCode::ModQ => {
-                let b = self.pop() as i64;
-                let a = self.pop() as i64;
-                if b == 0 {
-                    self.trap("long long 取模除以零", &inst.loc);
-                } else {
-                    self.push((a % b) as u64);
-                }
-            }
-            OpCode::NegQ => {
-                let a = self.pop() as i64;
-                self.push((-a) as u64);
-            }
-            OpCode::CastI2Q => {
-                let a = self.pop() as i32;
-                self.push(a as i64 as u64);
-            }
-            OpCode::CastQ2I => {
-                let a = self.pop() as i64;
-                self.push(a as i32 as u64);
-            }
-            OpCode::CastQ2D => {
-                let a = self.pop() as i64;
-                self.push((a as f64).to_bits());
-            }
-            OpCode::CastD2Q => {
-                let a = f64::from_bits(self.pop());
-                self.push(a as i64 as u64);
-            }
-            OpCode::EqQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a == b { 1 } else { 0 }); }
-            OpCode::NeQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a != b { 1 } else { 0 }); }
-            OpCode::LtQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a < b { 1 } else { 0 }); }
-            OpCode::LeQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a <= b { 1 } else { 0 }); }
-            OpCode::GtQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a > b { 1 } else { 0 }); }
-            OpCode::GeQ => { let b = self.pop() as i64; let a = self.pop() as i64; self.push(if a >= b { 1 } else { 0 }); }
-            OpCode::LoadLocalQ => {
-                if let Some(frame) = self.call_stack.last() {
-                    let addr = frame.locals_base + inst.operand as u32;
-                    if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                        self.trap("LoadLocalQ: 地址越界", &inst.loc);
-                    } else {
-                        let val = self.load_i64(addr, &inst.loc);
-                        self.push(val);
-                    }
-                } else {
-                    self.trap("LoadLocalQ: 无调用帧", &inst.loc);
-                }
-            }
-            OpCode::StoreLocalQ => {
-                if let Some(frame) = self.call_stack.last() {
-                    let addr = frame.locals_base + inst.operand as u32;
-                    if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                        self.trap("StoreLocalQ: 地址越界", &inst.loc);
-                    } else {
-                        let val = self.pop();
-                        self.store_i64(addr, val, &inst.loc);
-                    }
-                } else {
-                    self.trap("StoreLocalQ: 无调用帧", &inst.loc);
-                }
-            }
-            OpCode::LoadGlobalQ => {
-                let addr = GLOBAL_START + inst.operand as u32;
-                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                    self.trap("LoadGlobalQ: 地址越界", &inst.loc);
-                } else {
-                    let val = self.load_i64(addr, &inst.loc);
-                    self.push(val);
-                }
-            }
-            OpCode::StoreGlobalQ => {
-                let addr = GLOBAL_START + inst.operand as u32;
-                if addr as u64 + 8 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
-                    self.trap("StoreGlobalQ: 地址越界", &inst.loc);
-                } else {
-                    let val = self.pop();
-                    self.store_i64(addr, val, &inst.loc);
-                }
-            }
-            OpCode::LoadMemQ => {
-                let addr = self.pop() as u32;
-                let val = self.load_i64(addr, &inst.loc);
-                self.push(val);
-            }
-            OpCode::StoreMemQ => {
-                let val = self.pop();
-                let addr = self.pop() as u32;
-                self.store_i64(addr, val, &inst.loc);
-            }
-            OpCode::SplitQ => {
-                let val = self.pop();
-                let low = (val & 0xFFFFFFFF) as i32;
-                let high = ((val >> 32) & 0xFFFFFFFF) as i32;
-                self.push(low as u64);
-                self.push(high as u64);
-            }
-
-            OpCode::Jump => {
-                let target = inst.operand as usize;
-                if target >= self.code.len() {
-                    self.trap(&format!("Jump 目标越界：{}（代码长度：{}）", target, self.code.len()), &inst.loc);
-                } else {
-                    self.ip = target;
-                }
-            }
-
-            OpCode::JumpIfZero => {
-                let val = self.pop();
-                if val == 0 {
-                    let target = inst.operand as usize;
-                    if target >= self.code.len() {
-                        self.trap(&format!("JumpIfZero 目标越界：{}（代码长度：{}）", target, self.code.len()), &inst.loc);
-                    } else {
-                        self.ip = target;
-                    }
-                }
-            }
-
-            OpCode::JumpIfNotZero => {
-                let val = self.pop();
-                if val != 0 {
-                    let target = inst.operand as usize;
-                    if target >= self.code.len() {
-                        self.trap(&format!("JumpIfNotZero 目标越界：{}（代码长度：{}）", target, self.code.len()), &inst.loc);
-                    } else {
-                        self.ip = target;
-                    }
-                }
-            }
-
-            OpCode::Call => {
-                let func_idx = inst.operand as u32;
-                let idx = func_idx as usize;
-                if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
-                    self.trap(&format!("Call: 未知函数索引 {}", func_idx), &inst.loc);
-                } else {
-                    let meta = self.func_table[idx].clone();
-                    let frame_size = meta.local_count as u64;
-                    if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
-                        self.trap("Call: 栈溢出", &inst.loc);
-                    } else {
-                        let frame_size_u32 = frame_size as u32;
-                        if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
-                            self.trap("Call: 栈溢出", &inst.loc);
-                        } else {
-                            let heap_limit = session.memory.heap_offset;
-                            if self.mem_stack_top - frame_size_u32 < heap_limit {
-                                self.trap("Call: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", &inst.loc);
-                            } else {
-                                self.mem_stack_top -= frame_size_u32;
-                                let locals_base = self.mem_stack_top;
-
-                                let mut word_offset = 0;
-                                for word_count in meta.param_sizes.iter() {
-                                    let words = *word_count as u32;
-                                    let addr = locals_base + word_offset * 4;
-                                    for w in (0..words).rev() {
-                                        let val = self.pop() as i32;
-                                        self.store_i32(addr + w * 4, val, &inst.loc);
-                                    }
-                                    word_offset += words;
-                                }
-                                let arg_bytes = word_offset * 4;
-                                for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
-                                    self.memory[addr as usize] = 0;
-                                }
-                                let func_name = if (func_idx as usize) < self.func_names.len() {
-                                    self.func_names[func_idx as usize].clone()
-                                } else {
-                                    format!("func_{}", func_idx)
-                                };
-                                self.call_stack.push(CallFrame {
-                                    return_ip: self.ip,
-                                    locals_base,
-                                    local_count: meta.local_count,
-                                    func_name,
-                                });
-                                self.ip = meta.ip;
-                            }
-                        }
-                    }
-                }
-            }
-
-            OpCode::CallHost => {
-                execute_host_func(self, session, inst.operand as u32);
-                if session.runtime.waiting_input {
-                    self.ip -= 1;
-                    return StepResult::WaitingInput;
-                }
-            }
-
-            OpCode::Ret => {
-                if self.call_stack.is_empty() {
-                    return StepResult::Finished;
-                }
-                let ret_val = self.pop();
-                let frame = self.call_stack.pop().unwrap();
-                const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
-                if frame.return_ip == HOST_CALLBACK_SENTINEL {
-                    self.mem_stack_top = frame.locals_base;
-                    self.push(ret_val);
-                    return StepResult::Finished;
-                }
-                self.ip = frame.return_ip;
-                self.mem_stack_top = frame.locals_base;
-                self.push(ret_val);
-            }
-
-            OpCode::RetVoid => {
-                if self.call_stack.is_empty() {
-                    return StepResult::Finished;
-                }
-                let frame = self.call_stack.pop().unwrap();
-                const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
-                if frame.return_ip == HOST_CALLBACK_SENTINEL {
-                    self.mem_stack_top = frame.locals_base;
-                    return StepResult::Finished;
-                }
-                self.ip = frame.return_ip;
-                self.mem_stack_top = frame.locals_base;
-            }
-
-            OpCode::StepEvent => {
-                self.current_line = inst.operand;
-                if self.breakpoints.contains(&self.current_line) {
-                    self.paused = true;
-                }
-                self.step_event_hit = true;
-                for &(line, ty, ref ctx) in &self.vis_event_lines {
-                    if line == inst.operand {
-                        self.vis_event_queue.push(VisEvent {
-                            ty,
-                            line: inst.operand,
-                            extra0: 0,
-                            extra1: 0,
-                            extra2: 0,
-                            context: ctx.clone(),
-                        });
-                    }
-                }
-                if self.paused {
-                    return StepResult::Paused;
-                }
-            }
-
-            OpCode::TrapBounds => {
-                let operand = inst.operand;
-                let index = *self.stack.last().unwrap_or(&0) as i64;
-                let mut name = "数组".to_string();
-                let mut size = 0;
-                if operand >= 0 {
-                    let sym_idx = operand as usize;
-                    if sym_idx < self.symbols.len() {
-                        let sym = &self.symbols[sym_idx];
-                        name = sym.name.clone();
-                        size = sym.ty.array_size();
-                    }
-                } else {
-                    size = -operand;
-                }
-                if index < 0 || index >= size as i64 {
-                    let diag = if operand >= 0 {
-                        format!(
-                            "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：数组索引超出了合法范围。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
-                            name, index, name, size, size.saturating_sub(1), size.saturating_sub(1)
-                        )
-                    } else {
-                        format!(
-                            "🚫 数组越界：索引 {} 超出了合法范围 0~{}。\n\n💡 原因：数组索引超出了合法范围。",
-                            index, size.saturating_sub(1)
-                        )
-                    };
-                    self.trap(&diag, &inst.loc);
+            OpCode::StepEvent | OpCode::TrapBounds => {
+                if let Some(r) = self.execute_debug(inst.op, inst.operand, &inst.loc) {
+                    return r;
                 }
             }
         }

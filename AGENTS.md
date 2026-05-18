@@ -195,6 +195,16 @@ docs/                   设计文档、事故报告
   - `const` 语义：`const int MAX = 100;` 现在会阻止后续赋值和自增/自减，新增错误码 `E3049_AssignToConst`
   - VM 新增 `finished`/`exit_code` 机制，支持 `exit(code)` 提前终止并记录返回值
   - 新增 10 个端到端测试覆盖上述全部特性
+- **审阅报告修复（2026-05-18）**：
+  - Parser `LongLiteral` 误用作类型关键字：4 处 `TokenType::LongLiteral` → `TokenType::Long`
+  - VFS `fwrite` unwrap 风险：`files.get_mut()` 改为安全匹配，缺失时返回 `0`
+  - Flutter Bridge `expect` panic：`current_session()` / `current_unified_engine()` 增加安全 fallback，找不到时自动创建默认 session，永不 panic
+  - C API `vm.take().unwrap()` 边缘 panic：`cide_step_next` 改为 `unwrap_or_default()`
+  - BytecodeGen `LongLiteral` 静默截断：`flatten_init_list` 中超出 `i32` 范围时推入编译错误，而非静默截断
+  - Parser 字面量解析失败静默返回 0：数组维度及数字/字符/浮点字面量 `parse()` 失败时记录具体错误信息
+  - VM `step()` 超巨型 match（~720 行）：拆分为 12 个指令类别处理器（`execute_stack/local/global/memory/arithmetic/comparison/bitwise/float/double/longlong/control_flow/debug`），`step()` 缩减为 ~90 行分发逻辑
+  - Host `printf` 严重重复：`host_printf_1/2` 复用已有的 `format_printf_string()`，消除重复格式解析逻辑
+  - Flutter Bridge session 销毁不完整：`destroy_session` 同步清理 `UNIFIED_ENGINES`；`create_session` 与引擎管理对齐
 
 ## 构建命令
 

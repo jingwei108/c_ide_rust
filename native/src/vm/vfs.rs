@@ -223,7 +223,10 @@ impl VirtualFileSystem {
             return 0;
         }
         let to_write = size * nmemb;
-        let meta = self.files.get_mut(&desc.file_name).unwrap();
+        let meta = match self.files.get_mut(&desc.file_name) {
+            Some(m) => m,
+            None => return 0,
+        };
         let new_size = desc.cursor + to_write;
         if new_size > meta.capacity {
             let new_cap = align4(new_size.max(meta.capacity * 2));

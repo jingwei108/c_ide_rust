@@ -295,31 +295,7 @@ fn host_printf_1(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let arg = vm.pop();
     let fmt = read_cstring(vm, fmt_addr);
-    let mut out = String::new();
-    let mut used = false;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if !used && ch == '%' {
-            if let Some(&next) = chars.peek() {
-                match next {
-                    'd' => { out.push_str(&arg.to_string()); chars.next(); used = true; }
-                    'f' => { let f = f64::from_bits(arg); out.push_str(&format!("{:.6}", f)); chars.next(); used = true; }
-                    's' => {
-                        let s = read_cstring(vm, arg as u32);
-                        out.push_str(&s);
-                        chars.next(); used = true;
-                    }
-                    'c' => { out.push(arg as u8 as char); chars.next(); used = true; }
-                    '%' => { out.push('%'); chars.next(); }
-                    _ => { out.push(ch); }
-                }
-            } else {
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
+    let out = format_printf_string(vm, &fmt, &[arg]);
     session.runtime.output_lines.push(out);
 }
 
@@ -328,32 +304,7 @@ fn host_printf_2(vm: &mut CideVM, session: &mut Session) {
     let arg1 = vm.pop();
     let arg2 = vm.pop();
     let fmt = read_cstring(vm, fmt_addr);
-    let mut out = String::new();
-    let mut used = 0;
-    let mut chars = fmt.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if used < 2 && ch == '%' {
-            if let Some(&next) = chars.peek() {
-                let arg = if used == 0 { arg1 } else { arg2 };
-                match next {
-                    'd' => { out.push_str(&arg.to_string()); chars.next(); used += 1; }
-                    'f' => { let f = f64::from_bits(arg); out.push_str(&format!("{:.6}", f)); chars.next(); used += 1; }
-                    's' => {
-                        let s = read_cstring(vm, arg as u32);
-                        out.push_str(&s);
-                        chars.next(); used += 1;
-                    }
-                    'c' => { out.push(arg as u8 as char); chars.next(); used += 1; }
-                    '%' => { out.push('%'); chars.next(); }
-                    _ => { out.push(ch); }
-                }
-            } else {
-                out.push(ch);
-            }
-        } else {
-            out.push(ch);
-        }
-    }
+    let out = format_printf_string(vm, &fmt, &[arg1, arg2]);
     session.runtime.output_lines.push(out);
 }
 

@@ -243,7 +243,7 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
     }
     let session = &mut *s;
 
-    let mut vm = session.vm.take().unwrap();
+    let mut vm = session.vm.take().unwrap_or_default();
     let result = if !session.runtime.running {
         reset_runtime_for_step(session);
         setup_vm(&mut vm, session);
