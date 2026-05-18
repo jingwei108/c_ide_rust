@@ -65,7 +65,9 @@ pub fn destroy_session(session_id: u64) {
     sessions.remove(&session_id);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
     engines.remove(&session_id);
-    // 注意：Box::leak 的内存不会真正释放；后续建议迁移到 Arc<Mutex<Session>> 以实现完全释放
+    // 注意：Box::leak 的内存不会真正释放。实际场景中 session 是全局单例，此限制可接受。
+    // 若未来需频繁创建/销毁 session，需将 HashMap 改为 Arc<Mutex<T>> 存储，
+    // 并同步修改 current_session() / current_unified_engine() 的返回类型（不再返回 'static guard）。
 }
 
 /// 切换当前操作的 Session ID

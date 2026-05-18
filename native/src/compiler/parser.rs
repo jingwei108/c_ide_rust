@@ -1452,14 +1452,6 @@ impl Parser {
         Expr::Literal { value: 0, loc, ty: Type::int() }
     }
 
-    fn parse_call_expr(&mut self, name: String) -> Expr {
-        self.consume(TokenType::LParen, "预期 '('");
-        let args = self.parse_arg_list();
-        self.consume(TokenType::RParen, "预期 ')'");
-        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-        Expr::Call { name, args, loc, ty: Type::default() }
-    }
-
     fn parse_arg_list(&mut self) -> Vec<Expr> {
         let mut args = Vec::new();
         if self.check(TokenType::RParen) { return args; }
