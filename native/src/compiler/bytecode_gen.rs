@@ -1272,7 +1272,7 @@ impl BytecodeGen {
                     let arg_ty_kind = arg.ty().kind();
                     let arg_ty = arg.ty();
                     if arg_ty.is_struct() {
-                        let sz = self.type_size(&arg_ty);
+                        let sz = self.type_size(arg_ty);
                         let words = (sz + 3) / 4;
                         if let Expr::Identifier { name: arg_name, .. } = arg {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
@@ -1320,7 +1320,6 @@ impl BytecodeGen {
                     } else {
                         self.report_error(&format!("未定义的函数 '{}'", name), &loc);
                         self.emit(OpCode::PushConst, 0, &loc);
-                        return;
                     }
                 }
             }
