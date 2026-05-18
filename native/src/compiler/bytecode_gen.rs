@@ -466,56 +466,7 @@ impl BytecodeGen {
     }
 
     fn resolve_host_func_id(&self, name: &str) -> i32 {
-        let host_name = match name {
-            "print_int" => "__cide_output",
-            "printf" => "__cide_printf_n",
-            "scanf" => "__cide_scanf_n",
-            "strlen" => "strlen",
-            "strcpy" => "strcpy",
-            "strcmp" => "strcmp",
-            "getchar" => "getchar",
-            "putchar" => "putchar",
-            "rand" => "rand",
-            "srand" => "srand",
-            "memset" => "memset",
-            "exit" => "exit",
-            "strcat" => "strcat",
-            "atoi" => "atoi",
-            "fprintf" => "fprintf",
-            "realloc" => "realloc",
-            "qsort" => "qsort",
-            _ => name,
-        };
-        match host_name {
-            "__cide_output" => crate::vm::host_func_id::OUTPUT as i32,
-            "__cide_step" => crate::vm::host_func_id::STEP as i32,
-            "malloc" => crate::vm::host_func_id::MALLOC as i32,
-            "free" => crate::vm::host_func_id::FREE as i32,
-            "__cide_printf_0" => crate::vm::host_func_id::PRINTF_0 as i32,
-            "__cide_printf_1" => crate::vm::host_func_id::PRINTF_1 as i32,
-            "__cide_printf_n" => crate::vm::host_func_id::PRINTF_N as i32,
-            "__cide_scanf_n" => crate::vm::host_func_id::SCANF_N as i32,
-            "strlen" => crate::vm::host_func_id::STRLEN as i32,
-            "strcpy" => crate::vm::host_func_id::STRCPY as i32,
-            "strcmp" => crate::vm::host_func_id::STRCMP as i32,
-            "getchar" => crate::vm::host_func_id::GETCHAR as i32,
-            "putchar" => crate::vm::host_func_id::PUTCHAR as i32,
-            "rand" => crate::vm::host_func_id::RAND as i32,
-            "srand" => crate::vm::host_func_id::SRAND as i32,
-            "memset" => crate::vm::host_func_id::MEMSET as i32,
-            "exit" => crate::vm::host_func_id::EXIT as i32,
-            "strcat" => crate::vm::host_func_id::STRCAT as i32,
-            "atoi" => crate::vm::host_func_id::ATOI as i32,
-            "fopen" => crate::vm::host_func_id::FOPEN as i32,
-            "fread" => crate::vm::host_func_id::FREAD as i32,
-            "fwrite" => crate::vm::host_func_id::FWRITE as i32,
-            "fclose" => crate::vm::host_func_id::FCLOSE as i32,
-            "feof" => crate::vm::host_func_id::FEOF as i32,
-            "fprintf" => crate::vm::host_func_id::FPRINTF as i32,
-            "realloc" => crate::vm::host_func_id::REALLOC as i32,
-            "qsort" => crate::vm::host_func_id::QSORT as i32,
-            _ => -1,
-        }
+        crate::vm::host_func_id::by_user_name(name).map(|id| id as i32).unwrap_or(-1)
     }
 
     fn type_size(&self, ty: &Type) -> i32 {
@@ -948,7 +899,7 @@ impl BytecodeGen {
                 let addr = self.string_mem_offset;
                 let new_offset = addr + value.len() as u32 + 1;
                 let new_offset = (new_offset + 3) & !3;
-                if new_offset > 0x8000 {
+                if new_offset > crate::vm::vm::MEM_SIZE / 16 {
                     self.report_error("字符串字面量过多，超出内存限制", &loc);
                     self.emit(OpCode::PushConst, addr as i32, &loc);
                 } else {
@@ -1364,61 +1315,13 @@ impl BytecodeGen {
                 if let Some(&idx) = self.func_index.get(name) {
                     self.emit(OpCode::Call, idx, &loc);
                 } else {
-                    let host_name = match name.as_str() {
-                        "print_int" => "__cide_output",
-                        "printf" => "__cide_printf_n",
-                        "scanf" => "__cide_scanf_n",
-                        "strlen" => "strlen",
-                        "strcpy" => "strcpy",
-                        "strcmp" => "strcmp",
-                        "getchar" => "getchar",
-                        "putchar" => "putchar",
-                        "rand" => "rand",
-                        "srand" => "srand",
-                        "memset" => "memset",
-                        "exit" => "exit",
-                        "strcat" => "strcat",
-                        "atoi" => "atoi",
-                        "fprintf" => "fprintf",
-                        "realloc" => "realloc",
-                        "qsort" => "qsort",
-                        _ => name.as_str(),
-                    };
-                    let host_id = match host_name {
-                        "__cide_output" => crate::vm::host_func_id::OUTPUT,
-                        "__cide_step" => crate::vm::host_func_id::STEP,
-                        "malloc" => crate::vm::host_func_id::MALLOC,
-                        "free" => crate::vm::host_func_id::FREE,
-                        "__cide_printf_0" => crate::vm::host_func_id::PRINTF_0,
-                        "__cide_printf_1" => crate::vm::host_func_id::PRINTF_1,
-                        "__cide_printf_n" => crate::vm::host_func_id::PRINTF_N,
-                        "__cide_scanf_n" => crate::vm::host_func_id::SCANF_N,
-                        "strlen" => crate::vm::host_func_id::STRLEN,
-                        "strcpy" => crate::vm::host_func_id::STRCPY,
-                        "strcmp" => crate::vm::host_func_id::STRCMP,
-                        "getchar" => crate::vm::host_func_id::GETCHAR,
-                        "putchar" => crate::vm::host_func_id::PUTCHAR,
-                        "rand" => crate::vm::host_func_id::RAND,
-                        "srand" => crate::vm::host_func_id::SRAND,
-                        "memset" => crate::vm::host_func_id::MEMSET,
-                        "exit" => crate::vm::host_func_id::EXIT,
-                        "strcat" => crate::vm::host_func_id::STRCAT,
-                        "atoi" => crate::vm::host_func_id::ATOI,
-                        "fopen" => crate::vm::host_func_id::FOPEN,
-                        "fread" => crate::vm::host_func_id::FREAD,
-                        "fwrite" => crate::vm::host_func_id::FWRITE,
-                        "fclose" => crate::vm::host_func_id::FCLOSE,
-                        "feof" => crate::vm::host_func_id::FEOF,
-                        "fprintf" => crate::vm::host_func_id::FPRINTF,
-                        "realloc" => crate::vm::host_func_id::REALLOC,
-                        "qsort" => crate::vm::host_func_id::QSORT,
-                        _ => {
-                            self.report_error(&format!("未定义的函数 '{}'", name), &loc);
-                            self.emit(OpCode::PushConst, 0, &loc);
-                            return;
-                        }
-                    };
-                    self.emit(OpCode::CallHost, host_id as i32, &loc);
+                    if let Some(host_id) = crate::vm::host_func_id::by_user_name(name.as_str()) {
+                        self.emit(OpCode::CallHost, host_id as i32, &loc);
+                    } else {
+                        self.report_error(&format!("未定义的函数 '{}'", name), &loc);
+                        self.emit(OpCode::PushConst, 0, &loc);
+                        return;
+                    }
                 }
             }
             Expr::CallPtr { callee, args, .. } => {

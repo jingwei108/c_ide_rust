@@ -969,13 +969,7 @@ impl TypeChecker {
     }
 
     fn is_builtin_func(&self, name: &str) -> bool {
-        matches!(name,
-            "malloc" | "free" | "print_int" | "__cide_output" | "__cide_step" |
-            "printf" | "scanf" | "strlen" | "strcpy" | "strcmp" |
-            "getchar" | "putchar" | "rand" | "srand" | "memset" |
-            "exit" | "strcat" | "atoi" | "fopen" | "fread" | "fwrite" |
-            "fclose" | "feof" | "fprintf" | "realloc" | "qsort"
-        )
+        crate::vm::host_func_id::is_builtin(name)
     }
 
     fn visit_call(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {

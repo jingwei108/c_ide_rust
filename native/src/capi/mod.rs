@@ -190,10 +190,7 @@ pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_ch
     if session.compile.errors.is_empty() {
         return ptr::null();
     }
-    if session.compile.errors_buffer != session.compile.errors {
-        session.compile.errors_buffer = session.compile.errors.clone();
-    }
-    session.compile.errors_buffer.as_ptr() as *const c_char
+    session.compile.errors.as_ptr() as *const c_char
 }
 
 #[no_mangle]

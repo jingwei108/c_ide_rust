@@ -38,3 +38,44 @@ pub const FWRITE: u32 = 62;
 pub const FCLOSE: u32 = 63;
 #[allow(dead_code)]
 pub const FEOF: u32 = 64;
+
+/// 将用户代码中的函数名解析为 host function ID。
+/// 包含别名映射（如 `print_int` → `OUTPUT`, `printf` → `PRINTF_N`）。
+pub fn by_user_name(name: &str) -> Option<u32> {
+    match name {
+        "print_int" | "__cide_output" => Some(OUTPUT),
+        "__cide_step" => Some(STEP),
+        "malloc" => Some(MALLOC),
+        "free" => Some(FREE),
+        "__cide_printf_0" => Some(PRINTF_0),
+        "__cide_printf_1" => Some(PRINTF_1),
+        "__cide_printf_2" => Some(PRINTF_2),
+        "printf" => Some(PRINTF_N),
+        "scanf" => Some(SCANF_N),
+        "strlen" => Some(STRLEN),
+        "strcpy" => Some(STRCPY),
+        "strcmp" => Some(STRCMP),
+        "getchar" => Some(GETCHAR),
+        "putchar" => Some(PUTCHAR),
+        "rand" => Some(RAND),
+        "srand" => Some(SRAND),
+        "memset" => Some(MEMSET),
+        "exit" => Some(EXIT),
+        "strcat" => Some(STRCAT),
+        "atoi" => Some(ATOI),
+        "fprintf" => Some(FPRINTF),
+        "realloc" => Some(REALLOC),
+        "qsort" => Some(QSORT),
+        "fopen" => Some(FOPEN),
+        "fread" => Some(FREAD),
+        "fwrite" => Some(FWRITE),
+        "fclose" => Some(FCLOSE),
+        "feof" => Some(FEOF),
+        _ => None,
+    }
+}
+
+/// 判断名称是否为内置宿主函数（供 TypeChecker 使用）。
+pub fn is_builtin(name: &str) -> bool {
+    by_user_name(name).is_some()
+}

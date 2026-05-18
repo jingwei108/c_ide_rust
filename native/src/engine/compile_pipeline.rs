@@ -127,7 +127,6 @@ pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], so
         err_str.push_str(&enriched_msg);
         err_str.push('\n');
     }
-    session.compile.errors_buffer = err_str.clone();
     session.compile.errors = err_str;
 }
 
@@ -216,7 +215,6 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.algorithm_matches.clear();
     session.compile.struct_fields.clear();
     session.compile.errors.clear();
-    session.compile.errors_buffer.clear();
     session.compile.compiled = false;
 
     // 1. Lexer
@@ -237,7 +235,6 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         Some(p) => p,
         None => {
             session.compile.errors = "解析失败：无法生成 AST".to_string();
-            session.compile.errors_buffer = session.compile.errors.clone();
             return Err("解析失败".to_string());
         }
     };
@@ -261,8 +258,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         Ok(o) => o,
         Err(gen_errors) => {
             let err_str: String = gen_errors.iter().map(|e| format!("生成错误: {}\n", e)).collect();
-            session.compile.errors = err_str.clone();
-            session.compile.errors_buffer = err_str;
+            session.compile.errors = err_str;
             return Err("字节码生成错误".to_string());
         }
     };
@@ -331,7 +327,6 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
 
     session.compile.compiled = true;
     session.compile.errors.clear();
-    session.compile.errors_buffer.clear();
 
     Ok(())
 }

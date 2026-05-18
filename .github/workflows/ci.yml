@@ -25,6 +25,10 @@ jobs:
         run: cargo build
         working-directory: native
 
+      - name: Build native (Release)
+        run: cargo build --release
+        working-directory: native
+
       - name: Run Rust tests
         run: cargo test
         working-directory: native
@@ -34,7 +38,7 @@ jobs:
         working-directory: native
 
   flutter:
-    name: Flutter Build
+    name: Flutter Build & Test
     runs-on: windows-latest
     needs: rust
     steps:
@@ -52,6 +56,14 @@ jobs:
         run: flutter pub get
         working-directory: CideFlutter
 
+      - name: Run Flutter tests
+        run: flutter test
+        working-directory: CideFlutter
+
       - name: Build Windows (Debug)
         run: flutter build windows --debug
+        working-directory: CideFlutter
+
+      - name: Build Windows (Release)
+        run: flutter build windows --release
         working-directory: CideFlutter

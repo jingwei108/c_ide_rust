@@ -1,3 +1,8 @@
+# Android NDK 链接器配置
+# 注意：以下路径为个人开发环境硬编码，其他开发者或 CI 环境需替换为实际 NDK 路径。
+# 建议通过环境变量覆盖：
+#   export ANDROID_NDK_HOME=/path/to/ndk
+# 然后使用 cargo-ndk 工具构建，该工具会自动处理链接器路径。
 [target.aarch64-linux-android]
 linker = "C:/Users/liangjingwei/AppData/Local/Android/Sdk/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android21-clang.cmd"
 

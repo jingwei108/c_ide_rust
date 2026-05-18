@@ -460,8 +460,7 @@ impl CideVM {
     pub fn write_cstring(&mut self, addr: u32, s: &str) {
         let a = addr as usize;
         let bytes = s.as_bytes();
-        #[allow(clippy::int_plus_one)]
-        if a + bytes.len() + 1 <= self.memory.len() {
+        if a + bytes.len() < self.memory.len() {
             self.memory[a..a + bytes.len()].copy_from_slice(bytes);
             self.memory[a + bytes.len()] = 0;
         }

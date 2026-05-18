@@ -8,6 +8,8 @@ pub struct CheckpointManager {
     pub checkpoints: Vec<(i32, VMSnapshot)>,
     pub interval: i32,
     pub smart_mode: bool,
+    /// 最大检查点数量，防止长程序运行时内存无限增长。
+    pub max_checkpoints: usize,
 }
 
 impl CheckpointManager {
@@ -16,6 +18,7 @@ impl CheckpointManager {
             checkpoints: Vec::new(),
             interval,
             smart_mode: true,
+            max_checkpoints: 50,
         }
     }
 
@@ -30,9 +33,12 @@ impl CheckpointManager {
         false
     }
 
-    /// 保存检查点。
+    /// 保存检查点。超过上限时自动移除最旧的检查点。
     pub fn save(&mut self, step: i32, vm: &CideVM, session: &Session) {
         self.checkpoints.push((step, vm.snapshot(session)));
+        while self.checkpoints.len() > self.max_checkpoints {
+            self.checkpoints.remove(0);
+        }
     }
 
     /// 找到不超过 target 的最近检查点。

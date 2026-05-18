@@ -64,7 +64,6 @@ pub struct AlgorithmMatch {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CompileState {
     pub errors: String,
-    pub errors_buffer: String,
     pub compile_units: Vec<CompileUnit>,
     pub compiled: bool,
     pub bytecode: Vec<Instruction>,
