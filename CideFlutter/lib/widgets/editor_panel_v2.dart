@@ -514,6 +514,17 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     // 从 CideEditorState 获取滚动偏移，实现 Gutter 与编辑器视觉同步
     final scrollOffset = _editorKey.currentState?.scrollController.offset ?? 0.0;
 
+    // 热力图数据
+    final heatmap = unifiedState.heatmap;
+    final lineCountMap = <int, int>{};
+    int maxCount = 1;
+    if (heatmap != null && heatmap.lineCounts.isNotEmpty) {
+      for (final entry in heatmap.lineCounts) {
+        lineCountMap[entry.$1] = entry.$2.toInt();
+      }
+      maxCount = heatmap.maxCount.toInt() > 0 ? heatmap.maxCount.toInt() : 1;
+    }
+
     final List<Widget> lineWidgets = [];
     for (int index = 0; index < _document.lineCount; index++) {
       final line = index + 1;
@@ -551,6 +562,12 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
 
       final isCurrentLine = line == getCurrentLine();
 
+      // 热力图颜色
+      final count = lineCountMap[line] ?? 0;
+      final heatColor = count > 0
+          ? _heatmapColor(count / maxCount, isDark)
+          : Colors.transparent;
+
       lineWidgets.add(
         GestureDetector(
           onTap: () {
@@ -560,6 +577,14 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
             height: lineHeight,
             alignment: Alignment.centerRight,
             padding: const EdgeInsets.only(right: 8),
+            decoration: BoxDecoration(
+              border: Border(
+                left: BorderSide(
+                  width: 4,
+                  color: heatColor,
+                ),
+              ),
+            ),
             child: Text(
               prefix.isEmpty ? '$line$varSuffix' : '$prefix$line$varSuffix',
               style: TextStyle(
@@ -615,6 +640,20 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
   bool _tutorialLinesEqual(Set<int> a, Set<int> b) {
     if (a.length != b.length) return false;
     return a.containsAll(b);
+  }
+
+  Color _heatmapColor(double intensity, bool isDark) {
+    if (intensity < 0.2) {
+      return isDark ? const Color(0xFF3A3A3C) : const Color(0xFFE0E0E0);
+    } else if (intensity < 0.4) {
+      return isDark ? const Color(0xFF5C3A3A) : const Color(0xFFFFCDD2);
+    } else if (intensity < 0.6) {
+      return isDark ? const Color(0xFF7A3A3A) : const Color(0xFFEF9A9A);
+    } else if (intensity < 0.8) {
+      return isDark ? const Color(0xFFB04A4A) : const Color(0xFFE57373);
+    } else {
+      return isDark ? const Color(0xFFD32F2F) : const Color(0xFFC62828);
+    }
   }
 }
 
