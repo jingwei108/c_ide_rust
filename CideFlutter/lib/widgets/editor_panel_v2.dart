@@ -6,6 +6,13 @@ import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 import '../editor/editor.dart';
+import '../editor/gutter/gutter_view.dart';
+import '../editor/gutter/gutter_context.dart';
+import '../editor/gutter/line_number_column.dart';
+import '../editor/gutter/heatmap_column.dart';
+import '../editor/find_replace_controller.dart';
+import '../editor/find_replace_overlay.dart';
+import '../editor/search_highlight_layer.dart';
 import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/unified_provider.dart';
@@ -38,8 +45,10 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
   late final CideDocument _document;
   late final Highlight _highlight;
   late final AutocompleteController _autocompleteController;
+  late final FindReplaceController _findReplaceController;
   OverlayEntry? _contextMenuOverlay;
   OverlayEntry? _autocompleteOverlay;
+  OverlayEntry? _findReplaceOverlay;
 
   // 运行时高亮状态
   int _currentHighlightLine = 0;
@@ -62,13 +71,18 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
 
     _autocompleteController = AutocompleteController();
     _autocompleteController.addListener(_onAutocompleteChanged);
+
+    _findReplaceController = FindReplaceController();
+    _findReplaceController.addListener(_onFindReplaceChanged);
   }
 
   @override
   void dispose() {
     _hideContextMenu();
     _hideAutocomplete();
+    _hideFindReplace();
     _autocompleteController.removeListener(_onAutocompleteChanged);
+    _findReplaceController.removeListener(_onFindReplaceChanged);
     _document.removeListener(_onDocumentChanged);
     super.dispose();
   }
@@ -143,6 +157,98 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     _autocompleteOverlay = null;
     _autocompleteController.hide();
   }
+
+  // ---------------------------------------------------------------------------
+  // 查找替换
+  // ---------------------------------------------------------------------------
+  void _onFindReplaceChanged() {
+    if (_findReplaceController.visible) {
+      _showFindReplace();
+    } else {
+      _hideFindReplace();
+    }
+  }
+
+  void _showFindReplace() {
+    _hideFindReplace();
+    _findReplaceOverlay = OverlayEntry(
+      builder: (context) => Positioned(
+        top: 48,
+        right: 16,
+        child: FindReplaceOverlay(
+          controller: _findReplaceController,
+          onFindNext: _onFindNext,
+          onFindPrevious: _onFindPrevious,
+          onReplace: _onReplace,
+          onReplaceAll: _onReplaceAll,
+          onClose: _hideFindReplace,
+          isDark: ref.read(themeProvider) == ThemeMode.dark,
+        ),
+      ),
+    );
+    Overlay.of(context).insert(_findReplaceOverlay!);
+  }
+
+  void _hideFindReplace() {
+    _findReplaceOverlay?.remove();
+    _findReplaceOverlay = null;
+    _findReplaceController.hide();
+  }
+
+  void _onFindNext() {
+    _findReplaceController.search(_document.text);
+    _findReplaceController.nextMatch();
+    _scrollToMatch();
+  }
+
+  void _onFindPrevious() {
+    _findReplaceController.search(_document.text);
+    _findReplaceController.previousMatch();
+    _scrollToMatch();
+  }
+
+  void _scrollToMatch() {
+    final match = _findReplaceController.currentMatch;
+    if (match == null) return;
+    final pos = _document.offsetToPosition(match.start);
+    _editorKey.currentState?.scrollToLine(pos.line + 1);
+    _document.updateSelection(
+      DocSelection(base: pos, extent: pos),
+    );
+    _editorKey.currentState?.syncToProxy();
+  }
+
+  void _onReplace() {
+    final match = _findReplaceController.currentMatch;
+    if (match == null) return;
+    _document.applyEdit(EditOp(
+      startOffset: match.start,
+      oldText: _document.text.substring(match.start, match.end),
+      newText: _findReplaceController.replacement,
+    ));
+    _findReplaceController.search(_document.text);
+  }
+
+  void _onReplaceAll() {
+    final query = _findReplaceController.query;
+    final replacement = _findReplaceController.replacement;
+    if (query.isEmpty) return;
+
+    // 从后往前替换，避免 offset 漂移
+    final matches = List<SearchMatch>.from(_findReplaceController.matches);
+    matches.sort((a, b) => b.start.compareTo(a.start));
+
+    for (final match in matches) {
+      _document.applyEdit(EditOp(
+        startOffset: match.start,
+        oldText: _document.text.substring(match.start, match.end),
+        newText: replacement,
+      ));
+    }
+    _findReplaceController.search(_document.text);
+  }
+
+  void showFindReplace() => _findReplaceController.show();
 
   void _applyAutocomplete(AutocompleteCandidate candidate) {
     final sel = _document.selection.base;
@@ -434,6 +540,10 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
           );
         }).toList(),
       ),
+      SearchHighlightLayer(
+        matches: _findReplaceController.matches,
+        currentMatchIndex: _findReplaceController.currentMatchIndex,
+      ),
     ];
 
     return Container(
@@ -443,8 +553,31 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
       ),
       child: Row(
         children: [
-          // Gutter
-          _buildGutter(state, isDark, unifiedState),
+          // Gutter（插件化）
+          GutterView(
+            columns: [
+              HeatmapColumn(),
+              LineNumberColumn(),
+            ],
+            context: GutterContext(
+              currentLine: getCurrentLine(),
+              currentDebugLine: state.currentLine,
+              isStepMode: state.isStepMode,
+              breakpoints: state.breakpoints,
+              diagMap: {
+                for (final d in state.diagnostics)
+                  d.line: d.severity
+              },
+              accessedVars: _currentAccessedVars,
+              heatmap: unifiedState.heatmap,
+              isDark: isDark,
+            ),
+            scrollOffset: _editorKey.currentState?.scrollController.offset ?? 0.0,
+            viewportHeight: MediaQuery.of(context).size.height,
+            lineHeight: 21.0,
+            lineCount: _document.lineCount,
+            onTapLine: () {},
+          ),
           // 分隔线
           Container(width: 1, color: separatorColor),
           // 编辑器主体
@@ -512,137 +645,6 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
   // ---------------------------------------------------------------------------
   // Gutter
   // ---------------------------------------------------------------------------
-  Widget _buildGutter(
-    IdeState state,
-    bool isDark,
-    dynamic unifiedState,
-  ) {
-    final lineNumberColor =
-        isDark ? const Color(0xff5c6370) : const Color(0xffa0a1a7);
-    final focusedLineNumberColor =
-        isDark ? const Color(0xffabb2bf) : const Color(0xff383a42);
-
-    // 按行号分组诊断
-    final diagMap = <int, int>{};
-    for (final d in state.diagnostics) {
-      if (!diagMap.containsKey(d.line) || d.severity < diagMap[d.line]!) {
-        diagMap[d.line] = d.severity;
-      }
-    }
-
-    final lineHeight = 21.0;
-    // 从 CideEditorState 获取滚动偏移，实现 Gutter 与编辑器视觉同步
-    final scrollController = _editorKey.currentState?.scrollController;
-    final scrollOffset = (scrollController != null && scrollController.hasClients)
-        ? scrollController.offset
-        : 0.0;
-
-    // 热力图数据
-    final heatmap = unifiedState.heatmap;
-    final lineCountMap = <int, int>{};
-    int maxCount = 1;
-    if (heatmap != null && heatmap.lineCounts.isNotEmpty) {
-      for (final entry in heatmap.lineCounts) {
-        lineCountMap[entry.$1] = entry.$2.toInt();
-      }
-      maxCount = heatmap.maxCount.toInt() > 0 ? heatmap.maxCount.toInt() : 1;
-    }
-
-    final List<Widget> lineWidgets = [];
-    for (int index = 0; index < _document.lineCount; index++) {
-      final line = index + 1;
-      final hasBreakpoint = state.breakpoints.contains(line);
-      final severity = diagMap[line];
-
-      String prefix = '';
-      if (hasBreakpoint) {
-        prefix = '● ';
-      } else if (severity == 0) {
-        prefix = '✗ ';
-      } else if (severity == 1) {
-        prefix = '⚠ ';
-      } else if (severity == 2) {
-        prefix = 'ℹ ';
-      }
-
-      if (state.isStepMode && line == state.currentLine) {
-        prefix = '$prefix▶ ';
-      }
-
-      String varSuffix = '';
-      if (unifiedState.canSeek &&
-          unifiedState.currentStep >= 0 &&
-          unifiedState.currentStep < unifiedState.frameCache.length) {
-        final payload = unifiedState.frameCache[unifiedState.currentStep];
-        if (payload.codeLine == line && payload.accessedVars.isNotEmpty) {
-          final markers = payload.accessedVars.take(2).map((a) {
-            final marker = a.accessType == 'Read' ? 'R' : 'W';
-            return '${a.name}=$marker';
-          }).join(' ');
-          varSuffix = ' $markers';
-        }
-      }
-
-      final isCurrentLine = line == getCurrentLine();
-
-      // 热力图颜色
-      final count = lineCountMap[line] ?? 0;
-      final heatColor = count > 0
-          ? _heatmapColor(count / maxCount, isDark)
-          : Colors.transparent;
-
-      lineWidgets.add(
-        GestureDetector(
-          onTap: () {
-            ref.read(ideProvider.notifier).toggleBreakpoint(line);
-          },
-          child: Container(
-            height: lineHeight,
-            alignment: Alignment.centerRight,
-            padding: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  width: 4,
-                  color: heatColor,
-                ),
-              ),
-            ),
-            child: Text(
-              prefix.isEmpty ? '$line$varSuffix' : '$prefix$line$varSuffix',
-              style: TextStyle(
-                fontSize: 14,
-                color: isCurrentLine
-                    ? focusedLineNumberColor
-                    : lineNumberColor,
-                fontFamily: 'monospace',
-              ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Container(
-      width: 64,
-      color: isDark ? const Color(0xff21252b) : const Color(0xfff0f0f0),
-      child: ClipRect(
-        child: OverflowBox(
-          maxHeight: double.infinity,
-          alignment: Alignment.topCenter,
-          child: Transform.translate(
-            offset: Offset(0, -scrollOffset),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: lineWidgets,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // 工具方法
@@ -665,19 +667,6 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     return a.containsAll(b);
   }
 
-  Color _heatmapColor(double intensity, bool isDark) {
-    if (intensity < 0.2) {
-      return isDark ? const Color(0xFF3A3A3C) : const Color(0xFFE0E0E0);
-    } else if (intensity < 0.4) {
-      return isDark ? const Color(0xFF5C3A3A) : const Color(0xFFFFCDD2);
-    } else if (intensity < 0.6) {
-      return isDark ? const Color(0xFF7A3A3A) : const Color(0xFFEF9A9A);
-    } else if (intensity < 0.8) {
-      return isDark ? const Color(0xFFB04A4A) : const Color(0xFFE57373);
-    } else {
-      return isDark ? const Color(0xFFD32F2F) : const Color(0xFFC62828);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
