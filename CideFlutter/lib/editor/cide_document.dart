@@ -35,6 +35,7 @@ class EditOp {
 }
 
 /// 行+列坐标
+@immutable
 class DocPosition {
   final int line; // 0-based
   final int col; // 0-based
@@ -42,10 +43,18 @@ class DocPosition {
   const DocPosition({required this.line, required this.col});
 
   @override
+  bool operator ==(Object other) =>
+      other is DocPosition && other.line == line && other.col == col;
+
+  @override
+  int get hashCode => Object.hash(line, col);
+
+  @override
   String toString() => 'DocPosition($line, $col)';
 }
 
 /// 选区（行/列坐标）
+@immutable
 class DocSelection {
   final DocPosition base;
   final DocPosition extent;
@@ -69,6 +78,13 @@ class DocSelection {
               (base.line == extent.line && base.col <= extent.col))
           ? extent
           : base;
+
+  @override
+  bool operator ==(Object other) =>
+      other is DocSelection && other.base == base && other.extent == extent;
+
+  @override
+  int get hashCode => Object.hash(base, extent);
 
   @override
   String toString() => 'DocSelection($base -> $extent)';
@@ -117,6 +133,17 @@ class CideDocument extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 批量设置文本 + 选区 + composing，只触发一次 notifyListeners
+  void setTextSync(String text, DocSelection selection, TextRange composing) {
+    if (_text != text) {
+      _text = text;
+      _rebuildLineOffsets();
+    }
+    _selection = selection;
+    _composing = composing;
+    notifyListeners();
+  }
+
   /// 直接应用 EditOp（不记录历史，用于内部/undo）
   void _apply(EditOp op) {
     _text = _text.substring(0, op.startOffset) +
@@ -131,6 +158,17 @@ class CideDocument extends ChangeNotifier {
     _undoStack.add(op);
     if (_undoStack.length > _maxHistory) _undoStack.removeAt(0);
     _redoStack.clear();
+    notifyListeners();
+  }
+
+  /// 批量应用编辑 + 选区 + composing，只触发一次 notifyListeners
+  void applyEditSync(EditOp op, DocSelection selection, TextRange composing) {
+    _apply(op);
+    _undoStack.add(op);
+    if (_undoStack.length > _maxHistory) _undoStack.removeAt(0);
+    _redoStack.clear();
+    _selection = selection;
+    _composing = composing;
     notifyListeners();
   }
 

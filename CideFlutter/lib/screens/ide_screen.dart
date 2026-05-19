@@ -154,13 +154,9 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 同步系统键盘状态：若系统已收起但标记仍为 active，自动恢复
-    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
-    final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
-    if (_isSystemKeyboardActive && !isSystemKeyboardReallyVisible) {
-      _isSystemKeyboardActive = false;
-      _editorKey.currentState?.setReadOnly(true);
-    }
+    // 不再根据 viewInsets 自动切回自定义键盘。
+    // 键盘切换只由用户明确操作（点击「完成」/「英」按钮）触发，
+    // 避免 IME 候选词面板弹出/收起时误判为键盘隐藏。
   }
 
   void _syncBarsAnimation() {

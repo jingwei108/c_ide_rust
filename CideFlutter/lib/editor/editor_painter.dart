@@ -19,6 +19,11 @@ class CideEditorPainter extends CustomPainter {
   final TextStyle textStyle;
   final List<EditorLayer> layers;
 
+  // 构造时快照，用于 shouldRepaint 比较（避免 document 被修改后比较的是同一对象）
+  final String _text;
+  final DocSelection _selection;
+  final TextRange _composing;
+
   CideEditorPainter({
     required this.document,
     required this.scrollOffset,
@@ -26,7 +31,9 @@ class CideEditorPainter extends CustomPainter {
     required this.lineHeight,
     required this.textStyle,
     required this.layers,
-  });
+  })  : _text = document.text,
+        _selection = document.selection,
+        _composing = document.composing;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -75,7 +82,9 @@ class CideEditorPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CideEditorPainter old) {
-    return old.document != document ||
+    return old._text != _text ||
+        old._selection != _selection ||
+        old._composing != _composing ||
         old.scrollOffset != scrollOffset ||
         old.viewportHeight != viewportHeight ||
         old.lineHeight != lineHeight ||

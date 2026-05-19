@@ -23,7 +23,7 @@ class EditorPocScreen extends StatefulWidget {
 
 class _EditorPocScreenState extends State<EditorPocScreen> {
   late final CideDocument _document;
-  late final TextStyle _textStyle;
+  TextStyle? _textStyle;
   final GlobalKey<CideEditorState> _editorKey = GlobalKey();
 
   bool _isDark = false;
@@ -62,8 +62,9 @@ int main() {
   void initState() {
     super.initState();
     _document = CideDocument();
-    _document.setText(_sampleCode);
     _document.addListener(_onDocChanged);
+    // 初始加载 500 行代码用于性能测试
+    _generate500Lines();
   }
 
   @override
@@ -116,16 +117,17 @@ int main() {
     final textColor = _isDark ? const Color(0xffabb2bf) : const Color(0xff383a42);
     final cursorColor = _isDark ? Colors.white : Colors.black;
 
-    _textStyle = TextStyle(
+    final textStyle = TextStyle(
       fontSize: 14,
       height: 1.5,
       fontFamily: 'Consolas',
       fontFamilyFallback: const ['monospace'],
       color: textColor,
     );
+    _textStyle = textStyle;
 
     final layers = <EditorLayer>[
-      TextLayer(baseStyle: _textStyle),
+      TextLayer(baseStyle: textStyle),
       SelectionLayer(cursorColor: cursorColor),
       ComposingLayer(),
     ];
@@ -220,7 +222,7 @@ int main() {
                   child: CideEditor(
                     key: _editorKey,
                     document: _document,
-                    style: _textStyle,
+                    style: textStyle,
                     layers: layers,
                     onTap: () => debugPrint('Editor tapped'),
                     onPointerDown: (pos) => debugPrint('Pointer down at $pos'),

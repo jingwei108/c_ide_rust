@@ -21,6 +21,7 @@ class CideEditor extends StatefulWidget {
   final VoidCallback? onTap;
   final void Function(Offset position)? onPointerDown;
   final TextStyle style;
+  final void Function(int lineIndex, String lineText)? onTryAppendSemicolon;
 
   const CideEditor({
     super.key,
@@ -30,6 +31,7 @@ class CideEditor extends StatefulWidget {
     this.onTap,
     this.onPointerDown,
     required this.style,
+    this.onTryAppendSemicolon,
   });
 
   @override
@@ -58,12 +60,16 @@ class CideEditorState extends State<CideEditor>
   // 视口尺寸（用于 CustomPaint 裁剪）
   Size _viewportSize = Size.zero;
 
+  // 只读状态（可被外部修改）
+  bool _readOnly = false;
+
   // ---------------------------------------------------------------------------
   // 生命周期
   // ---------------------------------------------------------------------------
   @override
   void initState() {
     super.initState();
+    _readOnly = widget.readOnly;
     _proxyController = TextEditingController(text: widget.document.text);
     _focusNode = FocusNode();
     _scrollController = ScrollController();
@@ -102,6 +108,7 @@ class CideEditorState extends State<CideEditor>
   // 焦点 & TextInputConnection
   // ---------------------------------------------------------------------------
   void _onFocusChanged() {
+    debugPrint('[CideEditor] focus changed: hasFocus=${_focusNode.hasFocus}, isSystem=$_isSystemKeyboardActive');
     if (_focusNode.hasFocus) {
       if (_isSystemKeyboardActive) {
         _attachInputConnection();
@@ -112,7 +119,11 @@ class CideEditorState extends State<CideEditor>
   }
 
   void _attachInputConnection() {
-    if (_inputConnection != null || widget.readOnly) return;
+    if (_inputConnection != null || _readOnly) {
+      debugPrint('[CideEditor] attach skipped: connection=$_inputConnection, readOnly=$_readOnly');
+      return;
+    }
+    debugPrint('[CideEditor] attaching TextInputConnection...');
     _inputConnection = TextInput.attach(
       this,
       const TextInputConfiguration(
@@ -124,9 +135,12 @@ class CideEditorState extends State<CideEditor>
       ),
     );
     _inputConnection!.show();
+    _inputConnection!.setEditingState(_proxyController.value);
+    debugPrint('[CideEditor] TextInputConnection attached, text len=${_proxyController.value.text.length}');
   }
 
   void _detachInputConnection() {
+    debugPrint('[CideEditor] detaching TextInputConnection...');
     _inputConnection?.close();
     _inputConnection = null;
   }
@@ -139,6 +153,18 @@ class CideEditorState extends State<CideEditor>
     if (_focusNode.hasFocus) {
       _attachInputConnection();
     }
+  }
+
+  void setReadOnly(bool value) {
+    if (_readOnly == value) return;
+    setState(() {
+      _readOnly = value;
+      if (_readOnly) {
+        _detachInputConnection();
+      } else if (_focusNode.hasFocus && _isSystemKeyboardActive) {
+        _attachInputConnection();
+      }
+    });
   }
 
   /// 切换到自绘键盘模式（移动端）
@@ -166,32 +192,35 @@ class CideEditorState extends State<CideEditor>
   // 双向同步：Proxy → Document
   // ---------------------------------------------------------------------------
   void _onProxyChanged() {
-    if (_syncing) return;
+    if (_syncing) {
+      debugPrint('[CideEditor] _onProxyChanged ignored (syncing)');
+      return;
+    }
     _syncing = true;
 
     final proxy = _proxyController.value;
     final oldText = widget.document.text;
 
-    // 文本差异同步
+    debugPrint('[CideEditor] _onProxyChanged: textChanged=${proxy.text != oldText}, selection=${proxy.selection}, composing=${proxy.composing}');
+
+    final newSelection = DocSelection(
+      base: widget.document.offsetToPosition(proxy.selection.baseOffset),
+      extent: widget.document.offsetToPosition(proxy.selection.extentOffset),
+    );
+
+    // 文本差异同步（与选区/composing 批量更新，避免中间状态干扰 IME）
     if (proxy.text != oldText) {
       final diff = CideDocument.computeDiff(oldText, proxy.text);
       if (diff != null) {
-        widget.document.applyEdit(diff);
+        widget.document.applyEditSync(diff, newSelection, proxy.composing);
       } else {
-        widget.document.setText(proxy.text);
+        widget.document.setTextSync(proxy.text, newSelection, proxy.composing);
       }
+    } else {
+      // 仅选区 / composing 变化
+      widget.document.updateSelection(newSelection);
+      widget.document.updateComposing(proxy.composing);
     }
-
-    // 选区同步（offset → line/col）
-    widget.document.updateSelection(
-      DocSelection(
-        base: widget.document.offsetToPosition(proxy.selection.baseOffset),
-        extent: widget.document.offsetToPosition(proxy.selection.extentOffset),
-      ),
-    );
-
-    // Composing 同步
-    widget.document.updateComposing(proxy.composing);
 
     _syncing = false;
   }
@@ -209,10 +238,14 @@ class CideEditorState extends State<CideEditor>
       composing: widget.document.composing,
     );
 
-    // 同步给 IME
-    _inputConnection?.setEditingState(_proxyController.value);
+    // 注意：不要在这里调用 _inputConnection?.setEditingState()。
+    // IME 发起的编辑（updateEditingValue）不需要回传，否则会造成
+    // 反馈循环，导致候选词中断、光标跳回左上角。
+    // 自定义键盘操作后若需同步 IME，在对应 API 中单独处理。
 
     _syncing = false;
+
+    if (mounted) setState(() {});
   }
 
   void _syncToProxy() {
@@ -291,6 +324,78 @@ class CideEditorState extends State<CideEditor>
   void undo() => widget.document.undo();
   void redo() => widget.document.redo();
 
+  /// 获取当前光标所在行号（1-based），无焦点时返回 0
+  int getCurrentLine() {
+    final line = widget.document.selection.base.line;
+    if (line < 0) return 0;
+    return line + 1;
+  }
+
+  /// 插入换行（Enter）
+  void insertNewline() {
+    insertText('\n');
+    // VS 风格：尝试为前一行补分号
+    final line = widget.document.selection.base.line;
+    if (line > 0) {
+      final prevLineText = widget.document.lineText(line - 1);
+      widget.onTryAppendSemicolon?.call(line - 1, prevLineText);
+    }
+  }
+
+  /// 插入成对符号，并将光标放在中间
+  void insertPair(String open, String close) {
+    insertText('$open$close');
+    // 将光标向左移动 close.length 个字符
+    moveCursor(-close.length);
+  }
+
+  /// 滚动到指定行（1-based）
+  void scrollToLine(int line) {
+    if (line <= 0) return;
+    final lineIndex = line - 1;
+    if (lineIndex < 0 || lineIndex >= widget.document.lineCount) return;
+    final lineHeight = widget.style.fontSize != null
+        ? widget.style.fontSize! * 1.5
+        : 21.0;
+    final targetOffset = lineIndex * lineHeight;
+    _scrollController.animateTo(
+      targetOffset,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 全选
+  void selectAll() {
+    final endLine = widget.document.lineCount - 1;
+    final endCol = widget.document.lineText(endLine).length;
+    widget.document.updateSelection(
+      DocSelection(
+        base: const DocPosition(line: 0, col: 0),
+        extent: DocPosition(line: endLine, col: endCol),
+      ),
+    );
+    _syncToProxy();
+  }
+
+  /// 复制（选区 → 剪贴板）
+  Future<void> copy() async {
+    final sel = widget.document.selection;
+    if (sel.isCollapsed) return;
+    final start = widget.document.positionToOffset(sel.start);
+    final end = widget.document.positionToOffset(sel.end);
+    final text = widget.document.text.substring(start, end);
+    await Clipboard.setData(ClipboardData(text: text));
+  }
+
+  /// 粘贴（剪贴板 → 光标处）
+  Future<void> paste() async {
+    final data = await Clipboard.getData(Clipboard.kTextPlain);
+    if (data?.text != null) {
+      insertText(data!.text!);
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // TextInputClient 实现
   // ---------------------------------------------------------------------------
@@ -299,7 +404,11 @@ class CideEditorState extends State<CideEditor>
 
   @override
   void updateEditingValue(TextEditingValue value) {
-    if (_syncing) return;
+    if (_syncing) {
+      debugPrint('[CideEditor] updateEditingValue ignored (syncing)');
+      return;
+    }
+    debugPrint('[CideEditor] updateEditingValue: textLen=${value.text.length}, selection=${value.selection}, composing=${value.composing}');
     _proxyController.value = value;
   }
 
@@ -366,54 +475,56 @@ class CideEditorState extends State<CideEditor>
                     onPointerDown: (event) {
                       _lastPointerPosition = event.position;
                       widget.onPointerDown?.call(event.position);
+                      // 确保点击时获取焦点，否则 EditableText 不会响应输入
+                      if (!_focusNode.hasFocus) {
+                        _focusNode.requestFocus();
+                      }
+                      // 将点击坐标转换为文本位置并移动光标
+                      _handleTap(event.localPosition);
                     },
-                    child: GestureDetector(
-                      behavior: HitTestBehavior.translucent,
-                      onTap: () {
-                        widget.onTap?.call();
-                        if (_lastPointerPosition != null) {
-                          _handleTap(_lastPointerPosition!);
-                        }
-                      },
-                      child: EditableText(
-                        controller: _proxyController,
-                        focusNode: _focusNode,
-                        style: TextStyle(
-                          color: Colors.transparent,
-                          fontSize: widget.style.fontSize,
-                          height: widget.style.height,
-                          fontFamily: widget.style.fontFamily,
-                          fontFamilyFallback: widget.style.fontFamilyFallback,
-                        ),
-                        cursorColor: Colors.transparent,
-                        backgroundCursorColor: Colors.transparent,
-                        selectionColor: Colors.transparent,
-                        cursorOpacityAnimates: false,
-                        scrollPadding: EdgeInsets.zero,
-                        maxLines: null,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        readOnly: widget.readOnly,
-                        onChanged: (_) {}, // 变化由 controller listener 处理
-                        onSelectionChanged: (_, __) {},
+                    child: EditableText(
+                      controller: _proxyController,
+                      focusNode: _focusNode,
+                      style: TextStyle(
+                        color: Colors.transparent,
+                        fontSize: widget.style.fontSize,
+                        height: widget.style.height,
+                        fontFamily: widget.style.fontFamily,
+                        fontFamilyFallback: widget.style.fontFamilyFallback,
                       ),
+                      cursorColor: Colors.transparent,
+                      backgroundCursorColor: Colors.transparent,
+                      selectionColor: Colors.transparent,
+                      cursorOpacityAnimates: false,
+                      scrollPadding: EdgeInsets.zero,
+                      maxLines: null,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      readOnly: _readOnly,
+                      onChanged: (_) {}, // 变化由 controller listener 处理
+                      onSelectionChanged: (_, __) {},
                     ),
                   ),
                 ),
                 // 层 2：CustomPaint（实际渲染）
+                // IgnorePointer 确保点击事件穿透到下层 EditableText
                 Positioned.fill(
-                  child: CustomPaint(
-                    painter: CideEditorPainter(
-                      document: widget.document,
-                      scrollOffset: _scrollController.offset,
-                      viewportHeight: _viewportSize.height,
-                      lineHeight: widget.style.fontSize != null
-                          ? widget.style.fontSize! * 1.5
-                          : 21.0,
-                      textStyle: widget.style,
-                      layers: widget.layers,
+                  child: IgnorePointer(
+                    child: CustomPaint(
+                      painter: CideEditorPainter(
+                        document: widget.document,
+                        scrollOffset: _scrollController.hasClients
+                            ? _scrollController.offset
+                            : 0.0,
+                        viewportHeight: _viewportSize.height,
+                        lineHeight: widget.style.fontSize != null
+                            ? widget.style.fontSize! * 1.5
+                            : 21.0,
+                        textStyle: widget.style,
+                        layers: widget.layers,
+                      ),
+                      size: Size.infinite,
                     ),
-                    size: Size.infinite,
                   ),
                 ),
               ],
@@ -425,7 +536,36 @@ class CideEditorState extends State<CideEditor>
   }
 
   void _handleTap(Offset position) {
-    // TODO: Phase 1 实现坐标 → 文本位置的映射
-    debugPrint('Tap at $position');
+    final lineHeight = widget.style.fontSize != null
+        ? widget.style.fontSize! * 1.5
+        : 21.0;
+
+    // 注意：event.localPosition 是相对于 Listener（即 SingleChildScrollView 的 child）
+    // 的坐标，已经自然包含了滚动偏移，不需要再加 scrollOffset。
+    int line = (position.dy / lineHeight).floor().clamp(0, widget.document.lineCount - 1);
+
+    // 获取该行文本
+    final lineText = widget.document.lineText(line);
+
+    // 使用 TextPainter 计算列号
+    final textPainter = TextPainter(
+      text: TextSpan(text: lineText, style: widget.style),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+
+    final textPosition = textPainter.getPositionForOffset(
+      Offset(position.dx, lineHeight / 2),
+    );
+    int col = textPosition.offset.clamp(0, lineText.length);
+
+    debugPrint('[CideEditor] tap at local=$position -> line=$line, col=$col, text="$lineText"');
+
+    // 更新光标位置
+    final newPos = DocPosition(line: line, col: col);
+    widget.document.updateSelection(
+      DocSelection(base: newPos, extent: newPos),
+    );
+    _syncToProxy();
   }
 }
