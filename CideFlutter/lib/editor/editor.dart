@@ -23,7 +23,11 @@
 // )
 // ```
 
+export 'autocomplete_controller.dart';
+export 'autocomplete_overlay.dart';
 export 'cide_document.dart';
 export 'cide_editor.dart';
+export 'diagnostic_layer.dart';
 export 'editor_layers.dart';
 export 'editor_painter.dart';
+export 'syntax_highlight_layer.dart';

@@ -12,7 +12,6 @@ import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/draggable_panel_tab.dart';
-import '../widgets/editor_panel.dart';
 import '../widgets/editor_panel_v2.dart';
 import '../widgets/floating_orb_widget.dart';
 import '../widgets/floating_panel_popup.dart';
@@ -67,15 +66,9 @@ class _StopIntent extends Intent {
 
 class _IdeScreenState extends ConsumerState<IdeScreen>
     with SingleTickerProviderStateMixin {
-  /// Feature flag：切换编辑器内核（false = re_editor, true = CideEditor）
-  static const bool _useEditorV2 = true;
+  final _editorKey = GlobalKey<EditorPanelV2State>();
 
-  final _editorKeyV1 = GlobalKey<EditorPanelState>();
-  final _editorKeyV2 = GlobalKey<EditorPanelV2State>();
-
-  /// 统一访问当前编辑器实例（V1/V2 兼容）
-  dynamic get _editor =>
-      _useEditorV2 ? _editorKeyV2.currentState : _editorKeyV1.currentState;
+  dynamic get _editor => _editorKey.currentState;
 
   final _inputController = TextEditingController();
   bool _showKeyboard = false;
@@ -418,20 +411,12 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 8,
                               ),
-                              child:
-                                  _useEditorV2
-                                      ? EditorPanelV2(
-                                        key: _editorKeyV2,
-                                        onTap: _openKeyboard,
-                                        onBlankTap: _closeAllKeyboards,
-                                        onDismissKeyboard: _closeAllKeyboards,
-                                      )
-                                      : EditorPanel(
-                                        key: _editorKeyV1,
-                                        onTap: _openKeyboard,
-                                        onBlankTap: _closeAllKeyboards,
-                                        onDismissKeyboard: _closeAllKeyboards,
-                                      ),
+                              child: EditorPanelV2(
+                                key: _editorKey,
+                                onTap: _openKeyboard,
+                                onBlankTap: _closeAllKeyboards,
+                                onDismissKeyboard: _closeAllKeyboards,
+                              ),
                             ),
                           ),
                           // 教程激活时显示教程面板，否则显示模板栏+底部面板

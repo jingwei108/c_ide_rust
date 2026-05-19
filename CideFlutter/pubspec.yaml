@@ -12,9 +12,9 @@ dependencies:
     sdk: flutter
 
   # Code Editor
-  # 注意：代码中通过 (obj as dynamic).privateMember 访问了 re_editor 的私有 API
-  #（_editorKey、selectWord 等）。升级前必须人工核对内部实现是否变更。
-  re_editor: 0.8.0  # 锁定确切版本，防止运行时异常
+  # re_editor 已移除，CideEditor 为自研 Gesture Proxy 内核。
+  # re_highlight 保留用于语法高亮（原 re_editor 的 transitive dependency）。
+  re_highlight: ^0.0.3
 
   # State Management
   flutter_riverpod: ^3.3.1

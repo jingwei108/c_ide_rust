@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/frb_generated.dart';
 import 'providers/theme_provider.dart';
 import 'screens/ide_screen.dart';
-import 'screens/editor_poc_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();

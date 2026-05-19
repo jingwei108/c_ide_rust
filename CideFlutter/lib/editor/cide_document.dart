@@ -289,20 +289,6 @@ class CideDocument extends ChangeNotifier {
   }
 
   /// 从受影响的 offset 所在行开始局部重建，比全量重建更快
-  void _rebuildLineOffsetsFromOffset(int offset) {
-    final startLine = offsetToLine(offset);
-    // 删除旧索引中 startLine 之后的所有行起点
-    while (_lineStartOffsets.length > startLine + 1) {
-      _lineStartOffsets.removeLast();
-    }
-    // 从 startLine 的行起点开始重新扫描
-    final scanStart = _lineStartOffsets[startLine];
-    for (int i = scanStart; i < _text.length; i++) {
-      if (_text.codeUnitAt(i) == 0x0A) {
-        _lineStartOffsets.add(i + 1);
-      }
-    }
-  }
 
   // ---------------------------------------------------------------------------
   // Diff（用于 Proxy ↔ Document 同步）
