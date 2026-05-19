@@ -6,6 +6,8 @@ import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 import '../editor/editor.dart';
+import '../editor/autocomplete_controller.dart';
+import '../editor/autocomplete_overlay.dart';
 import '../editor/diagnostic_layer.dart';
 import '../editor/syntax_highlight_layer.dart';
 import '../providers/ide_provider.dart';
@@ -39,7 +41,9 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
   final GlobalKey<CideEditorState> _editorKey = GlobalKey();
   late final CideDocument _document;
   late final Highlight _highlight;
+  late final AutocompleteController _autocompleteController;
   OverlayEntry? _contextMenuOverlay;
+  OverlayEntry? _autocompleteOverlay;
 
   // 运行时高亮状态
   int _currentHighlightLine = 0;
@@ -56,11 +60,16 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
 
     _highlight = Highlight();
     _highlight.registerLanguage('c', langC);
+
+    _autocompleteController = AutocompleteController();
+    _autocompleteController.addListener(_onAutocompleteChanged);
   }
 
   @override
   void dispose() {
     _hideContextMenu();
+    _hideAutocomplete();
+    _autocompleteController.removeListener(_onAutocompleteChanged);
     _document.removeListener(_onDocumentChanged);
     super.dispose();
   }
@@ -72,6 +81,116 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
         ref.read(ideProvider.notifier).updateSource(_document.text);
       }
     });
+    // 触发自动补全检测
+    _updateAutocomplete();
+  }
+
+  // ---------------------------------------------------------------------------
+  // 自动补全
+  // ---------------------------------------------------------------------------
+  void _updateAutocomplete() {
+    final sel = _document.selection.base;
+    final offset = _document.positionToOffset(sel);
+    final textBefore = _document.text.substring(0, offset);
+    _autocompleteController.update(textBefore);
+  }
+
+  void _onAutocompleteChanged() {
+    if (_autocompleteController.visible) {
+      _showAutocomplete();
+    } else {
+      _hideAutocomplete();
+    }
+  }
+
+  void _showAutocomplete() {
+    _hideAutocomplete();
+    final position = _calculateCursorGlobalPosition();
+    if (position == null) return;
+
+    final isDark = ref.read(themeProvider) == ThemeMode.dark;
+
+    _autocompleteOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // 点击空白处关闭
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _hideAutocomplete,
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          // 候选列表
+          Positioned(
+            left: position.dx,
+            top: position.dy + 21.0, // 光标下方
+            child: AutocompleteOverlay(
+              controller: _autocompleteController,
+              onDismiss: _hideAutocomplete,
+              onSelected: _applyAutocomplete,
+              isDark: isDark,
+            ),
+          ),
+        ],
+      ),
+    );
+    Overlay.of(context).insert(_autocompleteOverlay!);
+  }
+
+  void _hideAutocomplete() {
+    _autocompleteOverlay?.remove();
+    _autocompleteOverlay = null;
+    _autocompleteController.hide();
+  }
+
+  void _applyAutocomplete(AutocompleteCandidate candidate) {
+    final sel = _document.selection.base;
+    final cursorOffset = _document.positionToOffset(sel);
+    final textBefore = _document.text.substring(0, cursorOffset);
+    final prefix = AutocompleteController.extractPrefix(textBefore);
+    final prefixOffset = cursorOffset - prefix.length;
+
+    _document.applyEdit(EditOp(
+      startOffset: prefixOffset,
+      oldText: prefix,
+      newText: candidate.word,
+    ));
+
+    // 移动光标到补全词后
+    final newOffset = prefixOffset + candidate.word.length;
+    final newPos = _document.offsetToPosition(newOffset);
+    _document.updateSelection(
+      DocSelection(base: newPos, extent: newPos),
+    );
+    _editorKey.currentState?.syncToProxy();
+  }
+
+  Offset? _calculateCursorGlobalPosition() {
+    final context = _editorKey.currentContext;
+    if (context == null) return null;
+    final renderBox = context.findRenderObject() as RenderBox?;
+    if (renderBox == null) return null;
+
+    final sel = _document.selection.base;
+    final line = sel.line;
+    final col = sel.col;
+    final lineHeight = 21.0;
+
+    final lineText = _document.lineText(line);
+    final safeCol = col.clamp(0, lineText.length);
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: lineText.substring(0, safeCol),
+        style: const TextStyle(fontSize: 14, height: 1.5, fontFamily: 'Consolas'),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+
+    // 编辑器内部坐标（相对于 EditableText/CustomPaint）
+    final localOffset = Offset(textPainter.width, line * lineHeight);
+    // 转换为全局坐标
+    return renderBox.localToGlobal(localOffset);
   }
 
   // ---------------------------------------------------------------------------

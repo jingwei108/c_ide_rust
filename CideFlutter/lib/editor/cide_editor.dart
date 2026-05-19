@@ -83,7 +83,7 @@ class CideEditorState extends State<CideEditor>
     if (oldWidget.document != widget.document) {
       oldWidget.document.removeListener(_onDocumentChanged);
       widget.document.addListener(_onDocumentChanged);
-      _syncToProxy();
+      syncToProxy();
     }
   }
 
@@ -242,7 +242,8 @@ class CideEditorState extends State<CideEditor>
     }
   }
 
-  void _syncToProxy() {
+  /// 将 Document 状态同步到 Proxy（用于外部直接操作 document 后刷新）
+  void syncToProxy() {
     _proxyController.value = TextEditingValue(
       text: widget.document.text,
       selection: _toTextSelection(widget.document.selection),
@@ -299,7 +300,7 @@ class CideEditorState extends State<CideEditor>
     widget.document.updateSelection(
       DocSelection(base: newPos, extent: newPos),
     );
-    _syncToProxy();
+    syncToProxy();
   }
 
   void backspace() {
@@ -329,7 +330,7 @@ class CideEditorState extends State<CideEditor>
         DocSelection(base: newPos, extent: newPos),
       );
     }
-    _syncToProxy();
+    syncToProxy();
   }
 
   void moveCursor(int delta) {
@@ -340,7 +341,7 @@ class CideEditorState extends State<CideEditor>
     widget.document.updateSelection(
       DocSelection(base: newPos, extent: newPos),
     );
-    _syncToProxy();
+    syncToProxy();
   }
 
   void undo() => widget.document.undo();
@@ -397,7 +398,7 @@ class CideEditorState extends State<CideEditor>
         extent: DocPosition(line: endLine, col: endCol),
       ),
     );
-    _syncToProxy();
+    syncToProxy();
   }
 
   /// 复制（选区 → 剪贴板）
@@ -581,6 +582,6 @@ class CideEditorState extends State<CideEditor>
     widget.document.updateSelection(
       DocSelection(base: newPos, extent: newPos),
     );
-    _syncToProxy();
+    syncToProxy();
   }
 }
