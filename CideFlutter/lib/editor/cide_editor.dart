@@ -236,7 +236,10 @@ class CideEditorState extends State<CideEditor>
 
     _syncing = false;
 
-    if (mounted) setState(() {});
+    if (mounted) {
+      setState(() {});
+      _ensureCursorVisible();
+    }
   }
 
   void _syncToProxy() {
@@ -245,6 +248,34 @@ class CideEditorState extends State<CideEditor>
       selection: _toTextSelection(widget.document.selection),
       composing: widget.document.composing,
     );
+  }
+
+  /// 确保光标在视口内可见
+  void _ensureCursorVisible() {
+    if (!_scrollController.hasClients) return;
+
+    final lineHeight = widget.style.fontSize != null
+        ? widget.style.fontSize! * 1.5
+        : 21.0;
+    final cursorLine = widget.document.selection.base.line;
+    final cursorTop = cursorLine * lineHeight;
+    final cursorBottom = cursorTop + lineHeight;
+    final viewportTop = _scrollController.offset;
+    final viewportBottom = viewportTop + _viewportSize.height;
+
+    if (cursorTop < viewportTop) {
+      _scrollController.animateTo(
+        cursorTop,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOut,
+      );
+    } else if (cursorBottom > viewportBottom) {
+      _scrollController.animateTo(
+        cursorBottom - _viewportSize.height + lineHeight,
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOut,
+      );
+    }
   }
 
   TextSelection _toTextSelection(DocSelection sel) {

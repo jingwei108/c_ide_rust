@@ -6,6 +6,7 @@ import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 import '../editor/editor.dart';
+import '../editor/diagnostic_layer.dart';
 import '../editor/syntax_highlight_layer.dart';
 import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
@@ -289,6 +290,11 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
             .toList(),
       ),
       TutorialLayer(tutorialLines: _currentTutorialLines),
+      DiagnosticLayer(
+        diagnostics: state.diagnostics
+            .map((d) => DiagnosticInfo(line: d.line, severity: d.severity))
+            .toList(),
+      ),
     ];
 
     return Container(
