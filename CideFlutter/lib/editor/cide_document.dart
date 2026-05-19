@@ -149,7 +149,8 @@ class CideDocument extends ChangeNotifier {
     _text = _text.substring(0, op.startOffset) +
         op.newText +
         _text.substring(op.startOffset + op.oldText.length);
-    _rebuildLineOffsetsFromOffset(op.startOffset);
+    // 全量重建行索引，避免增量重建在旧索引上计算 startLine 的时序 bug
+    _rebuildLineOffsets();
   }
 
   /// 应用编辑并记录 Undo 历史
@@ -229,9 +230,15 @@ class CideDocument extends ChangeNotifier {
   }
 
   DocPosition offsetToPosition(int offset) {
+    var line = offsetToLine(offset);
+    // 如果 offset 正好落在某行行首（换行符之后），把它归属到上一行末尾，
+    // 避免光标在行尾时被误判到下一行开头。
+    if (line > 0 && _lineStartOffsets[line] == offset) {
+      line -= 1;
+    }
     return DocPosition(
-      line: offsetToLine(offset),
-      col: offsetToCol(offset),
+      line: line,
+      col: offset - _lineStartOffsets[line],
     );
   }
 
@@ -244,6 +251,7 @@ class CideDocument extends ChangeNotifier {
     final lineEnd = pos.line + 1 < _lineStartOffsets.length
         ? _lineStartOffsets[pos.line + 1] - 1
         : _text.length;
+    // clamp 到 [lineStart, lineEnd]，允许 col 越界时回到行尾
     return (lineStart + pos.col).clamp(lineStart, lineEnd);
   }
 

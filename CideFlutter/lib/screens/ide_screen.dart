@@ -1,3 +1,6 @@
+import 'package:flutter/foundation.dart';
+import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -131,9 +134,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   void _insertOrbOverlay() {
     if (!mounted) return;
     final overlay = Overlay.of(context);
-    _orbOverlayEntry = OverlayEntry(
-      builder: (context) => _buildOrbOverlay(),
-    );
+    _orbOverlayEntry = OverlayEntry(builder: (context) => _buildOrbOverlay());
     overlay.insert(_orbOverlayEntry!);
   }
 
@@ -173,46 +174,58 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
     final isSystemKeyboardVisible = viewInsetsBottom > 50;
     final isCustomKeyboardVisible = _showKeyboard && !_isSystemKeyboardActive;
-    final isAnyKeyboardVisible = isCustomKeyboardVisible || isSystemKeyboardVisible;
+    final isAnyKeyboardVisible =
+        isCustomKeyboardVisible || isSystemKeyboardVisible;
     final target = isAnyKeyboardVisible ? 0.0 : 1.0;
     if ((_barsAnimationController.value - target).abs() > 0.01) {
       _barsAnimationController.animateTo(target);
     }
   }
 
-  /// 显示自定义键盘
+  /// 打开键盘（根据当前模式显示对应键盘）
   void _openKeyboard() {
-    if (!_showKeyboard) {
-      setState(() => _showKeyboard = true);
-    }
-  }
-
-  /// 隐藏自定义键盘
-  void _closeKeyboard() {
-    if (_showKeyboard) {
-      setState(() => _showKeyboard = false);
-    }
-  }
-
-  /// 关闭所有键盘（自定义键盘 + 系统键盘）
-  void _closeAllKeyboards() {
-    _closeKeyboard();
+    debugPrint('[IdeScreen] _openKeyboard: system=$_isSystemKeyboardActive');
+    if (_showKeyboard) return;
+    setState(() => _showKeyboard = true);
     if (_isSystemKeyboardActive) {
-      _showCustomKeyboard();
+      _editor?.showSystemKeyboard();
+      _editor?.setReadOnly(false);
     }
   }
 
-  /// 切换到系统键盘（用于中文输入）
-  void _showSystemKeyboard() {
-    setState(() => _isSystemKeyboardActive = true);
-    _editor?.setReadOnly(false);
-    SystemChannels.textInput.invokeMethod('TextInput.show');
+  /// 隐藏键盘（不改变键盘模式）
+  void _closeKeyboard() {
+    debugPrint('[IdeScreen] _closeKeyboard');
+    if (!_showKeyboard) return;
+    setState(() => _showKeyboard = false);
+    if (_isSystemKeyboardActive) {
+      SystemChannels.textInput.invokeMethod('TextInput.hide');
+    }
   }
 
-  /// 切换回自定义键盘（英文/代码输入模式）
+  /// 关闭所有键盘（隐藏即可，绝不抢夺模式）
+  void _closeAllKeyboards() {
+    debugPrint('[IdeScreen] _closeAllKeyboards');
+    _closeKeyboard();
+  }
+
+  /// 切换到系统键盘（用于中文输入）——唯一入口
+  void _showSystemKeyboard() {
+    debugPrint('[IdeScreen] _showSystemKeyboard');
+    setState(() => _isSystemKeyboardActive = true);
+    // 先解除 readOnly，确保 _attachInputConnection 的 _readOnly 拦截不会生效
+    _editor?.setReadOnly(false);
+    _editor?.showSystemKeyboard();
+  }
+
+  /// 切换回自定义键盘（英文/代码输入模式）——唯一入口
   void _showCustomKeyboard() {
+    debugPrint('[IdeScreen] _showCustomKeyboard');
     SystemChannels.textInput.invokeMethod('TextInput.hide');
     setState(() => _isSystemKeyboardActive = false);
+    // 先断开 input connection，再设 readOnly，避免 EditableText 在 readOnly
+    // 切换过程中残留 system IME 焦点。
+    _editor?.showCustomKeyboard();
     _editor?.setReadOnly(true);
   }
 
@@ -220,44 +233,46 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     final controller = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('新建文件'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: '输入文件名（如 utils.c）',
-            border: OutlineInputBorder(),
+      builder:
+          (context) => AlertDialog(
+            title: const Text('新建文件'),
+            content: TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: '输入文件名（如 utils.c）',
+                border: OutlineInputBorder(),
+              ),
+              onSubmitted: (value) {
+                if (value.isNotEmpty) {
+                  notifier.addFile(value);
+                }
+                Navigator.of(context).pop();
+              },
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text('取消'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final value = controller.text.trim();
+                  if (value.isNotEmpty) {
+                    notifier.addFile(value);
+                  }
+                  Navigator.of(context).pop();
+                },
+                child: const Text('确定'),
+              ),
+            ],
           ),
-          onSubmitted: (value) {
-            if (value.isNotEmpty) {
-              notifier.addFile(value);
-            }
-            Navigator.of(context).pop();
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () {
-              final value = controller.text.trim();
-              if (value.isNotEmpty) {
-                notifier.addFile(value);
-              }
-              Navigator.of(context).pop();
-            },
-            child: const Text('确定'),
-          ),
-        ],
-      ),
     );
   }
 
   void _insertText(String text) => _editor?.insertText(text);
-  void _insertPair(String open, String close) => _editor?.insertPair(open, close);
+  void _insertPair(String open, String close) =>
+      _editor?.insertPair(open, close);
   void _undo() => _editor?.undo();
   void _redo() => _editor?.redo();
   void _moveCursor(int offset) => _editor?.moveCursor(offset);
@@ -315,7 +330,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     final notifier = ref.read(ideProvider.notifier);
     final isDark = ref.watch(themeProvider) == ThemeMode.dark;
 
-    final scaffoldBg = isDark ? const Color(0xff121212) : const Color(0xfff5f5f5);
+    final scaffoldBg =
+        isDark ? const Color(0xff121212) : const Color(0xfff5f5f5);
     final showCustomKeyboard = _showKeyboard && !_isSystemKeyboardActive;
 
     // 监听错误信息并弹出提示
@@ -338,6 +354,11 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     // 检测系统键盘真实可见性（仅读取，副作用已移至 didChangeDependencies）
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
     final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
+    // 桌面端物理键盘不会更新 viewInsets，只要处于系统键盘模式就显示切换按钮
+    final isDesktop =
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final showSystemKeyboardToggle =
+        _isSystemKeyboardActive && (isDesktop || isSystemKeyboardReallyVisible);
 
     // 同步上下栏动画
     _syncBarsAnimation();
@@ -345,14 +366,18 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     final shortcuts = <ShortcutActivator, Intent>{
       const SingleActivator(LogicalKeyboardKey.f5): const _RunIntent(),
       const SingleActivator(LogicalKeyboardKey.f10): const _StepIntent(),
-      const SingleActivator(LogicalKeyboardKey.f9): const _ToggleBreakpointIntent(),
-      const SingleActivator(LogicalKeyboardKey.f5, shift: true): const _StopIntent(),
+      const SingleActivator(LogicalKeyboardKey.f9):
+          const _ToggleBreakpointIntent(),
+      const SingleActivator(LogicalKeyboardKey.f5, shift: true):
+          const _StopIntent(),
     };
 
     final actions = <Type, Action<Intent>>{
       _RunIntent: CallbackAction<_RunIntent>(onInvoke: (_) => _handleRun()),
       _StepIntent: CallbackAction<_StepIntent>(onInvoke: (_) => _handleStep()),
-      _ToggleBreakpointIntent: CallbackAction<_ToggleBreakpointIntent>(onInvoke: (_) => _handleToggleBreakpoint()),
+      _ToggleBreakpointIntent: CallbackAction<_ToggleBreakpointIntent>(
+        onInvoke: (_) => _handleToggleBreakpoint(),
+      ),
       _StopIntent: CallbackAction<_StopIntent>(onInvoke: (_) => _handleStop()),
     };
 
@@ -364,131 +389,145 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
           autofocus: true,
           child: Scaffold(
             resizeToAvoidBottomInset: false,
-      backgroundColor: scaffoldBg,
-      body: Stack(
-        children: [
-          SafeArea(
-            child: Stack(
+            backgroundColor: scaffoldBg,
+            body: Stack(
               children: [
-                Column(
-                  children: [
-                    // 顶部工具栏：键盘弹出时平滑收起
-                    SizeTransition(
-                      sizeFactor: _barsAnimation,
-                      axisAlignment: -1,
-                      child: _buildToolbar(state, notifier, isDark),
-                    ),
-                    _buildExecutionControl(state, notifier),
-                    FileTabBar(
-                      files: state.files,
-                      currentFile: state.currentFile,
-                      onSwitch: (filename) => notifier.switchFile(filename),
-                      onClose: (filename) => notifier.removeFile(filename),
-                      onAdd: () => _showAddFileDialog(context, notifier),
-                    ),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: _useEditorV2
-                            ? EditorPanelV2(
-                                key: _editorKeyV2,
-                                onTap: _openKeyboard,
-                                onBlankTap: _closeAllKeyboards,
-                                onDismissKeyboard: _closeAllKeyboards,
-                              )
-                            : EditorPanel(
-                                key: _editorKeyV1,
-                                onTap: _openKeyboard,
-                                onBlankTap: _closeAllKeyboards,
-                                onDismissKeyboard: _closeAllKeyboards,
+                SafeArea(
+                  child: Stack(
+                    children: [
+                      Column(
+                        children: [
+                          // 顶部工具栏：键盘弹出时平滑收起
+                          SizeTransition(
+                            sizeFactor: _barsAnimation,
+                            axisAlignment: -1,
+                            child: _buildToolbar(state, notifier, isDark),
+                          ),
+                          _buildExecutionControl(state, notifier),
+                          FileTabBar(
+                            files: state.files,
+                            currentFile: state.currentFile,
+                            onSwitch:
+                                (filename) => notifier.switchFile(filename),
+                            onClose:
+                                (filename) => notifier.removeFile(filename),
+                            onAdd: () => _showAddFileDialog(context, notifier),
+                          ),
+                          Expanded(
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
                               ),
+                              child:
+                                  _useEditorV2
+                                      ? EditorPanelV2(
+                                        key: _editorKeyV2,
+                                        onTap: _openKeyboard,
+                                        onBlankTap: _closeAllKeyboards,
+                                        onDismissKeyboard: _closeAllKeyboards,
+                                      )
+                                      : EditorPanel(
+                                        key: _editorKeyV1,
+                                        onTap: _openKeyboard,
+                                        onBlankTap: _closeAllKeyboards,
+                                        onDismissKeyboard: _closeAllKeyboards,
+                                      ),
+                            ),
+                          ),
+                          // 教程激活时显示教程面板，否则显示模板栏+底部面板
+                          if (state.activeTutorial != null)
+                            TemplateTutorialPanel(
+                              templateName: state.activeTutorial!.templateKey,
+                              currentStep: state.activeTutorial!.stepIndex,
+                              totalSteps: state.activeTutorial!.steps.length,
+                              step:
+                                  state.activeTutorial!.steps[state
+                                      .activeTutorial!
+                                      .stepIndex],
+                              isDark: isDark,
+                              onNext: () {
+                                notifier.nextTutorialStep();
+                                _scrollToTutorialFocus();
+                              },
+                              onPrev: () {
+                                notifier.prevTutorialStep();
+                                _scrollToTutorialFocus();
+                              },
+                              onSkip: notifier.skipTutorial,
+                              onRun: () => notifier.completeTutorial(),
+                            )
+                          else ...[
+                            // 模板栏：键盘弹出时平滑收起
+                            SizeTransition(
+                              sizeFactor: _barsAnimation,
+                              axisAlignment: 1,
+                              child: _buildTemplateBar(state, notifier),
+                            ),
+                            // 底部面板：键盘弹出时平滑收起
+                            SizeTransition(
+                              sizeFactor: _barsAnimation,
+                              axisAlignment: 1,
+                              child: _buildBottomPanel(state, notifier, isDark),
+                            ),
+                          ],
+                        ],
                       ),
-                    ),
-                    // 教程激活时显示教程面板，否则显示模板栏+底部面板
-                    if (state.activeTutorial != null)
-                      TemplateTutorialPanel(
-                        templateName: state.activeTutorial!.templateKey,
-                        currentStep: state.activeTutorial!.stepIndex,
-                        totalSteps: state.activeTutorial!.steps.length,
-                        step: state.activeTutorial!.steps[state.activeTutorial!.stepIndex],
-                        isDark: isDark,
-                        onNext: () {
-                          notifier.nextTutorialStep();
-                          _scrollToTutorialFocus();
-                        },
-                        onPrev: () {
-                          notifier.prevTutorialStep();
-                          _scrollToTutorialFocus();
-                        },
-                        onSkip: notifier.skipTutorial,
-                        onRun: () => notifier.completeTutorial(),
-                      )
-                    else ...[
-                      // 模板栏：键盘弹出时平滑收起
-                      SizeTransition(
-                        sizeFactor: _barsAnimation,
-                        axisAlignment: 1,
-                        child: _buildTemplateBar(state, notifier),
-                      ),
-                      // 底部面板：键盘弹出时平滑收起
-                      SizeTransition(
-                        sizeFactor: _barsAnimation,
-                        axisAlignment: 1,
-                        child: _buildBottomPanel(state, notifier, isDark),
-                      ),
+                      // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
+                      if (showCustomKeyboard)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          child: FocusScope(
+                            canRequestFocus: false,
+                            child: CustomKeyboard(
+                              onInsertText: _insertText,
+                              onInsertPair: _insertPair,
+                              onMoveCursor: _moveCursor,
+                              onBackspace: _backspace,
+                              onEnter: _insertNewline,
+                              onTab: () => _insertText('    '),
+                              onUndo: _undo,
+                              onRedo: _redo,
+                              onDone: _closeKeyboard,
+                              onToggleSystemKeyboard: _showSystemKeyboard,
+                              isSystemKeyboardActive: false,
+                            ),
+                          ),
+                        ),
+                      // 系统键盘激活时，提供悬浮按钮切回自定义键盘
+                      if (showSystemKeyboardToggle)
+                        Positioned(
+                          right: 16,
+                          bottom: viewInsetsBottom + 16,
+                          child: FloatingActionButton(
+                            mini: true,
+                            backgroundColor: Colors.blueAccent,
+                            onPressed: _showCustomKeyboard,
+                            child: const Text(
+                              '英',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (state.showIntro)
+                        IntroOverlay(
+                          isDark: isDark,
+                          onDone: notifier.hideIntro,
+                        ),
                     ],
-                  ],
+                  ),
                 ),
-                // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
-                if (showCustomKeyboard)
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: FocusScope(
-                      canRequestFocus: false,
-                      child: CustomKeyboard(
-                        onInsertText: _insertText,
-                        onInsertPair: _insertPair,
-                        onMoveCursor: _moveCursor,
-                        onBackspace: _backspace,
-                        onEnter: _insertNewline,
-                        onTab: () => _insertText('    '),
-                        onUndo: _undo,
-                        onRedo: _redo,
-                        onDone: _closeKeyboard,
-                        onToggleSystemKeyboard: _showSystemKeyboard,
-                        isSystemKeyboardActive: false,
-                      ),
-                    ),
-                  ),
-                // 系统键盘激活且真正可见时，提供悬浮按钮切回自定义键盘
-                if (_isSystemKeyboardActive && isSystemKeyboardReallyVisible)
-                  Positioned(
-                    right: 16,
-                    bottom: viewInsetsBottom + 16,
-                    child: FloatingActionButton(
-                      mini: true,
-                      backgroundColor: Colors.blueAccent,
-                      onPressed: _showCustomKeyboard,
-                      child: const Text('英', style: TextStyle(fontSize: 14, color: Colors.white)),
-                    ),
-                  ),
-                if (state.showIntro)
-                  IntroOverlay(
-                    isDark: isDark,
-                    onDone: notifier.hideIntro,
-                  ),
+                // 悬浮球通过 OverlayEntry 渲染，不放在 body Stack 中
               ],
             ),
           ),
-          // 悬浮球通过 OverlayEntry 渲染，不放在 body Stack 中
-        ],
+        ),
       ),
-    ),
-  ),
-),
-);
+    );
   }
 
   // ========== 工具栏 ==========
@@ -505,9 +544,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   // ========== 执行控制面板 ==========
 
   Widget _buildExecutionControl(IdeState state, IdeNotifier notifier) {
-    return ExecutionControlPanel(
-      onRun: () => notifier.compile(),
-    );
+    return ExecutionControlPanel(onRun: () => notifier.compile());
   }
 
   // ========== 模板快捷栏 ==========
@@ -531,7 +568,9 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
         decoration: BoxDecoration(
           color: panelBg,
           border: Border(
-            top: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.2)),
+            top: BorderSide(
+              color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
+            ),
           ),
         ),
         child: Column(
@@ -554,20 +593,29 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                         badge: _getBadgeForPanel(panelId, state),
                         onTap: () => notifier.selectBottomTab(index),
 
-                        data: PanelDragData(panelId: panelId, fromLocation: PanelLocation.bottom, fromIndex: index),
+                        data: PanelDragData(
+                          panelId: panelId,
+                          fromLocation: PanelLocation.bottom,
+                          fromIndex: index,
+                        ),
                         onAccept: (dragData) {
                           if (dragData.fromLocation == PanelLocation.bottom) {
                             // 同区：底部 Tab 之间交换位置
-                            notifier.swapBottomPanels(index, dragData.fromIndex);
+                            notifier.swapBottomPanels(
+                              index,
+                              dragData.fromIndex,
+                            );
                           } else {
                             // 跨区域：悬浮球 → 底部，与当前位置交换
-                            notifier.swapFloatingWithBottomItem(dragData.panelId, index);
+                            notifier.swapFloatingWithBottomItem(
+                              dragData.panelId,
+                              index,
+                            );
                           }
                         },
                       ),
                     );
                   }),
-
                 ],
               ),
             ),
@@ -596,19 +644,33 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   String? _getBadgeForPanel(String panelId, IdeState state) {
     switch (panelId) {
       case 'diagnostics':
-        return state.diagnostics.isNotEmpty ? '${state.diagnostics.length}' : null;
+        return state.diagnostics.isNotEmpty
+            ? '${state.diagnostics.length}'
+            : null;
       case 'algorithm':
-        return state.algorithmMatches.isNotEmpty ? '${state.algorithmMatches.length}' : null;
+        return state.algorithmMatches.isNotEmpty
+            ? '${state.algorithmMatches.length}'
+            : null;
       case 'breakpoints':
-        return state.breakpoints.isNotEmpty ? '${state.breakpoints.length}' : null;
+        return state.breakpoints.isNotEmpty
+            ? '${state.breakpoints.length}'
+            : null;
       default:
         return null;
     }
   }
 
-  Widget _buildBottomTabContent(IdeState state, IdeNotifier notifier, bool isDark) {
+  Widget _buildBottomTabContent(
+    IdeState state,
+    IdeNotifier notifier,
+    bool isDark,
+  ) {
     if (state.bottomSlots.isEmpty) return const SizedBox.shrink();
-    final panelId = state.bottomSlots[state.bottomActiveIndex.clamp(0, state.bottomSlots.length - 1)];
+    final panelId =
+        state.bottomSlots[state.bottomActiveIndex.clamp(
+          0,
+          state.bottomSlots.length - 1,
+        )];
     switch (panelId) {
       case 'output':
         return _buildOutputTab(state, notifier, isDark);
@@ -675,7 +737,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
           onSwapWithFloatingItem: (dragData, targetIndex) {
             if (dragData.fromLocation == PanelLocation.bottom) {
               // 底部 → 悬浮球具体项，交换
-              notifier.swapBottomWithFloatingItem(dragData.panelId, targetIndex);
+              notifier.swapBottomWithFloatingItem(
+                dragData.panelId,
+                targetIndex,
+              );
             }
           },
         );
@@ -703,7 +768,12 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     );
   }
 
-  Widget _buildPanelContentById(String panelId, IdeState state, IdeNotifier notifier, bool isDark) {
+  Widget _buildPanelContentById(
+    String panelId,
+    IdeState state,
+    IdeNotifier notifier,
+    bool isDark,
+  ) {
     switch (panelId) {
       case 'output':
         return _buildOutputTab(state, notifier, isDark);
@@ -749,7 +819,11 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     );
   }
 
-  Widget _buildDiagnosticsTab(IdeState state, IdeNotifier notifier, bool isDark) {
+  Widget _buildDiagnosticsTab(
+    IdeState state,
+    IdeNotifier notifier,
+    bool isDark,
+  ) {
     return DiagnosticsTab(
       state: state,
       notifier: notifier,
@@ -808,7 +882,11 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   Widget _buildBreakpointsTab(IdeState state, bool isDark) {
-    return BreakpointsTab(state: state, isDark: isDark, onScrollToLine: _scrollToLine);
+    return BreakpointsTab(
+      state: state,
+      isDark: isDark,
+      onScrollToLine: _scrollToLine,
+    );
   }
 }
 

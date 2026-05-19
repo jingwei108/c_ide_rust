@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'cide_document.dart';
@@ -53,6 +54,9 @@ class CideEditorState extends State<CideEditor>
 
   // 同步锁（防止双向循环）
   bool _syncing = false;
+
+  // 标记当前是否正在处理 Proxy → Document 的同步（IME 来源）
+  bool _proxyUpdateInProgress = false;
 
   // 视口尺寸（用于 CustomPaint 裁剪）
   Size _viewportSize = Size.zero;
@@ -115,7 +119,11 @@ class CideEditorState extends State<CideEditor>
   }
 
   void _attachInputConnection() {
-    if (_inputConnection != null || _readOnly) return;
+    if (_inputConnection != null || _readOnly) {
+      debugPrint('[CideEditor] _attachInputConnection skipped: conn=$_inputConnection readOnly=$_readOnly');
+      return;
+    }
+    debugPrint('[CideEditor] _attachInputConnection: proxySel=${_proxyController.selection}');
     _inputConnection = TextInput.attach(
       this,
       const TextInputConfiguration(
@@ -131,6 +139,7 @@ class CideEditorState extends State<CideEditor>
   }
 
   void _detachInputConnection() {
+    debugPrint('[CideEditor] _detachInputConnection');
     _inputConnection?.close();
     _inputConnection = null;
   }
@@ -143,6 +152,7 @@ class CideEditorState extends State<CideEditor>
 
   /// 切换到系统键盘模式（桌面/平板物理键盘）
   void showSystemKeyboard() {
+    debugPrint('[CideEditor] showSystemKeyboard: readOnly=$_readOnly focus=${_focusNode.hasFocus}');
     if (_isSystemKeyboardActive) return;
     _isSystemKeyboardActive = true;
     widget.document.clearUndoStack();
@@ -165,6 +175,7 @@ class CideEditorState extends State<CideEditor>
 
   /// 切换到自绘键盘模式（移动端）
   void showCustomKeyboard() {
+    debugPrint('[CideEditor] showCustomKeyboard: readOnly=$_readOnly focus=${_focusNode.hasFocus}');
     if (!_isSystemKeyboardActive) return;
     _isSystemKeyboardActive = false;
     _detachInputConnection();
@@ -188,11 +199,19 @@ class CideEditorState extends State<CideEditor>
   // 双向同步：Proxy → Document
   // ---------------------------------------------------------------------------
   void _onProxyChanged() {
-    if (_syncing) return;
+    if (_syncing) {
+      debugPrint('[CideEditor] _onProxyChanged -> skipped (_syncing=true)');
+      return;
+    }
     _syncing = true;
+    _proxyUpdateInProgress = true;
 
     final proxy = _proxyController.value;
     final oldText = widget.document.text;
+
+    debugPrint(
+      '[CideEditor] _onProxyChanged: oldDocLen=${oldText.length} proxyText="${proxy.text}" proxySel=${proxy.selection}',
+    );
 
     final newSelection = DocSelection(
       base: widget.document.offsetToPosition(proxy.selection.baseOffset),
@@ -203,36 +222,61 @@ class CideEditorState extends State<CideEditor>
     if (proxy.text != oldText) {
       final diff = CideDocument.computeDiff(oldText, proxy.text);
       if (diff != null) {
+        debugPrint(
+          '[CideEditor]   -> applyEditSync: start=${diff.startOffset} old="${diff.oldText}" new="${diff.newText}"',
+        );
         widget.document.applyEditSync(diff, newSelection, proxy.composing);
       } else {
+        debugPrint('[CideEditor]   -> setTextSync: "${proxy.text}"');
         widget.document.setTextSync(proxy.text, newSelection, proxy.composing);
       }
     } else {
       // 仅选区 / composing 变化
+      debugPrint('[CideEditor]   -> text same, update selection/composing');
       widget.document.updateSelection(newSelection);
       widget.document.updateComposing(proxy.composing);
     }
 
+    debugPrint(
+      '[CideEditor]   -> doc after: text="${widget.document.text}" sel=${widget.document.selection}',
+    );
+
     _syncing = false;
+    _proxyUpdateInProgress = false;
+
+    // IME 来源的变更需要手动触发重绘与光标可见，因为 document notify
+    // 触发的 _onDocumentChanged 会被 _syncing 锁挡掉。
+    if (mounted) {
+      setState(() {});
+      _ensureCursorVisible();
+    }
   }
 
   // ---------------------------------------------------------------------------
   // 双向同步：Document → Proxy
   // ---------------------------------------------------------------------------
   void _onDocumentChanged() {
-    if (_syncing) return;
+    if (_syncing) {
+      debugPrint('[CideEditor] _onDocumentChanged -> skipped (_syncing=true)');
+      return;
+    }
     _syncing = true;
 
-    _proxyController.value = TextEditingValue(
-      text: widget.document.text,
-      selection: _toTextSelection(widget.document.selection),
-      composing: widget.document.composing,
-    );
-
-    // 注意：不要在这里调用 _inputConnection?.setEditingState()。
-    // IME 发起的编辑（updateEditingValue）不需要回传，否则会造成
-    // 反馈循环，导致候选词中断、光标跳回左上角。
-    // 自定义键盘操作后若需同步 IME，在对应 API 中单独处理。
+    // 若当前是 IME 来源的同步（Proxy → Document），不需要回传 Proxy，
+    // 否则会把 composing 中间态回写给 IME，造成候选词中断或文本残留。
+    // 另外，系统键盘模式下也不回传 selection，避免和 IME 争夺光标位置。
+    if (!_proxyUpdateInProgress && !_isSystemKeyboardActive) {
+      debugPrint(
+        '[CideEditor] _onDocumentChanged: doc->proxy text="${widget.document.text}"',
+      );
+      _proxyController.value = TextEditingValue(
+        text: widget.document.text,
+        selection: _toTextSelection(widget.document.selection),
+        composing: widget.document.composing,
+      );
+    } else {
+      debugPrint('[CideEditor] _onDocumentChanged: skipped (proxyUpdateInProgress=$_proxyUpdateInProgress system=$_isSystemKeyboardActive)');
+    }
 
     _syncing = false;
 
@@ -427,7 +471,13 @@ class CideEditorState extends State<CideEditor>
 
   @override
   void updateEditingValue(TextEditingValue value) {
-    if (_syncing) return;
+    debugPrint(
+      '[CideEditor] IME update: text="${value.text}" sel=${value.selection} composing=${value.composing}',
+    );
+    if (_syncing) {
+      debugPrint('[CideEditor]   -> skipped (_syncing=true)');
+      return;
+    }
     _proxyController.value = value;
   }
 

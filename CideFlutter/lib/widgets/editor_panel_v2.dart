@@ -50,6 +50,9 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
   List<rust_unified.AccessedVar> _currentAccessedVars = [];
   Set<int> _currentTutorialLines = {};
 
+  // 标记 document 是否刚被本地编辑（IME / 自绘键盘），用于屏蔽 build 中的外部 source 回写
+  bool _documentDirty = false;
+
   @override
   void initState() {
     super.initState();
@@ -75,8 +78,10 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
   }
 
   void _onDocumentChanged() {
+    _documentDirty = true;
     // 同步到 ideProvider（延迟，避免 widget tree building 阶段修改 provider）
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _documentDirty = false;
       if (mounted) {
         ref.read(ideProvider.notifier).updateSource(_document.text);
       }
@@ -221,6 +226,10 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
 
   void setReadOnly(bool value) => _editorKey.currentState?.setReadOnly(value);
 
+  void showSystemKeyboard() => _editorKey.currentState?.showSystemKeyboard();
+
+  void showCustomKeyboard() => _editorKey.currentState?.showCustomKeyboard();
+
   void backspace() => _editorKey.currentState?.backspace();
 
   void insertNewline() => _editorKey.currentState?.insertNewline();
@@ -343,7 +352,9 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     final unifiedState = ref.watch(unifiedProvider);
 
     // 同步外部 source 变更（如文件切换、修复应用）
-    if (_document.text != state.source) {
+    // 当 document 正被本地编辑时（IME / 自绘键盘），禁止把滞后的 state.source 回写，
+    // 否则会和输入发生 race condition，导致文本错乱或光标跳回。
+    if (!_documentDirty && _document.text != state.source) {
       _document.setText(state.source);
     }
 
@@ -512,7 +523,10 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
 
     final lineHeight = 21.0;
     // 从 CideEditorState 获取滚动偏移，实现 Gutter 与编辑器视觉同步
-    final scrollOffset = _editorKey.currentState?.scrollController.offset ?? 0.0;
+    final scrollController = _editorKey.currentState?.scrollController;
+    final scrollOffset = (scrollController != null && scrollController.hasClients)
+        ? scrollController.offset
+        : 0.0;
 
     // 热力图数据
     final heatmap = unifiedState.heatmap;

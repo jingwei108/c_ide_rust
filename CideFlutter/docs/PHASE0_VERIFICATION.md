@@ -1,7 +1,7 @@
 # Phase 0 POC 验证报告
 
 > 起始 commit: `8f403c2`  
-> 完成 commit: `TBD`  
+> 完成 commit: `5661209`  
 > 验证目标：确认 Gesture Proxy 架构的核心假设成立，进入 Phase 1 集成。
 
 ---
@@ -58,6 +58,56 @@
 - **修复**：`AndroidManifest.xml` 中 `android:name=".MainActivity"` → `android:name="com.example.cide.MainActivity"`。
 - **文件**：`android/app/src/main/AndroidManifest.xml`
 
+### P5 — Gutter 取 `scrollController.offset` 时 ScrollController 尚未 attach
+
+- **现象**：进入 IDE 初始界面直接红屏崩溃，assert `'positions.isNotEmpty': ScrollController not attached to any scroll views`。
+- **根因**：`_buildGutter` 在首次 `build` 时直接访问 `_editorKey.currentState?.scrollController.offset`，此时 `SingleChildScrollView` 尚未完成 attach，`hasClients == false`。
+- **修复**：访问 `offset` 前增加 `scrollController.hasClients` 保护，未 attach 时回退为 `0.0`。
+- **文件**：`lib/widgets/editor_panel_v2.dart`
+
+### P6 — 系统键盘模式切换后 TextInputConnection 未建立
+
+- **现象**：点击「中/英」切换到系统键盘后无法输入；必须重新点击编辑器才能恢复。
+- **根因**：`IdeScreen._showSystemKeyboard()` 只调用 `SystemChannels.textInput.invokeMethod('TextInput.show')`，但底层 `CideEditorState` 的 `_isSystemKeyboardActive` 仍为 `false`，`_attachInputConnection()` 永远不会执行；`TextInputConnection` 未建立。
+- **修复**：
+  1. `EditorPanelV2State` 暴露 `showSystemKeyboard()` / `showCustomKeyboard()` 公共 API。
+  2. `IdeScreen` 在切换键盘时调用 `_editor?.showSystemKeyboard()` / `_editor?.showCustomKeyboard()`，由 `CideEditorState` 内部完成 `_attachInputConnection()` / `_detachInputConnection()`。
+- **文件**：`lib/widgets/editor_panel_v2.dart`, `lib/screens/ide_screen.dart`
+
+### P7 — 关闭键盘时系统键盘模式被自动抢夺回自绘键盘
+
+- **现象**：处于系统键盘模式时，点击空白处关闭键盘或上下滑动收起键盘，自动跳回自绘键盘；系统键盘状态无法保持。
+- **根因**：`_closeAllKeyboards()` 中 `if (_isSystemKeyboardActive) { _showCustomKeyboard(); }` 把关闭键盘操作变成了切换键盘模式。
+- **修复**：
+  1. `_closeAllKeyboards()` 只隐藏键盘，不改变 `_isSystemKeyboardActive` 模式。
+  2. `_openKeyboard()` 根据当前模式恢复对应键盘（系统键盘模式时重新 `showSystemKeyboard()`）。
+  3. 只有显式的「中/英」/「英」按钮才能切换模式。
+- **文件**：`lib/screens/ide_screen.dart`
+
+### P8 — 中文输入时 composing 中间态被 `state.source` 回写覆盖，导致乱码累积
+
+- **现象**：使用系统键盘输入中文，候选词上屏后拼音残留（如 `chang'wen`）与最终汉字混合，出现 `chang'wchang'wenchang...` 式乱码；光标随机跳回文档开头。
+- **根因**：`EditorPanelV2._onDocumentChanged` 使用 `addPostFrameCallback` 延迟更新 `ideProvider.state.source`；在此期间 IME 继续输入，`_document.text` 已更新为新值，但 provider 仍持有旧值；下一帧 `build` 中 `_document.setText(state.source)` 把 document **回滚**到旧值，proxy 与 IME 状态错乱，diff 计算崩坏。
+- **修复**：`EditorPanelV2State` 新增 `_documentDirty` 标志；本地编辑期间（IME / 自绘键盘输入）`build` 中禁止把滞后的 `state.source` 回写到 `_document`；post frame callback 重置标志后才允许外部 source 同步。
+- **文件**：`lib/widgets/editor_panel_v2.dart`
+
+### P9 — 行尾输入时光标在第四行末尾与第五行开头之间随机跳动
+
+- **现象**：在 `printf("Hello, Cide!\n");` 行尾输入中文或英文时，`SelectionLayer` 绘制的光标随机出现在当前行末尾或下一行开头（如第四行末 ↔ 第五行首来回跳动）。
+- **根因**：`CideDocument._apply` 使用 `_rebuildLineOffsetsFromOffset` 增量重建行首索引。该算法先用**旧的** `_lineStartOffsets` 计算 `startLine`，当新插入文本使当前行变长后，`offsetToLine` 把 `startOffset` 误判到下一行；截断点错误导致重建出来的 `_lineStartOffsets` 顺序被破坏（出现后面的值比前面还小）。后续 `offsetToLine` 的 binary search 在乱序数组上返回随机行号，`DocPosition` 行号错误，光标位置随之乱跳。
+- **修复**：
+  1. `_apply` 中放弃增量重建，改为调用 `_rebuildLineOffsets()` 全量重建。对于通常几十到几百行的 C 代码，O(n) 扫描性能完全可接受。
+  2. `offsetToPosition` 增加边界处理：当 `offset` 正好等于某行行首时，归属到**上一行末尾**，避免光标在行尾被误判到下一行开头。
+  3. 系统键盘模式下 `_onDocumentChanged` 不再回传 `selection` 给 proxy，防止 V2 和 IME 来回争夺光标位置。
+- **文件**：`lib/editor/cide_document.dart`, `lib/editor/cide_editor.dart`
+
+### P10 — Windows 桌面端系统键盘状态下不显示「英」切换按钮
+
+- **现象**：在 Windows 桌面端切换到系统键盘后，屏幕右下角没有出现「英」悬浮按钮，无法切回自绘键盘。
+- **根因**：显示「英」按钮的条件包含 `isSystemKeyboardReallyVisible = viewInsetsBottom > 50`。Windows 桌面端使用物理键盘时 `MediaQuery.viewInsets` 不会变化，始终为 `false`，导致按钮被隐藏。
+- **修复**：桌面端（`Platform.isWindows || Platform.isMacOS || Platform.isLinux`）只要 `_isSystemKeyboardActive == true` 就直接显示切换按钮，不依赖 `viewInsets`；移动端仍保留 `viewInsets` 判断，避免系统键盘收起后按钮悬浮遮挡内容。
+- **文件**：`lib/screens/ide_screen.dart`
+
 ---
 
 ## 架构决策确认
@@ -77,7 +127,7 @@
 1. ✅ V1 ~ V4 全部通过（核心架构假设成立）。
 2. ✅ V5 通过，500 行滚动流畅，桌面端 ~160 FPS / 移动端 60 FPS。
 3. ✅ V6 通过，同步逻辑正确，无丢字符。
-4. ✅ P0 ~ P4 已修复。
+4. ✅ P0 ~ P9 已修复。
 
 ---
 
