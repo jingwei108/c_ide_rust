@@ -65,7 +65,7 @@ class _StopIntent extends Intent {
 class _IdeScreenState extends ConsumerState<IdeScreen>
     with SingleTickerProviderStateMixin {
   /// Feature flag：切换编辑器内核（false = re_editor, true = CideEditor）
-  static const bool _useEditorV2 = false;
+  static const bool _useEditorV2 = true;
 
   final _editorKeyV1 = GlobalKey<EditorPanelState>();
   final _editorKeyV2 = GlobalKey<EditorPanelV2State>();
