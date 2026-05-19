@@ -6,10 +6,6 @@ import 'package:re_highlight/re_highlight.dart';
 import 'package:re_highlight/styles/atom-one-dark.dart';
 import 'package:re_highlight/styles/atom-one-light.dart';
 import '../editor/editor.dart';
-import '../editor/autocomplete_controller.dart';
-import '../editor/autocomplete_overlay.dart';
-import '../editor/diagnostic_layer.dart';
-import '../editor/syntax_highlight_layer.dart';
 import '../providers/ide_provider.dart';
 import '../providers/theme_provider.dart';
 import '../providers/unified_provider.dart';
@@ -421,9 +417,22 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
       ),
       TutorialLayer(tutorialLines: _currentTutorialLines),
       DiagnosticLayer(
-        diagnostics: state.diagnostics
-            .map((d) => DiagnosticInfo(line: d.line, severity: d.severity))
-            .toList(),
+        diagnostics: state.diagnostics.map((d) {
+          // Rust 后端输出列号为 1-based，转换为 0-based
+          final startCol = (d.replaceStartColumn > 0
+                  ? d.replaceStartColumn
+                  : d.column) -
+              1;
+          final endCol = d.replaceEndColumn > 0
+              ? d.replaceEndColumn - 1
+              : startCol + 1;
+          return DiagnosticInfo(
+            line: d.line,
+            severity: d.severity,
+            startCol: startCol.clamp(0, 9999),
+            endCol: endCol.clamp(startCol, 9999),
+          );
+        }).toList(),
       ),
     ];
 

@@ -3,18 +3,24 @@ import 'cide_document.dart';
 import 'editor_layers.dart';
 
 /// ---------------------------------------------------------------------------
-/// DiagnosticLayer — 诊断信息可视化图层
+/// DiagnosticLayer — 诊断信息可视化图层（字符级精确波浪线）
 /// ---------------------------------------------------------------------------
-/// 在代码行下方绘制波浪线（error=红色, warning=琥珀色, hint=蓝色）。
-/// 目前仅绘制整行波浪线；精确到字符范围需要后续结合 TextPainter 的
-/// getBoxesForSelection 实现。
+/// 在诊断范围的字符下方绘制精确波浪线。
+/// 支持一行多个诊断、不同严重级别颜色区分。
 /// ---------------------------------------------------------------------------
 
 class DiagnosticInfo {
   final int line; // 1-based
   final int severity; // 0=error, 1=warning, 2=hint
+  final int startCol; // 0-based, inclusive
+  final int endCol;   // 0-based, exclusive
 
-  const DiagnosticInfo({required this.line, required this.severity});
+  const DiagnosticInfo({
+    required this.line,
+    required this.severity,
+    this.startCol = 0,
+    this.endCol = 0,
+  });
 }
 
 class DiagnosticLayer implements EditorLayer {
@@ -25,30 +31,41 @@ class DiagnosticLayer implements EditorLayer {
   @override
   void paint(Canvas canvas, LineLayout layout, CideDocument document, Rect viewport) {
     final line = layout.lineIndex + 1;
-    final severity = _severityForLine(line);
-    if (severity == null) return;
 
-    final color = _severityColor(severity);
-    final y = layout.top + layout.height - 2;
-
-    _drawWavyLine(
-      canvas,
-      Offset(0, y),
-      Offset(viewport.width, y),
-      color,
-    );
-  }
-
-  int? _severityForLine(int line) {
-    int? result;
+    // 收集当前行的所有诊断（按 startCol 排序）
+    final lineDiagnostics = <DiagnosticInfo>[];
     for (final d in diagnostics) {
       if (d.line == line) {
-        if (result == null || d.severity < result) {
-          result = d.severity;
-        }
+        lineDiagnostics.add(d);
       }
     }
-    return result;
+    if (lineDiagnostics.isEmpty) return;
+
+    lineDiagnostics.sort((a, b) => a.startCol.compareTo(b.startCol));
+
+    final textLength = layout.text.length;
+
+    for (final d in lineDiagnostics) {
+      final start = d.startCol.clamp(0, textLength);
+      final end = d.endCol.clamp(start, textLength);
+      if (start >= end) continue;
+
+      final color = _severityColor(d.severity);
+      final boxes = layout.painter.getBoxesForSelection(
+        TextSelection(baseOffset: start, extentOffset: end),
+      );
+
+      for (final box in boxes) {
+        final rect = box.toRect().translate(0, layout.top);
+        final y = rect.bottom - 1.5;
+        _drawWavyLine(
+          canvas,
+          Offset(rect.left, y),
+          Offset(rect.right, y),
+          color,
+        );
+      }
+    }
   }
 
   Color _severityColor(int severity) {
