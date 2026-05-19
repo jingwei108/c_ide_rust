@@ -54,9 +54,6 @@ class CideEditorState extends State<CideEditor>
   // 同步锁（防止双向循环）
   bool _syncing = false;
 
-  // 点击坐标缓存
-  Offset? _lastPointerPosition;
-
   // 视口尺寸（用于 CustomPaint 裁剪）
   Size _viewportSize = Size.zero;
 
@@ -108,7 +105,6 @@ class CideEditorState extends State<CideEditor>
   // 焦点 & TextInputConnection
   // ---------------------------------------------------------------------------
   void _onFocusChanged() {
-    debugPrint('[CideEditor] focus changed: hasFocus=${_focusNode.hasFocus}, isSystem=$_isSystemKeyboardActive');
     if (_focusNode.hasFocus) {
       if (_isSystemKeyboardActive) {
         _attachInputConnection();
@@ -119,11 +115,7 @@ class CideEditorState extends State<CideEditor>
   }
 
   void _attachInputConnection() {
-    if (_inputConnection != null || _readOnly) {
-      debugPrint('[CideEditor] attach skipped: connection=$_inputConnection, readOnly=$_readOnly');
-      return;
-    }
-    debugPrint('[CideEditor] attaching TextInputConnection...');
+    if (_inputConnection != null || _readOnly) return;
     _inputConnection = TextInput.attach(
       this,
       const TextInputConfiguration(
@@ -136,14 +128,18 @@ class CideEditorState extends State<CideEditor>
     );
     _inputConnection!.show();
     _inputConnection!.setEditingState(_proxyController.value);
-    debugPrint('[CideEditor] TextInputConnection attached, text len=${_proxyController.value.text.length}');
   }
 
   void _detachInputConnection() {
-    debugPrint('[CideEditor] detaching TextInputConnection...');
     _inputConnection?.close();
     _inputConnection = null;
   }
+
+  /// 焦点节点
+  FocusNode get focusNode => _focusNode;
+
+  /// 滚动控制器（外部可用于同步 Gutter 等）
+  ScrollController get scrollController => _scrollController;
 
   /// 切换到系统键盘模式（桌面/平板物理键盘）
   void showSystemKeyboard() {
@@ -192,16 +188,11 @@ class CideEditorState extends State<CideEditor>
   // 双向同步：Proxy → Document
   // ---------------------------------------------------------------------------
   void _onProxyChanged() {
-    if (_syncing) {
-      debugPrint('[CideEditor] _onProxyChanged ignored (syncing)');
-      return;
-    }
+    if (_syncing) return;
     _syncing = true;
 
     final proxy = _proxyController.value;
     final oldText = widget.document.text;
-
-    debugPrint('[CideEditor] _onProxyChanged: textChanged=${proxy.text != oldText}, selection=${proxy.selection}, composing=${proxy.composing}');
 
     final newSelection = DocSelection(
       base: widget.document.offsetToPosition(proxy.selection.baseOffset),
@@ -404,11 +395,7 @@ class CideEditorState extends State<CideEditor>
 
   @override
   void updateEditingValue(TextEditingValue value) {
-    if (_syncing) {
-      debugPrint('[CideEditor] updateEditingValue ignored (syncing)');
-      return;
-    }
-    debugPrint('[CideEditor] updateEditingValue: textLen=${value.text.length}, selection=${value.selection}, composing=${value.composing}');
+    if (_syncing) return;
     _proxyController.value = value;
   }
 
@@ -473,7 +460,6 @@ class CideEditorState extends State<CideEditor>
                 Positioned.fill(
                   child: Listener(
                     onPointerDown: (event) {
-                      _lastPointerPosition = event.position;
                       widget.onPointerDown?.call(event.position);
                       // 确保点击时获取焦点，否则 EditableText 不会响应输入
                       if (!_focusNode.hasFocus) {
@@ -558,8 +544,6 @@ class CideEditorState extends State<CideEditor>
       Offset(position.dx, lineHeight / 2),
     );
     int col = textPosition.offset.clamp(0, lineText.length);
-
-    debugPrint('[CideEditor] tap at local=$position -> line=$line, col=$col, text="$lineText"');
 
     // 更新光标位置
     final newPos = DocPosition(line: line, col: col);

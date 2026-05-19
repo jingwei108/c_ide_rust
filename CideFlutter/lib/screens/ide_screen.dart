@@ -10,6 +10,7 @@ import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/draggable_panel_tab.dart';
 import '../widgets/editor_panel.dart';
+import '../widgets/editor_panel_v2.dart';
 import '../widgets/floating_orb_widget.dart';
 import '../widgets/floating_panel_popup.dart';
 import '../widgets/height_resizable_panel.dart';
@@ -63,7 +64,16 @@ class _StopIntent extends Intent {
 
 class _IdeScreenState extends ConsumerState<IdeScreen>
     with SingleTickerProviderStateMixin {
-  final _editorKey = GlobalKey<EditorPanelState>();
+  /// Feature flag：切换编辑器内核（false = re_editor, true = CideEditor）
+  static const bool _useEditorV2 = false;
+
+  final _editorKeyV1 = GlobalKey<EditorPanelState>();
+  final _editorKeyV2 = GlobalKey<EditorPanelV2State>();
+
+  /// 统一访问当前编辑器实例（V1/V2 兼容）
+  dynamic get _editor =>
+      _useEditorV2 ? _editorKeyV2.currentState : _editorKeyV1.currentState;
+
   final _inputController = TextEditingController();
   bool _showKeyboard = false;
   bool _isSystemKeyboardActive = false;
@@ -91,7 +101,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   void _handleToggleBreakpoint() {
-    final line = _editorKey.currentState?.getCurrentLine() ?? 0;
+    final line = _editor?.getCurrentLine() ?? 0;
     if (line > 0) {
       ref.read(ideProvider.notifier).toggleBreakpoint(line);
     }
@@ -195,7 +205,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   /// 切换到系统键盘（用于中文输入）
   void _showSystemKeyboard() {
     setState(() => _isSystemKeyboardActive = true);
-    _editorKey.currentState?.setReadOnly(false);
+    _editor?.setReadOnly(false);
     SystemChannels.textInput.invokeMethod('TextInput.show');
   }
 
@@ -203,7 +213,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   void _showCustomKeyboard() {
     SystemChannels.textInput.invokeMethod('TextInput.hide');
     setState(() => _isSystemKeyboardActive = false);
-    _editorKey.currentState?.setReadOnly(true);
+    _editor?.setReadOnly(true);
   }
 
   void _showAddFileDialog(BuildContext context, IdeNotifier notifier) {
@@ -246,14 +256,14 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
     );
   }
 
-  void _insertText(String text) => _editorKey.currentState?.insertText(text);
-  void _insertPair(String open, String close) => _editorKey.currentState?.insertPair(open, close);
-  void _undo() => _editorKey.currentState?.undo();
-  void _redo() => _editorKey.currentState?.redo();
-  void _moveCursor(int offset) => _editorKey.currentState?.moveCursor(offset);
-  void _scrollToLine(int line) => _editorKey.currentState?.scrollToLine(line);
-  void _backspace() => _editorKey.currentState?.backspace();
-  void _insertNewline() => _editorKey.currentState?.insertNewline();
+  void _insertText(String text) => _editor?.insertText(text);
+  void _insertPair(String open, String close) => _editor?.insertPair(open, close);
+  void _undo() => _editor?.undo();
+  void _redo() => _editor?.redo();
+  void _moveCursor(int offset) => _editor?.moveCursor(offset);
+  void _scrollToLine(int line) => _editor?.scrollToLine(line);
+  void _backspace() => _editor?.backspace();
+  void _insertNewline() => _editor?.insertNewline();
 
   void _handleTemplateSelect(CodeTemplate template) {
     final notifier = ref.read(ideProvider.notifier);
@@ -379,12 +389,19 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 8),
-                        child: EditorPanel(
-                          key: _editorKey,
-                          onTap: _openKeyboard,
-                          onBlankTap: _closeAllKeyboards,
-                          onDismissKeyboard: _closeAllKeyboards,
-                        ),
+                        child: _useEditorV2
+                            ? EditorPanelV2(
+                                key: _editorKeyV2,
+                                onTap: _openKeyboard,
+                                onBlankTap: _closeAllKeyboards,
+                                onDismissKeyboard: _closeAllKeyboards,
+                              )
+                            : EditorPanel(
+                                key: _editorKeyV1,
+                                onTap: _openKeyboard,
+                                onBlankTap: _closeAllKeyboards,
+                                onDismissKeyboard: _closeAllKeyboards,
+                              ),
                       ),
                     ),
                     // 教程激活时显示教程面板，否则显示模板栏+底部面板
@@ -738,7 +755,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
       notifier: notifier,
       isDark: isDark,
       onScrollToLine: _scrollToLine,
-      onUpdateSource: (src) => _editorKey.currentState?.setText(src),
+      onUpdateSource: (src) => _editor?.setText(src),
     );
   }
 
