@@ -3,6 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/ide_state.dart';
 import '../models/knowledge_card.dart';
 import '../providers/ide_provider.dart';
+import '../src/rust/api/cide.dart' as rust;
+import '../src/rust/diagnostics/knowledge_graph.dart' as rust_kg;
+import 'concept_graph_view.dart';
 import 'learning_path_panel.dart';
 
 class ProgressTab extends ConsumerWidget {
@@ -132,6 +135,87 @@ class ProgressTab extends ConsumerWidget {
                     ),
                   ),
                   const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.indigo),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // 概念图谱入口
+          InkWell(
+            onTap: () async {
+              final diags = state.diagnostics;
+              List<rust_kg.ActivatedConcept> activated = [];
+              if (diags.isNotEmpty) {
+                for (final d in diags.take(3)) {
+                  activated.addAll(await rust.activateConceptsFromError(errorCode: d.errorCode));
+                }
+              }
+              if (context.mounted) {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (context) => DraggableScrollableSheet(
+                    initialChildSize: 0.85,
+                    minChildSize: 0.5,
+                    maxChildSize: 0.95,
+                    expand: false,
+                    builder: (context, scrollController) => Column(
+                      children: [
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Row(
+                            children: [
+                              Icon(Icons.account_tree, color: Colors.teal.shade700),
+                              const SizedBox(width: 8),
+                              const Text('概念图谱', style: TextStyle(fontWeight: FontWeight.w600)),
+                              const Spacer(),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 20),
+                                onPressed: () => Navigator.pop(context),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        Expanded(
+                          child: ConceptGraphView(activated: activated),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }
+            },
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.teal.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.teal.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.account_tree, color: Colors.teal.shade700, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '概念图谱',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.teal.shade700),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '探索 C 语言核心概念之间的关联网络',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(Icons.arrow_forward_ios, size: 14, color: Colors.teal.shade700),
                 ],
               ),
             ),

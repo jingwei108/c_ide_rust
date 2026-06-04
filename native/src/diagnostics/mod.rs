@@ -2,5 +2,6 @@
 
 pub mod error_codes;
 pub mod error_catalog;
+pub mod knowledge_graph;
 pub mod learning_path;
 pub mod misconception_patterns;

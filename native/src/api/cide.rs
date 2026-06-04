@@ -11,6 +11,11 @@ pub use crate::session::{
 
 // 统一模式类型 re-export
 #[frb]
+pub use crate::diagnostics::knowledge_graph::{
+    ActivatedConcept, ConceptEdge, ConceptNode, NeighborConcept,
+};
+
+#[frb]
 pub use crate::diagnostics::learning_path::{LearningPath, PathStep};
 
 #[frb]
@@ -28,6 +33,31 @@ pub fn recommend_learning_paths(
     detected: Vec<DetectedMisconception>,
 ) -> Vec<LearningPath> {
     crate::diagnostics::learning_path::recommend_learning_paths(detected)
+}
+
+#[frb]
+pub fn activate_concepts_from_error(error_code: i32) -> Vec<ActivatedConcept> {
+    crate::diagnostics::knowledge_graph::activate_from_error(error_code)
+}
+
+#[frb]
+pub fn activate_concepts_from_ast(features: Vec<String>) -> Vec<ActivatedConcept> {
+    crate::diagnostics::knowledge_graph::activate_from_ast(features)
+}
+
+#[frb]
+pub fn find_prerequisite_path(target_id: String) -> Vec<ConceptNode> {
+    crate::diagnostics::knowledge_graph::find_prerequisite_path(target_id)
+}
+
+#[frb]
+pub fn get_all_concept_nodes() -> Vec<ConceptNode> {
+    crate::diagnostics::knowledge_graph::get_all_concept_nodes()
+}
+
+#[frb]
+pub fn get_all_concept_edges() -> Vec<ConceptEdge> {
+    crate::diagnostics::knowledge_graph::get_all_concept_edges()
 }
 
 #[frb]
