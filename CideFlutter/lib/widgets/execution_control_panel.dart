@@ -5,13 +5,16 @@ import '../models/knowledge_card.dart';
 import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import 'knowledge_card_item.dart';
+import 'root_cause_banner.dart';
 
 class ExecutionControlPanel extends ConsumerWidget {
   final VoidCallback onRun;
+  final void Function(int line)? onScrollToLine;
 
   const ExecutionControlPanel({
     super.key,
     required this.onRun,
+    this.onScrollToLine,
   });
 
   @override
@@ -25,17 +28,16 @@ class ExecutionControlPanel extends ConsumerWidget {
 
     // 获取当前步的算法可视化事件上下文
     String? visContext;
-    final algorithmStep = state.currentStep >= 0 && state.currentStep < state.frameCache.length
-        ? state.frameCache[state.currentStep].algorithmStep
+    final currentPayload = state.currentStep >= 0 && state.currentStep < state.frameCache.length
+        ? state.frameCache[state.currentStep]
         : null;
-    if (state.currentStep >= 0 && state.currentStep < state.frameCache.length) {
-      final payload = state.frameCache[state.currentStep];
-      if (payload.visEvents.isNotEmpty) {
-        visContext = payload.visEvents
-            .map((e) => e.context)
-            .where((c) => c.isNotEmpty)
-            .join(' · ');
-      }
+    final algorithmStep = currentPayload?.algorithmStep;
+    final rootCauseHint = currentPayload?.rootCauseHint;
+    if (currentPayload != null && currentPayload.visEvents.isNotEmpty) {
+      visContext = currentPayload.visEvents
+          .map((e) => e.context)
+          .where((c) => c.isNotEmpty)
+          .join(' · ');
     }
 
     return Column(
@@ -114,6 +116,12 @@ class ExecutionControlPanel extends ConsumerWidget {
                 ),
               ],
             ),
+          ),
+        // 根因分析提示条（认知推理 P0）
+        if (rootCauseHint != null)
+          RootCauseBanner(
+            hint: rootCauseHint,
+            onLineTap: onScrollToLine,
           ),
         // 运行时异常提示条
         if (state.trapMessage != null)

@@ -6,6 +6,7 @@
 import '../frb_generated.dart';
 import '../session.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
+import 'root_cause.dart';
 
 /// 当前步访问的变量（用于变量级高亮）。
 class AccessedVar {
@@ -292,6 +293,7 @@ class StepPayload {
   final List<AccessedVar> accessedVars;
   final List<ArraySnapshot> arraySnapshots;
   final List<PointerSnapshot> pointerSnapshots;
+  final RootCauseHint? rootCauseHint;
 
   const StepPayload({
     required this.stepIndex,
@@ -307,6 +309,7 @@ class StepPayload {
     required this.accessedVars,
     required this.arraySnapshots,
     required this.pointerSnapshots,
+    this.rootCauseHint,
   });
 
   @override
@@ -323,7 +326,8 @@ class StepPayload {
       heatmapCount.hashCode ^
       accessedVars.hashCode ^
       arraySnapshots.hashCode ^
-      pointerSnapshots.hashCode;
+      pointerSnapshots.hashCode ^
+      rootCauseHint.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -342,7 +346,8 @@ class StepPayload {
           heatmapCount == other.heatmapCount &&
           accessedVars == other.accessedVars &&
           arraySnapshots == other.arraySnapshots &&
-          pointerSnapshots == other.pointerSnapshots;
+          pointerSnapshots == other.pointerSnapshots &&
+          rootCauseHint == other.rootCauseHint;
 }
 
 /// 编译并启动统一模式的返回结果。

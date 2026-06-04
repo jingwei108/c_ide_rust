@@ -1,4 +1,5 @@
 use flutter_rust_bridge::frb;
+use crate::unified::root_cause::RootCauseHint;
 
 /// 算法步骤语义快照（用于前端步骤标注）。
 #[frb]
@@ -27,6 +28,7 @@ pub struct StepPayload {
     pub accessed_vars: Vec<AccessedVar>,
     pub array_snapshots: Vec<ArraySnapshot>,
     pub pointer_snapshots: Vec<PointerSnapshot>,
+    pub root_cause_hint: Option<RootCauseHint>,
 }
 
 /// 指针变量快照（用于指针追踪动画）。

@@ -1,6 +1,7 @@
 use crate::session::Session;
 use crate::unified::checkpoint::CheckpointManager;
 use crate::unified::collector::StepCollector;
+use crate::unified::trace_analyzer::TraceAnalyzer;
 use crate::unified::types::{AutoStepResult, SeekResult, StepMeta, StepPayload};
 use crate::vm::vm::{CideVM, StepResult};
 
@@ -119,7 +120,24 @@ impl UnifiedEngine {
                 StepResult::Trap => {
                     // 自动回退到上一步状态
                     vm.restore(&pre_step_snap, session);
-                    let payload = StepCollector::collect(vm, session, step);
+                    let mut payload = StepCollector::collect(vm, session, step);
+
+                    // Build full history for trace analysis.
+                    let mut history = Vec::with_capacity(self.frame_cache.len() + payloads.len() + 1);
+                    history.extend_from_slice(&self.frame_cache);
+                    history.extend_from_slice(&payloads);
+                    history.push(payload.clone());
+                    let trap_step = history.len().saturating_sub(1);
+
+                    if let Some(hint) = TraceAnalyzer::analyze_trap(
+                        &history,
+                        trap_step,
+                        vm.get_error(),
+                        session,
+                    ) {
+                        payload.root_cause_hint = Some(hint);
+                    }
+
                     payloads.push(payload);
                     trapped = true;
                     trap_message = Some(vm.get_error().to_string());

@@ -1705,6 +1705,17 @@ impl SseDecode for Option<crate::unified::types::AlgorithmStepSnapshot> {
     }
 }
 
+impl SseDecode for Option<crate::unified::root_cause::RootCauseHint> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<crate::unified::root_cause::RootCauseHint>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::unified::types::StepPayload> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1759,6 +1770,22 @@ impl SseDecode for (i32, u64) {
     }
 }
 
+impl SseDecode for crate::unified::root_cause::RootCauseHint {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_category = <String>::sse_decode(deserializer);
+        let mut var_oneLiner = <String>::sse_decode(deserializer);
+        let mut var_relatedLines = <Vec<i32>>::sse_decode(deserializer);
+        let mut var_suggestedFixKind = <String>::sse_decode(deserializer);
+        return crate::unified::root_cause::RootCauseHint {
+            category: var_category,
+            one_liner: var_oneLiner,
+            related_lines: var_relatedLines,
+            suggested_fix_kind: var_suggestedFixKind,
+        };
+    }
+}
+
 impl SseDecode for crate::session::RunResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1805,6 +1832,7 @@ impl SseDecode for crate::unified::types::StepPayload {
         let mut var_accessedVars = <Vec<crate::unified::types::AccessedVar>>::sse_decode(deserializer);
         let mut var_arraySnapshots = <Vec<crate::unified::types::ArraySnapshot>>::sse_decode(deserializer);
         let mut var_pointerSnapshots = <Vec<crate::unified::types::PointerSnapshot>>::sse_decode(deserializer);
+        let mut var_rootCauseHint = <Option<crate::unified::root_cause::RootCauseHint>>::sse_decode(deserializer);
         return crate::unified::types::StepPayload {
             step_index: var_stepIndex,
             code_line: var_codeLine,
@@ -1819,6 +1847,7 @@ impl SseDecode for crate::unified::types::StepPayload {
             accessed_vars: var_accessedVars,
             array_snapshots: var_arraySnapshots,
             pointer_snapshots: var_pointerSnapshots,
+            root_cause_hint: var_rootCauseHint,
         };
     }
 }
@@ -2328,6 +2357,26 @@ impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::PointerStatus> for
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::unified::root_cause::RootCauseHint {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.category.into_into_dart().into_dart(),
+            self.one_liner.into_into_dart().into_dart(),
+            self.related_lines.into_into_dart().into_dart(),
+            self.suggested_fix_kind.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::unified::root_cause::RootCauseHint {}
+impl flutter_rust_bridge::IntoIntoDart<crate::unified::root_cause::RootCauseHint>
+    for crate::unified::root_cause::RootCauseHint
+{
+    fn into_into_dart(self) -> crate::unified::root_cause::RootCauseHint {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::session::RunResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2379,6 +2428,7 @@ impl flutter_rust_bridge::IntoDart for crate::unified::types::StepPayload {
             self.accessed_vars.into_into_dart().into_dart(),
             self.array_snapshots.into_into_dart().into_dart(),
             self.pointer_snapshots.into_into_dart().into_dart(),
+            self.root_cause_hint.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -2892,6 +2942,16 @@ impl SseEncode for Option<crate::unified::types::AlgorithmStepSnapshot> {
     }
 }
 
+impl SseEncode for Option<crate::unified::root_cause::RootCauseHint> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <crate::unified::root_cause::RootCauseHint>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::unified::types::StepPayload> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2940,6 +3000,16 @@ impl SseEncode for (i32, u64) {
     }
 }
 
+impl SseEncode for crate::unified::root_cause::RootCauseHint {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.category, serializer);
+        <String>::sse_encode(self.one_liner, serializer);
+        <Vec<i32>>::sse_encode(self.related_lines, serializer);
+        <String>::sse_encode(self.suggested_fix_kind, serializer);
+    }
+}
+
 impl SseEncode for crate::session::RunResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -2975,6 +3045,7 @@ impl SseEncode for crate::unified::types::StepPayload {
         <Vec<crate::unified::types::AccessedVar>>::sse_encode(self.accessed_vars, serializer);
         <Vec<crate::unified::types::ArraySnapshot>>::sse_encode(self.array_snapshots, serializer);
         <Vec<crate::unified::types::PointerSnapshot>>::sse_encode(self.pointer_snapshots, serializer);
+        <Option<crate::unified::root_cause::RootCauseHint>>::sse_encode(self.root_cause_hint, serializer);
     }
 }
 

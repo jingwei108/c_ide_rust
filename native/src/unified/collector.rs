@@ -83,6 +83,7 @@ impl StepCollector {
             array_snapshots,
             pointer_snapshots,
             algorithm_step,
+            root_cause_hint: None,
         }
     }
 }

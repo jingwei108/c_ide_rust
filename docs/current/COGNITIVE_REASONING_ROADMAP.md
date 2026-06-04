@@ -1,0 +1,541 @@
+# Cide 认知推理系统深化路线图
+
+> **范围**：P0 ~ P3，排除自然语言对话层（P4）  
+> **目标**：将系统从"被动报错"升级为"主动理解代码意图、推断错误根因、关联知识概念"的认知教学助手  
+> **文档日期**：2026-06-04
+
+---
+
+## 目录
+
+1. [P0: 运行时推理层（根因分析）](#p0-运行时推理层根因分析)
+2. [P1: 教学推理层（错误模式聚类 + 学习路径）](#p1-教学推理层错误模式聚类--学习路径)
+3. [P2: 知识图谱层（概念关联网络）](#p2-知识图谱层概念关联网络)
+4. [P3: 代码理解层（意图分析 + CFG）](#p3-代码理解层意图分析--cfg)
+5. [实施顺序与依赖关系](#实施顺序与依赖关系)
+
+---
+
+## P0: 运行时推理层（根因分析）
+
+### 目标
+当程序在统一模式中发生 Trap 或异常时，系统不仅报告表面错误，还能基于最近执行历史推断**根因**，并用一句自然语言解释"为什么会这样"。
+
+### 现有基础
+- `UnifiedEngine` + `StepCollector`：每步收集变量快照、调用栈、可视化事件
+- `algorithm_steps.rs`：6 种算法的步骤语义标注
+- `error_catalog.rs`：70+ 错误码中文元数据
+- `VMSnapshot`：支持从检查点恢复历史状态
+
+### 深化方向
+
+#### 1.1 执行轨迹切片（Execution Trace Slicing）
+定义：从 Trap 发生点向前回溯，提取与错误相关的变量变化子序列。
+
+| 错误类型 | 切片范围 | 关键观察点 |
+|:---|:---|:---|
+| `TrapBounds`（数组越界） | 越界索引变量最近 5 次赋值 | 循环条件、索引计算表达式 |
+| `TrapNull`（空指针解引用） | 指针变量最近 3 次赋值 | 是否来自未初始化、`malloc` 失败、`free` 后未置空 |
+| `TrapDivZero`（除零） | 除数变量最近 5 次变化 | 是否因未初始化、条件分支遗漏 |
+| `UseAfterFree`（E3060） | 指针的分配→释放→访问时间线 | 释放后是否重新赋值 |
+
+**Rust 实现**：新增 `native/src/unified/trace_analyzer.rs`
+```rust
+pub struct TraceAnalyzer;
+
+impl TraceAnalyzer {
+    /// 从 steps 序列中提取与某变量相关的变化子序列
+    pub fn slice_variable_history<'a>(
+        steps: &'a [StepPayload],
+        var_name: &str,
+        trap_step: usize,
+        lookback: usize,
+    ) -> Vec<&'a VarSnapshot>;
+
+    /// 推断数组越界的根因类型
+    pub fn infer_bounds_root_cause(
+        slices: &[VarSnapshot],
+        array_decl_size: usize,
+    ) -> BoundsRootCause;
+}
+
+pub enum BoundsRootCause {
+    OffByOne,           // 循环条件多写了一个 =
+    WrongStartIndex,    // 起始索引错误（如从 1 开始）
+    SizeMismatch,       // 声明大小与实际需求不符
+    UninitializedIndex, // 索引变量未初始化
+}
+```
+
+#### 1.2 根因生成器（Root Cause Generator）
+将推断结果映射为结构化解释数据，供 Flutter 前端渲染。
+
+**数据结构设计**：扩展 `StepPayload`
+```rust
+pub struct StepPayload {
+    // ... 现有字段 ...
+    pub root_cause_hint: Option<RootCauseHint>,
+}
+
+pub struct RootCauseHint {
+    pub category: RootCauseCategory,   // 循环边界 / 指针生命周期 / 初始化遗漏 / 类型误用
+    pub one_liner: String,             // 一句话根因解释
+    pub related_lines: Vec<i32>,       // 相关的源码行号（可点击跳转）
+    pub suggested_fix_kind: FixKind,   // 关联到现有自动修复系统
+}
+```
+
+**示例输出**：
+```json
+{
+  "root_cause_hint": {
+    "category": "OffByOne",
+    "one_liner": "数组越界是因为循环条件 i <= 5 未考虑到数组索引从 0 开始，最后一个有效索引是 4",
+    "related_lines": [2, 5],
+    "suggested_fix_kind": "ChangeLeToLt"
+  }
+}
+```
+
+#### 1.3 预期效果与验证
+- 学生看到 Trap 时，不再只有"数组越界"四个字，而是明确知道"是我循环条件写错了"
+- 验证方式：在现有 E2E 测试中增加 `assert_root_cause_hint` 断言，确保根因推断准确率 > 90%
+- **预计工作量**：3-5 天
+
+---
+
+## P1: 教学推理层（错误模式聚类 + 学习路径）
+
+### 目标
+基于学生历史编译/运行数据，识别其**稳定犯错模式**（misconceptions），并推送针对性练习，实现因材施教。
+
+### 现有基础
+- `LearningProgress`：编译次数、成功率、错误码统计、知识卡片阅读记录
+- 错误码体系：E1xxx（词法）、E2xxx（语法）、E3xxx（语义）、W305x（警告）
+- 16 个代码模板：冒泡/选择/插入/快速/归并/二分/线性查找/链表/栈/二叉树等
+
+### 深化方向
+
+#### 2.1 错误模式定义（Misconception Patterns）
+将离散的错误码组合定义为认知层面的误解模式。
+
+| 模式 ID | 模式名称 | 错误序列特征 | 深层误解 |
+|:---|:---|:---|:---|
+| M01 | 边界混淆 | `E3021_Bounds` + `W3051_LeToLt` 反复出现 | 不理解"大小为 N" vs "索引 0~N-1" |
+| M02 | 指针值语义混淆 | `E3060_UseAfterFree` + `E3035_NullDeref` | 认为指针存的是"变量名"而非地址 |
+| M03 | 赋值与比较混淆 | `W3050_AssignInCondition` 反复出现 | 不理解 `=` 与 `==` 的语义差异 |
+| M04 | 数组指针退化误解 | `E3045_PtrArithTypeError` + `E3032_ArrayAssign` | 不知道数组在表达式中会退化为指针 |
+| M05 | 递归边界遗漏 | `E3020_StackOverflow` + 递归函数中无 `if (n <= 0)` | 不理解递归必须有终止条件 |
+| M06 | 格式化字符串误用 | `E3046_PrintfFormatMismatch` 反复出现 | 不理解 `%d/%f/%s` 与变量类型的对应关系 |
+
+**Rust 实现**：新增 `native/src/diagnostics/misconception_patterns.rs`
+```rust
+pub struct MisconceptionPattern {
+    pub id: String,
+    pub name: String,
+    pub error_signature: Vec<ErrorSignature>,
+    pub min_occurrences: usize,        // 触发模式识别的最小次数
+    pub time_window_steps: usize,      // 在多少步编译内出现算"反复"
+}
+
+pub struct ErrorSignature {
+    pub code_prefix: String,           // 如 "E3021"
+    pub context_hint: Option<String>,  // 可选的上下文匹配（如包含 "arr["）
+}
+
+/// 分析最近 N 次编译/运行历史，返回检测到的误解模式
+pub fn detect_misconceptions(
+    history: &[SessionRecord],
+    patterns: &[MisconceptionPattern],
+) -> Vec<DetectedMisconception>;
+```
+
+#### 2.2 学习路径推荐引擎
+针对检测到的误解模式，从现有模板库和知识卡片中组装**最小有效学习路径**。
+
+**推荐策略**：
+```
+if detected(M01_边界混淆):
+    recommend = [
+        { type: "knowledge_card", id: "KC_ARRAY_BOUNDS" },
+        { type: "template", id: "bubble_sort", focus_line: "for (int i = 0; i < n - 1; i++)" },
+        { type: "exercise", id: "EX_BOUNDARY_FIX", desc: "修复 3 个越界循环" },
+    ]
+```
+
+**数据结构**：
+```rust
+pub struct LearningPath {
+    pub target_misconception: String,
+    pub estimated_time_minutes: u32,
+    pub steps: Vec<PathStep>,
+}
+
+pub enum PathStep {
+    ReadKnowledgeCard { card_id: String },
+    StudyTemplate { template_id: String, highlight_lines: Vec<i32> },
+    CompleteExercise { exercise_id: String },
+    ReviewOwnCode { session_id: u64, lines: Vec<i32> },
+}
+```
+
+#### 2.3 Flutter 前端：学习路径面板
+新增 `LearningPathPanel` 组件：
+- 顶部显示当前检测到的误解模式（如"你最近 5 次编译中有 3 次数组越界"）
+- 中部为推荐步骤列表，每步带进度勾选
+- 底部"开始练习"按钮，点击后自动加载对应模板并高亮关键行
+
+#### 2.4 预期效果与验证
+- 系统从"每次独立报错"升级为"追踪你的认知盲区"
+- 验证方式：A/B 测试对比使用学习路径前后的同一错误重复率
+- **预计工作量**：2-3 天
+
+---
+
+## P2: 知识图谱层（概念关联网络）
+
+### 目标
+将 C 语言的离散知识点建模为**概念图**，当学生遇到错误或浏览代码时，动态激活相关概念子图，展示知识间的关联。
+
+### 现有基础
+- 知识卡片系统：`assets/knowledge_cards/` 下的 JSON 资源文件
+- `error_catalog.rs`：错误码到中文解释的映射
+- 算法检测器：7 种算法的 AST 模式识别
+
+### 深化方向
+
+#### 3.1 概念节点建模
+定义 C 语言核心概念节点，覆盖编译器、内存、控制流三大域。
+
+**节点分类**：
+```
+编译概念域
+├── 变量声明 (VarDecl)
+├── 类型系统 (TypeSystem)
+│   ├── 隐式转换 (ImplicitCast)
+│   └── 指针类型 (PointerType)
+├── 运算符 (Operators)
+│   ├── 算术运算符 (ArithOp)
+│   ├── 逻辑运算符 (LogicOp)
+│   └── 位运算符 (BitOp)
+└── 作用域 (Scope)
+
+内存概念域
+├── 栈内存 (StackMemory)
+├── 堆内存 (HeapMemory)
+├── 指针 (Pointer)
+│   ├── 取地址 (AddressOf)
+│   ├── 解引用 (Dereference)
+│   └── 指针算术 (PtrArithmetic)
+├── 数组 (Array)
+│   └── 数组退化 (ArrayDecay)
+└── 结构体内存布局 (StructLayout)
+
+控制流概念域
+├── 条件分支 (IfSwitch)
+├── 循环 (Loop)
+│   ├── for 循环 (ForLoop)
+│   ├── while 循环 (WhileLoop)
+│   └── 边界条件 (BoundaryCondition)
+├── 函数调用 (FunctionCall)
+│   ├── 参数传递 (ParameterPassing)
+│   └── 返回值 (ReturnValue)
+└── 递归 (Recursion)
+```
+
+**Rust 实现**：新增 `native/src/diagnostics/knowledge_graph.rs`
+```rust
+pub struct ConceptNode {
+    pub id: String,
+    pub domain: ConceptDomain,
+    pub title: String,
+    pub description: String,
+    pub difficulty: u8,            // 1-5
+    pub related_card_ids: Vec<String>,
+}
+
+pub struct ConceptEdge {
+    pub from: String,
+    pub to: String,
+    pub relation: ConceptRelation,
+    pub strength: f32,             // 0.0 ~ 1.0
+}
+
+pub enum ConceptRelation {
+    Prerequisite,      // 前置依赖：必须先理解 A 才能理解 B
+    LeadsTo,           // 自然延伸：学会 A 后通常会学 B
+    CommonMistake,     // 常见误解：A 和 B 容易被混淆
+    UsedTogether,      // 协同使用：A 和 B 经常一起出现
+    Contradicts,       // 互斥注意：A 和 B 有本质区别需注意
+}
+```
+
+#### 3.2 动态激活机制
+根据当前上下文（错误码、代码 AST 特征、执行状态）激活相关概念子图。
+
+**激活规则示例**：
+| 触发条件 | 激活概念节点 | 连带激活（1 跳邻居） |
+|:---|:---|:---|
+| 错误 `E3035_NullDeref` | `Pointer::Dereference` | `Pointer`, `HeapMemory`, `StackMemory` |
+| 代码包含 `malloc` + `free` | `HeapMemory`, `Pointer` | `MemoryLeak`, `UseAfterFree`, `DanglingPointer` |
+| 算法检测到冒泡排序 | `Loop::ForLoop`, `Array` | `BoundaryCondition`, `ArrayDecay`, `SwapOperation` |
+| 警告 `W3050_AssignInCondition` | `Operators::LogicOp` | `IfSwitch`, `CommonMistake::AssignVsCompare` |
+
+**实现接口**：
+```rust
+impl KnowledgeGraph {
+    /// 根据错误码激活概念子图
+    pub fn activate_from_error(&self, error_code: &str, context: &str) -> Vec<ActivatedConcept>;
+
+    /// 根据 AST 节点类型激活概念子图
+    pub fn activate_from_ast(&self, ast_nodes: &[AstNodeKind]) -> Vec<ActivatedConcept>;
+
+    /// 获取从当前概念到基础概念的推荐学习路径
+    pub fn find_prerequisite_path(&self, target: &str) -> Vec<&ConceptNode>;
+}
+```
+
+#### 3.3 Flutter 前端：概念图谱视图
+新增 `ConceptGraphView` 组件：
+- **力导向图布局**：概念为节点，关联为边，用 `CustomPainter` 或 `graphview` 包绘制
+- **动态高亮**：当前激活的概念显示为亮色，前置依赖为橙色，延伸概念为蓝色
+- **点击展开**：点击节点弹出 BottomSheet，展示概念解释 + 关联知识卡片 + 推荐模板
+- **学习进度标记**：已阅读过的概念节点显示勾选标记
+
+#### 3.4 与现有系统的集成点
+| 现有系统 | 集成方式 |
+|:---|:---|
+| `error_catalog.rs` | 每个错误码增加 `related_concepts: Vec<String>` 字段 |
+| 知识卡片 JSON | 增加 `concept_id` 字段，建立卡片→概念的反向索引 |
+| `LearningProgress` | 记录"已激活/已阅读"的概念 ID 集合 |
+| `algorithm_detector.rs` | 算法匹配成功后返回 `related_concepts` 列表 |
+
+#### 3.5 预期效果与验证
+- 学生发现：原来"数组越界"和"指针算术"都连接到"边界条件"这个核心概念
+- 验证方式：人工审核概念图谱覆盖率（核心 C 概念 > 80%），动态激活准确率 > 85%
+- **预计工作量**：5-7 天
+
+---
+
+## P3: 代码理解层（意图分析 + CFG）
+
+### 目标
+超越 AST 模式匹配，通过控制流图（CFG）和数据流分析，深入理解代码结构特征，提升算法检测准确率和诊断精度。
+
+### 现有基础
+- `algorithm_detector.rs`：基于 AST 字符串匹配的 7 种算法识别
+- `parser.rs`：完整的 AST 输出
+- `type_checker.rs`：符号表 + 类型信息
+
+### 深化方向
+
+#### 4.1 控制流图（CFG）构建
+从 AST 提取基本块（Basic Block）和控制流边。
+
+**基本块定义**：
+- 单入口单出口的最大连续语句序列
+- 入口：函数首条语句、分支目标、循环头
+- 出口：最后一条语句、跳转/分支/返回
+
+**Rust 实现**：新增 `native/src/compiler/cfg.rs`
+```rust
+pub struct BasicBlock {
+    pub id: BlockId,
+    pub stmts: Vec<Stmt>,
+    pub terminator: Terminator,
+}
+
+pub enum Terminator {
+    Return,
+    Goto(BlockId),
+    Branch { cond: Expr, then_block: BlockId, else_block: BlockId },
+    Switch { discriminant: Expr, cases: Vec<(Expr, BlockId)>, default: BlockId },
+}
+
+pub struct ControlFlowGraph {
+    pub entry: BlockId,
+    pub blocks: Vec<BasicBlock>,
+    pub edges: Vec<(BlockId, BlockId)>,
+}
+
+impl ControlFlowGraph {
+    /// 从函数 AST 构建 CFG
+    pub fn from_func(func: &FuncDecl) -> Self;
+
+    /// 检测不可达代码
+    pub fn find_unreachable_blocks(&self) -> Vec<BlockId>;
+
+    /// 检测循环结构（自然循环识别）
+    pub fn find_loops(&self) -> Vec<LoopInfo>;
+
+    /// 计算支配树（Dominator Tree）
+    pub fn compute_dominators(&self) -> HashMap<BlockId, BlockId>;
+}
+```
+
+#### 4.2 算法检测增强（基于 CFG）
+用 CFG 特征替代脆弱的字符串匹配，提升算法识别准确率。
+
+| 算法 | AST 模式（现有） | CFG 增强特征 |
+|:---|:---|:---|
+| 冒泡排序 | 双重循环 + `arr[j] > arr[j+1]` + `swap` | 外层循环支配内层循环；内层循环边界依赖外层变量；存在反向条件分支（交换保护） |
+| 快速排序 | 递归 + `partition` 函数名 | 递归调用两个子问题；存在以 pivot 为界的分区循环 |
+| 二分查找 | `while (left <= right)` + `mid` 计算 | 循环体内两条分支分别调整左/右边界；无递归调用 |
+| 链表遍历 | `while (p != NULL)` + `p = p->next` | 单循环；循环体内沿指针链推进；终止条件为 null 检查 |
+
+**改进 `algorithm_detector.rs`**：
+```rust
+pub struct AlgorithmMatcher {
+    ast_pattern: AstPattern,
+    cfg_features: Vec<CfgFeature>,
+    confidence_threshold: f32,
+}
+
+pub enum CfgFeature {
+    NestedLoops { depth: usize },
+    LoopBoundDependsOnOuterVar,
+    HasSwapBranch,
+    RecursiveWithTwoCalls,
+    NullTerminatedTraversal,
+}
+
+/// 综合 AST + CFG 评分
+pub fn match_algorithm(func: &FuncDecl, cfg: &ControlFlowGraph) -> Option<AlgorithmMatch> {
+    let ast_score = match_ast_pattern(func);
+    let cfg_score = match_cfg_features(cfg);
+    let total = ast_score * 0.6 + cfg_score * 0.4;
+    if total >= self.confidence_threshold { Some(...) } else { None }
+}
+```
+
+#### 4.3 数据流分析（Data Flow Analysis）
+实现基本的数据流分析，用于诊断和优化建议。
+
+**分析类型**：
+```rust
+pub struct DataFlowAnalyzer;
+
+impl DataFlowAnalyzer {
+    /// 到达定值分析（Reaching Definitions）
+    /// 用于检测：变量使用前是否可能未初始化
+    pub fn reaching_definitions(&self, cfg: &ControlFlowGraph) -> HashMap<BlockId, Vec<Def>>;
+
+    /// 活跃变量分析（Live Variables）
+    /// 用于检测：赋值后未使用的冗余代码
+    pub fn live_variables(&self, cfg: &ControlFlowGraph) -> HashMap<BlockId, Vec<String>>;
+
+    /// 常量传播（Constant Propagation）
+    /// 用于提示："此处 i 的值为 5，条件永远为真"
+    pub fn constant_propagation(&self, cfg: &ControlFlowGraph) -> HashMap<(BlockId, String), ConstValue>;
+}
+```
+
+**教学诊断应用**：
+- **未初始化检测**：`int x; if (x > 0)` → 数据流分析发现 `x` 的到达定值集合为空 → 报告"变量 x 可能未初始化"
+- **死代码检测**：赋值后变量不再活跃 → 提示"这行代码对后续没有影响"
+- **常量条件**：`if (5 > 3)` → 提示"条件永远为真，是否写错了？"
+
+#### 4.4 意图推断（Intent Inference）
+基于代码特征猜测学生想实现的目标。
+
+```rust
+pub enum CodingIntent {
+    SortAscending,      // 升序排序
+    SortDescending,     // 降序排序
+    FindElement,        // 查找元素
+    FindMaxMin,         // 求最大/最小值
+    ReverseArray,       // 反转数组
+    RemoveDuplicates,   // 去重
+    MergeSorted,        // 合并有序数组
+}
+
+pub fn infer_intent(func: &FuncDecl, cfg: &ControlFlowGraph) -> Vec<IntentHypothesis> {
+    // 综合函数名、变量名、循环结构、比较方向、赋值模式进行评分
+}
+```
+
+**应用**：
+- 学生写了冒泡排序框架但比较方向反了（`arr[j] < arr[j+1]`）→ 推断意图为 `SortDescending` → 提示"你想实现降序排列吗？当前代码与此一致"
+- 学生写了查找代码但返回的是索引而非元素 → 推断意图为 `FindElement` → 提示"是否需要返回找到的元素值？"
+
+#### 4.5 预期效果与验证
+- 算法检测准确率从当前"字符串匹配"的 ~75% 提升到 CFG+AST 综合的 > 90%
+- 新增"未初始化变量"诊断，覆盖现有 TypeChecker 无法检测的跨分支场景
+- 验证方式：对现有 16 个模板各生成 3 种变体（改名、改结构、改注释），测试算法检测是否仍然通过
+- **预计工作量**：4-6 天
+
+---
+
+## 实施顺序与依赖关系
+
+```
+P0: 运行时推理（根因分析）
+  │
+  ├── 复用现有：StepCollector, VMSnapshot, error_catalog
+  │
+  ▼
+P1: 教学推理（错误模式聚类）
+  │
+  ├── 依赖 P0 的 TraceAnalyzer 提供历史数据
+  ├── 复用现有：LearningProgress, 模板库
+  │
+  ▼
+P2: 知识图谱（概念网络）
+  │
+  ├── 依赖 P1 的 MisconceptionPattern 定义概念节点
+  ├── 复用现有：知识卡片 JSON, error_catalog
+  ├── 可为 P0 的根因提示提供"概念关联"上下文
+  │
+  ▼
+P3: 代码理解（CFG + 数据流）
+  │
+  ├── 与 P0/P1/P2 平行，改动在编译器层
+  ├── 增强 algorithm_detector → 提升 P0 的语义标签质量
+  └── 为 P2 的知识图谱提供 AST→概念激活的精确映射
+```
+
+### 推荐实施节奏
+
+| 周次 | 任务 | 产出 |
+|:---|:---|:---|
+| Week 1 | P0：TraceAnalyzer + RootCauseHint | `trace_analyzer.rs` + 前端根因提示组件 |
+| Week 2 | P1：MisconceptionPattern + LearningPath | `misconception_patterns.rs` + 学习路径面板 |
+| Week 3-4 | P2：KnowledgeGraph 核心 + 概念节点数据 | `knowledge_graph.rs` + 50+ 概念节点 JSON |
+| Week 4-5 | P2：Flutter 概念图谱视图 | `ConceptGraphView` CustomPainter |
+| Week 5-6 | P3：CFG 构建 + 循环识别 | `cfg.rs` + 算法检测 CFG 增强 |
+| Week 6-7 | P3：数据流分析 + 意图推断 | `data_flow.rs` + `intent.rs` |
+
+### 与现有架构的兼容性说明
+
+- **零破坏**：所有新增模块均为独立文件，通过 `Session` 或 `StepPayload` 的 `Option<T>` 字段扩展，不影响现有编译/运行链路
+- **渐进启用**：新增功能通过 feature flag 控制（如 `session.enable_root_cause = true`），可随时回退
+- **FRB 兼容**：新增数据结构均实现 `Serialize`/`Deserialize`，可直接通过 flutter_rust_bridge v2 传输
+
+---
+
+## 附录：新增文件清单
+
+```
+native/src/
+├── unified/
+│   ├── trace_analyzer.rs          # P0: 执行轨迹切片 + 根因推断
+│   └── root_cause.rs              # P0: RootCauseHint 数据结构
+├── diagnostics/
+│   ├── misconception_patterns.rs  # P1: 误解模式定义 + 检测
+│   ├── knowledge_graph.rs         # P2: 概念图谱核心
+│   └── concept_nodes.json         # P2: 概念节点与边数据（编译时嵌入）
+├── compiler/
+│   ├── cfg.rs                     # P3: 控制流图构建
+│   ├── data_flow.rs               # P3: 数据流分析
+│   └── intent.rs                  # P3: 意图推断引擎
+└── api/
+    └── cide.rs                    # 扩展：新增 FRB 数据结构（RootCauseHint, LearningPath 等）
+
+CideFlutter/lib/
+├── widgets/
+│   ├── root_cause_banner.dart     # P0: 根因提示横幅
+│   ├── learning_path_panel.dart   # P1: 学习路径面板
+│   └── concept_graph_view.dart    # P2: 概念图谱 Canvas
+└── providers/
+    └── cognitive_provider.dart    # P0-P2: 认知推理状态管理
+```

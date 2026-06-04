@@ -529,7 +529,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   // ========== 执行控制面板 ==========
 
   Widget _buildExecutionControl(IdeState state, IdeNotifier notifier) {
-    return ExecutionControlPanel(onRun: () => notifier.compile());
+    return ExecutionControlPanel(
+      onRun: () => notifier.compile(),
+      onScrollToLine: _scrollToLine,
+    );
   }
 
   // ========== 模板快捷栏 ==========
