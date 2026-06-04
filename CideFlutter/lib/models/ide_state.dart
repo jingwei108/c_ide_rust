@@ -1,4 +1,5 @@
 import 'package:cide/src/rust/api/types.dart' as rust;
+import 'package:cide/src/rust/compiler/intent.dart';
 import 'code_template.dart';
 import 'knowledge_card.dart';
 import 'learning_progress.dart';
@@ -61,6 +62,7 @@ class IdeState {
   final List<rust.Diagnostic> diagnostics;
   final List<KnowledgeCard> knowledgeCards;
   final List<rust.AlgorithmMatch> algorithmMatches;
+  final List<IntentScore> intentScores;
   final int currentLine;
   final int highlightedLine;
   final bool waitingInput;
@@ -92,6 +94,7 @@ class IdeState {
     this.diagnostics = const [],
     this.knowledgeCards = const [],
     this.algorithmMatches = const [],
+    this.intentScores = const [],
     this.currentLine = 0,
     this.highlightedLine = 0,
     this.waitingInput = false,
@@ -111,7 +114,7 @@ class IdeState {
     this.activeTutorial,
   });
 
-  static const _defaultBottomSlots = ['output', 'diagnostics', 'algorithm'];
+  static const _defaultBottomSlots = ['output', 'diagnostics', 'algorithm', 'intent'];
   static const _defaultFloatingSlots = [
     'knowledge', 'pointer', 'arrayVis', 'linkedListVis', 'treeVis', 'memory', 'variables', 'watch', 'callstack', 'progress', 'varHistory',
   ];
@@ -130,6 +133,7 @@ class IdeState {
     List<rust.Diagnostic>? diagnostics,
     List<KnowledgeCard>? knowledgeCards,
     List<rust.AlgorithmMatch>? algorithmMatches,
+    List<IntentScore>? intentScores,
     int? currentLine,
     int? highlightedLine,
     bool? waitingInput,
@@ -160,6 +164,7 @@ class IdeState {
       diagnostics: diagnostics ?? this.diagnostics,
       knowledgeCards: knowledgeCards ?? this.knowledgeCards,
       algorithmMatches: algorithmMatches ?? this.algorithmMatches,
+      intentScores: intentScores ?? this.intentScores,
       currentLine: currentLine ?? this.currentLine,
       highlightedLine: highlightedLine ?? this.highlightedLine,
       waitingInput: waitingInput ?? this.waitingInput,

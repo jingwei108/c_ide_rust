@@ -146,11 +146,22 @@ class IdeNotifier extends Notifier<IdeState> {
         errorsByCode: newErrorsByCode,
         recentCompileRecords: trimmedRecords,
       );
+      // P3: infer code intent
+      List<IntentScore> intentScores = [];
+      if (result.success) {
+        try {
+          intentScores = await rust.inferIntentFromSource(source: state.source);
+        } catch (_) {
+          // ignore intent inference errors
+        }
+      }
+
       state = state.copyWith(
         isCompiling: false,
         diagnostics: diags,
         knowledgeCards: KnowledgeCard.findByErrorCodes(diags.map((d) => d.errorCode).toList()),
         algorithmMatches: result.algorithmMatches,
+        intentScores: intentScores,
         isRunning: false,
         isStepMode: false,
         currentLine: 0,

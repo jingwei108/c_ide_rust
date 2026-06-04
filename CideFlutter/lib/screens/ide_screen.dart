@@ -25,6 +25,7 @@ import '../widgets/algorithm_tab.dart';
 import '../widgets/array_vis_tab.dart';
 import '../widgets/callstack_tab.dart';
 import '../widgets/diagnostics_tab.dart';
+import '../widgets/intent_inference_panel.dart';
 import '../widgets/knowledge_card_tab.dart';
 import '../widgets/memory_tab.dart';
 import '../widgets/output_tab.dart';
@@ -666,6 +667,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
         return _buildDiagnosticsTab(state, notifier, isDark);
       case 'algorithm':
         return _buildAlgorithmTab(state, isDark);
+      case 'intent':
+        return _buildIntentTab(state);
       case 'knowledge':
         return _buildKnowledgeCardTab(state, isDark);
       case 'pointer':
@@ -823,6 +826,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
 
   Widget _buildAlgorithmTab(IdeState state, bool isDark) {
     return AlgorithmTab(matches: state.algorithmMatches, isDark: isDark);
+  }
+
+  Widget _buildIntentTab(IdeState state) {
+    return IntentInferencePanel(scores: state.intentScores);
   }
 
   Widget _buildKnowledgeCardTab(IdeState state, bool isDark) {

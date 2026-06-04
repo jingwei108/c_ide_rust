@@ -63,6 +63,30 @@ pub fn get_all_concept_edges() -> Vec<ConceptEdge> {
 #[frb]
 pub use crate::unified::root_cause::RootCauseHint;
 
+// P3: Code Understanding Layer
+#[frb]
+pub use crate::compiler::intent::{CodeIntent, IntentScore};
+
+#[frb]
+pub fn infer_intent_from_source(source: String) -> Vec<IntentScore> {
+    let (tokens, _) = crate::compiler::lexer::Lexer::new(&source).tokenize();
+    let (program, _) = crate::compiler::parser::Parser::new(tokens).parse();
+    let program = match program {
+        Some(p) => p,
+        None => return Vec::new(),
+    };
+    let mut all = Vec::new();
+    for func in &program.funcs {
+        let mut scores = crate::compiler::intent::infer_intent(func);
+        // annotate with function name
+        for s in &mut scores {
+            s.reasons.insert(0, format!("函数: {}", func.name));
+        }
+        all.extend(scores);
+    }
+    all
+}
+
 #[frb]
 pub use crate::unified::types::{
     AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, AutoStepResult, HeatmapData,

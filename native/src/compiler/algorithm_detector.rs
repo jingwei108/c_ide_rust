@@ -9,6 +9,7 @@
 //! - 二分查找 (binary_search)
 
 use crate::compiler::ast::*;
+use crate::compiler::cfg::ControlFlowGraph;
 use crate::session::{AlgorithmMatch, VisEvent};
 
 /// 检测程序中的所有算法模式
@@ -25,7 +26,15 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
         Some(b) => b,
         None => return Vec::new(),
     };
-    let features = extract_features(body);
+    let mut features = extract_features(body);
+
+    // P3: augment with CFG features
+    if let Some(cfg) = ControlFlowGraph::from_func(func) {
+        features.cfg_has_back_edge = cfg.edges.iter().any(|(a, b)| *a >= *b);
+        features.cfg_num_blocks = cfg.blocks.len();
+        features.cfg_has_unreachable = !cfg.find_unreachable_blocks().is_empty();
+        features.cfg_has_early_return = cfg.blocks.iter().filter(|b| matches!(b.terminator, crate::compiler::cfg::Terminator::Return)).count() > 1;
+    }
 
     // 基于函数名和结构特征进行匹配（收集所有匹配）
     let name_lower = func.name.to_lowercase();
@@ -151,6 +160,11 @@ struct FuncFeatures {
     has_mid_calculation: bool,
     has_left_right_update: bool,
     has_adjacent_index_compare: bool,
+    // CFG-derived features (P3)
+    cfg_has_early_return: bool,
+    cfg_has_back_edge: bool,
+    cfg_num_blocks: usize,
+    cfg_has_unreachable: bool,
     compare_lines: Vec<(i32, i32, String)>, // (line, type, context)
 }
 
@@ -176,6 +190,12 @@ fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
         }
         Stmt::If { cond, then_stmt, else_stmt, .. } => {
             check_compare_expr(cond, f, loop_depth);
+            // P3: detect min/max tracking pattern inside loops
+            if loop_depth >= 1 && is_comparison_expr(cond) {
+                if stmt_has_min_max_assign(then_stmt) || else_stmt.as_ref().map_or(false, |s| stmt_has_min_max_assign(s)) {
+                    f.has_min_max_track = true;
+                }
+            }
             walk_stmt(then_stmt, f, loop_depth, func_name, depth + 1);
             if let Some(e) = else_stmt {
                 walk_stmt(e, f, loop_depth, func_name, depth + 1);
@@ -374,6 +394,51 @@ fn check_compare_expr(expr: &Expr, f: &mut FuncFeatures, _loop_depth: i32) {
 
 fn is_comparison_op(op: &BinaryOp) -> bool {
     matches!(op, BinaryOp::Lt | BinaryOp::Gt | BinaryOp::Le | BinaryOp::Ge | BinaryOp::Eq | BinaryOp::Ne)
+}
+
+fn is_comparison_expr(expr: &Expr) -> bool {
+    match expr {
+        Expr::Binary { op, .. } => is_comparison_op(op),
+        Expr::Unary { op: UnaryOp::Not, operand, .. } => is_comparison_expr(operand),
+        _ => false,
+    }
+}
+
+fn stmt_has_min_max_assign(stmt: &Stmt) -> bool {
+    match stmt {
+        Stmt::Block { stmts, .. } => stmts.iter().any(stmt_has_min_max_assign),
+        Stmt::Expr { expr, .. } => expr_has_min_max_assign(expr),
+        Stmt::VarDecl { init, extra_vars, .. } => {
+            init.as_ref().map_or(false, expr_has_min_max_assign)
+                || extra_vars.iter().any(|(_, _, e)| e.as_ref().map_or(false, expr_has_min_max_assign))
+        }
+        _ => false,
+    }
+}
+
+fn expr_has_min_max_assign(expr: &Expr) -> bool {
+    match expr {
+        Expr::Assign { left, .. } => {
+            if let Expr::Identifier { name, .. } = left.as_ref() {
+                let n = name.to_lowercase();
+                return n.contains("min") || n.contains("max");
+            }
+            false
+        }
+        Expr::Binary { left, right, .. } => expr_has_min_max_assign(left) || expr_has_min_max_assign(right),
+        Expr::Unary { operand, .. } => expr_has_min_max_assign(operand),
+        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            expr_has_min_max_assign(cond) || expr_has_min_max_assign(then_branch) || expr_has_min_max_assign(else_branch)
+        }
+        Expr::Call { args, .. } => args.iter().any(expr_has_min_max_assign),
+        Expr::CallPtr { callee, args, .. } => expr_has_min_max_assign(callee) || args.iter().any(expr_has_min_max_assign),
+        Expr::Index { array, index, .. } => expr_has_min_max_assign(array) || expr_has_min_max_assign(index),
+        Expr::Member { object, .. } => expr_has_min_max_assign(object),
+        Expr::Cast { expr: e, .. } => expr_has_min_max_assign(e),
+        Expr::Sizeof { operand: Some(e), .. } => expr_has_min_max_assign(e),
+        Expr::InitList { elements, .. } => elements.iter().any(expr_has_min_max_assign),
+        _ => false,
+    }
 }
 
 fn is_index_access(expr: &Expr) -> bool {
