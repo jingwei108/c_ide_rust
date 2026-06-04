@@ -52,6 +52,7 @@ struct SessionSnapshot {
     compile: CompileState,
     runtime: RuntimeState,
     memory: MemoryState,
+    vfs_files: Vec<(String, Vec<u8>)>,
 }
 
 #[no_mangle]
@@ -60,10 +61,16 @@ pub unsafe extern "C" fn cide_session_save(s: *mut Session, filepath: *const c_c
         return -1;
     }
     let session = &*s;
+    let vfs_files = session
+        .vm
+        .as_ref()
+        .map(|vm| session.vfs.snapshot_files(vm))
+        .unwrap_or_default();
     let snapshot = SessionSnapshot {
         compile: session.compile.clone(),
         runtime: session.runtime.clone(),
         memory: session.memory.clone(),
+        vfs_files,
     };
     let path = CStr::from_ptr(filepath).to_string_lossy().into_owned();
     match serde_json::to_string_pretty(&snapshot) {
@@ -96,10 +103,7 @@ pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_c
                     let mut vm = CideVM::default();
                     if session.compile.compiled {
                         setup_vm(&mut vm, session);
-                        let mut vfs = std::mem::take(&mut session.vfs);
-                        vfs.inject_preset_file("test.txt", b"hello\nworld\n", &mut vm, &mut session.memory);
-                        vfs.inject_preset_file("numbers.txt", b"1 2 3 4 5\n", &mut vm, &mut session.memory);
-                        session.vfs = vfs;
+                        session.vfs.restore_files(&mut vm, &mut session.memory, &snapshot.vfs_files);
                     }
                     session.vm = Some(vm);
                     0

@@ -267,6 +267,27 @@ impl VirtualFileSystem {
     pub fn get_file_name(&self, fd: u32) -> Option<&str> {
         self.descriptors.get(&fd).map(|d| d.file_name.as_str())
     }
+
+    /// 序列化所有预设文件的内容（用于 Session 保存）。
+    pub fn snapshot_files(&self, vm: &CideVM) -> Vec<(String, Vec<u8>)> {
+        let mut result = Vec::new();
+        for (name, meta) in &self.files {
+            let mut buf = vec![0u8; meta.size];
+            if vm.read_memory_to(meta.heap_addr, &mut buf) {
+                result.push((name.clone(), buf));
+            }
+        }
+        result
+    }
+
+    /// 从快照恢复预设文件（用于 Session 加载）。
+    pub fn restore_files(&mut self, vm: &mut CideVM, memory: &mut MemoryState, files: &[(String, Vec<u8>)]) {
+        self.files.clear();
+        self.descriptors.clear();
+        for (name, data) in files {
+            self.inject_preset_file(name, data, vm, memory);
+        }
+    }
 }
 
 // ========== 内部辅助函数 ==========
