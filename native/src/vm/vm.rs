@@ -32,6 +32,14 @@ pub struct FuncMeta {
     pub param_sizes: Vec<i32>,
 }
 
+#[derive(Debug, Clone)]
+pub struct FreedRegionInfo {
+    pub addr: u32,
+    pub size: u32,
+    pub alloc_line: i32,
+    pub freed_line: i32,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CallFrame {
     pub return_ip: usize,
@@ -102,6 +110,7 @@ pub struct CideVM {
     last_accessed_vars: Vec<VariableAccess>,
     local_sym_map: HashMap<i32, String>,
     global_sym_map: HashMap<i32, String>,
+    pub(crate) freed_logs: Vec<FreedRegionInfo>,
 }
 
 impl Default for CideVM {
@@ -143,6 +152,7 @@ impl CideVM {
             last_accessed_vars: Vec::new(),
             local_sym_map: HashMap::new(),
             global_sym_map: HashMap::new(),
+            freed_logs: Vec::new(),
         }
     }
 
@@ -174,6 +184,7 @@ impl CideVM {
         self.qsort_depth = 0;
         self.local_sym_map.clear();
         self.global_sym_map.clear();
+        self.freed_logs.clear();
         self.memory.fill(0);
         self.mem_stack_top = STACK_START;
     }
@@ -288,6 +299,7 @@ impl CideVM {
             vis_event_queue: self.vis_event_queue.clone(),
             breakpoints: self.breakpoints.clone(),
             global_count: self.global_count,
+            freed_logs: self.freed_logs.clone(),
             runtime: super::snapshot::RuntimeSnapshot::from(&session.runtime),
             memory_state: super::snapshot::MemorySnapshot::from(&session.memory),
         }
@@ -343,6 +355,8 @@ impl CideVM {
         session.memory.free_list = snap.memory_state.free_list.clone();
         session.memory.heap_offset = snap.memory_state.heap_offset;
         session.memory.alloc_counter = snap.memory_state.alloc_counter;
+
+        self.freed_logs = snap.freed_logs.clone();
     }
 
     /// Call a user-defined function from a host function context.
@@ -591,6 +605,12 @@ impl CideVM {
     }
 
     // --- Memory helpers ---
+
+    fn check_uaf(&self, addr: u32, size: u32) -> Option<&FreedRegionInfo> {
+        self.freed_logs
+            .iter()
+            .find(|log| addr < log.addr + log.size && addr + size > log.addr)
+    }
 
     fn check_mem_access(&mut self, addr: u32, size: u32, loc: &SourceLoc, is_write: bool) -> bool {
         if addr < NULL_TRAP_SIZE {
@@ -1202,22 +1222,42 @@ impl CideVM {
         match op {
                         OpCode::LoadMem => {
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 4) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针（另一个指针也指向同一块内存）。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             let val = self.load_i32(addr, loc);
                             self.push(val as u64);
                         }
                         OpCode::StoreMem => {
                             let val = self.pop() as i32;
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 4) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             self.store_i32(addr, val, loc);
                         }
                         OpCode::LoadMemD => {
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 8) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             let val = self.load_i64(addr, loc);
                             self.push(val);
                         }
                         OpCode::StoreMemD => {
                             let val = self.pop();
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 8) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             self.store_i64(addr, val, loc);
                         }
                         OpCode::SplitD => {
@@ -1229,22 +1269,42 @@ impl CideVM {
                         }
                         OpCode::LoadMemByte => {
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 1) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             let val = self.load_i8(addr, loc);
                             self.push(val as u64);
                         }
                         OpCode::StoreMemByte => {
                             let val = self.pop() as i32;
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 1) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             self.store_i8(addr, val, loc);
                         }
                         OpCode::LoadMemQ => {
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 8) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             let val = self.load_i64(addr, loc);
                             self.push(val);
                         }
                         OpCode::StoreMemQ => {
                             let val = self.pop();
                             let addr = self.pop() as u32;
+                            if let Some(log) = self.check_uaf(addr, 8) {
+                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                self.trap(&msg, loc);
+                                return;
+                            }
                             self.store_i64(addr, val, loc);
                         }
                         OpCode::SplitQ => {

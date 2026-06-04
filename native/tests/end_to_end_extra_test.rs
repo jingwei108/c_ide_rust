@@ -3790,3 +3790,74 @@ int main() {
     let joined = out.join("\n");
     assert!(!joined.contains("内存泄漏检测报告"), "已 free 不应报告泄漏");
 }
+
+
+// ============================================================================
+// Use-After-Free / Double-Free Detection
+// ============================================================================
+
+#[test]
+fn test_e2e_use_after_free() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(sizeof(int));
+    *p = 42;
+    free(p);
+    *p = 99;
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected Use-After-Free trap, got: {:?}", result);
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("Use-After-Free") || err.contains("E3060") || err.contains("已释放"),
+        "Error should mention Use-After-Free: {}",
+        err
+    );
+}
+
+#[test]
+fn test_e2e_double_free() {
+    let src = r#"
+#include <stdlib.h>
+int main() {
+    int *p = (int*)malloc(4);
+    free(p);
+    free(p);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected Double-Free trap, got: {:?}", result);
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("Double-Free") || err.contains("E3061") || err.contains("重复释放"),
+        "Error should mention Double-Free: {}",
+        err
+    );
+}
+
+#[test]
+fn test_e2e_use_after_free_alias() {
+    let src = r#"
+#include <stdlib.h>
+int main() {
+    int *a = (int*)malloc(4);
+    int *b = a;
+    free(a);
+    *b = 1;
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Expected Use-After-Free trap via alias, got: {:?}", result);
+    let err = result.unwrap_err();
+    assert!(
+        err.contains("Use-After-Free") || err.contains("E3060") || err.contains("已释放"),
+        "Error should mention Use-After-Free: {}",
+        err
+    );
+}

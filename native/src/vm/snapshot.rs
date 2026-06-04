@@ -30,6 +30,7 @@ pub struct VMSnapshot {
     pub vis_event_queue: Vec<VisEvent>,
     pub breakpoints: HashSet<i32>,
     pub global_count: usize,
+    pub freed_logs: Vec<crate::vm::vm::FreedRegionInfo>,
 
     // Session 运行时状态（随 VM 一起恢复）
     pub runtime: RuntimeSnapshot,

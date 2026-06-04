@@ -496,6 +496,20 @@ static ERROR_INFO_MAP: LazyLock<HashMap<i32, ErrorInfo>> = LazyLock::new(|| {
             title: "隐式类型提升",
             explanation: "代码中发生了安全的隐式类型转换（如 char → int、int → float 或 void* → 具体指针）。这在 C 语言中是允许的，但如果你希望代码更明确，可以使用显式强制转换。",
             common_causes: &["char 自动提升为 int 参与运算", "int 自动提升为 float 参与运算", "malloc 返回值未显式转换"],
+        }),
+        (3060, ErrorInfo {
+            code: 3060,
+            emoji: "💥",
+            title: "使用已释放的内存 (Use-After-Free)",
+            explanation: "你正在读取或写入一块已经被 free() 的内存。这块内存可能还保留着旧数据，但它已经不再属于你。继续使用它会导致不可预测的行为。",
+            common_causes: &["指针在 free 后没有置为 NULL，后续又解引用", "多个指针指向同一块内存，其中一个释放了，另一个还在用"],
+        }),
+        (3061, ErrorInfo {
+            code: 3061,
+            emoji: "🔁",
+            title: "重复释放内存 (Double-Free)",
+            explanation: "同一块内存被 free() 了两次。这会破坏内存管理器的内部数据结构，可能导致程序崩溃或后续分配出错。",
+            common_causes: &["free(p) 后没有置 NULL，再次 free(p)", "两个指针指向同一地址，都执行了 free"],
         })
     ])
 });
@@ -853,6 +867,17 @@ pub fn generate_fix(
         3057 => {
             (
                 "隐式类型提升是安全的，如需更明确可添加显式强制转换".to_string(),
+                4,
+                0,
+                0,
+                0,
+                0,
+                String::new(),
+            )
+        }
+        3060 | 3061 => {
+            (
+                "free(p) 后建议立即执行 p = NULL;，并检查是否还有其他指针指向这块内存。".to_string(),
                 4,
                 0,
                 0,

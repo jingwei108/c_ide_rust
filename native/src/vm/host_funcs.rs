@@ -208,6 +208,12 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
             return;
         }
     };
+    // 清理被新分配重用的 freed_logs
+    let new_end = addr.saturating_add(aligned_size);
+    vm.freed_logs.retain(|log| {
+        let log_end = log.addr.saturating_add(log.size);
+        log_end <= addr || log.addr >= new_end
+    });
     // reuse or add region
     let mut reused = false;
     for r in &mut session.memory.regions {
@@ -245,10 +251,25 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
 
 fn host_free(vm: &mut CideVM, session: &mut Session) {
     let addr = vm.pop() as u32;
+    if addr == 0 {
+        return;
+    }
+    // Double-Free 检测
+    if let Some(log) = vm.freed_logs.iter().find(|log| log.addr == addr) {
+        let msg = format!("🔁 Double-Free (E3061)：你正在 free 一块已经在第 {} 行被释放过的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：同一块内存被释放了两次，这通常是因为 free(p) 后没有将 p 置为 NULL，或者两个指针指向同一块内存且都被释放了。\n✅ 解决方法：每次 free(p) 后立刻写 p = NULL;。对 NULL 指针重复 free 是安全的。", log.freed_line, log.alloc_line);
+        vm.trap(&msg, &super::instruction::SourceLoc::default());
+        return;
+    }
     for r in &mut session.memory.regions {
         if r.addr == addr && !r.is_freed {
             r.is_freed = true;
             let aligned_size = ((r.size as u32) + 3) & !3;
+            vm.freed_logs.push(super::vm::FreedRegionInfo {
+                addr: r.addr,
+                size: aligned_size,
+                alloc_line: r.alloc_line,
+                freed_line: vm.get_current_line(),
+            });
             session.memory.free_list.push(crate::session::FreeBlock {
                 addr: r.addr,
                 size: aligned_size as i32,
@@ -641,6 +662,12 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                 if r.addr == ptr && !r.is_freed {
                     r.is_freed = true;
                     let aligned_size = ((r.size as u32) + 3) & !3;
+                    vm.freed_logs.push(super::vm::FreedRegionInfo {
+                        addr: r.addr,
+                        size: aligned_size,
+                        alloc_line: r.alloc_line,
+                        freed_line: vm.get_current_line(),
+                    });
                     session.memory.free_list.push(crate::session::FreeBlock {
                         addr: r.addr,
                         size: aligned_size as i32,
@@ -752,6 +779,12 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     for r in &mut session.memory.regions {
         if r.addr == old_addr && !r.is_freed {
             r.is_freed = true;
+            vm.freed_logs.push(super::vm::FreedRegionInfo {
+                addr: r.addr,
+                size: aligned_old_size,
+                alloc_line: r.alloc_line,
+                freed_line: vm.get_current_line(),
+            });
             session.memory.free_list.push(crate::session::FreeBlock {
                 addr: r.addr,
                 size: aligned_old_size as i32,
@@ -760,6 +793,13 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
             break;
         }
     }
+
+    // 清理被新分配重用的 freed_logs
+    let new_end = new_addr.saturating_add(aligned_new_size);
+    vm.freed_logs.retain(|log| {
+        let log_end = log.addr.saturating_add(log.size);
+        log_end <= new_addr || log.addr >= new_end
+    });
 
     // Track new region
     session.memory.regions.push(MemoryRegion {

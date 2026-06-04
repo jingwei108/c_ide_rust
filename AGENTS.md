@@ -61,6 +61,7 @@ docs/                   设计文档、事故报告
 | Phase 16 | **算法步骤语义标注**：为 6 种检测到的算法预定义步骤模板，运行时结合源码行特征 + 变量值生成教学描述（如冒泡排序"第 {i} 趟：将第 {n-i} 大的元素放到正确位置"）；前端 `ExecutionControlPanel` 实时展示步骤横幅 + `AlgorithmTab` 静态流程预览 + `ArrayVisTab` 已排序边界高亮 | ✅ 完成 |
 | Phase 17 | **代码模板参数化 + 交互式教程**：模板支持 `{{key:default}}` 占位符（数组长度、查找目标等）；选择模板后弹出参数对话框；填入参数后启动 `TemplateTutorialPanel` 逐行引导理解；关键行带 💡 可展开解释；教程完成自动编译运行并启动统一模式 | ✅ 完成 |
 | Phase 18 | **6-04 地毯式审阅修复**：P0 soundness 修复 + VM 热点 O(1) 优化 + Call/CallPtr 去重 + algorithm_detector AST 精确匹配 + 格式解析 DRY + type_size 统一提取 + check_assignable 拆分 + 隐式转换映射表 + Session 预设文件序列化 + 边界检查统一 + ptr_step_size 数组指针支持 + clippy 0 警告 | ✅ 完成 |
+| Phase 19 | **Use-After-Free / Double-Free 运行时检测**：VM `execute_memory` 指令层添加 `freed_logs` 检查，访问已释放堆内存时立即 trap 并报告分配/释放位置；`host_free` 检测重复释放；统一模式自动回退 + 知识卡片（E3060/E3061）| ✅ 完成 |
 
 ## 编码约定
 
@@ -125,6 +126,7 @@ docs/                   设计文档、事故报告
 - **变量级高亮** — `re_editor` `spanBuilder` 集成：当前执行行的被读变量名显示淡蓝底色、被写变量名显示淡橙底色，保留语法高亮；`VariablesTab` 值变化背景闪烁动画
 - **代码模板扩展** — 新增选择排序、插入排序、归并排序、线性查找、链表头插法/遍历、二叉树节点/先序遍历、栈（数组实现）等 8 个模板，总计 16 个
 - **代码模板参数化 + 交互式教程** — 核心算法模板（冒泡/选择/插入/快速/归并/二分/线性查找）支持参数占位符（如 `{{n:5}}`、`{{target:3}}`）；`TemplateParamDialog` 底部弹窗收集参数；`TemplateTutorialPanel` 逐步骤高亮代码行并展示教学描述；每步骤的关键行带 💡 `ExpansionTile` 可展开查看详细解释；教程最后一步点击"运行代码"自动插入生成代码、编译并启动统一模式；`LearningProgress` 记录 `completedTutorials`
+- **Use-After-Free / Double-Free 运行时检测** — VM `execute_memory` 指令层在每次堆内存解引用前检查 `freed_logs`；访问已释放但尚未重用的堆内存时立即 trap 并弹出知识卡片（E3060），报告分配行号和释放行号；`host_free` 检测到对同一块内存重复释放时 trap（E3061）；`malloc`/`realloc` 重用内存时自动清理对应 `freed_logs`；统一模式 Trap 自动回退到上一步；新增 3 个 E2E 测试
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护
