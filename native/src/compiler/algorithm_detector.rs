@@ -244,13 +244,8 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             walk_expr(right, f, loop_depth, func_name, depth + 1);
 
             // 检测 mid 计算：left + (right - left) / 2 或 (left + right) / 2
-            if matches!(op, BinaryOp::Add | BinaryOp::Div) {
-                let es = expr_to_string(expr);
-                if es.contains("mid")
-                    || (expr_to_string(left).contains("left") && expr_to_string(right).contains("right"))
-                {
-                    f.has_mid_calculation = true;
-                }
+            if matches!(op, BinaryOp::Add | BinaryOp::Div) && is_mid_calculation(expr) {
+                f.has_mid_calculation = true;
             }
         }
         Expr::Unary { operand, .. } => {
@@ -292,15 +287,17 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
                 f.has_swap = true;
             }
 
-            // 检测 left/right 更新
-            let s = expr_to_string(expr);
-            if (s.contains("left") || s.contains("right")) && s.contains("mid") {
-                f.has_left_right_update = true;
+            // 检测 left/right 更新（基于 AST 结构：涉及索引访问的赋值）
+            if matches!(op, AssignOp::Assign) {
+                if let Expr::Index { index: idx, .. } = left.as_ref() {
+                    if expr_to_string(idx).contains("mid") {
+                        f.has_left_right_update = true;
+                    }
+                }
             }
 
             // 检测 shift 模式：arr[j+1] = arr[j] 或类似的后移操作
-            if matches!(op, AssignOp::Assign)
-                && s.contains('[') && expr_to_string(right).contains('[') {
+            if matches!(op, AssignOp::Assign) && is_shift_pattern(left, right) {
                 f.has_shift_pattern = true;
             }
         }
@@ -383,6 +380,10 @@ fn is_index_access(expr: &Expr) -> bool {
     matches!(expr, Expr::Index { .. })
 }
 
+fn is_literal_int(expr: &Expr, val: i32) -> bool {
+    matches!(expr, Expr::Literal { value: v, .. } if *v == val)
+}
+
 fn is_adjacent_compare(a: &Expr, b: &Expr) -> bool {
     // 检查是否是 arr[x] 和 arr[x+1] 的比较（基于 AST 结构，而非字符串格式）
     if let Expr::Index { array: arr_a, index: idx_a, .. } = a {
@@ -390,10 +391,49 @@ fn is_adjacent_compare(a: &Expr, b: &Expr) -> bool {
             if expr_to_string(arr_a) == expr_to_string(arr_b) {
                 // 检查 idx_b 是否是 idx_a + 1
                 if let Expr::Binary { op: BinaryOp::Add, left, right, .. } = idx_b.as_ref() {
-                    if expr_to_string(left) == expr_to_string(idx_a) {
-                        if let Expr::Literal { value: 1, .. } = right.as_ref() {
-                            return true;
-                        }
+                    if expr_to_string(left) == expr_to_string(idx_a) && is_literal_int(right, 1) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn is_mid_calculation(expr: &Expr) -> bool {
+    // 模式1: (a + b) / 2
+    if let Expr::Binary { op: BinaryOp::Div, left, right, .. } = expr {
+        if is_literal_int(right, 2) {
+            if let Expr::Binary { op: BinaryOp::Add, .. } = left.as_ref() {
+                return true;
+            }
+        }
+    }
+    // 模式2: a + (b - a) / 2
+    if let Expr::Binary { op: BinaryOp::Add, left, right, .. } = expr {
+        if let Expr::Binary { op: BinaryOp::Div, left: div_left, right: div_right, .. } = right.as_ref() {
+            if is_literal_int(div_right, 2) {
+                if let Expr::Binary { op: BinaryOp::Sub, left: _, right: sub_right, .. } = div_left.as_ref() {
+                    if expr_to_string(sub_right) == expr_to_string(left) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+fn is_shift_pattern(left: &Expr, right: &Expr) -> bool {
+    // 检测 arr[x] = arr[y] 的后移模式，要求 x == y + 1
+    if let Expr::Index { array: arr_l, index: idx_l, .. } = left {
+        if let Expr::Index { array: arr_r, index: idx_r, .. } = right {
+            if expr_to_string(arr_l) == expr_to_string(arr_r) {
+                // 检查 idx_l 是否为 idx_r + 1
+                if let Expr::Binary { op: BinaryOp::Add, left: add_left, right: add_right, .. } = idx_l.as_ref() {
+                    if expr_to_string(add_left) == expr_to_string(idx_r) && is_literal_int(add_right, 1) {
+                        return true;
                     }
                 }
             }
