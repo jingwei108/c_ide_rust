@@ -230,12 +230,7 @@ class CideDocument extends ChangeNotifier {
   }
 
   DocPosition offsetToPosition(int offset) {
-    var line = offsetToLine(offset);
-    // 如果 offset 正好落在某行行首（换行符之后），把它归属到上一行末尾，
-    // 避免光标在行尾时被误判到下一行开头。
-    if (line > 0 && _lineStartOffsets[line] == offset) {
-      line -= 1;
-    }
+    final line = offsetToLine(offset);
     return DocPosition(
       line: line,
       col: offset - _lineStartOffsets[line],

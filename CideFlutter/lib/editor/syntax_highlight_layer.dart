@@ -43,7 +43,7 @@ class SyntaxHighlightLayer implements EditorLayer {
       );
     }
 
-    painter.layout(maxWidth: viewport.width);
+    painter.layout();
     painter.paint(canvas, Offset(0, layout.top));
   }
 

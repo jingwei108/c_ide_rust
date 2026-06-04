@@ -53,12 +53,12 @@ class CideEditorPainter extends CustomPainter {
         continue;
       }
 
-      // 构建 TextPainter 并布局
+      // 构建 TextPainter 并布局（不限制宽度，禁止 soft wrap）
       final textPainter = TextPainter(
         text: TextSpan(text: text, style: textStyle),
         textDirection: TextDirection.ltr,
       );
-      textPainter.layout(maxWidth: size.width);
+      textPainter.layout();
 
       final layout = LineLayout(
         lineIndex: line,

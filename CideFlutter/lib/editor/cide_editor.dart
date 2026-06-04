@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'cide_document.dart';
@@ -550,27 +549,29 @@ class CideEditorState extends State<CideEditor>
                       // 将点击坐标转换为文本位置并移动光标
                       _handleTap(event.localPosition);
                     },
-                    child: EditableText(
-                      controller: _proxyController,
-                      focusNode: _focusNode,
-                      style: TextStyle(
-                        color: Colors.transparent,
-                        fontSize: widget.style.fontSize,
-                        height: widget.style.height,
-                        fontFamily: widget.style.fontFamily,
-                        fontFamilyFallback: widget.style.fontFamilyFallback,
+                    child: AbsorbPointer(
+                      child: EditableText(
+                        controller: _proxyController,
+                        focusNode: _focusNode,
+                        style: TextStyle(
+                          color: Colors.transparent,
+                          fontSize: widget.style.fontSize,
+                          height: widget.style.height,
+                          fontFamily: widget.style.fontFamily,
+                          fontFamilyFallback: widget.style.fontFamilyFallback,
+                        ),
+                        cursorColor: Colors.transparent,
+                        backgroundCursorColor: Colors.transparent,
+                        selectionColor: Colors.transparent,
+                        cursorOpacityAnimates: false,
+                        scrollPadding: EdgeInsets.zero,
+                        maxLines: null,
+                        autocorrect: false,
+                        enableSuggestions: false,
+                        readOnly: _readOnly,
+                        onChanged: (_) {}, // 变化由 controller listener 处理
+                        onSelectionChanged: (_, __) {},
                       ),
-                      cursorColor: Colors.transparent,
-                      backgroundCursorColor: Colors.transparent,
-                      selectionColor: Colors.transparent,
-                      cursorOpacityAnimates: false,
-                      scrollPadding: EdgeInsets.zero,
-                      maxLines: null,
-                      autocorrect: false,
-                      enableSuggestions: false,
-                      readOnly: _readOnly,
-                      onChanged: (_) {}, // 变化由 controller listener 处理
-                      onSelectionChanged: (_, __) {},
                     ),
                   ),
                 ),
