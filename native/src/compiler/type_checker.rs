@@ -45,71 +45,34 @@ pub struct TypeChecker {
     switch_depth: i32,
 }
 
+/// 根据 (from, to) 类型对判断是否允许隐式转换，并返回转换后的目标类型。
+fn implicit_cast_target(from: TypeKind, to: TypeKind) -> Option<Type> {
+    use TypeKind::*;
+    match (from, to) {
+        (Int | Char | Float | LongLong, Double) => Some(Type::double()),
+        (Double, Int) => Some(Type::int()),
+        (Double, Char) => Some(Type::char()),
+        (Double, Float) => Some(Type::float()),
+        (Double, LongLong) => Some(Type::long_long()),
+        (Int | Char | LongLong, Float) => Some(Type::float()),
+        (Float, Int) => Some(Type::int()),
+        (Float, Char) => Some(Type::char()),
+        (Float, LongLong) => Some(Type::long_long()),
+        (Int | Char, LongLong) => Some(Type::long_long()),
+        (LongLong, Int) => Some(Type::int()),
+        (LongLong, Char) => Some(Type::char()),
+        _ => None,
+    }
+}
+
 fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     let current_ty = expr.ty().clone();
-    if target.kind() == TypeKind::Double && current_ty.kind() != TypeKind::Double && matches!(current_ty.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong) {
-        if matches!(expr, Expr::FloatLiteral { .. }) {
-            expr.set_ty(Type::double());
-        } else {
-            let loc = *expr.loc();
-            let old = std::mem::take(expr);
-            *expr = Expr::Cast {
-                expr: Box::new(old),
-                target_type: Type::double(),
-                loc,
-                ty: Type::double(),
-            };
-        }
-    } else if target.kind() != TypeKind::Double && current_ty.kind() == TypeKind::Double && matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong) {
+    if target.kind() == TypeKind::Double && matches!(expr, Expr::FloatLiteral { .. }) {
+        expr.set_ty(Type::double());
+        return;
+    }
+    if let Some(target_ty) = implicit_cast_target(current_ty.kind(), target.kind()) {
         let loc = *expr.loc();
-        let target_ty = match target.kind() {
-            TypeKind::Char => Type::char(),
-            TypeKind::Float => Type::float(),
-            TypeKind::LongLong => Type::long_long(),
-            _ => Type::int(),
-        };
-        let old = std::mem::take(expr);
-        *expr = Expr::Cast {
-            expr: Box::new(old),
-            target_type: target_ty.clone(),
-            loc,
-            ty: target_ty,
-        };
-    } else if target.kind() == TypeKind::Float && current_ty.kind() != TypeKind::Float && matches!(current_ty.kind(), TypeKind::Int | TypeKind::Char | TypeKind::LongLong) {
-        let loc = *expr.loc();
-        let old = std::mem::take(expr);
-        *expr = Expr::Cast {
-            expr: Box::new(old),
-            target_type: Type::float(),
-            loc,
-            ty: Type::float(),
-        };
-    } else if target.kind() != TypeKind::Float && current_ty.kind() == TypeKind::Float && matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::LongLong) {
-        let loc = *expr.loc();
-        let target_ty = match target.kind() {
-            TypeKind::Char => Type::char(),
-            TypeKind::LongLong => Type::long_long(),
-            _ => Type::int(),
-        };
-        let old = std::mem::take(expr);
-        *expr = Expr::Cast {
-            expr: Box::new(old),
-            target_type: target_ty.clone(),
-            loc,
-            ty: target_ty,
-        };
-    } else if target.kind() == TypeKind::LongLong && current_ty.kind() != TypeKind::LongLong && matches!(current_ty.kind(), TypeKind::Int | TypeKind::Char) {
-        let loc = *expr.loc();
-        let old = std::mem::take(expr);
-        *expr = Expr::Cast {
-            expr: Box::new(old),
-            target_type: Type::long_long(),
-            loc,
-            ty: Type::long_long(),
-        };
-    } else if target.kind() != TypeKind::LongLong && current_ty.kind() == TypeKind::LongLong && matches!(target.kind(), TypeKind::Int | TypeKind::Char) {
-        let loc = *expr.loc();
-        let target_ty = if target.kind() == TypeKind::Char { Type::char() } else { Type::int() };
         let old = std::mem::take(expr);
         *expr = Expr::Cast {
             expr: Box::new(old),
