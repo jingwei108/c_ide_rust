@@ -196,7 +196,16 @@ pub fn step_next() -> StepResult {
         loop {
             match vm.step(&mut session) {
                 crate::vm::vm::StepResult::Ok => {
-                    // 继续执行
+                    // 首次运行：遇到第一个 StepEvent 后暂停，避免无断点时持续执行到 max_steps
+                    if vm.was_step_event_hit() {
+                        session.runtime.current_line = vm.get_current_line();
+                        break StepResult {
+                            status: StepStatus::Paused,
+                            current_line: session.runtime.current_line,
+                            output: session.runtime.output(),
+                            waiting_input: false,
+                        };
+                    }
                 }
                 crate::vm::vm::StepResult::Paused => {
                     session.runtime.current_line = vm.get_current_line();

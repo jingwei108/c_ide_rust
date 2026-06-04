@@ -200,6 +200,7 @@ impl BytecodeGen {
                 is_local: false,
                 ty: g.ty.clone(),
                 scope_depth: 0,
+                func_name: String::new(),
             });
             self.next_global_offset += sz;
         }
@@ -315,6 +316,7 @@ impl BytecodeGen {
                 is_local: true,
                 ty: p.ty.clone(),
                 scope_depth: 1,
+                func_name: self.current_func.clone(),
             });
             offset += aligned_sz;
         }
@@ -523,6 +525,7 @@ impl BytecodeGen {
                         is_local: true,
                         ty: vty.clone(),
                         scope_depth: 1,
+                        func_name: self.current_func.clone(),
                     });
                     if let Some(ref mut e) = init {
                         if vty.is_array() && matches!(e, Expr::InitList { .. }) {

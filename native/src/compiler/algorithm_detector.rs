@@ -384,15 +384,17 @@ fn is_index_access(expr: &Expr) -> bool {
 }
 
 fn is_adjacent_compare(a: &Expr, b: &Expr) -> bool {
-    // 检查是否是 arr[x] 和 arr[x+1] 的比较
+    // 检查是否是 arr[x] 和 arr[x+1] 的比较（基于 AST 结构，而非字符串格式）
     if let Expr::Index { array: arr_a, index: idx_a, .. } = a {
         if let Expr::Index { array: arr_b, index: idx_b, .. } = b {
             if expr_to_string(arr_a) == expr_to_string(arr_b) {
                 // 检查 idx_b 是否是 idx_a + 1
-                let ia = expr_to_string(idx_a);
-                let ib = expr_to_string(idx_b);
-                if ib == format!("{} + 1", ia) || ib == format!("{}+1", ia) {
-                    return true;
+                if let Expr::Binary { op: BinaryOp::Add, left, right, .. } = idx_b.as_ref() {
+                    if expr_to_string(left) == expr_to_string(idx_a) {
+                        if let Expr::Literal { value: 1, .. } = right.as_ref() {
+                            return true;
+                        }
+                    }
                 }
             }
         }

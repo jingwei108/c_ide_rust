@@ -12,11 +12,11 @@ use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime
 /// 将 C 字符串指针安全转换为 Rust &str。
 ///
 /// 内部完成 null 检查，可作为 safe 函数调用。
-fn cstr_to_str(s: *const c_char) -> Option<&'static str> {
+fn cstr_to_str(s: *const c_char) -> Option<String> {
     if s.is_null() {
         return None;
     }
-    unsafe { CStr::from_ptr(s).to_str().ok() }
+    unsafe { CStr::from_ptr(s).to_str().ok().map(|s| s.to_owned()) }
 }
 
 /// 将 Rust 字符串安全写入 C 缓冲区（带 null 终止符）。

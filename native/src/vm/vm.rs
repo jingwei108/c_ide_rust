@@ -47,6 +47,7 @@ pub struct VMSymbol {
     pub is_local: bool,
     pub ty: Type,
     pub scope_depth: i32,
+    pub func_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -99,6 +100,8 @@ pub struct CideVM {
     f64_constants: Vec<f64>,
     i64_constants: Vec<i64>,
     last_accessed_vars: Vec<VariableAccess>,
+    local_sym_map: HashMap<i32, String>,
+    global_sym_map: HashMap<i32, String>,
 }
 
 impl Default for CideVM {
@@ -138,6 +141,8 @@ impl CideVM {
             f64_constants: Vec::new(),
             i64_constants: Vec::new(),
             last_accessed_vars: Vec::new(),
+            local_sym_map: HashMap::new(),
+            global_sym_map: HashMap::new(),
         }
     }
 
@@ -166,6 +171,9 @@ impl CideVM {
         self.exit_code = 0;
         self.i64_constants.clear();
         self.last_accessed_vars.clear();
+        self.qsort_depth = 0;
+        self.local_sym_map.clear();
+        self.global_sym_map.clear();
         self.memory.fill(0);
         self.mem_stack_top = STACK_START;
     }
@@ -206,6 +214,12 @@ impl CideVM {
     }
 
     pub fn set_symbols(&mut self, symbols: Vec<VMSymbol>) {
+        self.global_sym_map.clear();
+        for sym in &symbols {
+            if !sym.is_local {
+                self.global_sym_map.insert(sym.addr as i32, sym.name.clone());
+            }
+        }
         self.symbols = symbols;
     }
 
@@ -388,6 +402,7 @@ impl CideVM {
             local_count: meta.local_count,
             func_name,
         });
+        self.rebuild_local_sym_map();
         self.ip = meta.ip;
 
         // Execute until return or trap
@@ -423,6 +438,7 @@ impl CideVM {
         self.error = saved_error;
         self.finished = saved_finished;
         self.step_event_hit = saved_step_event_hit;
+        self.rebuild_local_sym_map();
         self.current_line = saved_current_line;
         self.vis_event_queue = saved_vis_event_queue;
         self.breakpoints = saved_breakpoints;
@@ -529,6 +545,17 @@ impl CideVM {
 
     pub fn get_symbols(&self) -> &[VMSymbol] {
         &self.symbols
+    }
+
+    fn rebuild_local_sym_map(&mut self) {
+        self.local_sym_map.clear();
+        if let Some(frame) = self.call_stack.last() {
+            for sym in &self.symbols {
+                if sym.is_local && sym.func_name == frame.func_name {
+                    self.local_sym_map.insert(sym.addr as i32, sym.name.clone());
+                }
+            }
+        }
     }
 
     pub fn get_call_stack(&self) -> &[CallFrame] {
@@ -1006,9 +1033,9 @@ impl CideVM {
     fn execute_local(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
         match op {
                         OpCode::LoadLocal => {
-                            let var_name = self.symbols.iter()
-                                .find(|s| s.is_local && s.addr == operand as u32)
-                                .map(|s| s.name.clone())
+                            let var_name = self.local_sym_map
+                                .get(&operand)
+                                .cloned()
                                 .unwrap_or_else(|| format!("local_{}", operand));
                             self.last_accessed_vars.push(VariableAccess {
                                 name: var_name,
@@ -1027,9 +1054,9 @@ impl CideVM {
                             }
                         }
                         OpCode::StoreLocal => {
-                            let var_name = self.symbols.iter()
-                                .find(|s| s.is_local && s.addr == operand as u32)
-                                .map(|s| s.name.clone())
+                            let var_name = self.local_sym_map
+                                .get(&operand)
+                                .cloned()
                                 .unwrap_or_else(|| format!("local_{}", operand));
                             self.last_accessed_vars.push(VariableAccess {
                                 name: var_name,
@@ -1112,9 +1139,9 @@ impl CideVM {
     fn execute_global(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
         match op {
                         OpCode::LoadGlobal => {
-                            let var_name = self.symbols.iter()
-                                .find(|s| !s.is_local && s.addr == operand as u32)
-                                .map(|s| s.name.clone())
+                            let var_name = self.global_sym_map
+                                .get(&operand)
+                                .cloned()
                                 .unwrap_or_else(|| format!("global_{}", operand));
                             self.last_accessed_vars.push(VariableAccess {
                                 name: var_name,
@@ -1129,9 +1156,9 @@ impl CideVM {
                             }
                         }
                         OpCode::StoreGlobal => {
-                            let var_name = self.symbols.iter()
-                                .find(|s| !s.is_local && s.addr == operand as u32)
-                                .map(|s| s.name.clone())
+                            let var_name = self.global_sym_map
+                                .get(&operand)
+                                .cloned()
                                 .unwrap_or_else(|| format!("global_{}", operand));
                             self.last_accessed_vars.push(VariableAccess {
                                 name: var_name,
@@ -1543,6 +1570,60 @@ impl CideVM {
             _ => {}
         }
     }
+    fn do_call(&mut self, func_idx: u32, loc: &SourceLoc, session: &mut Session, op_name: &str) {
+        let idx = func_idx as usize;
+        if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
+            self.trap(&format!("{}: 未知函数索引 {}", op_name, func_idx), loc);
+            return;
+        }
+        let meta = self.func_table[idx].clone();
+        let frame_size = meta.local_count as u64;
+        if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
+            self.trap(&format!("{}: 栈溢出", op_name), loc);
+            return;
+        }
+        let frame_size_u32 = frame_size as u32;
+        if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
+            self.trap(&format!("{}: 栈溢出", op_name), loc);
+            return;
+        }
+        let heap_limit = session.memory.heap_offset;
+        if self.mem_stack_top - frame_size_u32 < heap_limit {
+            self.trap(&format!("{}: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", op_name), loc);
+            return;
+        }
+        self.mem_stack_top -= frame_size_u32;
+        let locals_base = self.mem_stack_top;
+
+        let mut word_offset = 0;
+        for word_count in meta.param_sizes.iter() {
+            let words = *word_count as u32;
+            let addr = locals_base + word_offset * 4;
+            for w in (0..words).rev() {
+                let val = self.pop() as i32;
+                self.store_i32(addr + w * 4, val, loc);
+            }
+            word_offset += words;
+        }
+        let arg_bytes = word_offset * 4;
+        for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
+            self.memory[addr as usize] = 0;
+        }
+        let func_name = if idx < self.func_names.len() {
+            self.func_names[idx].clone()
+        } else {
+            format!("func_{}", func_idx)
+        };
+        self.call_stack.push(CallFrame {
+            return_ip: self.ip,
+            locals_base,
+            local_count: meta.local_count,
+            func_name,
+        });
+        self.rebuild_local_sym_map();
+        self.ip = meta.ip;
+    }
+
     fn execute_control_flow(&mut self, op: OpCode, operand: i32, loc: &SourceLoc, session: &mut Session) -> Option<StepResult> {
         match op {
                         OpCode::Jump => {
@@ -1579,57 +1660,7 @@ impl CideVM {
                             None
                         }
                         OpCode::Call => {
-                            let func_idx = operand as u32;
-                            let idx = func_idx as usize;
-                            if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
-                                self.trap(&format!("Call: 未知函数索引 {}", func_idx), loc);
-                            } else {
-                                let meta = self.func_table[idx].clone();
-                                let frame_size = meta.local_count as u64;
-                                if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
-                                    self.trap("Call: 栈溢出", loc);
-                                } else {
-                                    let frame_size_u32 = frame_size as u32;
-                                    if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
-                                        self.trap("Call: 栈溢出", loc);
-                                    } else {
-                                        let heap_limit = session.memory.heap_offset;
-                                        if self.mem_stack_top - frame_size_u32 < heap_limit {
-                                            self.trap("Call: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", loc);
-                                        } else {
-                                            self.mem_stack_top -= frame_size_u32;
-                                            let locals_base = self.mem_stack_top;
-            
-                                            let mut word_offset = 0;
-                                            for word_count in meta.param_sizes.iter() {
-                                                let words = *word_count as u32;
-                                                let addr = locals_base + word_offset * 4;
-                                                for w in (0..words).rev() {
-                                                    let val = self.pop() as i32;
-                                                    self.store_i32(addr + w * 4, val, loc);
-                                                }
-                                                word_offset += words;
-                                            }
-                                            let arg_bytes = word_offset * 4;
-                                            for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
-                                                self.memory[addr as usize] = 0;
-                                            }
-                                            let func_name = if (func_idx as usize) < self.func_names.len() {
-                                                self.func_names[func_idx as usize].clone()
-                                            } else {
-                                                format!("func_{}", func_idx)
-                                            };
-                                            self.call_stack.push(CallFrame {
-                                                return_ip: self.ip,
-                                                locals_base,
-                                                local_count: meta.local_count,
-                                                func_name,
-                                            });
-                                            self.ip = meta.ip;
-                                        }
-                                    }
-                                }
-                            }
+                            self.do_call(operand as u32, loc, session, "Call");
                             None
                         }
                         OpCode::CallPtr => {
@@ -1637,55 +1668,7 @@ impl CideVM {
                                 self.trap("CallPtr: 栈下溢（缺少函数索引）", loc);
                             } else {
                                 let func_idx = self.pop() as u32;
-                                let idx = func_idx as usize;
-                                if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
-                                    self.trap(&format!("CallPtr: 未知函数索引 {}", func_idx), loc);
-                                } else {
-                                    let meta = self.func_table[idx].clone();
-                                    let frame_size = meta.local_count as u64;
-                                    if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
-                                        self.trap("CallPtr: 栈溢出", loc);
-                                    } else {
-                                        let frame_size_u32 = frame_size as u32;
-                                        if self.mem_stack_top < NULL_TRAP_SIZE + frame_size_u32 {
-                                            self.trap("CallPtr: 栈溢出", loc);
-                                        } else {
-                                            let heap_limit = session.memory.heap_offset;
-                                            if self.mem_stack_top - frame_size_u32 < heap_limit {
-                                                self.trap("CallPtr: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", loc);
-                                            } else {
-                                                self.mem_stack_top -= frame_size_u32;
-                                                let locals_base = self.mem_stack_top;
-                                                let mut word_offset = 0;
-                                                for word_count in meta.param_sizes.iter() {
-                                                    let words = *word_count as u32;
-                                                    let addr = locals_base + word_offset * 4;
-                                                    for w in (0..words).rev() {
-                                                        let val = self.pop() as i32;
-                                                        self.store_i32(addr + w * 4, val, loc);
-                                                    }
-                                                    word_offset += words;
-                                                }
-                                                let arg_bytes = word_offset * 4;
-                                                for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
-                                                    self.memory[addr as usize] = 0;
-                                                }
-                                                let func_name = if idx < self.func_names.len() {
-                                                    self.func_names[idx].clone()
-                                                } else {
-                                                    format!("func_{}", func_idx)
-                                                };
-                                                self.call_stack.push(CallFrame {
-                                                    return_ip: self.ip,
-                                                    locals_base,
-                                                    local_count: meta.local_count,
-                                                    func_name,
-                                                });
-                                                self.ip = meta.ip;
-                                            }
-                                        }
-                                    }
-                                }
+                                self.do_call(func_idx, loc, session, "CallPtr");
                             }
                             None
                         }
@@ -1707,11 +1690,13 @@ impl CideVM {
                             if frame.return_ip == HOST_CALLBACK_SENTINEL {
                                 self.mem_stack_top = frame.locals_base;
                                 self.push(ret_val);
+                                self.local_sym_map.clear();
                                 return Some(StepResult::Finished);
                             }
                             self.ip = frame.return_ip;
                             self.mem_stack_top = frame.locals_base;
                             self.push(ret_val);
+                            self.rebuild_local_sym_map();
                             None
                         }
                         OpCode::RetVoid => {
@@ -1722,10 +1707,12 @@ impl CideVM {
                             const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                             if frame.return_ip == HOST_CALLBACK_SENTINEL {
                                 self.mem_stack_top = frame.locals_base;
+                                self.local_sym_map.clear();
                                 return Some(StepResult::Finished);
                             }
                             self.ip = frame.return_ip;
                             self.mem_stack_top = frame.locals_base;
+                            self.rebuild_local_sym_map();
                             None
                         }
             _ => None,

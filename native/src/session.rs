@@ -54,6 +54,7 @@ pub struct Symbol {
     pub is_local: bool,
     pub ty: Type,
     pub scope_depth: i32,
+    pub func_name: String,
 }
 
 #[frb]

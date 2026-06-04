@@ -195,6 +195,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
         is_local: s.is_local,
         ty: s.ty.clone(),
         scope_depth: s.scope_depth,
+        func_name: s.func_name.clone(),
     }).collect();
     vm.set_symbols(symbols);
 
@@ -317,6 +318,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
             is_local: sym.is_local,
             ty: sym.ty,
             scope_depth: sym.scope_depth,
+            func_name: sym.func_name,
         });
     }
 
@@ -506,6 +508,7 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
             is_local: sym.is_local,
             ty: sym.ty,
             scope_depth: sym.scope_depth,
+            func_name: sym.func_name,
         });
     }
 

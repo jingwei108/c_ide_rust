@@ -1,4 +1,3 @@
-use cide_native::compiler::ast::Type;
 use cide_native::diagnostics::error_codes::ErrorCode;
 use cide_native::engine::compile_pipeline::run_multi_file_pipeline;
 use cide_native::session::{CompileUnit, Session};
