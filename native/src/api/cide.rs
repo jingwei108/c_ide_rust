@@ -11,6 +11,26 @@ pub use crate::session::{
 
 // 统一模式类型 re-export
 #[frb]
+pub use crate::diagnostics::learning_path::{LearningPath, PathStep};
+
+#[frb]
+pub use crate::diagnostics::misconception_patterns::{
+    CompileRecord, DetectedMisconception, MisconceptionPattern,
+};
+
+#[frb]
+pub fn detect_misconceptions(history: Vec<CompileRecord>) -> Vec<DetectedMisconception> {
+    crate::diagnostics::misconception_patterns::detect_misconceptions(history)
+}
+
+#[frb]
+pub fn recommend_learning_paths(
+    detected: Vec<DetectedMisconception>,
+) -> Vec<LearningPath> {
+    crate::diagnostics::learning_path::recommend_learning_paths(detected)
+}
+
+#[frb]
 pub use crate::unified::root_cause::RootCauseHint;
 
 #[frb]

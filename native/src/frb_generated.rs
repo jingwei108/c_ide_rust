@@ -38,7 +38,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.12.0";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2135479538;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 780725230;
 
 // Section: executor
 
@@ -325,6 +325,35 @@ fn wire__crate__api__cide__destroy_session_impl(
                     let output_ok = Result::<_, ()>::Ok({
                         crate::api::cide::destroy_session(api_session_id);
                     })?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
+fn wire__crate__api__cide__detect_misconceptions_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "detect_misconceptions",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_)
+            };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_history =
+                <Vec<crate::diagnostics::misconception_patterns::CompileRecord>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(crate::api::cide::detect_misconceptions(api_history))?;
                     Ok(output_ok)
                 })())
             }
@@ -908,6 +937,35 @@ fn wire__crate__api__cide__read_memory_impl(
         },
     )
 }
+fn wire__crate__api__cide__recommend_learning_paths_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "recommend_learning_paths",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(ptr_, rust_vec_len_, data_len_)
+            };
+            let mut deserializer = flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_detected =
+                <Vec<crate::diagnostics::misconception_patterns::DetectedMisconception>>::sse_decode(&mut deserializer);
+            deserializer.end();
+            move |context| {
+                transform_result_sse::<_, ()>((move || {
+                    let output_ok = Result::<_, ()>::Ok(crate::api::cide::recommend_learning_paths(api_detected))?;
+                    Ok(output_ok)
+                })())
+            }
+        },
+    )
+}
 fn wire__crate__api__cide__reset_session_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -1339,6 +1397,22 @@ impl SseDecode for crate::api::cide::CodeFile {
     }
 }
 
+impl SseDecode for crate::diagnostics::misconception_patterns::CompileRecord {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_timestampMs = <i64>::sse_decode(deserializer);
+        let mut var_success = <bool>::sse_decode(deserializer);
+        let mut var_errorCodes = <Vec<i32>>::sse_decode(deserializer);
+        let mut var_trapMessage = <Option<String>>::sse_decode(deserializer);
+        return crate::diagnostics::misconception_patterns::CompileRecord {
+            timestamp_ms: var_timestampMs,
+            success: var_success,
+            error_codes: var_errorCodes,
+            trap_message: var_trapMessage,
+        };
+    }
+}
+
 impl SseDecode for crate::session::CompileResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1349,6 +1423,24 @@ impl SseDecode for crate::session::CompileResult {
             success: var_success,
             diagnostics: var_diagnostics,
             algorithm_matches: var_algorithmMatches,
+        };
+    }
+}
+
+impl SseDecode for crate::diagnostics::misconception_patterns::DetectedMisconception {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_patternId = <String>::sse_decode(deserializer);
+        let mut var_patternName = <String>::sse_decode(deserializer);
+        let mut var_description = <String>::sse_decode(deserializer);
+        let mut var_occurrenceCount = <i32>::sse_decode(deserializer);
+        let mut var_confidence = <f32>::sse_decode(deserializer);
+        return crate::diagnostics::misconception_patterns::DetectedMisconception {
+            pattern_id: var_patternId,
+            pattern_name: var_patternName,
+            description: var_description,
+            occurrence_count: var_occurrenceCount,
+            confidence: var_confidence,
         };
     }
 }
@@ -1387,6 +1479,13 @@ impl SseDecode for crate::session::Diagnostic {
     }
 }
 
+impl SseDecode for f32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_f32::<NativeEndian>().unwrap()
+    }
+}
+
 impl SseDecode for crate::session::HeapStats {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1419,6 +1518,29 @@ impl SseDecode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         deserializer.cursor.read_i32::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        deserializer.cursor.read_i64::<NativeEndian>().unwrap()
+    }
+}
+
+impl SseDecode for crate::diagnostics::learning_path::LearningPath {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_targetMisconceptionId = <String>::sse_decode(deserializer);
+        let mut var_targetMisconceptionName = <String>::sse_decode(deserializer);
+        let mut var_estimatedTimeMinutes = <i32>::sse_decode(deserializer);
+        let mut var_steps = <Vec<crate::diagnostics::learning_path::PathStep>>::sse_decode(deserializer);
+        return crate::diagnostics::learning_path::LearningPath {
+            target_misconception_id: var_targetMisconceptionId,
+            target_misconception_name: var_targetMisconceptionName,
+            estimated_time_minutes: var_estimatedTimeMinutes,
+            steps: var_steps,
+        };
     }
 }
 
@@ -1506,6 +1628,34 @@ impl SseDecode for Vec<crate::api::cide::CodeFile> {
     }
 }
 
+impl SseDecode for Vec<crate::diagnostics::misconception_patterns::CompileRecord> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::diagnostics::misconception_patterns::CompileRecord>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::diagnostics::misconception_patterns::DetectedMisconception> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::diagnostics::misconception_patterns::DetectedMisconception>::sse_decode(
+                deserializer,
+            ));
+        }
+        return ans_;
+    }
+}
+
 impl SseDecode for Vec<crate::session::Diagnostic> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -1513,6 +1663,18 @@ impl SseDecode for Vec<crate::session::Diagnostic> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::session::Diagnostic>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::diagnostics::learning_path::LearningPath> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::diagnostics::learning_path::LearningPath>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1537,6 +1699,18 @@ impl SseDecode for Vec<crate::session::MemoryRegion> {
         let mut ans_ = Vec::with_capacity(len_ as usize);
         for idx_ in 0..len_ {
             ans_.push(<crate::session::MemoryRegion>::sse_decode(deserializer));
+        }
+        return ans_;
+    }
+}
+
+impl SseDecode for Vec<crate::diagnostics::learning_path::PathStep> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut len_ = <i32>::sse_decode(deserializer);
+        let mut ans_ = Vec::with_capacity(len_ as usize);
+        for idx_ in 0..len_ {
+            ans_.push(<crate::diagnostics::learning_path::PathStep>::sse_decode(deserializer));
         }
         return ans_;
     }
@@ -1724,6 +1898,24 @@ impl SseDecode for Option<crate::unified::types::StepPayload> {
         } else {
             return None;
         }
+    }
+}
+
+impl SseDecode for crate::diagnostics::learning_path::PathStep {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        let mut var_stepType = <String>::sse_decode(deserializer);
+        let mut var_title = <String>::sse_decode(deserializer);
+        let mut var_detail = <String>::sse_decode(deserializer);
+        let mut var_targetId = <String>::sse_decode(deserializer);
+        let mut var_highlightLines = <Vec<i32>>::sse_decode(deserializer);
+        return crate::diagnostics::learning_path::PathStep {
+            step_type: var_stepType,
+            title: var_title,
+            detail: var_detail,
+            target_id: var_targetId,
+            highlight_lines: var_highlightLines,
+        };
     }
 }
 
@@ -2005,36 +2197,38 @@ fn pde_ffi_dispatcher_primary_impl(
         8 => wire__crate__api__cide__continue_from_step_impl(port, ptr, rust_vec_len, data_len),
         9 => wire__crate__api__cide__create_session_impl(port, ptr, rust_vec_len, data_len),
         10 => wire__crate__api__cide__destroy_session_impl(port, ptr, rust_vec_len, data_len),
-        11 => wire__crate__api__cide__get_algorithm_matches_impl(port, ptr, rust_vec_len, data_len),
-        12 => wire__crate__api__cide__get_callstack_impl(port, ptr, rust_vec_len, data_len),
-        13 => wire__crate__api__cide__get_current_line_impl(port, ptr, rust_vec_len, data_len),
-        14 => wire__crate__api__cide__get_current_session_id_impl(port, ptr, rust_vec_len, data_len),
-        15 => wire__crate__api__cide__get_diagnostics_impl(port, ptr, rust_vec_len, data_len),
-        16 => wire__crate__api__cide__get_heap_stats_impl(port, ptr, rust_vec_len, data_len),
-        17 => wire__crate__api__cide__get_heatmap_impl(port, ptr, rust_vec_len, data_len),
-        18 => wire__crate__api__cide__get_memory_fragments_impl(port, ptr, rust_vec_len, data_len),
-        19 => wire__crate__api__cide__get_memory_regions_impl(port, ptr, rust_vec_len, data_len),
-        20 => wire__crate__api__cide__get_memory_size_impl(port, ptr, rust_vec_len, data_len),
-        21 => wire__crate__api__cide__get_output_impl(port, ptr, rust_vec_len, data_len),
-        22 => wire__crate__api__cide__get_step_payloads_impl(port, ptr, rust_vec_len, data_len),
-        23 => wire__crate__api__cide__get_struct_fields_impl(port, ptr, rust_vec_len, data_len),
-        24 => wire__crate__api__cide__get_variables_impl(port, ptr, rust_vec_len, data_len),
-        25 => wire__crate__api__cide__get_vis_events_impl(port, ptr, rust_vec_len, data_len),
-        27 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
-        28 => wire__crate__api__cide__is_waiting_input_impl(port, ptr, rust_vec_len, data_len),
-        29 => wire__crate__api__cide__pause_execution_impl(port, ptr, rust_vec_len, data_len),
-        30 => wire__crate__api__cide__provide_input_line_impl(port, ptr, rust_vec_len, data_len),
-        31 => wire__crate__api__cide__read_memory_impl(port, ptr, rust_vec_len, data_len),
-        32 => wire__crate__api__cide__reset_session_impl(port, ptr, rust_vec_len, data_len),
-        33 => wire__crate__api__cide__resume_execution_impl(port, ptr, rust_vec_len, data_len),
-        34 => wire__crate__api__cide__run_auto_steps_impl(port, ptr, rust_vec_len, data_len),
-        35 => wire__crate__api__cide__run_code_impl(port, ptr, rust_vec_len, data_len),
-        36 => wire__crate__api__cide__seek_to_step_impl(port, ptr, rust_vec_len, data_len),
-        37 => wire__crate__api__cide__set_breakpoints_impl(port, ptr, rust_vec_len, data_len),
-        38 => wire__crate__api__cide__set_current_session_id_impl(port, ptr, rust_vec_len, data_len),
-        39 => wire__crate__api__cide__set_input_impl(port, ptr, rust_vec_len, data_len),
-        40 => wire__crate__api__cide__step_next_impl(port, ptr, rust_vec_len, data_len),
-        41 => wire__crate__api__cide__step_next_unified_impl(port, ptr, rust_vec_len, data_len),
+        11 => wire__crate__api__cide__detect_misconceptions_impl(port, ptr, rust_vec_len, data_len),
+        12 => wire__crate__api__cide__get_algorithm_matches_impl(port, ptr, rust_vec_len, data_len),
+        13 => wire__crate__api__cide__get_callstack_impl(port, ptr, rust_vec_len, data_len),
+        14 => wire__crate__api__cide__get_current_line_impl(port, ptr, rust_vec_len, data_len),
+        15 => wire__crate__api__cide__get_current_session_id_impl(port, ptr, rust_vec_len, data_len),
+        16 => wire__crate__api__cide__get_diagnostics_impl(port, ptr, rust_vec_len, data_len),
+        17 => wire__crate__api__cide__get_heap_stats_impl(port, ptr, rust_vec_len, data_len),
+        18 => wire__crate__api__cide__get_heatmap_impl(port, ptr, rust_vec_len, data_len),
+        19 => wire__crate__api__cide__get_memory_fragments_impl(port, ptr, rust_vec_len, data_len),
+        20 => wire__crate__api__cide__get_memory_regions_impl(port, ptr, rust_vec_len, data_len),
+        21 => wire__crate__api__cide__get_memory_size_impl(port, ptr, rust_vec_len, data_len),
+        22 => wire__crate__api__cide__get_output_impl(port, ptr, rust_vec_len, data_len),
+        23 => wire__crate__api__cide__get_step_payloads_impl(port, ptr, rust_vec_len, data_len),
+        24 => wire__crate__api__cide__get_struct_fields_impl(port, ptr, rust_vec_len, data_len),
+        25 => wire__crate__api__cide__get_variables_impl(port, ptr, rust_vec_len, data_len),
+        26 => wire__crate__api__cide__get_vis_events_impl(port, ptr, rust_vec_len, data_len),
+        28 => wire__crate__api__simple__init_app_impl(port, ptr, rust_vec_len, data_len),
+        29 => wire__crate__api__cide__is_waiting_input_impl(port, ptr, rust_vec_len, data_len),
+        30 => wire__crate__api__cide__pause_execution_impl(port, ptr, rust_vec_len, data_len),
+        31 => wire__crate__api__cide__provide_input_line_impl(port, ptr, rust_vec_len, data_len),
+        32 => wire__crate__api__cide__read_memory_impl(port, ptr, rust_vec_len, data_len),
+        33 => wire__crate__api__cide__recommend_learning_paths_impl(port, ptr, rust_vec_len, data_len),
+        34 => wire__crate__api__cide__reset_session_impl(port, ptr, rust_vec_len, data_len),
+        35 => wire__crate__api__cide__resume_execution_impl(port, ptr, rust_vec_len, data_len),
+        36 => wire__crate__api__cide__run_auto_steps_impl(port, ptr, rust_vec_len, data_len),
+        37 => wire__crate__api__cide__run_code_impl(port, ptr, rust_vec_len, data_len),
+        38 => wire__crate__api__cide__seek_to_step_impl(port, ptr, rust_vec_len, data_len),
+        39 => wire__crate__api__cide__set_breakpoints_impl(port, ptr, rust_vec_len, data_len),
+        40 => wire__crate__api__cide__set_current_session_id_impl(port, ptr, rust_vec_len, data_len),
+        41 => wire__crate__api__cide__set_input_impl(port, ptr, rust_vec_len, data_len),
+        42 => wire__crate__api__cide__step_next_impl(port, ptr, rust_vec_len, data_len),
+        43 => wire__crate__api__cide__step_next_unified_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2047,7 +2241,7 @@ fn pde_ffi_dispatcher_sync_impl(
 ) -> flutter_rust_bridge::for_generated::WireSyncRust2DartSse {
     // Codec=Pde (Serialization + dispatch), see doc to use other codecs
     match func_id {
-        26 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
+        27 => wire__crate__api__simple__greet_impl(ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }
@@ -2205,6 +2399,29 @@ impl flutter_rust_bridge::IntoIntoDart<crate::api::cide::CodeFile> for crate::ap
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::diagnostics::misconception_patterns::CompileRecord {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.timestamp_ms.into_into_dart().into_dart(),
+            self.success.into_into_dart().into_dart(),
+            self.error_codes.into_into_dart().into_dart(),
+            self.trap_message.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::diagnostics::misconception_patterns::CompileRecord
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::diagnostics::misconception_patterns::CompileRecord>
+    for crate::diagnostics::misconception_patterns::CompileRecord
+{
+    fn into_into_dart(self) -> crate::diagnostics::misconception_patterns::CompileRecord {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::session::CompileResult {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [
@@ -2218,6 +2435,30 @@ impl flutter_rust_bridge::IntoDart for crate::session::CompileResult {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::session::CompileResult {}
 impl flutter_rust_bridge::IntoIntoDart<crate::session::CompileResult> for crate::session::CompileResult {
     fn into_into_dart(self) -> crate::session::CompileResult {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::diagnostics::misconception_patterns::DetectedMisconception {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.pattern_id.into_into_dart().into_dart(),
+            self.pattern_name.into_into_dart().into_dart(),
+            self.description.into_into_dart().into_dart(),
+            self.occurrence_count.into_into_dart().into_dart(),
+            self.confidence.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive
+    for crate::diagnostics::misconception_patterns::DetectedMisconception
+{
+}
+impl flutter_rust_bridge::IntoIntoDart<crate::diagnostics::misconception_patterns::DetectedMisconception>
+    for crate::diagnostics::misconception_patterns::DetectedMisconception
+{
+    fn into_into_dart(self) -> crate::diagnostics::misconception_patterns::DetectedMisconception {
         self
     }
 }
@@ -2283,6 +2524,26 @@ impl flutter_rust_bridge::IntoIntoDart<crate::unified::types::HeatmapData> for c
     }
 }
 // Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::diagnostics::learning_path::LearningPath {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.target_misconception_id.into_into_dart().into_dart(),
+            self.target_misconception_name.into_into_dart().into_dart(),
+            self.estimated_time_minutes.into_into_dart().into_dart(),
+            self.steps.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::diagnostics::learning_path::LearningPath {}
+impl flutter_rust_bridge::IntoIntoDart<crate::diagnostics::learning_path::LearningPath>
+    for crate::diagnostics::learning_path::LearningPath
+{
+    fn into_into_dart(self) -> crate::diagnostics::learning_path::LearningPath {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
 impl flutter_rust_bridge::IntoDart for crate::session::MemoryFragment {
     fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
         [self.addr.into_into_dart().into_dart(), self.size.into_into_dart().into_dart()].into_dart()
@@ -2313,6 +2574,27 @@ impl flutter_rust_bridge::IntoDart for crate::session::MemoryRegion {
 impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::session::MemoryRegion {}
 impl flutter_rust_bridge::IntoIntoDart<crate::session::MemoryRegion> for crate::session::MemoryRegion {
     fn into_into_dart(self) -> crate::session::MemoryRegion {
+        self
+    }
+}
+// Codec=Dco (DartCObject based), see doc to use other codecs
+impl flutter_rust_bridge::IntoDart for crate::diagnostics::learning_path::PathStep {
+    fn into_dart(self) -> flutter_rust_bridge::for_generated::DartAbi {
+        [
+            self.step_type.into_into_dart().into_dart(),
+            self.title.into_into_dart().into_dart(),
+            self.detail.into_into_dart().into_dart(),
+            self.target_id.into_into_dart().into_dart(),
+            self.highlight_lines.into_into_dart().into_dart(),
+        ]
+        .into_dart()
+    }
+}
+impl flutter_rust_bridge::for_generated::IntoDartExceptPrimitive for crate::diagnostics::learning_path::PathStep {}
+impl flutter_rust_bridge::IntoIntoDart<crate::diagnostics::learning_path::PathStep>
+    for crate::diagnostics::learning_path::PathStep
+{
+    fn into_into_dart(self) -> crate::diagnostics::learning_path::PathStep {
         self
     }
 }
@@ -2657,12 +2939,33 @@ impl SseEncode for crate::api::cide::CodeFile {
     }
 }
 
+impl SseEncode for crate::diagnostics::misconception_patterns::CompileRecord {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i64>::sse_encode(self.timestamp_ms, serializer);
+        <bool>::sse_encode(self.success, serializer);
+        <Vec<i32>>::sse_encode(self.error_codes, serializer);
+        <Option<String>>::sse_encode(self.trap_message, serializer);
+    }
+}
+
 impl SseEncode for crate::session::CompileResult {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.success, serializer);
         <Vec<crate::session::Diagnostic>>::sse_encode(self.diagnostics, serializer);
         <Vec<crate::session::AlgorithmMatch>>::sse_encode(self.algorithm_matches, serializer);
+    }
+}
+
+impl SseEncode for crate::diagnostics::misconception_patterns::DetectedMisconception {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.pattern_id, serializer);
+        <String>::sse_encode(self.pattern_name, serializer);
+        <String>::sse_encode(self.description, serializer);
+        <i32>::sse_encode(self.occurrence_count, serializer);
+        <f32>::sse_encode(self.confidence, serializer);
     }
 }
 
@@ -2682,6 +2985,13 @@ impl SseEncode for crate::session::Diagnostic {
         <i32>::sse_encode(self.replace_end_column, serializer);
         <String>::sse_encode(self.replacement_text, serializer);
         <String>::sse_encode(self.filename, serializer);
+    }
+}
+
+impl SseEncode for f32 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_f32::<NativeEndian>(self).unwrap();
     }
 }
 
@@ -2707,6 +3017,23 @@ impl SseEncode for i32 {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         serializer.cursor.write_i32::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for i64 {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        serializer.cursor.write_i64::<NativeEndian>(self).unwrap();
+    }
+}
+
+impl SseEncode for crate::diagnostics::learning_path::LearningPath {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.target_misconception_id, serializer);
+        <String>::sse_encode(self.target_misconception_name, serializer);
+        <i32>::sse_encode(self.estimated_time_minutes, serializer);
+        <Vec<crate::diagnostics::learning_path::PathStep>>::sse_encode(self.steps, serializer);
     }
 }
 
@@ -2780,12 +3107,42 @@ impl SseEncode for Vec<crate::api::cide::CodeFile> {
     }
 }
 
+impl SseEncode for Vec<crate::diagnostics::misconception_patterns::CompileRecord> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::diagnostics::misconception_patterns::CompileRecord>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::diagnostics::misconception_patterns::DetectedMisconception> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::diagnostics::misconception_patterns::DetectedMisconception>::sse_encode(item, serializer);
+        }
+    }
+}
+
 impl SseEncode for Vec<crate::session::Diagnostic> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::session::Diagnostic>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::diagnostics::learning_path::LearningPath> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::diagnostics::learning_path::LearningPath>::sse_encode(item, serializer);
         }
     }
 }
@@ -2806,6 +3163,16 @@ impl SseEncode for Vec<crate::session::MemoryRegion> {
         <i32>::sse_encode(self.len() as _, serializer);
         for item in self {
             <crate::session::MemoryRegion>::sse_encode(item, serializer);
+        }
+    }
+}
+
+impl SseEncode for Vec<crate::diagnostics::learning_path::PathStep> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <i32>::sse_encode(self.len() as _, serializer);
+        for item in self {
+            <crate::diagnostics::learning_path::PathStep>::sse_encode(item, serializer);
         }
     }
 }
@@ -2959,6 +3326,17 @@ impl SseEncode for Option<crate::unified::types::StepPayload> {
         if let Some(value) = self {
             <crate::unified::types::StepPayload>::sse_encode(value, serializer);
         }
+    }
+}
+
+impl SseEncode for crate::diagnostics::learning_path::PathStep {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <String>::sse_encode(self.step_type, serializer);
+        <String>::sse_encode(self.title, serializer);
+        <String>::sse_encode(self.detail, serializer);
+        <String>::sse_encode(self.target_id, serializer);
+        <Vec<i32>>::sse_encode(self.highlight_lines, serializer);
     }
 }
 

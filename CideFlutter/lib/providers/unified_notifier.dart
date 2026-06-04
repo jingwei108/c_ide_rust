@@ -111,6 +111,7 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
         await ref.read(ideProvider.notifier).recordUnifiedRun(
           steps: state.maxCollectedStep,
           trapped: result.trapped,
+          trapMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
         );
       }
     } catch (e) {

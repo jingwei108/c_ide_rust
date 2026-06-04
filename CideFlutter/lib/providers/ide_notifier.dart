@@ -129,11 +129,22 @@ class IdeNotifier extends Notifier<IdeState> {
         final key = d.errorCode.toString();
         newErrorsByCode[key] = (newErrorsByCode[key] ?? 0) + 1;
       }
+      // 追加编译记录（用于误解模式检测）
+      final errorCodes = diags.where((d) => d.severity == 0).map((d) => d.errorCode).toList();
+      final newRecord = CompileSnapshot(
+        timestampMs: DateTime.now().millisecondsSinceEpoch,
+        success: result.success,
+        errorCodes: errorCodes,
+      );
+      final newRecords = [...progress.recentCompileRecords, newRecord];
+      final trimmedRecords = newRecords.length > 20 ? newRecords.sublist(newRecords.length - 20) : newRecords;
+
       final newProgress = progress.copyWith(
         totalCompiles: progress.totalCompiles + 1,
         successfulCompiles: progress.successfulCompiles + (result.success ? 1 : 0),
         failedCompiles: progress.failedCompiles + (result.success ? 0 : 1),
         errorsByCode: newErrorsByCode,
+        recentCompileRecords: trimmedRecords,
       );
       state = state.copyWith(
         isCompiling: false,
@@ -637,14 +648,27 @@ class IdeNotifier extends Notifier<IdeState> {
   }
 
   /// 记录一次统一模式运行
-  Future<void> recordUnifiedRun({required int steps, required bool trapped}) async {
+  Future<void> recordUnifiedRun({required int steps, required bool trapped, String? trapMessage}) async {
     final progress = state.learningProgress;
+    var records = progress.recentCompileRecords;
+    // 如果有 trap，更新最近一条编译记录的 trapMessage
+    if (trapped && trapMessage != null && records.isNotEmpty) {
+      final last = records.last;
+      records = [...records];
+      records[records.length - 1] = CompileSnapshot(
+        timestampMs: last.timestampMs,
+        success: last.success,
+        errorCodes: last.errorCodes,
+        trapMessage: trapMessage,
+      );
+    }
     state = state.copyWith(
       learningProgress: progress.copyWith(
         totalUnifiedRuns: progress.totalUnifiedRuns + 1,
         totalStepsExecuted: progress.totalStepsExecuted + steps,
         maxStepsInSingleRun: math.max(progress.maxStepsInSingleRun, steps),
         totalTraps: trapped ? progress.totalTraps + 1 : progress.totalTraps,
+        recentCompileRecords: records,
       ),
     );
     await _saveProgress();

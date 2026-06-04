@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/ide_state.dart';
 import '../models/knowledge_card.dart';
 import '../providers/ide_provider.dart';
+import 'learning_path_panel.dart';
 
 class ProgressTab extends ConsumerWidget {
   final IdeState state;
@@ -81,6 +82,59 @@ class ProgressTab extends ConsumerWidget {
                 : '总步数 ${progress.totalStepsExecuted} · 异常 ${progress.totalTraps} · Seek ${progress.totalSeeks} · 峰值 ${progress.maxStepsInSingleRun} 步',
             icon: Icons.play_circle_outline,
             color: Colors.deepOrange,
+          ),
+          const SizedBox(height: 12),
+          // 认知诊断入口
+          InkWell(
+            onTap: () {
+              showModalBottomSheet(
+                context: context,
+                isScrollControlled: true,
+                builder: (context) => DraggableScrollableSheet(
+                  initialChildSize: 0.7,
+                  minChildSize: 0.4,
+                  maxChildSize: 0.95,
+                  expand: false,
+                  builder: (context, scrollController) => SingleChildScrollView(
+                    controller: scrollController,
+                    child: const LearningPathPanel(),
+                  ),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(10),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.indigo.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.indigo.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.psychology, color: Colors.indigo, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '认知诊断与学习路径',
+                          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.indigo),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '基于最近编译历史分析认知盲区，获取针对性练习',
+                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.indigo),
+                ],
+              ),
+            ),
           ),
           const SizedBox(height: 24),
           // 重置按钮

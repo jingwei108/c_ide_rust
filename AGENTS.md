@@ -63,6 +63,7 @@ docs/                   设计文档、事故报告
 | Phase 18 | **6-04 地毯式审阅修复**：P0 soundness 修复 + VM 热点 O(1) 优化 + Call/CallPtr 去重 + algorithm_detector AST 精确匹配 + 格式解析 DRY + type_size 统一提取 + check_assignable 拆分 + 隐式转换映射表 + Session 预设文件序列化 + 边界检查统一 + ptr_step_size 数组指针支持 + clippy 0 警告 | ✅ 完成 |
 | Phase 19 | **Use-After-Free / Double-Free 运行时检测**：VM `execute_memory` 指令层添加 `freed_logs` 检查，访问已释放堆内存时立即 trap 并报告分配/释放位置；`host_free` 检测重复释放；统一模式自动回退 + 知识卡片（E3060/E3061）| ✅ 完成 |
 | Phase 20 | **认知推理 P0（运行时根因分析）**：`TraceAnalyzer` 执行轨迹切片 + 根因推断引擎；支持数组越界（OffByOne/未初始化/索引错误）、Use-After-Free、Double-Free、除零、NULL 指针 5 类 Trap 的根因推断；`RootCauseHint` 结构化数据经 FRB 传输到 Flutter；前端 `RootCauseBanner` 组件实时展示根因提示与相关行号跳转 | ✅ 完成 |
+| Phase 21 | **认知推理 P1（教学推理层）**：`MisconceptionPattern` 6 种认知误解模式定义 + `detect_misconceptions` 检测引擎；`LearningPath` 推荐引擎为每种模式组装知识卡片→模板高亮→练习路径；Flutter `LearningProgress` 新增 `recentCompileRecords`（保留最近 20 次编译记录）；`LearningPathPanel` BottomSheet 面板实时展示诊断结果与可点击学习步骤 | ✅ 完成 |
 
 ## 编码约定
 
@@ -129,6 +130,7 @@ docs/                   设计文档、事故报告
 - **代码模板参数化 + 交互式教程** — 核心算法模板（冒泡/选择/插入/快速/归并/二分/线性查找）支持参数占位符（如 `{{n:5}}`、`{{target:3}}`）；`TemplateParamDialog` 底部弹窗收集参数；`TemplateTutorialPanel` 逐步骤高亮代码行并展示教学描述；每步骤的关键行带 💡 `ExpansionTile` 可展开查看详细解释；教程最后一步点击"运行代码"自动插入生成代码、编译并启动统一模式；`LearningProgress` 记录 `completedTutorials`
 - **Use-After-Free / Double-Free 运行时检测** — VM `execute_memory` 指令层在每次堆内存解引用前检查 `freed_logs`；访问已释放但尚未重用的堆内存时立即 trap 并弹出知识卡片（E3060），报告分配行号和释放行号；`host_free` 检测到对同一块内存重复释放时 trap（E3061）；`malloc`/`realloc` 重用内存时自动清理对应 `freed_logs`；统一模式 Trap 自动回退到上一步；新增 3 个 E2E 测试
 - **认知推理 P0（运行时根因分析）** — `TraceAnalyzer` 基于执行历史切片推断 Trap 根因：数组越界时识别 OffByOne（`<=` 条件）、索引变量未初始化、循环起始错误；Use-After-Free / Double-Free 时提取分配/释放时间线；除零时定位值为 0 的除数变量；NULL 指针时追踪指针历史变化。`RootCauseHint` 结构化数据（category/one_liner/related_lines/fix_kind）经 FRB 传输；前端 `RootCauseBanner` 以琥珀/深橙/紫/青等颜色编码展示根因，附带可点击行号跳转和修复建议标签
+- **认知推理 P1（教学推理层）** — `MisconceptionPattern` 定义 6 种认知误解模式（边界混淆 M01、指针生命周期混淆 M02、赋值与比较混淆 M03、数组指针退化误解 M04、递归边界遗漏 M05、格式化字符串误用 M06）；`detect_misconceptions` 基于最近 20 次编译记录滑动窗口检测稳定犯错模式；`recommend_learning_paths` 为每种检测到的模式组装知识卡片→模板高亮→练习的最小有效学习路径；Flutter `LearningProgress` 新增 `recentCompileRecords` 字段（SharedPreferences 持久化）；`LearningPathPanel` BottomSheet 面板展示诊断结果与彩色路径卡片，点击步骤可直接加载模板/启动教程
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护

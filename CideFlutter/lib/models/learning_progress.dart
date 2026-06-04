@@ -1,5 +1,36 @@
 import 'dart:convert';
 
+/// 单次编译/运行的快照，用于误解模式检测。
+class CompileSnapshot {
+  final int timestampMs;
+  final bool success;
+  final List<int> errorCodes;
+  final String? trapMessage;
+
+  const CompileSnapshot({
+    required this.timestampMs,
+    required this.success,
+    this.errorCodes = const [],
+    this.trapMessage,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'timestampMs': timestampMs,
+    'success': success,
+    'errorCodes': errorCodes,
+    'trapMessage': trapMessage,
+  };
+
+  factory CompileSnapshot.fromJson(Map<String, dynamic> json) {
+    return CompileSnapshot(
+      timestampMs: json['timestampMs'] as int? ?? 0,
+      success: json['success'] as bool? ?? false,
+      errorCodes: (json['errorCodes'] as List<dynamic>?)?.cast<int>() ?? const [],
+      trapMessage: json['trapMessage'] as String?,
+    );
+  }
+}
+
 /// 学习进度数据模型
 ///
 /// 追踪用户在 IDE 中的学习行为：编译历史、错误修复、知识卡片阅读、算法验证等。
@@ -20,6 +51,8 @@ class LearningProgress {
   final int totalSeeks;
   final int maxStepsInSingleRun;
   final Set<String> completedTutorials;
+  /// 最近编译记录（用于误解模式检测），最多保留 20 条。
+  final List<CompileSnapshot> recentCompileRecords;
 
   const LearningProgress({
     this.totalCompiles = 0,
@@ -38,6 +71,7 @@ class LearningProgress {
     this.totalSeeks = 0,
     this.maxStepsInSingleRun = 0,
     this.completedTutorials = const {},
+    this.recentCompileRecords = const [],
   });
 
   double get successRate => totalCompiles == 0 ? 0.0 : successfulCompiles / totalCompiles;
@@ -69,6 +103,7 @@ class LearningProgress {
     int? totalSeeks,
     int? maxStepsInSingleRun,
     Set<String>? completedTutorials,
+    List<CompileSnapshot>? recentCompileRecords,
   }) {
     return LearningProgress(
       totalCompiles: totalCompiles ?? this.totalCompiles,
@@ -87,6 +122,7 @@ class LearningProgress {
       totalSeeks: totalSeeks ?? this.totalSeeks,
       maxStepsInSingleRun: maxStepsInSingleRun ?? this.maxStepsInSingleRun,
       completedTutorials: completedTutorials ?? this.completedTutorials,
+      recentCompileRecords: recentCompileRecords ?? this.recentCompileRecords,
     );
   }
 
@@ -108,6 +144,7 @@ class LearningProgress {
       'totalSeeks': totalSeeks,
       'maxStepsInSingleRun': maxStepsInSingleRun,
       'completedTutorials': completedTutorials.toList(),
+      'recentCompileRecords': recentCompileRecords.map((r) => r.toJson()).toList(),
     };
   }
 
@@ -149,6 +186,10 @@ class LearningProgress {
               ?.map((e) => e as String)
               .toSet() ??
           const {},
+      recentCompileRecords: (json['recentCompileRecords'] as List<dynamic>?)
+              ?.map((e) => CompileSnapshot.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 
