@@ -18,6 +18,67 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
 
 /// 跳过 printf 格式字符串中的修饰符（宽度、精度、长度等），返回真正的格式字母列表。
 /// 例如 "%6d" 返回 ['d']，"%.2f" 返回 ['f']，"%%" 不返回任何内容。
+/// 解析一个 printf/scanf 格式说明符（% 之后的内容）。
+/// 返回 (格式字母, 是否 ll, 精度)。
+fn parse_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<(char, bool, Option<usize>)> {
+    // 跳过 flags
+    while let Some(&c) = chars.peek() {
+        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    // 跳过 width
+    while let Some(&c) = chars.peek() {
+        if c.is_ascii_digit() || c == '*' {
+            chars.next();
+        } else {
+            break;
+        }
+    }
+    // 解析 precision
+    let mut precision: Option<usize> = None;
+    if let Some(&'.') = chars.peek() {
+        chars.next();
+        let mut prec_str = String::new();
+        while let Some(&c) = chars.peek() {
+            if c.is_ascii_digit() {
+                prec_str.push(c);
+                chars.next();
+            } else if c == '*' {
+                chars.next();
+                break;
+            } else {
+                break;
+            }
+        }
+        if !prec_str.is_empty() {
+            precision = prec_str.parse().ok();
+        }
+    }
+    // 跳过长度修饰符，记录是否 ll
+    let mut is_ll = false;
+    if let Some(&c) = chars.peek() {
+        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
+            chars.next();
+            if let Some(&c2) = chars.peek() {
+                if c == 'l' && c2 == 'l' {
+                    is_ll = true;
+                    chars.next();
+                } else if c == 'h' && c2 == 'h' {
+                    chars.next();
+                }
+            }
+        }
+    }
+    // 格式字母
+    chars.peek().copied().map(|spec| {
+        chars.next();
+        (spec, is_ll, precision)
+    })
+}
+
 fn parse_format_specs(fmt: &str) -> Vec<char> {
     let mut specs = Vec::new();
     let mut chars = fmt.chars().peekable();
@@ -26,50 +87,8 @@ fn parse_format_specs(fmt: &str) -> Vec<char> {
             if let Some(&next) = chars.peek() {
                 if next == '%' {
                     chars.next(); // 跳过 %%
-                } else {
-                    // 跳过 flags
-                    while let Some(&c) = chars.peek() {
-                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-                    // 跳过 width（数字或 *）
-                    while let Some(&c) = chars.peek() {
-                        if c.is_ascii_digit() || c == '*' {
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-                    // 跳过 precision（. 后跟数字或 *）
-                    if let Some(&'.') = chars.peek() {
-                        chars.next();
-                        while let Some(&c) = chars.peek() {
-                            if c.is_ascii_digit() || c == '*' {
-                                chars.next();
-                            } else {
-                                break;
-                            }
-                        }
-                    }
-                    // 跳过长度修饰符（l, ll, h, hh, L, z, j, t）
-                    if let Some(&c) = chars.peek() {
-                        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
-                            chars.next();
-                            if let Some(&c2) = chars.peek() {
-                                if (c == 'l' && c2 == 'l') || (c == 'h' && c2 == 'h') {
-                                    chars.next();
-                                }
-                            }
-                        }
-                    }
-                    // 真正的格式字母
-                    if let Some(&spec) = chars.peek() {
-                        specs.push(spec);
-                        chars.next();
-                    }
+                } else if let Some((spec, _, _)) = parse_format_spec(&mut chars) {
+                    specs.push(spec);
                 }
             }
         }
@@ -78,7 +97,6 @@ fn parse_format_specs(fmt: &str) -> Vec<char> {
 }
 
 /// 根据格式字符串和参数列表生成 printf 输出。
-/// 会正确跳过宽度/精度/长度修饰符，只根据格式字母消费参数。
 fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
     let mut out = String::new();
     let mut used = 0;
@@ -89,84 +107,29 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                 if next == '%' {
                     out.push('%');
                     chars.next();
-                } else {
-                    // 跳过 flags
-                    while let Some(&c) = chars.peek() {
-                        if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-                    // 提取 width（忽略，不用于格式化）
-                    while let Some(&c) = chars.peek() {
-                        if c.is_ascii_digit() || c == '*' {
-                            chars.next();
-                        } else {
-                            break;
-                        }
-                    }
-                    // 提取 precision
-                    let mut precision: Option<usize> = None;
-                    if let Some(&'.') = chars.peek() {
-                        chars.next();
-                        let mut prec_str = String::new();
-                        while let Some(&c) = chars.peek() {
-                            if c.is_ascii_digit() {
-                                prec_str.push(c);
-                                chars.next();
-                            } else if c == '*' {
-                                chars.next();
-                                break;
+                } else if let Some((spec, is_ll, precision)) = parse_format_spec(&mut chars) {
+                    let arg = args[used];
+                    match spec {
+                        'd' | 'i' => {
+                            if is_ll {
+                                out.push_str(&(arg as i64).to_string());
                             } else {
-                                break;
+                                out.push_str(&(arg as i32).to_string());
                             }
                         }
-                        if !prec_str.is_empty() {
-                            precision = prec_str.parse().ok();
+                        'f' => {
+                            let f = f64::from_bits(arg);
+                            let prec = precision.unwrap_or(6);
+                            out.push_str(&format!("{:.*}", prec, f));
                         }
+                        's' => {
+                            let s = read_cstring(vm, arg as u32);
+                            out.push_str(&s);
+                        }
+                        'c' => out.push(arg as u8 as char),
+                        _ => { out.push(ch); out.push(spec); }
                     }
-                    // 跳过长度修饰符，记录是否 ll
-                    let mut is_ll = false;
-                    if let Some(&c) = chars.peek() {
-                        if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
-                            chars.next();
-                            if let Some(&c2) = chars.peek() {
-                                if c == 'l' && c2 == 'l' {
-                                    is_ll = true;
-                                    chars.next();
-                                } else if c == 'h' && c2 == 'h' {
-                                    chars.next();
-                                }
-                            }
-                        }
-                    }
-                    // 真正的格式字母
-                    if let Some(&spec) = chars.peek() {
-                        let arg = args[used];
-                        match spec {
-                            'd' | 'i' => {
-                                if is_ll {
-                                    out.push_str(&(arg as i64).to_string());
-                                } else {
-                                    out.push_str(&(arg as i32).to_string());
-                                }
-                            }
-                            'f' => {
-                                let f = f64::from_bits(arg);
-                                let prec = precision.unwrap_or(6);
-                                out.push_str(&format!("{:.*}", prec, f));
-                            }
-                            's' => {
-                                let s = read_cstring(vm, arg as u32);
-                                out.push_str(&s);
-                            }
-                            'c' => out.push(arg as u8 as char),
-                            _ => { out.push(ch); out.push(spec); }
-                        }
-                        chars.next();
-                        used += 1;
-                    }
+                    used += 1;
                 }
             } else {
                 out.push(ch);
