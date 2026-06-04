@@ -651,7 +651,7 @@ impl Parser {
 
         if !is_abstract {
             guard.cross_count = node_cross_count(&node);
-            if guard.cross_count > 2 {
+            if guard.cross_count > 4 {
                 self.errors.push(ParseError {
                     message: "声明符过于复杂".to_string(),
                     line: self.current().line,
