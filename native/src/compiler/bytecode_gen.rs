@@ -412,12 +412,18 @@ impl BytecodeGen {
     }
 
     fn push_f64_constant(&mut self, val: f64) -> i32 {
+        if let Some(idx) = self.f64_constants.iter().position(|&v| v.to_bits() == val.to_bits()) {
+            return idx as i32;
+        }
         let idx = self.f64_constants.len() as i32;
         self.f64_constants.push(val);
         idx
     }
 
     fn push_i64_constant(&mut self, val: i64) -> i32 {
+        if let Some(idx) = self.i64_constants.iter().position(|&v| v == val) {
+            return idx as i32;
+        }
         let idx = self.i64_constants.len() as i32;
         self.i64_constants.push(val);
         idx
