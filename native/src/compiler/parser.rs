@@ -523,6 +523,7 @@ impl Parser {
                 column: self.current().column,
                 code: ErrorCode::E1006_UnsupportedFeature as i32,
             });
+            return Type::int();
         }
         t.set_const(is_const);
         t

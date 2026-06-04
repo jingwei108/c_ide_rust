@@ -260,8 +260,9 @@ impl Lexer {
             let text: String = self.chars[start..self.pos].iter().collect();
             // Convert hex to decimal string so parser can parse it
             let hex_str = &text[2..];
-            if let Ok(val) = u64::from_str_radix(hex_str, 16) {
-                if val > u32::MAX as u64 {
+            match u32::from_str_radix(hex_str, 16) {
+                Ok(val) => return self.make_token(TokenType::Number, &val.to_string()),
+                Err(_) => {
                     self.errors.push(LexerError {
                         message: format!("十六进制数值 0x{} 超出 int 范围", hex_str),
                         line: self.line,
@@ -270,9 +271,7 @@ impl Lexer {
                     });
                     return self.make_token(TokenType::Number, "0");
                 }
-                return self.make_token(TokenType::Number, &val.to_string());
             }
-            return self.make_token(TokenType::Number, &text);
         }
         // Octal literal: 0[0-7]+
         if self.peek(0) == '0' && self.peek(1).is_ascii_digit() {

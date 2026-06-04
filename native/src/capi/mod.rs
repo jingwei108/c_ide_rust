@@ -47,6 +47,7 @@ pub unsafe extern "C" fn cide_session_destroy(s: *mut Session) {
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
 struct SessionSnapshot {
     compile: CompileState,
     runtime: RuntimeState,

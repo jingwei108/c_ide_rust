@@ -27,7 +27,7 @@ impl UnifiedEngine {
         Self {
             checkpoints: CheckpointManager::new(20),
             frame_cache: Vec::new(),
-            max_steps: 10_000,
+            max_steps: 100_000,
             is_paused: false,
             is_cancelled: false,
         }
@@ -183,6 +183,13 @@ impl UnifiedEngine {
 
         // 正向重放到目标步
         for step in checkpoint_step..target {
+            if self.is_cancelled {
+                return SeekResult {
+                    success: false,
+                    payload: None,
+                    error: Some("执行已取消".to_string()),
+                };
+            }
             match vm.step(session) {
                 StepResult::Ok | StepResult::Paused => {
                     let payload = StepCollector::collect(vm, session, step);

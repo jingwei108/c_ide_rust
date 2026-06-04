@@ -592,13 +592,25 @@ impl CideVM {
 
     // --- Memory helpers ---
 
-    pub fn load_i32(&mut self, addr: u32, loc: &SourceLoc) -> i32 {
+    fn check_mem_access(&mut self, addr: u32, size: u32, loc: &SourceLoc, is_write: bool) -> bool {
         if addr < NULL_TRAP_SIZE {
-            self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr), loc);
-            return 0;
+            let msg = if is_write {
+                format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr)
+            } else {
+                format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr)
+            };
+            self.trap(&msg, loc);
+            return false;
         }
-        if addr as u64 + 4 > MEM_SIZE as u64 {
+        if addr as u64 + size as u64 > MEM_SIZE as u64 {
             self.trap(&self.format_bounds_error(addr), loc);
+            return false;
+        }
+        true
+    }
+
+    pub fn load_i32(&mut self, addr: u32, loc: &SourceLoc) -> i32 {
+        if !self.check_mem_access(addr, 4, loc, false) {
             return 0;
         }
         i32::from_le_bytes([
@@ -610,12 +622,7 @@ impl CideVM {
     }
 
     pub fn store_i32(&mut self, addr: u32, val: i32, loc: &SourceLoc) {
-        if addr < NULL_TRAP_SIZE {
-            self.trap(&format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr), loc);
-            return;
-        }
-        if addr as u64 + 4 > MEM_SIZE as u64 {
-            self.trap(&self.format_bounds_error(addr), loc);
+        if !self.check_mem_access(addr, 4, loc, true) {
             return;
         }
         let bytes = val.to_le_bytes();
@@ -623,12 +630,7 @@ impl CideVM {
     }
 
     pub fn load_i64(&mut self, addr: u32, loc: &SourceLoc) -> u64 {
-        if addr < NULL_TRAP_SIZE {
-            self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr), loc);
-            return 0;
-        }
-        if addr as u64 + 8 > MEM_SIZE as u64 {
-            self.trap(&self.format_bounds_error(addr), loc);
+        if !self.check_mem_access(addr, 8, loc, false) {
             return 0;
         }
         let mut bytes = [0u8; 8];
@@ -637,12 +639,7 @@ impl CideVM {
     }
 
     pub fn store_i64(&mut self, addr: u32, val: u64, loc: &SourceLoc) {
-        if addr < NULL_TRAP_SIZE {
-            self.trap(&format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr), loc);
-            return;
-        }
-        if addr as u64 + 8 > MEM_SIZE as u64 {
-            self.trap(&self.format_bounds_error(addr), loc);
+        if !self.check_mem_access(addr, 8, loc, true) {
             return;
         }
         let bytes = val.to_le_bytes();
@@ -650,24 +647,14 @@ impl CideVM {
     }
 
     pub fn load_i8(&mut self, addr: u32, loc: &SourceLoc) -> i32 {
-        if addr < NULL_TRAP_SIZE {
-            self.trap(&format!("访问了 NULL 指针区域（地址 0x{:04X}）", addr), loc);
-            return 0;
-        }
-        if addr as u64 >= MEM_SIZE as u64 {
-            self.trap(&self.format_bounds_error(addr), loc);
+        if !self.check_mem_access(addr, 1, loc, false) {
             return 0;
         }
         self.memory[addr as usize] as i8 as i32
     }
 
     pub fn store_i8(&mut self, addr: u32, val: i32, loc: &SourceLoc) {
-        if addr < NULL_TRAP_SIZE {
-            self.trap(&format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr), loc);
-            return;
-        }
-        if addr as u64 >= MEM_SIZE as u64 {
-            self.trap(&self.format_bounds_error(addr), loc);
+        if !self.check_mem_access(addr, 1, loc, true) {
             return;
         }
         self.memory[addr as usize] = val as u8;
@@ -1578,7 +1565,7 @@ impl CideVM {
         }
         let meta = self.func_table[idx].clone();
         let frame_size = meta.local_count as u64;
-        if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
+        if frame_size > (STACK_START - NULL_TRAP_SIZE) as u64 || frame_size > self.mem_stack_top as u64 {
             self.trap(&format!("{}: 栈溢出", op_name), loc);
             return;
         }
