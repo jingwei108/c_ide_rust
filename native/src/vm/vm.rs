@@ -354,7 +354,7 @@ impl CideVM {
             return None;
         }
         let meta = self.func_table[idx].clone();
-        let frame_size = (meta.local_count as u64) * 4;
+        let frame_size = meta.local_count as u64;
         if frame_size > MEM_SIZE as u64 || frame_size > self.mem_stack_top as u64 {
             return None;
         }
@@ -386,9 +386,9 @@ impl CideVM {
             let arg_addr = (locals_base as u64) + (i as u64) * 4;
             self.store_i32(arg_addr as u32, arg, &SourceLoc::default());
         }
-        for i in meta.param_count..meta.local_count {
-            let local_addr = (locals_base as u64) + (i as u64) * 4;
-            self.store_i32(local_addr as u32, 0, &SourceLoc::default());
+        let arg_bytes = meta.param_count as u32 * 4;
+        for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
+            self.memory[addr as usize] = 0;
         }
         let func_name = if idx < self.func_names.len() {
             self.func_names[idx].clone()
