@@ -60,6 +60,7 @@ docs/                   设计文档、事故报告
 | Phase 15 | **指针追踪动画**：统一模式每步收集 `PointerSnapshot`，前端 `PointerArrowWidget` 实时绘制指针箭头；支持 Valid/Freed/Null/Dangling 四种状态可视化 | ✅ 完成 |
 | Phase 16 | **算法步骤语义标注**：为 6 种检测到的算法预定义步骤模板，运行时结合源码行特征 + 变量值生成教学描述（如冒泡排序"第 {i} 趟：将第 {n-i} 大的元素放到正确位置"）；前端 `ExecutionControlPanel` 实时展示步骤横幅 + `AlgorithmTab` 静态流程预览 + `ArrayVisTab` 已排序边界高亮 | ✅ 完成 |
 | Phase 17 | **代码模板参数化 + 交互式教程**：模板支持 `{{key:default}}` 占位符（数组长度、查找目标等）；选择模板后弹出参数对话框；填入参数后启动 `TemplateTutorialPanel` 逐行引导理解；关键行带 💡 可展开解释；教程完成自动编译运行并启动统一模式 | ✅ 完成 |
+| Phase 18 | **6-04 地毯式审阅修复**：P0 soundness 修复 + VM 热点 O(1) 优化 + Call/CallPtr 去重 + algorithm_detector AST 精确匹配 + 格式解析 DRY + type_size 统一提取 + check_assignable 拆分 + 隐式转换映射表 + Session 预设文件序列化 + 边界检查统一 + ptr_step_size 数组指针支持 + clippy 0 警告 | ✅ 完成 |
 
 ## 编码约定
 
