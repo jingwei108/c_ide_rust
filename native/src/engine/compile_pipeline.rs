@@ -3,50 +3,17 @@
 //! 为 `flutter_bridge.rs` 和 `capi/mod.rs` 提供统一的诊断推送、VM 初始化逻辑，
 //! 消除两端的代码重复。
 
-use crate::compiler::ast::{SourceLoc as AstSourceLoc, StructField, Type, TypeKind};
+use crate::compiler::ast::{self, SourceLoc as AstSourceLoc};
 use crate::compiler::bytecode_gen::BytecodeGen;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::type_checker::TypeChecker;
 use crate::session::*;
 use crate::vm::vm::CideVM;
-use std::collections::HashMap;
 
 // ---------- 辅助函数：根据类型定义计算类型大小 ----------
 
-fn base_element_type(ty: &Type) -> &Type {
-    match ty {
-        Type::Array { element, .. } => base_element_type(element),
-        _ => ty,
-    }
-}
 
-fn type_size(ty: &Type, struct_defs: &HashMap<String, Vec<StructField>>, union_defs: &HashMap<String, Vec<StructField>>) -> i32 {
-    match ty.kind() {
-        TypeKind::Void => 0,
-        TypeKind::Int => 4,
-        TypeKind::Char => 1,
-        TypeKind::Float => 4,
-        TypeKind::Double | TypeKind::LongLong => 8,
-        TypeKind::Pointer | TypeKind::Function => 4,
-        TypeKind::Array => {
-            let elem_count = ty.total_elements();
-            let base_elem = base_element_type(ty);
-            let elem_size = type_size(base_elem, struct_defs, union_defs);
-            elem_count * elem_size
-        }
-        TypeKind::Struct => {
-            struct_defs.get(ty.name()).map(|f| {
-                f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).sum()
-            }).unwrap_or(0)
-        }
-        TypeKind::Union => {
-            union_defs.get(ty.name()).map(|f| {
-                f.iter().map(|field| type_size(&field.ty, struct_defs, union_defs)).max().unwrap_or(0)
-            }).unwrap_or(0)
-        }
-    }
-}
 
 // ========== 编译错误 trait ==========
 
@@ -328,7 +295,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
             .iter()
             .map(|f| {
                 let current = offset;
-                offset += type_size(&f.ty, &output.struct_defs, &output.union_defs);
+                offset += ast::compute_type_size(&f.ty, &output.struct_defs, &output.union_defs);
                 (f.name.clone(), current)
             })
             .collect();
@@ -518,7 +485,7 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
             .iter()
             .map(|f| {
                 let current = offset;
-                offset += type_size(&f.ty, &output.struct_defs, &output.union_defs);
+                offset += ast::compute_type_size(&f.ty, &output.struct_defs, &output.union_defs);
                 (f.name.clone(), current)
             })
             .collect();

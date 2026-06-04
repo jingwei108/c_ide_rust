@@ -478,29 +478,7 @@ impl BytecodeGen {
     }
 
     fn type_size(&self, ty: &Type) -> i32 {
-        match ty.kind() {
-            TypeKind::Void => 0,
-            TypeKind::Int => 4,
-            TypeKind::Char => 1,
-            TypeKind::Float => 4,
-            TypeKind::Double | TypeKind::LongLong => 8,
-            TypeKind::Pointer | TypeKind::Function => 4,
-            TypeKind::Array => {
-                let elem_count = ty.total_elements();
-                let elem_size = self.elem_type_size(ty);
-                elem_count * elem_size
-            }
-            TypeKind::Struct => {
-                self.struct_defs.get(ty.name()).map(|f| {
-                    f.iter().map(|field| self.type_size(&field.ty)).sum()
-                }).unwrap_or(0)
-            }
-            TypeKind::Union => {
-                self.union_defs.get(ty.name()).map(|f| {
-                    f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0)
-                }).unwrap_or(0)
-            }
-        }
+        compute_type_size(ty, &self.struct_defs, &self.union_defs)
     }
 
     // =====================================================================

@@ -468,3 +468,46 @@ pub struct ProgramNode {
     pub globals: Vec<GlobalDecl>,
     pub funcs: Vec<FuncDecl>,
 }
+
+use std::collections::HashMap;
+
+/// 获取数组类型的最底层元素类型。
+pub fn base_element_type(ty: &Type) -> &Type {
+    match ty {
+        Type::Array { element, .. } => base_element_type(element),
+        _ => ty,
+    }
+}
+
+/// 根据类型定义计算类型的字节大小。
+/// 与 `bytecode_gen::type_size` 和 `compile_pipeline::type_size` 保持同一语义。
+pub fn compute_type_size(
+    ty: &Type,
+    struct_defs: &HashMap<String, Vec<StructField>>,
+    union_defs: &HashMap<String, Vec<StructField>>,
+) -> i32 {
+    match ty.kind() {
+        TypeKind::Void => 0,
+        TypeKind::Int => 4,
+        TypeKind::Char => 1,
+        TypeKind::Float => 4,
+        TypeKind::Double | TypeKind::LongLong => 8,
+        TypeKind::Pointer | TypeKind::Function => 4,
+        TypeKind::Array => {
+            let elem_count = ty.total_elements();
+            let base_elem = base_element_type(ty);
+            let elem_size = compute_type_size(base_elem, struct_defs, union_defs);
+            elem_count * elem_size
+        }
+        TypeKind::Struct => {
+            struct_defs.get(ty.name()).map(|f| {
+                f.iter().map(|field| compute_type_size(&field.ty, struct_defs, union_defs)).sum()
+            }).unwrap_or(0)
+        }
+        TypeKind::Union => {
+            union_defs.get(ty.name()).map(|f| {
+                f.iter().map(|field| compute_type_size(&field.ty, struct_defs, union_defs)).max().unwrap_or(0)
+            }).unwrap_or(0)
+        }
+    }
+}
