@@ -282,14 +282,20 @@ impl Parser {
         Some(program)
     }
 
-    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode, is_static: bool) {
-        let checkpoint = self.pos;
-        let base_type = self.parse_base_type();
-        // 前瞻：跳过前导 *，检查是否是 identifier (
+    /// 从当前位置前瞻，跳过连续的 `*` 指针前缀，返回跳过后的 token 索引。
+    fn look_ahead_skip_stars(&self) -> usize {
         let mut lookahead = self.pos;
         while lookahead < self.tokens.len() && self.tokens[lookahead].ty == TokenType::Star {
             lookahead += 1;
         }
+        lookahead
+    }
+
+    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode, is_static: bool) {
+        let checkpoint = self.pos;
+        let base_type = self.parse_base_type();
+        // 前瞻：跳过前导 *，检查是否是 identifier (
+        let lookahead = self.look_ahead_skip_stars();
         let is_func_decl = lookahead < self.tokens.len()
             && self.tokens[lookahead].ty == TokenType::Identifier
             && lookahead + 1 < self.tokens.len()
