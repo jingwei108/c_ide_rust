@@ -146,9 +146,10 @@ impl UnifiedEngine {
             }
 
             if step >= self.max_steps {
-                return Err(
-                    "执行步数超过限制（10,000 步），可能存在无限循环。".to_string()
-                );
+                return Err(format!(
+                    "执行步数超过限制（{} 步），可能存在无限循环。",
+                    self.max_steps
+                ));
             }
         }
 

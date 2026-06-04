@@ -395,6 +395,13 @@ impl CideVM {
         let locals_base = self.mem_stack_top;
         // Arguments: args[0] is first param, args[n-1] is last param.
         // VM Call convention: first param is at locals_base + 0
+        // 当前 call_user_function 仅用于 qsort 回调（参数均为 4 字节指针）。
+        // 若未来扩展为 8 字节参数（double/long long），需按 type_size 选择 store_i32/store_i64。
+        debug_assert!(
+            meta.param_sizes.iter().all(|&sz| sz == 1),
+            "call_user_function 暂不支持非 4 字节参数（param_sizes {:?}）",
+            meta.param_sizes
+        );
         for i in 0..meta.param_count {
             let arg = if (i as usize) < args.len() { args[i as usize] } else { 0 };
             let arg_addr = (locals_base as u64) + (i as u64) * 4;
@@ -1715,7 +1722,11 @@ impl CideVM {
                                 self.trap("CallPtr: 栈下溢（缺少函数索引）", loc);
                             } else {
                                 let func_idx = self.pop() as u32;
-                                self.do_call(func_idx, loc, session, "CallPtr");
+                                if func_idx as usize >= self.func_table.len() {
+                                    self.trap(&format!("CallPtr: 函数指针索引 {} 越界，可能指针未正确初始化", func_idx), loc);
+                                } else {
+                                    self.do_call(func_idx, loc, session, "CallPtr");
+                                }
                             }
                             None
                         }

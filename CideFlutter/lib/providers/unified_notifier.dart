@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
-import '../models/ide_state.dart';
 import '../models/unified_state.dart';
 import 'ide_provider.dart';
 

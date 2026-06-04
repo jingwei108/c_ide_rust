@@ -19,7 +19,7 @@ class ConceptGraphView extends StatefulWidget {
 class _ConceptGraphViewState extends State<ConceptGraphView> {
   List<rust_kg.ConceptNode> _allNodes = [];
   List<rust_kg.ConceptEdge> _allEdges = [];
-  Map<String, _NodeLayout> _layout = {};
+  final Map<String, _NodeLayout> _layout = {};
   bool _loading = true;
 
   @override

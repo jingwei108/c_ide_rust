@@ -1,13 +1,9 @@
-import 'package:flutter/foundation.dart';
 import 'dart:io' show Platform;
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/code_template.dart';
-import '../models/ide_state.dart';
 import '../models/panel_item.dart';
-import '../models/unified_state.dart';
 import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';

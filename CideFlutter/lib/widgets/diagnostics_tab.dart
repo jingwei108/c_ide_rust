@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../models/ide_state.dart';
 import '../providers/ide_provider.dart';
 
 class DiagnosticsTab extends StatelessWidget {

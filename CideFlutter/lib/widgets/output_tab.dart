@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import '../models/ide_state.dart';
 import '../providers/ide_provider.dart';
 
 class OutputTab extends StatelessWidget {

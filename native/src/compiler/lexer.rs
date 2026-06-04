@@ -260,11 +260,11 @@ impl Lexer {
             let text: String = self.chars[start..self.pos].iter().collect();
             // Convert hex to decimal string so parser can parse it
             let hex_str = &text[2..];
-            match u32::from_str_radix(hex_str, 16) {
+            match u64::from_str_radix(hex_str, 16) {
                 Ok(val) => return self.make_token(TokenType::Number, &val.to_string()),
                 Err(_) => {
                     self.errors.push(LexerError {
-                        message: format!("十六进制数值 0x{} 超出 int 范围", hex_str),
+                        message: format!("十六进制数值 0x{} 超出可表示范围", hex_str),
                         line: self.line,
                         column: self.column,
                         code: ErrorCode::E1006_UnsupportedFeature as i32,

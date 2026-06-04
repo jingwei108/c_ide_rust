@@ -939,7 +939,7 @@ impl TypeChecker {
                     insert_implicit_cast(right, &left_type);
                 }
                 if *op != AssignOp::Assign && (!self.is_scalar(&left_type) || !self.is_scalar(&right_type)) {
-                    self.report_error("复合赋值要求两边都是 int 或 float 类型", loc, ErrorCode::E3045_CompoundAssignType);
+                    self.report_error("复合赋值要求两边都是标量类型（int、float、double 或 long long）", loc, ErrorCode::E3045_CompoundAssignType);
                 }
                 *ty = left_type.clone();
                 ty.clone()

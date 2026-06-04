@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import '../src/rust/api/cide.dart';
 import '../src/rust/compiler/intent.dart';
 
 /// P3: Code intent inference panel.
@@ -60,7 +59,7 @@ class _IntentCard extends StatelessWidget {
                   width: 32,
                   height: 32,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.15),
+                    color: color.withValues(alpha: 0.15),
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -183,7 +182,7 @@ class _ConfidenceBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Text(

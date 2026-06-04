@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/ide_state.dart';
 import '../models/knowledge_card.dart';
 import '../providers/ide_provider.dart';
 import '../src/rust/api/cide.dart' as rust;

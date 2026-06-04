@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/types.dart' as rust;
+import 'package:cide/src/rust/compiler/intent.dart';
 import '../models/algorithm_validation.dart';
 import '../models/code_template.dart';
 import '../models/ide_state.dart';

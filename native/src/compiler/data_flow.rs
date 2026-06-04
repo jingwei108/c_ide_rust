@@ -111,10 +111,8 @@ fn used_vars(stmt: &Stmt) -> Vec<String> {
                 collect_expr_vars(e, &mut vars, true);
             }
         }
-        Stmt::Return { value, .. } => {
-            if let Some(e) = value {
-                collect_expr_vars(e, &mut vars, true);
-            }
+        Stmt::Return { value: Some(e), .. } => {
+            collect_expr_vars(e, &mut vars, true);
         }
         Stmt::Switch { cond, .. } => {
             collect_expr_vars(cond, &mut vars, true);
@@ -137,10 +135,8 @@ fn defined_vars(stmt: &Stmt) -> Vec<String> {
         Stmt::Expr { expr, .. } => {
             collect_expr_vars(expr, &mut vars, false);
         }
-        Stmt::For { init, .. } => {
-            if let Some(s) = init {
-                vars.extend(defined_vars(s));
-            }
+        Stmt::For { init: Some(s), .. } => {
+            vars.extend(defined_vars(s));
         }
         _ => {}
     }
@@ -151,11 +147,10 @@ fn defined_vars(stmt: &Stmt) -> Vec<String> {
 /// `read=true` collects used variables, `read=false` collects assigned variables.
 fn collect_expr_vars(expr: &Expr, out: &mut Vec<String>, read: bool) {
     match expr {
-        Expr::Identifier { name, .. } => {
-            if read {
-                out.push(name.clone());
-            }
+        Expr::Identifier { name, .. } if read => {
+            out.push(name.clone());
         }
+        Expr::Identifier { .. } => {}
         Expr::Binary { left, right, .. } => {
             collect_expr_vars(left, out, read);
             collect_expr_vars(right, out, read);
@@ -196,10 +191,8 @@ fn collect_expr_vars(expr: &Expr, out: &mut Vec<String>, read: bool) {
         Expr::Cast { expr: inner, .. } => {
             collect_expr_vars(inner, out, read);
         }
-        Expr::Sizeof { operand, .. } => {
-            if let Some(e) = operand {
-                collect_expr_vars(e, out, read);
-            }
+        Expr::Sizeof { operand: Some(e), .. } => {
+            collect_expr_vars(e, out, read);
         }
         Expr::InitList { elements, .. } => {
             for e in elements {

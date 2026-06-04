@@ -191,10 +191,12 @@ fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
         Stmt::If { cond, then_stmt, else_stmt, .. } => {
             check_compare_expr(cond, f, loop_depth);
             // P3: detect min/max tracking pattern inside loops
-            if loop_depth >= 1 && is_comparison_expr(cond) {
-                if stmt_has_min_max_assign(then_stmt) || else_stmt.as_ref().map_or(false, |s| stmt_has_min_max_assign(s)) {
-                    f.has_min_max_track = true;
-                }
+            if loop_depth >= 1
+                && is_comparison_expr(cond)
+                && (stmt_has_min_max_assign(then_stmt)
+                    || else_stmt.as_ref().is_some_and(|s| stmt_has_min_max_assign(s)))
+            {
+                f.has_min_max_track = true;
             }
             walk_stmt(then_stmt, f, loop_depth, func_name, depth + 1);
             if let Some(e) = else_stmt {
@@ -409,8 +411,8 @@ fn stmt_has_min_max_assign(stmt: &Stmt) -> bool {
         Stmt::Block { stmts, .. } => stmts.iter().any(stmt_has_min_max_assign),
         Stmt::Expr { expr, .. } => expr_has_min_max_assign(expr),
         Stmt::VarDecl { init, extra_vars, .. } => {
-            init.as_ref().map_or(false, expr_has_min_max_assign)
-                || extra_vars.iter().any(|(_, _, e)| e.as_ref().map_or(false, expr_has_min_max_assign))
+            init.as_ref().is_some_and(expr_has_min_max_assign)
+                || extra_vars.iter().any(|(_, _, e)| e.as_ref().is_some_and(expr_has_min_max_assign))
         }
         _ => false,
     }

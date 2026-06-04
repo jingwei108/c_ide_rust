@@ -93,7 +93,7 @@ impl BytecodeGen {
             struct_defs: HashMap::new(),
             union_defs: HashMap::new(),
             string_data: Vec::new(),
-            string_mem_offset: 0x1000,
+            string_mem_offset: 0,
             source_map: Vec::new(),
             break_patches: Vec::new(),
             continue_patches: Vec::new(),

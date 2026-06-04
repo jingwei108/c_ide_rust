@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/ide_state.dart';
 import '../providers/ide_provider.dart';
 
 class BreakpointsTab extends ConsumerWidget {

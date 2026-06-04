@@ -71,35 +71,49 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
     // --- Name heuristics ---
     for s in &mut scores {
         match &s.intent {
-            CodeIntent::Sort => {
-                if name_lower.contains("sort") || name_lower.contains("bubble") || name_lower.contains("order") {
-                    s.score += 50;
-                    s.reasons.push("函数名包含排序关键词".to_string());
-                }
+            CodeIntent::Sort
+                if name_lower.contains("sort")
+                    || name_lower.contains("bubble")
+                    || name_lower.contains("order") =>
+            {
+                s.score += 50;
+                s.reasons.push("函数名包含排序关键词".to_string());
             }
-            CodeIntent::Search => {
-                if name_lower.contains("search") || name_lower.contains("find") || name_lower.contains("lookup") || name_lower.contains("binary") {
-                    s.score += 50;
-                    s.reasons.push("函数名包含查找关键词".to_string());
-                }
+            CodeIntent::Search
+                if name_lower.contains("search")
+                    || name_lower.contains("find")
+                    || name_lower.contains("lookup")
+                    || name_lower.contains("binary") =>
+            {
+                s.score += 50;
+                s.reasons.push("函数名包含查找关键词".to_string());
             }
-            CodeIntent::Traverse => {
-                if name_lower.contains("travers") || name_lower.contains("walk") || name_lower.contains("visit") || name_lower.contains("print") {
-                    s.score += 40;
-                    s.reasons.push("函数名包含遍历关键词".to_string());
-                }
+            CodeIntent::Traverse
+                if name_lower.contains("travers")
+                    || name_lower.contains("walk")
+                    || name_lower.contains("visit")
+                    || name_lower.contains("print") =>
+            {
+                s.score += 40;
+                s.reasons.push("函数名包含遍历关键词".to_string());
             }
-            CodeIntent::Compute => {
-                if name_lower.contains("calc") || name_lower.contains("sum") || name_lower.contains("count") || name_lower.contains("max") || name_lower.contains("min") {
-                    s.score += 40;
-                    s.reasons.push("函数名包含计算关键词".to_string());
-                }
+            CodeIntent::Compute
+                if name_lower.contains("calc")
+                    || name_lower.contains("sum")
+                    || name_lower.contains("count")
+                    || name_lower.contains("max")
+                    || name_lower.contains("min") =>
+            {
+                s.score += 40;
+                s.reasons.push("函数名包含计算关键词".to_string());
             }
-            CodeIntent::Transform => {
-                if name_lower.contains("convert") || name_lower.contains("revers") || name_lower.contains("rotat") {
-                    s.score += 40;
-                    s.reasons.push("函数名包含转换关键词".to_string());
-                }
+            CodeIntent::Transform
+                if name_lower.contains("convert")
+                    || name_lower.contains("revers")
+                    || name_lower.contains("rotat") =>
+            {
+                s.score += 40;
+                s.reasons.push("函数名包含转换关键词".to_string());
             }
             _ => {}
         }
@@ -107,17 +121,15 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
 
     // --- CFG structure heuristics ---
     if let (Some(body), Some(cfg)) = (func.body.as_ref(), ControlFlowGraph::from_func(func)) {
-        let has_loop = cfg.find_loops().len() > 0;
+        let has_loop = !cfg.find_loops().is_empty();
         let has_back_edge = cfg.edges.iter().any(|(a, b)| *a >= *b);
         let unreachable = cfg.find_unreachable_blocks();
 
         for s in &mut scores {
             match &s.intent {
-                CodeIntent::Sort => {
-                    if has_loop && has_back_edge {
-                        s.score += 20;
-                        s.reasons.push("存在循环结构（排序通常需要循环）".to_string());
-                    }
+                CodeIntent::Sort if has_loop && has_back_edge => {
+                    s.score += 20;
+                    s.reasons.push("存在循环结构（排序通常需要循环）".to_string());
                 }
                 CodeIntent::Search => {
                     if has_loop && !has_back_edge {
@@ -129,25 +141,22 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
                         s.reasons.push("存在提前返回路径（查找常提前退出）".to_string());
                     }
                 }
-                CodeIntent::Traverse => {
-                    if has_loop {
-                        s.score += 20;
-                        s.reasons.push("存在循环结构".to_string());
-                    }
+                CodeIntent::Traverse if has_loop => {
+                    s.score += 20;
+                    s.reasons.push("存在循环结构".to_string());
                 }
                 CodeIntent::Compute => {
                     if has_loop {
                         s.score += 10;
+                        s.reasons.push("存在循环结构".to_string());
                     } else {
                         s.score += 15;
                         s.reasons.push("无循环（纯计算特征）".to_string());
                     }
                 }
-                CodeIntent::Transform => {
-                    if has_loop && has_back_edge {
-                        s.score += 15;
-                        s.reasons.push("存在循环结构".to_string());
-                    }
+                CodeIntent::Transform if has_loop && has_back_edge => {
+                    s.score += 15;
+                    s.reasons.push("存在循环结构".to_string());
                 }
                 _ => {}
             }
@@ -157,35 +166,53 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
         let var_names = collect_var_names(body);
         for s in &mut scores {
             match &s.intent {
-                CodeIntent::Sort => {
-                    if var_names.iter().any(|n| n.contains("swap") || n.contains("temp") || n.contains("tmp")) {
-                        s.score += 15;
-                        s.reasons.push("变量名包含 swap/temp（交换操作特征）".to_string());
-                    }
+                CodeIntent::Sort
+                    if var_names
+                        .iter()
+                        .any(|n| n.contains("swap") || n.contains("temp") || n.contains("tmp")) =>
+                {
+                    s.score += 15;
+                    s.reasons.push("变量名包含 swap/temp（交换操作特征）".to_string());
                 }
-                CodeIntent::Search => {
-                    if var_names.iter().any(|n| n.contains("mid") || n.contains("left") || n.contains("right") || n.contains("target") || n.contains("found")) {
-                        s.score += 20;
-                        s.reasons.push("变量名包含 mid/left/right/target（查找特征）".to_string());
-                    }
+                CodeIntent::Search
+                    if var_names.iter().any(|n| {
+                        n.contains("mid")
+                            || n.contains("left")
+                            || n.contains("right")
+                            || n.contains("target")
+                            || n.contains("found")
+                    }) =>
+                {
+                    s.score += 20;
+                    s.reasons.push("变量名包含 mid/left/right/target（查找特征）".to_string());
                 }
-                CodeIntent::Traverse => {
-                    if var_names.iter().any(|n| n.contains("next") || n.contains("curr") || n.contains("head")) {
-                        s.score += 15;
-                        s.reasons.push("变量名包含 next/curr/head（链表遍历特征）".to_string());
-                    }
+                CodeIntent::Traverse
+                    if var_names
+                        .iter()
+                        .any(|n| n.contains("next") || n.contains("curr") || n.contains("head")) =>
+                {
+                    s.score += 15;
+                    s.reasons.push("变量名包含 next/curr/head（链表遍历特征）".to_string());
                 }
-                CodeIntent::Compute => {
-                    if var_names.iter().any(|n| n.contains("sum") || n.contains("total") || n.contains("count") || n.contains("result") || n.contains("res")) {
-                        s.score += 15;
-                        s.reasons.push("变量名包含 sum/result（累加特征）".to_string());
-                    }
+                CodeIntent::Compute
+                    if var_names.iter().any(|n| {
+                        n.contains("sum")
+                            || n.contains("total")
+                            || n.contains("count")
+                            || n.contains("result")
+                            || n.contains("res")
+                    }) =>
+                {
+                    s.score += 15;
+                    s.reasons.push("变量名包含 sum/result（累加特征）".to_string());
                 }
-                CodeIntent::Transform => {
-                    if var_names.iter().any(|n| n.contains("new") || n.contains("out") || n.contains("buf")) {
-                        s.score += 10;
-                        s.reasons.push("变量名包含 new/out/buf（转换特征）".to_string());
-                    }
+                CodeIntent::Transform
+                    if var_names
+                        .iter()
+                        .any(|n| n.contains("new") || n.contains("out") || n.contains("buf")) =>
+                {
+                    s.score += 10;
+                    s.reasons.push("变量名包含 new/out/buf（转换特征）".to_string());
                 }
                 _ => {}
             }
@@ -215,7 +242,7 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
         }
     }
 
-    scores.sort_by(|a, b| b.score.cmp(&a.score));
+    scores.sort_by_key(|s| std::cmp::Reverse(s.score));
     scores.retain(|s| s.score > 0);
     scores
 }
@@ -268,17 +295,21 @@ fn has_recursive_call(stmt: &Stmt, func_name: &str) -> bool {
         Stmt::Block { stmts, .. } => stmts.iter().any(|s| has_recursive_call(s, func_name)),
         Stmt::If { then_stmt, else_stmt, .. } => {
             has_recursive_call(then_stmt, func_name)
-                || else_stmt.as_ref().map_or(false, |e| has_recursive_call(e, func_name))
+                || else_stmt.as_ref().is_some_and(|e| has_recursive_call(e, func_name))
         }
         Stmt::While { body, .. } => has_recursive_call(body, func_name),
         Stmt::DoWhile { body, .. } => has_recursive_call(body, func_name),
         Stmt::For { body, .. } => has_recursive_call(body, func_name),
         Stmt::Expr { expr, .. } => expr_has_call(expr, func_name),
         Stmt::VarDecl { init, extra_vars, .. } => {
-            init.as_ref().map_or(false, |e| expr_has_call(e, func_name))
-                || extra_vars.iter().any(|(_, _, e)| e.as_ref().map_or(false, |x| expr_has_call(x, func_name)))
+            init.as_ref().is_some_and(|e| expr_has_call(e, func_name))
+                || extra_vars
+                    .iter()
+                    .any(|(_, _, e)| e.as_ref().is_some_and(|x| expr_has_call(x, func_name)))
         }
-        Stmt::Return { value, .. } => value.as_ref().map_or(false, |e| expr_has_call(e, func_name)),
+        Stmt::Return { value, .. } => {
+            value.as_ref().is_some_and(|e| expr_has_call(e, func_name))
+        }
         Stmt::Switch { body, .. } => has_recursive_call(body, func_name),
         Stmt::Case { stmt: s, .. } => has_recursive_call(s, func_name),
         _ => false,
@@ -289,11 +320,19 @@ fn expr_has_call(expr: &crate::compiler::ast::Expr, func_name: &str) -> bool {
     use crate::compiler::ast::Expr;
     match expr {
         Expr::Call { name, .. } => name == func_name,
-        Expr::Binary { left, right, .. } => expr_has_call(left, func_name) || expr_has_call(right, func_name),
+        Expr::Binary { left, right, .. } => {
+            expr_has_call(left, func_name) || expr_has_call(right, func_name)
+        }
         Expr::Unary { operand, .. } => expr_has_call(operand, func_name),
-        Expr::Assign { left, right, .. } => expr_has_call(left, func_name) || expr_has_call(right, func_name),
-        Expr::CallPtr { callee, args, .. } => expr_has_call(callee, func_name) || args.iter().any(|a| expr_has_call(a, func_name)),
-        Expr::Index { array, index, .. } => expr_has_call(array, func_name) || expr_has_call(index, func_name),
+        Expr::Assign { left, right, .. } => {
+            expr_has_call(left, func_name) || expr_has_call(right, func_name)
+        }
+        Expr::CallPtr { callee, args, .. } => {
+            expr_has_call(callee, func_name) || args.iter().any(|a| expr_has_call(a, func_name))
+        }
+        Expr::Index { array, index, .. } => {
+            expr_has_call(array, func_name) || expr_has_call(index, func_name)
+        }
         Expr::Member { object, .. } => expr_has_call(object, func_name),
         Expr::Ternary { cond, then_branch, else_branch, .. } => {
             expr_has_call(cond, func_name)
