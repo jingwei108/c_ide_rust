@@ -678,3 +678,24 @@ pub fn continue_from_step(step: i32) -> UnifiedRunResult {
         finished: false,
     }
 }
+
+// ========== 智能补全 API ==========
+
+use crate::engine::completion::CompletionCandidate;
+
+/// 获取光标位置的语义补全候选
+pub fn get_completion_candidates(
+    source: String,
+    line: i32,
+    column: i32,
+    prefix: String,
+) -> Vec<CompletionCandidate> {
+    let session = current_session();
+    crate::engine::completion::get_completion_candidates(
+        &session,
+        &source,
+        line as usize,
+        column as usize,
+        &prefix,
+    )
+}

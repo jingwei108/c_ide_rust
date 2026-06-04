@@ -107,11 +107,41 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     final sel = _document.selection.base;
     final offset = _document.positionToOffset(sel);
     final textBefore = _document.text.substring(0, offset);
+    final prefix = AutocompleteController.extractPrefix(textBefore);
+
+    // 1. 同步更新静态候选（立即响应）
     _autocompleteController.update(textBefore);
+
+    // 2. 异步获取语义候选（防抖 150ms）
+    // 触发条件：有输入前缀，或在成员访问/类型上下文/格式字符串等特定上下文
+    final trimmed = textBefore.trimRight();
+    final isMemberContext = trimmed.endsWith('.') || trimmed.endsWith('->');
+    final isFormatContext = textBefore.contains('printf("') ||
+        textBefore.contains('scanf("');
+    // 类型上下文：用户在类型关键字后，需要提示自定义 struct/union/typedef/enum
+    final typeKeywords = [
+      'int', 'char', 'float', 'double', 'void', 'long', 'short',
+      'signed', 'unsigned', 'const', 'static', 'extern',
+      'struct', 'union', 'enum', 'typedef',
+    ];
+    final isTypeContext =
+        typeKeywords.any((kw) => trimmed.endsWith(' $kw') || trimmed == kw);
+
+    if (prefix.isNotEmpty ||
+        isMemberContext ||
+        isFormatContext ||
+        isTypeContext) {
+      _autocompleteController.fetchSemanticCandidates(
+        _document.text,
+        sel.line,
+        sel.col,
+        textBefore,
+      );
+    }
   }
 
   void _onAutocompleteChanged() {
-    if (_autocompleteController.visible) {
+    if (_autocompleteController.visible || _autocompleteController.fetchingSemantic) {
       _showAutocomplete();
     } else {
       _hideAutocomplete();
@@ -257,15 +287,22 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     final prefix = AutocompleteController.extractPrefix(textBefore);
     final prefixOffset = cursorOffset - prefix.length;
 
+    final insertText = candidate.insertText ?? candidate.word;
+
     _document.applyEdit(EditOp(
       startOffset: prefixOffset,
       oldText: prefix,
-      newText: candidate.word,
+      newText: insertText,
     ));
 
-    // 移动光标到补全词后
-    final newOffset = prefixOffset + candidate.word.length;
-    final newPos = _document.offsetToPosition(newOffset);
+    // 移动光标到补全词后；如果是函数调用且 insertText 以 () 结尾，
+    // 将光标放到括号内
+    final newOffset = prefixOffset + insertText.length;
+    int finalOffset = newOffset;
+    if (insertText.endsWith('()')) {
+      finalOffset = newOffset - 1; // 光标放在括号内
+    }
+    final newPos = _document.offsetToPosition(finalOffset);
     _document.updateSelection(
       DocSelection(base: newPos, extent: newPos),
     );

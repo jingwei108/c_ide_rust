@@ -2,9 +2,10 @@ import 'package:flutter/material.dart';
 import 'autocomplete_controller.dart';
 
 /// ---------------------------------------------------------------------------
-/// AutocompleteOverlay — 自动补全候选列表浮层
+/// AutocompleteOverlay — 自动补全候选列表浮层（v2 语义增强）
 /// ---------------------------------------------------------------------------
 /// 显示在光标下方，支持点击选择和键盘导航。
+/// 增强：更多类型图标、语义候选 detail 显示、加载指示器。
 /// ---------------------------------------------------------------------------
 
 class AutocompleteOverlay extends StatelessWidget {
@@ -26,7 +27,7 @@ class AutocompleteOverlay extends StatelessWidget {
     return AnimatedBuilder(
       animation: controller,
       builder: (context, child) {
-        if (!controller.visible || controller.candidates.isEmpty) {
+        if (!controller.visible && !controller.fetchingSemantic) {
           return const SizedBox.shrink();
         }
 
@@ -39,59 +40,111 @@ class AutocompleteOverlay extends StatelessWidget {
           borderRadius: BorderRadius.circular(4),
           color: bgColor,
           child: Container(
-            constraints: const BoxConstraints(maxHeight: 200, maxWidth: 240),
+            constraints: const BoxConstraints(maxHeight: 240, maxWidth: 280),
             decoration: BoxDecoration(
               border: Border.all(color: borderColor),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: controller.candidates.length,
-              itemBuilder: (context, index) {
-                final candidate = controller.candidates[index];
-                final isSelected = index == controller.selectedIndex;
-                return InkWell(
-                  onTap: () {
-                    controller.selectedIndex = index; // 需要 setter
-                    onSelected(controller.confirm()!);
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? Colors.blueAccent.withValues(alpha: 0.3)
-                          : null,
-                    ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (controller.fetchingSemantic && controller.candidates.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(12),
                     child: Row(
                       children: [
-                        _TypeIcon(type: candidate.type),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            candidate.word,
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isSelected ? Colors.white : textColor,
-                              fontFamily: 'monospace',
-                            ),
+                        SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: isDark ? Colors.grey : Colors.blueAccent,
                           ),
                         ),
-                        if (candidate.signature != null)
-                          Text(
-                            candidate.signature!,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey,
-                              fontFamily: 'monospace',
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        const SizedBox(width: 8),
+                        Text(
+                          '分析中...',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: isDark ? Colors.grey : Colors.grey.shade600,
                           ),
+                        ),
                       ],
                     ),
                   ),
-                );
-              },
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    padding: EdgeInsets.zero,
+                    itemCount: controller.candidates.length,
+                    itemBuilder: (context, index) {
+                      final candidate = controller.candidates[index];
+                      final isSelected = index == controller.selectedIndex;
+                      return InkWell(
+                        onTap: () {
+                          controller.selectedIndex = index;
+                          onSelected(controller.confirm()!);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? Colors.blueAccent.withValues(alpha: 0.3)
+                                : null,
+                          ),
+                          child: Row(
+                            children: [
+                              _TypeIcon(type: candidate.type),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      candidate.word,
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        color: isSelected ? Colors.white : textColor,
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                    if (candidate.detail != null && candidate.detail!.isNotEmpty)
+                                      Text(
+                                        candidate.detail!,
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          color: isSelected
+                                              ? Colors.white70
+                                              : Colors.grey.shade500,
+                                          fontFamily: 'monospace',
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                  ],
+                                ),
+                              ),
+                              if (candidate.signature != null)
+                                Text(
+                                  candidate.signature!,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey,
+                                    fontFamily: 'monospace',
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
         );
@@ -107,15 +160,18 @@ class _TypeIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (type) {
-      'function' => Colors.yellowAccent,
-      'macro' => Colors.cyanAccent,
-      _ => Colors.blueAccent,
-    };
-    final icon = switch (type) {
-      'function' => Icons.functions,
-      'macro' => Icons.data_object,
-      _ => Icons.text_fields,
+    final (color, icon) = switch (type) {
+      'function' => (Colors.yellowAccent, Icons.functions),
+      'macro' => (Colors.cyanAccent, Icons.data_object),
+      'variable' => (Colors.lightGreenAccent, Icons.adjust),
+      'struct' => (Colors.orangeAccent, Icons.account_tree),
+      'union' => (Colors.deepOrangeAccent, Icons.account_tree),
+      'enum' => (Colors.purpleAccent, Icons.format_list_numbered),
+      'typedef' => (Colors.tealAccent, Icons.short_text),
+      'field' => (Colors.pinkAccent, Icons.arrow_right),
+      'snippet' => (Colors.amberAccent, Icons.code),
+      'format' => (Colors.indigoAccent, Icons.percent),
+      _ => (Colors.blueAccent, Icons.text_fields),
     };
     return Icon(icon, size: 14, color: color);
   }

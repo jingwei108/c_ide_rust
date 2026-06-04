@@ -66,6 +66,7 @@ docs/                   设计文档、事故报告
 | Phase 21 | **认知推理 P1（教学推理层）**：`MisconceptionPattern` 6 种认知误解模式定义 + `detect_misconceptions` 检测引擎；`LearningPath` 推荐引擎为每种模式组装知识卡片→模板高亮→练习路径；Flutter `LearningProgress` 新增 `recentCompileRecords`（保留最近 20 次编译记录）；`LearningPathPanel` BottomSheet 面板实时展示诊断结果与可点击学习步骤 | ✅ 完成 |
 | Phase 22 | **认知推理 P2（知识图谱层）**：`KnowledgeGraph` 概念图谱核心，定义 24 个 C 语言核心概念节点（编译/内存/控制流三大域）+ 30+ 条关系边（Prerequisite/LeadsTo/CommonMistake/UsedTogether/Contradicts）；错误码→概念动态激活 + AST 特征激活 + 前置依赖路径查找；Flutter `ConceptGraphView` CustomPainter 三列布局绘制概念网络，激活节点高亮发光，点击弹出概念解释 BottomSheet | ✅ 完成 |
 | Phase 23 | **认知推理 P3（代码理解层）**：`ControlFlowGraph` 从 AST 构建基本块+终结符+边，支持 dominator 计算、不可达块检测、循环检测；`DataFlow` 活跃变量分析 + 常量条件求值；`IntentInference` 基于函数名+变量名+CFG 结构+递归特征推断代码意图（Sort/Search/Traverse/Compute/Transform）；`algorithm_detector` 集成 CFG 特征（回边/提前返回/不可达块）修复 `has_min_max_track` 检测；FRB 导出 `infer_intent_from_source`；Flutter `IntentInferencePanel` 底部 Tab 实时展示意图推断结果与置信度 | ✅ 完成 |
+| Phase 24 | **语义智能补全 v2**：`CompletionEngine` 轻量级补全引擎（`native/src/engine/completion.rs`），基于编译快照 + 增量 Token 扫描；支持成员访问（`expr.` / `expr->`）、类型上下文、表达式上下文、格式字符串（`printf`/`scanf`）、预处理指令五种上下文感知补全；编译时从 AST 提取函数/变量/结构体/联合体/typedef 快照持久化到 `Session.compile.completion_snapshot`；增量扫描提取光标所在作用域局部变量；FRB 导出 `get_completion_candidates(source, line, column, prefix)`；Flutter `AutocompleteController` 增强为静态关键词 + 语义候选混合模式，150ms 防抖异步获取；`AutocompleteOverlay` 增强类型图标（Variable/Function/Struct/Union/Enum/Field/Format 等）与签名详情；函数补全自动插入括号并将光标定位到括号内 | ✅ 完成 |
 
 ## 编码约定
 
@@ -135,6 +136,15 @@ docs/                   设计文档、事故报告
 - **认知推理 P1（教学推理层）** — `MisconceptionPattern` 定义 6 种认知误解模式（边界混淆 M01、指针生命周期混淆 M02、赋值与比较混淆 M03、数组指针退化误解 M04、递归边界遗漏 M05、格式化字符串误用 M06）；`detect_misconceptions` 基于最近 20 次编译记录滑动窗口检测稳定犯错模式；`recommend_learning_paths` 为每种检测到的模式组装知识卡片→模板高亮→练习的最小有效学习路径；Flutter `LearningProgress` 新增 `recentCompileRecords` 字段（SharedPreferences 持久化）；`LearningPathPanel` BottomSheet 面板展示诊断结果与彩色路径卡片，点击步骤可直接加载模板/启动教程
 - **认知推理 P2（知识图谱层）** — `KnowledgeGraph` 定义 24 个概念节点（编译域 8 个：变量声明/类型系统/隐式转换/指针类型/算术/逻辑/位运算符/作用域；内存域 8 个：栈/堆/指针/取地址/解引用/指针算术/数组/数组退化/结构体布局；控制流域 6 个：条件分支/for/while/边界条件/函数调用/参数传递/返回值/递归）和 30+ 条关系边；`activate_from_error` 错误码映射激活（如 3051 越界激活 Array + BoundaryCondition）、`activate_from_ast` AST 特征激活（如 malloc/free 激活 HeapMemory + Pointer）、`find_prerequisite_path` 前置依赖路径查找；Flutter `ConceptGraphView` CustomPainter 三列域布局，激活节点发光高亮+邻居半透明，边按关系类型着色（Prerequisite 橙/LeadsTo 蓝/CommonMistake 红虚线），点击节点弹出概念解释 BottomSheet
 - **认知推理 P3（代码理解层）** — `ControlFlowGraph` 从 AST `FuncDecl` 提取基本块（`BasicBlock { id, stmts, terminator }`），支持 `Return`/`Goto`/`Branch`/`Switch`/`FallThrough` 五种终结符，自动构建边表；迭代算法计算 dominator 树；检测不可达块和循环（通过回边识别）；`DataFlow` 提供活跃变量分析（LiveVarResult，反向迭代数据流固定点）和常量条件求值（`evaluate_constant_condition`）；`IntentInference` 综合函数名启发式（sort/search/find/traverse/calc）、变量名模式（swap/temp/mid/left/right/target/next/curr/sum/result）、CFG 结构特征（循环嵌套/回边/提前返回/不可达块）、递归调用检测，输出 5 种意图（Sort/Search/Traverse/Compute/Transform）的置信度评分与推理原因；`algorithm_detector` 集成 CFG 特征并修复 `has_min_max_track` 检测缺失；FRB 导出 `infer_intent_from_source` 接受源码字符串返回 `Vec<IntentScore>`；Flutter `IntentInferencePanel` 作为底部 Tab 实时展示意图排名卡片（按置信度分高/中/低三级徽章），附带 💡 推理原因列表
+- **语义智能补全 v2** — `CompletionEngine`（`native/src/engine/completion.rs`）基于编译快照 + 轻量级 Token 增量扫描，提供五种上下文感知补全：
+  - **成员访问**：`expr.` / `expr->` 自动列出 struct/union 字段（如 `p.x`, `n->next`）
+  - **类型上下文**：`int `、`struct ` 后自动提示类型名、结构体/联合体/typedef 别名
+  - **表达式上下文**：当前作用域局部变量优先，全局变量、函数签名、类型名混合排序；函数候选自动插入 `()` 并将光标定位到括号内
+  - **格式字符串**：`printf("` / `scanf("` 内自动提示 `%d`、`%f`、`%s`、`%p` 等占位符
+  - **预处理指令**：`#` 后提示 `include`、`define`、`ifdef` 等，并提供标准头文件列表
+  - 后端：每次成功编译时从 AST 提取符号快照（`CompletionSnapshot`）持久化到 `Session.compile.completion_snapshot`；增量扫描只解析光标前源码，提取局部变量和参数
+  - FRB API：`get_completion_candidates(source, line, column, prefix)` 返回语义候选列表
+  - Flutter：`AutocompleteController` 150ms 防抖异步获取语义候选，与静态关键词列表合并去重；`AutocompleteOverlay` 增强类型图标（Variable/Function/Struct/Union/Enum/Field/Format 等）与详情签名展示
 
 ### 已修复的关键 Bug
 - **Parser 死循环（2026-04-27）**：`struct*` 返回类型误识别为 struct 声明 → `ParseStructDecl` 零进度保护

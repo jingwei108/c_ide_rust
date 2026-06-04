@@ -63,6 +63,38 @@ pub fn get_all_concept_edges() -> Vec<ConceptEdge> {
 #[frb]
 pub use crate::unified::root_cause::RootCauseHint;
 
+// 智能补全 v2
+#[frb]
+#[derive(Debug, Clone)]
+pub struct CompletionCandidate {
+    pub label: String,
+    pub kind: String,
+    pub detail: String,
+    pub documentation: String,
+    pub insert_text: String,
+    pub sort_text: String,
+}
+
+#[frb]
+pub fn get_completion_candidates(
+    source: String,
+    line: i32,
+    column: i32,
+    prefix: String,
+) -> Vec<CompletionCandidate> {
+    crate::flutter_bridge::get_completion_candidates(source, line, column, prefix)
+        .into_iter()
+        .map(|c| CompletionCandidate {
+            label: c.label,
+            kind: c.kind.as_str().to_string(),
+            detail: c.detail,
+            documentation: c.documentation,
+            insert_text: c.insert_text,
+            sort_text: c.sort_text,
+        })
+        .collect()
+}
+
 // P3: Code Understanding Layer
 #[frb]
 pub use crate::compiler::intent::{CodeIntent, IntentScore};

@@ -118,3 +118,7 @@ node_modules/
 
 #py
 *.pyc
+scripts/__pycache__/build_utils.cpython-314.pyc
+scripts/__pycache__/build_utils.cpython-314.pyc
+native/tests/test_detect.*
+native/examples/repro*.rs

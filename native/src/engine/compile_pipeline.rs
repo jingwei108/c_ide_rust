@@ -8,6 +8,7 @@ use crate::compiler::bytecode_gen::BytecodeGen;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::type_checker::TypeChecker;
+use crate::engine::completion::update_completion_snapshot;
 use crate::session::*;
 use crate::vm::vm::CideVM;
 
@@ -313,6 +314,9 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.algorithm_matches =
         crate::compiler::algorithm_detector::detect_algorithms(&program);
 
+    // 更新智能补全快照
+    update_completion_snapshot(session, &program);
+
     session.compile.compiled = true;
     session.compile.errors.clear();
 
@@ -502,6 +506,9 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
     // 算法模式识别
     session.compile.algorithm_matches =
         crate::compiler::algorithm_detector::detect_algorithms(&program);
+
+    // 更新智能补全快照
+    update_completion_snapshot(session, &program);
 
     session.compile.compiled = true;
     session.compile.errors.clear();

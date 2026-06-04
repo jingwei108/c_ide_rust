@@ -1,4 +1,5 @@
 use crate::compiler::ast::{SourceLoc, Type};
+use crate::engine::completion::CompletionSnapshot;
 use crate::vm::instruction::Instruction;
 use crate::vm::vfs::VirtualFileSystem;
 use crate::vm::vm::CideVM;
@@ -87,6 +88,8 @@ pub struct CompileState {
     pub symbols: Vec<Symbol>,
     pub algorithm_matches: Vec<AlgorithmMatch>,
     pub struct_fields: HashMap<String, Vec<(String, i32)>>,
+    /// 智能补全快照：每次成功编译后从 AST 提取的符号表
+    pub completion_snapshot: CompletionSnapshot,
 }
 
 #[frb]
