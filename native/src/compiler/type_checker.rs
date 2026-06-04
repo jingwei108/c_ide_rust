@@ -227,8 +227,7 @@ impl TypeChecker {
         false
     }
 
-    fn check_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
-        if target == value { return true; }
+    fn check_array_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Array) {
             if let (Type::Pointer { pointee: t_pointee, .. }, Type::Array { element: v_element, .. }) = (target, value) {
                 if t_pointee.as_ref() == v_element.as_ref() {
@@ -259,8 +258,11 @@ impl TypeChecker {
                 }
             }
         }
+        false
+    }
+
+    fn check_function_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if target.is_function_pointer() && value.is_function_pointer() {
-            // Function pointer assignment: check return type and param count
             if let (Type::Pointer { pointee: t_pointee, .. }, Type::Pointer { pointee: v_pointee, .. }) = (target, value) {
                 if let (Type::Function { return_type: t_ret, param_types: t_params, .. },
                         Type::Function { return_type: v_ret, param_types: v_params, .. }) = (t_pointee.as_ref(), v_pointee.as_ref()) {
@@ -276,43 +278,52 @@ impl TypeChecker {
             return true;
         }
         if target.is_pointer() && value.is_function_pointer() {
-            // Allow assigning function pointer to generic pointer
             return true;
         }
         if target.is_function_pointer() && value.is_pointer() {
-            // Allow assigning generic pointer to function pointer (with warning)
             self.report_warning("将通用指针赋值给函数指针，建议显式转换", loc, ErrorCode::W3055_VoidPointerCast);
             return true;
         }
-        if (matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)) && (matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)) {
-            // 警告可能丢失精度的情况
-            if matches!(target.kind(), TypeKind::Char) && matches!(value.kind(), TypeKind::Int | TypeKind::Float | TypeKind::Double) {
-                self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
-            }
-            if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Float | TypeKind::Double) {
-                self.report_warning(&format!("{} 被隐式转换为 int，可能会丢失精度。", value), loc, ErrorCode::W3053_ImplicitScalarConversion);
-            }
-            if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Double) {
-                self.report_warning("double 被隐式转换为 float，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
-            }
-            // 提示安全的隐式提升
-            if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Char) {
-                self.report_hint("char 被隐式提升为 int。", loc, ErrorCode::H3057_ImplicitConversionHint);
-            }
-            if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Int | TypeKind::Char) {
-                let src = if matches!(value.kind(), TypeKind::Char) { "char" } else { "int" };
-                self.report_hint(&format!("{} 被隐式提升为 float。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
-            }
-            if matches!(target.kind(), TypeKind::Double) && matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float) {
-                let src = match value.kind() {
-                    TypeKind::Char => "char",
-                    TypeKind::Float => "float",
-                    _ => "int",
-                };
-                self.report_hint(&format!("{} 被隐式提升为 double。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
-            }
-            return true;
+        false
+    }
+
+    fn check_scalar_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
+        if !matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) {
+            return false;
         }
+        if !matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) {
+            return false;
+        }
+        // 警告可能丢失精度的情况
+        if matches!(target.kind(), TypeKind::Char) && matches!(value.kind(), TypeKind::Int | TypeKind::Float | TypeKind::Double) {
+            self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+        }
+        if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Float | TypeKind::Double) {
+            self.report_warning(&format!("{} 被隐式转换为 int，可能会丢失精度。", value), loc, ErrorCode::W3053_ImplicitScalarConversion);
+        }
+        if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Double) {
+            self.report_warning("double 被隐式转换为 float，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+        }
+        // 提示安全的隐式提升
+        if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Char) {
+            self.report_hint("char 被隐式提升为 int。", loc, ErrorCode::H3057_ImplicitConversionHint);
+        }
+        if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Int | TypeKind::Char) {
+            let src = if matches!(value.kind(), TypeKind::Char) { "char" } else { "int" };
+            self.report_hint(&format!("{} 被隐式提升为 float。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
+        }
+        if matches!(target.kind(), TypeKind::Double) && matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+            let src = match value.kind() {
+                TypeKind::Char => "char",
+                TypeKind::Float => "float",
+                _ => "int",
+            };
+            self.report_hint(&format!("{} 被隐式提升为 double。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
+        }
+        true
+    }
+
+    fn check_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Int) {
             self.report_warning("整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。", loc, ErrorCode::W3054_IntToPointerCast);
             return true;
@@ -325,6 +336,15 @@ impl TypeChecker {
             }
             return true;
         }
+        false
+    }
+
+    fn check_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
+        if target == value { return true; }
+        if self.check_array_pointer_assignable(target, value, loc) { return true; }
+        if self.check_function_pointer_assignable(target, value, loc) { return true; }
+        if self.check_scalar_assignable(target, value, loc) { return true; }
+        if self.check_pointer_assignable(target, value, loc) { return true; }
         false
     }
 
