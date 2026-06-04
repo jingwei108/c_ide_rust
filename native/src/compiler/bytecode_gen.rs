@@ -446,6 +446,14 @@ impl BytecodeGen {
                             f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0)
                         }).unwrap_or(4)
                     }
+                    TypeKind::Array => {
+                        // 指向数组的指针：步长为整个数组大小（如 int (*p)[3] 步长为 12）
+                        if let Type::Pointer { pointee, .. } = ty {
+                            self.type_size(pointee)
+                        } else {
+                            4
+                        }
+                    }
                     _ => 4,
                 }
             }
