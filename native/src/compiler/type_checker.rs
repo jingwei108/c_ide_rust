@@ -1002,6 +1002,34 @@ impl TypeChecker {
         }
     }
 
+    // ---------- 内建函数检查器辅助方法 ----------
+
+    fn builtin_check_count(&mut self, args: &[Expr], expected: usize, name: &str, loc: &SourceLoc) -> bool {
+        if args.len() != expected {
+            self.report_error(&format!("{} 需要{}个参数", name, expected), loc, ErrorCode::E3028_BuiltInArgCount);
+            false
+        } else {
+            true
+        }
+    }
+
+    fn builtin_check_pointer(&mut self, arg: &mut Expr, idx: usize, name: &str, loc: &SourceLoc) {
+        let arg_type = self.resolve_expr_type(arg);
+        if !arg_type.is_pointer() && !arg_type.is_array() {
+            self.report_error(&format!("{} 的第 {} 个参数必须是指针或数组", name, idx + 1), loc, ErrorCode::E3029_BuiltInArgType);
+        }
+    }
+
+    fn builtin_check_int(&mut self, arg: &mut Expr, idx: usize, name: &str, loc: &SourceLoc) {
+        let expected = Type::int();
+        let arg_type = self.resolve_expr_type(arg);
+        if !self.check_assignable(&expected, &arg_type, loc) {
+            self.report_error(&format!("{} 的第 {} 个参数必须是 int", name, idx + 1), loc, ErrorCode::E3029_BuiltInArgType);
+        } else {
+            insert_implicit_cast(arg, &expected);
+        }
+    }
+
     // ---------- 内建函数检查器 ----------
 
     fn check_builtin_malloc(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -1020,13 +1048,8 @@ impl TypeChecker {
     }
 
     fn check_builtin_free(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("free 需要一个参数", loc, ErrorCode::E3026_FreeArgCount);
-        } else {
-            let arg_type = self.resolve_expr_type(&mut args[0]);
-            if !arg_type.is_pointer() && !arg_type.is_array() {
-                self.report_error("free 参数必须是指针", loc, ErrorCode::E3027_FreeArgType);
-            }
+        if self.builtin_check_count(args, 1, "free", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "free", loc);
         }
         Type::void()
     }
@@ -1120,97 +1143,48 @@ impl TypeChecker {
     }
 
     fn check_builtin_strlen(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("strlen 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            let arg_type = self.resolve_expr_type(&mut args[0]);
-            if !arg_type.is_pointer() && !arg_type.is_array() {
-                self.report_error(
-                    "strlen 参数必须是指针或数组",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
-            }
+        if self.builtin_check_count(args, 1, "strlen", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "strlen", loc);
         }
         Type::int()
     }
 
     fn check_builtin_strcpy(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 2 {
-            self.report_error("strcpy 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            for (i, arg) in args.iter_mut().enumerate() {
-                let arg_type = self.resolve_expr_type(arg);
-                if !arg_type.is_pointer() && !arg_type.is_array() {
-                    self.report_error(
-                        &format!("strcpy 的第 {} 个参数必须是指针或数组", i + 1),
-                        loc,
-                        ErrorCode::E3029_BuiltInArgType,
-                    );
-                }
-            }
+        if self.builtin_check_count(args, 2, "strcpy", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "strcpy", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "strcpy", loc);
         }
         Type::void()
     }
 
     fn check_builtin_strcmp(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 2 {
-            self.report_error("strcmp 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            for (i, arg) in args.iter_mut().enumerate() {
-                let arg_type = self.resolve_expr_type(arg);
-                if !arg_type.is_pointer() && !arg_type.is_array() {
-                    self.report_error(
-                        &format!("strcmp 的第 {} 个参数必须是指针或数组", i + 1),
-                        loc,
-                        ErrorCode::E3029_BuiltInArgType,
-                    );
-                }
-            }
+        if self.builtin_check_count(args, 2, "strcmp", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "strcmp", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "strcmp", loc);
         }
         Type::int()
     }
 
     fn check_builtin_getchar(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if !args.is_empty() {
-            self.report_error("getchar 不需要参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        }
+        self.builtin_check_count(args, 0, "getchar", loc);
         Type::int()
     }
 
     fn check_builtin_putchar(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("putchar 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            let expected = Type::int();
-            let arg_type = self.resolve_expr_type(&mut args[0]);
-            if !self.check_assignable(&expected, &arg_type, loc) {
-                self.report_error("putchar 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
-            } else {
-                insert_implicit_cast(&mut args[0], &expected);
-            }
+        if self.builtin_check_count(args, 1, "putchar", loc) {
+            self.builtin_check_int(&mut args[0], 0, "putchar", loc);
         }
         Type::void()
     }
 
     fn check_builtin_rand(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if !args.is_empty() {
-            self.report_error("rand 不需要参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        }
+        self.builtin_check_count(args, 0, "rand", loc);
         Type::int()
     }
 
     fn check_builtin_srand(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("srand 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            let expected = Type::int();
-            let arg_type = self.resolve_expr_type(&mut args[0]);
-            if !self.check_assignable(&expected, &arg_type, loc) {
-                self.report_error("srand 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
-            } else {
-                insert_implicit_cast(&mut args[0], &expected);
-            }
+        if self.builtin_check_count(args, 1, "srand", loc) {
+            self.builtin_check_int(&mut args[0], 0, "srand", loc);
         }
         Type::void()
     }
@@ -1245,50 +1219,23 @@ impl TypeChecker {
     }
 
     fn check_builtin_exit(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("exit 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            let expected = Type::int();
-            let arg_type = self.resolve_expr_type(&mut args[0]);
-            if !self.check_assignable(&expected, &arg_type, loc) {
-                self.report_error("exit 参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
-            } else {
-                insert_implicit_cast(&mut args[0], &expected);
-            }
+        if self.builtin_check_count(args, 1, "exit", loc) {
+            self.builtin_check_int(&mut args[0], 0, "exit", loc);
         }
         Type::void()
     }
 
     fn check_builtin_strcat(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 2 {
-            self.report_error("strcat 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            for (i, arg) in args.iter_mut().enumerate() {
-                let arg_type = self.resolve_expr_type(arg);
-                if !arg_type.is_pointer() && !arg_type.is_array() {
-                    self.report_error(
-                        &format!("strcat 的第 {} 个参数必须是指针或数组", i + 1),
-                        loc,
-                        ErrorCode::E3029_BuiltInArgType,
-                    );
-                }
-            }
+        if self.builtin_check_count(args, 2, "strcat", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "strcat", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "strcat", loc);
         }
         Type::pointer_to(Type::char())
     }
 
     fn check_builtin_atoi(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("atoi 需要一个参数", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
-            let arg_type = self.resolve_expr_type(&mut args[0]);
-            if !arg_type.is_pointer() && !arg_type.is_array() {
-                self.report_error(
-                    "atoi 参数必须是指针或数组",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
-            }
+        if self.builtin_check_count(args, 1, "atoi", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "atoi", loc);
         }
         Type::int()
     }
@@ -1460,9 +1407,7 @@ impl TypeChecker {
     }
 
     fn check_builtin_fclose(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("fclose 需要一个参数（文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
+        if self.builtin_check_count(args, 1, "fclose", loc) {
             let stream_type = self.resolve_expr_type(&mut args[0]);
             if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
                 self.report_error("fclose 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
@@ -1472,9 +1417,7 @@ impl TypeChecker {
     }
 
     fn check_builtin_feof(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
-        if args.len() != 1 {
-            self.report_error("feof 需要一个参数（文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
-        } else {
+        if self.builtin_check_count(args, 1, "feof", loc) {
             let stream_type = self.resolve_expr_type(&mut args[0]);
             if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
                 self.report_error("feof 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
