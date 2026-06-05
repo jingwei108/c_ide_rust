@@ -413,10 +413,10 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 | ~~链表/树可视化增强~~ | `DESIGN.md:774` Phase 8 | ✅ **已实现** | `LinkedListVisualizer` / `TreeVisualizer` / `LinkedListVisTab` / `TreeVisTab` 均已完成（Phase 15）。**原报告误判为未实现，特此修正。** |
 | **社区贡献算法模板** | `ROADMAP.md:249` | ❌ 未实现 | 需要模板上传/审核/评分系统 |
 | **iOS 目标支持** | `ROADMAP.md:250` | ❌ 未评估 | Flutter 跨平台编译 iOS 需要配置 Xcode 签名和 Native 库交叉编译 |
-| **浮点数值比较公差** | `C_SUBSET_SPEC.md` | ⚠️ 未实现 | VM 对 `float == float` 不做 epsilon 公差处理，直接位比较 |
-| **枚举值作为 switch case 标签关联校验** | — | ⚠️ 未实现 | Parser 支持 enum 声明并生成全局常量，但 TypeChecker 的 switch case 检查未对 enum 常量名做关联 |
-| **条件断点**（`if i == 5 then break`） | 未在任何文档中提及 | ❌ 未实现 | 当前只支持行号断点 |
-| **非当前栈帧变量访问** | — | ❌ 未实现 | `get_variable_snapshot()` 只返回当前调用帧局部变量，无法查看调用者的变量 |
+| **浮点数值比较公差** | `C_SUBSET_SPEC.md` | ✅ **已实现** | VM 对 `float`/`double` 比较指令引入 epsilon 公差（f32: 1e-6, f64: 1e-9），解决 `0.1 + 0.2 != 0.3` 教学困惑 |
+| **枚举值作为 switch case 标签关联校验** | — | ⏳ Pending | Parser 支持 enum 声明并生成全局常量，但 TypeChecker 的 switch case 检查未对 enum 常量名做关联 |
+| **条件断点**（`if i == 5 then break`） | 未在任何文档中提及 | ⏳ Pending | 当前只支持行号断点 |
+| **非当前栈帧变量访问** | — | ⏳ Pending | `get_variable_snapshot()` 只返回当前调用帧局部变量，无法查看调用者的变量 |
 
 ---
 
@@ -431,7 +431,7 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 | **链表/树可视化增强** | Cxxdroid/OnlineGDB 无 | ✅ **已实现** | 数据结构可视化是算法教学的**核心痛点**，竞品完全没有此能力。`LinkedListVisTab` / `TreeVisTab` 已集成统一模式。**原报告误判，特此修正。** |
 | **iOS 支持** | Cxxdroid 不支持；OnlineGDB 通过 Web 间接支持 | 🟡 中优先级 | iOS 用户在编程教学中占一定比例，Flutter 跨平台优势可使迁移成本较低，但不是当前最紧急的壁垒加强项 |
 | **社区算法模板** | Educoder 有（平台内置题库） | 🟡 中优先级 | 模板系统是长期留存的关键（平台效应），但依赖用户基数达到临界点后方有价值 |
-| **浮点数公差比较** | 无专门竞品 | 🟢 **高优先级** | 教学场景中小数计算结果不一致会让学生困惑（`0.1 + 0.2 != 0.3`），这是低投入高价值的体验优化 |
+| **浮点数公差比较** | 无专门竞品 | ✅ **已实现** | VM `float`/`double` 比较指令引入 epsilon 公差（f32: 1e-6, f64: 1e-9），解决 `0.1 + 0.2 != 0.3` 教学困惑 |
 | **条件断点** | OnlineGDB 支持（GDB 条件断点） | 🟡 中优先级 | 调试能力补全，但教学场景中单步 + 变量面板已覆盖多数需求 |
 | **非当前帧变量访问** | OnlineGDB 支持（GDB `up`/`down`） | 🟡 中优先级 | 调试体验提升，但增加内存视图的状态管理复杂度 |
 

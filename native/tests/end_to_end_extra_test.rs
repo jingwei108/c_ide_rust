@@ -1,7 +1,7 @@
 use std::ffi::{c_char, CString};
 
 fn filter_outputs(outputs: Vec<String>) -> Vec<String> {
-    outputs.into_iter().filter(|s| !s.starts_with("程序运行完成")).collect()
+    outputs.into_iter().filter(|s| !s.contains("程序运行完成")).collect()
 }
 
 fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
@@ -3966,3 +3966,148 @@ int main() {
     );
 }
 
+
+
+// ── Float/double epsilon comparison tests ──
+
+#[test]
+fn test_e2e_double_epsilon_equality() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double a = 0.1;
+    double b = 0.2;
+    double c = a + b;
+    printf("%d\n", c == 0.3);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "1", "0.1 + 0.2 == 0.3 should be true with epsilon");
+}
+
+#[test]
+fn test_e2e_double_epsilon_inequality() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double a = 0.1;
+    double b = 0.2;
+    double c = a + b;
+    printf("%d\n", c != 0.3);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "0", "0.1 + 0.2 != 0.3 should be false with epsilon");
+}
+
+#[test]
+fn test_e2e_double_epsilon_relational() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    double a = 0.1;
+    double b = 0.2;
+    double c = a + b;
+    printf("%d", c <= 0.3);
+    printf("%d", c >= 0.3);
+    printf("%d", c > 0.3);
+    printf("%d\n", c < 0.3);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    // With epsilon: <= true, >= true, > false, < false
+    assert_eq!(out.join(""), "1100", "0.1+0.3 relational with epsilon: <= and >= true, > and < false");
+}
+
+#[test]
+fn test_e2e_float_epsilon_equality() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    float x = 0.1234567;
+    float y = 0.1234568;
+    printf("%d\n", x == y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    // diff ~9.7e-8 < EPS_F32 (1e-6) => should be true
+    assert_eq!(out.join(""), "1", "Nearby floats should be equal with epsilon");
+}
+
+#[test]
+fn test_e2e_float_epsilon_inequality() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    float x = 0.1234567;
+    float y = 0.1234568;
+    printf("%d\n", x != y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "0", "Nearby floats should not be unequal with epsilon");
+}
+
+#[test]
+fn test_e2e_float_epsilon_relational() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    float x = 0.1234567;
+    float y = 0.1234568;
+    printf("%d", x <= y);
+    printf("%d", x >= y);
+    printf("%d", x > y);
+    printf("%d\n", x < y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    // With epsilon: <= true, >= true, > false, < false
+    assert_eq!(out.join(""), "1100", "Nearby float relational with epsilon");
+}
+
+#[test]
+fn test_e2e_float_far_apart_still_different() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    float a = 1.0;
+    float b = 2.0;
+    printf("%d", a == b);
+    printf("%d", a != b);
+    printf("%d", a < b);
+    printf("%d\n", a > b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    // diff = 1.0 > EPS_F32 => normal comparison
+    assert_eq!(out.join(""), "0110", "Far apart floats should compare normally");
+}

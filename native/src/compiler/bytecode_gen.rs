@@ -1005,6 +1005,25 @@ impl BytecodeGen {
                 let result_is_long_long = ty.kind() == TypeKind::LongLong;
                 let any_fp = result_is_double || result_is_float;
 
+                // For comparison ops, result type is always int, so we must look at operand types.
+                let is_comparison = matches!(op, BinaryOp::Eq | BinaryOp::Ne | BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge);
+                let op_is_double = if is_comparison {
+                    left.ty().kind() == TypeKind::Double || right.ty().kind() == TypeKind::Double
+                } else {
+                    result_is_double
+                };
+                let op_is_float = if is_comparison {
+                    !op_is_double && (left.ty().kind() == TypeKind::Float || right.ty().kind() == TypeKind::Float)
+                } else {
+                    result_is_float
+                };
+                let op_is_long_long = if is_comparison {
+                    !op_is_double && !op_is_float && (left.ty().kind() == TypeKind::LongLong || right.ty().kind() == TypeKind::LongLong)
+                } else {
+                    result_is_long_long
+                };
+                let any_op_fp = op_is_double || op_is_float;
+
                 // Short-circuit evaluation for && and ||
                 if *op == BinaryOp::And || *op == BinaryOp::Or {
                     self.gen_expr(left);
@@ -1035,25 +1054,28 @@ impl BytecodeGen {
                 }
 
                 self.gen_expr(left);
-                if any_fp && !left_is_ptr && left.ty().kind() != TypeKind::Float && left.ty().kind() != TypeKind::Double && left.ty().kind() != TypeKind::LongLong {
-                    if result_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
+                let any_fp_for_cast = if is_comparison { any_op_fp } else { any_fp };
+                let cast_is_double = if is_comparison { op_is_double } else { result_is_double };
+                let cast_is_long_long = if is_comparison { op_is_long_long } else { result_is_long_long };
+                if any_fp_for_cast && !left_is_ptr && left.ty().kind() != TypeKind::Float && left.ty().kind() != TypeKind::Double && left.ty().kind() != TypeKind::LongLong {
+                    if cast_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
                     else { self.emit(OpCode::CastI2F, 0, &loc); }
-                } else if result_is_double && left.ty().kind() == TypeKind::Float {
+                } else if cast_is_double && left.ty().kind() == TypeKind::Float {
                     self.emit(OpCode::CastF2D, 0, &loc);
-                } else if result_is_double && left.ty().kind() == TypeKind::LongLong {
+                } else if cast_is_double && left.ty().kind() == TypeKind::LongLong {
                     self.emit(OpCode::CastQ2D, 0, &loc);
-                } else if result_is_long_long && left.ty().kind() == TypeKind::Int {
+                } else if cast_is_long_long && left.ty().kind() == TypeKind::Int {
                     self.emit(OpCode::CastI2Q, 0, &loc);
                 }
                 self.gen_expr(right);
-                if any_fp && !right_is_ptr && right.ty().kind() != TypeKind::Float && right.ty().kind() != TypeKind::Double && right.ty().kind() != TypeKind::LongLong {
-                    if result_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
+                if any_fp_for_cast && !right_is_ptr && right.ty().kind() != TypeKind::Float && right.ty().kind() != TypeKind::Double && right.ty().kind() != TypeKind::LongLong {
+                    if cast_is_double { self.emit(OpCode::CastI2D, 0, &loc); }
                     else { self.emit(OpCode::CastI2F, 0, &loc); }
-                } else if result_is_double && right.ty().kind() == TypeKind::Float {
+                } else if cast_is_double && right.ty().kind() == TypeKind::Float {
                     self.emit(OpCode::CastF2D, 0, &loc);
-                } else if result_is_double && right.ty().kind() == TypeKind::LongLong {
+                } else if cast_is_double && right.ty().kind() == TypeKind::LongLong {
                     self.emit(OpCode::CastQ2D, 0, &loc);
-                } else if result_is_long_long && right.ty().kind() == TypeKind::Int {
+                } else if cast_is_long_long && right.ty().kind() == TypeKind::Int {
                     self.emit(OpCode::CastI2Q, 0, &loc);
                 }
 
@@ -1119,39 +1141,39 @@ impl BytecodeGen {
                         else { self.emit(OpCode::Mod, 0, &loc); }
                     }
                     BinaryOp::Eq => {
-                        if result_is_double { self.emit(OpCode::EqD, 0, &loc); }
-                        else if result_is_float { self.emit(OpCode::EqF, 0, &loc); }
-                        else if result_is_long_long { self.emit(OpCode::EqQ, 0, &loc); }
+                        if op_is_double { self.emit(OpCode::EqD, 0, &loc); }
+                        else if op_is_float { self.emit(OpCode::EqF, 0, &loc); }
+                        else if op_is_long_long { self.emit(OpCode::EqQ, 0, &loc); }
                         else { self.emit(OpCode::Eq, 0, &loc); }
                     }
                     BinaryOp::Ne => {
-                        if result_is_double { self.emit(OpCode::NeD, 0, &loc); }
-                        else if result_is_float { self.emit(OpCode::NeF, 0, &loc); }
-                        else if result_is_long_long { self.emit(OpCode::NeQ, 0, &loc); }
+                        if op_is_double { self.emit(OpCode::NeD, 0, &loc); }
+                        else if op_is_float { self.emit(OpCode::NeF, 0, &loc); }
+                        else if op_is_long_long { self.emit(OpCode::NeQ, 0, &loc); }
                         else { self.emit(OpCode::Ne, 0, &loc); }
                     }
                     BinaryOp::Lt => {
-                        if result_is_double { self.emit(OpCode::LtD, 0, &loc); }
-                        else if result_is_float { self.emit(OpCode::LtF, 0, &loc); }
-                        else if result_is_long_long { self.emit(OpCode::LtQ, 0, &loc); }
+                        if op_is_double { self.emit(OpCode::LtD, 0, &loc); }
+                        else if op_is_float { self.emit(OpCode::LtF, 0, &loc); }
+                        else if op_is_long_long { self.emit(OpCode::LtQ, 0, &loc); }
                         else { self.emit(OpCode::Lt, 0, &loc); }
                     }
                     BinaryOp::Le => {
-                        if result_is_double { self.emit(OpCode::LeD, 0, &loc); }
-                        else if result_is_float { self.emit(OpCode::LeF, 0, &loc); }
-                        else if result_is_long_long { self.emit(OpCode::LeQ, 0, &loc); }
+                        if op_is_double { self.emit(OpCode::LeD, 0, &loc); }
+                        else if op_is_float { self.emit(OpCode::LeF, 0, &loc); }
+                        else if op_is_long_long { self.emit(OpCode::LeQ, 0, &loc); }
                         else { self.emit(OpCode::Le, 0, &loc); }
                     }
                     BinaryOp::Gt => {
-                        if result_is_double { self.emit(OpCode::GtD, 0, &loc); }
-                        else if result_is_float { self.emit(OpCode::GtF, 0, &loc); }
-                        else if result_is_long_long { self.emit(OpCode::GtQ, 0, &loc); }
+                        if op_is_double { self.emit(OpCode::GtD, 0, &loc); }
+                        else if op_is_float { self.emit(OpCode::GtF, 0, &loc); }
+                        else if op_is_long_long { self.emit(OpCode::GtQ, 0, &loc); }
                         else { self.emit(OpCode::Gt, 0, &loc); }
                     }
                     BinaryOp::Ge => {
-                        if result_is_double { self.emit(OpCode::GeD, 0, &loc); }
-                        else if result_is_float { self.emit(OpCode::GeF, 0, &loc); }
-                        else if result_is_long_long { self.emit(OpCode::GeQ, 0, &loc); }
+                        if op_is_double { self.emit(OpCode::GeD, 0, &loc); }
+                        else if op_is_float { self.emit(OpCode::GeF, 0, &loc); }
+                        else if op_is_long_long { self.emit(OpCode::GeQ, 0, &loc); }
                         else { self.emit(OpCode::Ge, 0, &loc); }
                     }
                     BinaryOp::BitAnd => self.emit(OpCode::BitAnd, 0, &loc),
