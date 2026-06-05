@@ -2498,6 +2498,17 @@ impl SseDecode for Option<crate::unified::stream::AlgorithmStepSnapshotRef> {
     }
 }
 
+impl SseDecode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<crate::unified::root_cause::RootCauseHint> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
@@ -2608,11 +2619,15 @@ impl SseDecode for crate::unified::root_cause::RootCauseHint {
         let mut var_oneLiner = <String>::sse_decode(deserializer);
         let mut var_relatedLines = <Vec<i32>>::sse_decode(deserializer);
         let mut var_suggestedFixKind = <String>::sse_decode(deserializer);
+        let mut var_suggestedFixLine = <Option<i32>>::sse_decode(deserializer);
+        let mut var_suggestedFixDesc = <Option<String>>::sse_decode(deserializer);
         return crate::unified::root_cause::RootCauseHint {
             category: var_category,
             one_liner: var_oneLiner,
             related_lines: var_relatedLines,
             suggested_fix_kind: var_suggestedFixKind,
+            suggested_fix_line: var_suggestedFixLine,
+            suggested_fix_desc: var_suggestedFixDesc,
         };
     }
 }
@@ -3673,6 +3688,8 @@ impl flutter_rust_bridge::IntoDart for crate::unified::root_cause::RootCauseHint
             self.one_liner.into_into_dart().into_dart(),
             self.related_lines.into_into_dart().into_dart(),
             self.suggested_fix_kind.into_into_dart().into_dart(),
+            self.suggested_fix_line.into_into_dart().into_dart(),
+            self.suggested_fix_desc.into_into_dart().into_dart(),
         ]
         .into_dart()
     }
@@ -4731,6 +4748,16 @@ impl SseEncode for Option<crate::unified::stream::AlgorithmStepSnapshotRef> {
     }
 }
 
+impl SseEncode for Option<i32> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i32>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<crate::unified::root_cause::RootCauseHint> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
@@ -4819,6 +4846,8 @@ impl SseEncode for crate::unified::root_cause::RootCauseHint {
         <String>::sse_encode(self.one_liner, serializer);
         <Vec<i32>>::sse_encode(self.related_lines, serializer);
         <String>::sse_encode(self.suggested_fix_kind, serializer);
+        <Option<i32>>::sse_encode(self.suggested_fix_line, serializer);
+        <Option<String>>::sse_encode(self.suggested_fix_desc, serializer);
     }
 }
 

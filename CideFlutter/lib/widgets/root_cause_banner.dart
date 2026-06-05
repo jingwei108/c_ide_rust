@@ -52,20 +52,27 @@ class RootCauseBanner extends StatelessWidget {
                   Wrap(
                     spacing: 6,
                     children: h.relatedLines.map((line) {
+                      final isFixLine = line == h.suggestedFixLine;
                       return InkWell(
                         onTap: onLineTap != null ? () => onLineTap!(line) : null,
                         borderRadius: BorderRadius.circular(4),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
+                            color: isFixLine
+                                ? Colors.white.withValues(alpha: 0.35)
+                                : Colors.white.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
+                            border: isFixLine
+                                ? Border.all(color: Colors.white70, width: 1)
+                                : null,
                           ),
                           child: Text(
                             '第 $line 行',
-                            style: const TextStyle(
+                            style: TextStyle(
                               color: Colors.white,
                               fontSize: 10,
+                              fontWeight: isFixLine ? FontWeight.bold : FontWeight.normal,
                               decoration: TextDecoration.underline,
                               decorationColor: Colors.white70,
                             ),
@@ -73,6 +80,17 @@ class RootCauseBanner extends StatelessWidget {
                         ),
                       );
                     }).toList(),
+                  ),
+                ],
+                if (h.suggestedFixDesc != null && h.suggestedFixDesc!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    '💡 ${h.suggestedFixDesc}',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.9),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ],
               ],
@@ -101,6 +119,10 @@ class RootCauseBanner extends StatelessWidget {
     switch (category) {
       case 'OffByOne':
         return Colors.amber.shade800;
+      case 'WrongInit':
+        return Colors.orange.shade800;
+      case 'WrongIncrement':
+        return Colors.deepPurple.shade700;
       case 'UseAfterFree':
       case 'DoubleFree':
         return Colors.deepOrange.shade800;
@@ -120,6 +142,10 @@ class RootCauseBanner extends StatelessWidget {
     switch (category) {
       case 'OffByOne':
         return Icons.exposure_plus_1;
+      case 'WrongInit':
+        return Icons.looks_one;
+      case 'WrongIncrement':
+        return Icons.looks_two;
       case 'UseAfterFree':
       case 'DoubleFree':
         return Icons.memory;
@@ -139,12 +165,14 @@ class RootCauseBanner extends StatelessWidget {
     switch (kind) {
       case 'ChangeLeToLt':
         return '<= → <';
-      case 'AddNullCheck':
-        return '加 NULL 检查';
-      case 'InitVariable':
-        return '初始化变量';
       case 'FixLoopStart':
         return '修正循环起点';
+      case 'FixLoopIncrement':
+        return '修正步长';
+      case 'InitVariable':
+        return '初始化变量';
+      case 'AddNullCheck':
+        return '加 NULL 检查';
       case 'SetNullAfterFree':
         return 'free 后置 NULL';
       case 'AvoidDivZero':

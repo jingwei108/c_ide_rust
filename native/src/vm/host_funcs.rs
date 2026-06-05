@@ -269,6 +269,8 @@ fn host_free(vm: &mut CideVM, session: &mut Session) {
                 size: aligned_size,
                 alloc_line: r.alloc_line,
                 freed_line: vm.get_current_line(),
+                alloc_step: 0,
+                freed_step: vm.get_executed_steps(),
             });
             session.memory.free_list.push(crate::session::FreeBlock {
                 addr: r.addr,
@@ -667,6 +669,8 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                         size: aligned_size,
                         alloc_line: r.alloc_line,
                         freed_line: vm.get_current_line(),
+                        alloc_step: 0,
+                        freed_step: vm.get_executed_steps(),
                     });
                     session.memory.free_list.push(crate::session::FreeBlock {
                         addr: r.addr,
@@ -784,6 +788,8 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                 size: aligned_old_size,
                 alloc_line: r.alloc_line,
                 freed_line: vm.get_current_line(),
+                alloc_step: 0,
+                freed_step: vm.get_executed_steps(),
             });
             session.memory.free_list.push(crate::session::FreeBlock {
                 addr: r.addr,

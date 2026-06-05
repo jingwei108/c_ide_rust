@@ -94,7 +94,7 @@ class _VarTileState extends State<_VarTile> with SingleTickerProviderStateMixin 
     super.initState();
     _flashController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 600),
+      duration: const Duration(milliseconds: 300),
     );
     _lastValue = widget.v.value as String?;
     _triggerFlashIfChanged();
@@ -162,14 +162,14 @@ class _VarTileState extends State<_VarTile> with SingleTickerProviderStateMixin 
     return AnimatedBuilder(
       animation: _flashController,
       builder: (context, child) {
-        final flashOpacity = (1.0 - _flashController.value) * 0.15;
+        final flashOpacity = (1.0 - _flashController.value) * 0.25;
         return Container(
           margin: const EdgeInsets.only(bottom: 6),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: Color.lerp(
               widget.isDark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
-              Colors.amber,
+              Colors.redAccent,
               flashOpacity,
             ),
             borderRadius: BorderRadius.circular(6),

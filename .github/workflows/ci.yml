@@ -38,6 +38,31 @@ jobs:
         run: cargo clippy -- -D warnings
         working-directory: native
 
+      - name: Shadow Verification
+        run: python native/tests/shadow_verification/shadow_verify.py --cases native/tests/shadow_verification/cases --report reports/shadow_report.json
+        shell: bash
+
+      - name: Upload Shadow Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: shadow-verification-report
+          path: reports/shadow_report.json
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
+
+      - name: Generate coverage report
+        run: cargo llvm-cov --lcov --output-path lcov.info
+        working-directory: native
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: native/lcov.info
+
   flutter:
     name: Flutter Build & Test
     runs-on: windows-latest

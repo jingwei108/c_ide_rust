@@ -82,4 +82,5 @@ pub enum ErrorCode {
     E3061_DoubleFree = 3061,
     E3062_PrintfFormatMismatch = 3062,
     E3063_ScanfFormatMismatch = 3063,
+    W3064_DoublePointerCast = 3064,
 }

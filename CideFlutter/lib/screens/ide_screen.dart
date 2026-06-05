@@ -861,7 +861,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   Widget _buildCallstackTab(IdeState state, bool isDark) {
-    return CallstackTab(isDark: isDark);
+    return CallstackTab(isDark: isDark, onScrollToLine: _scrollToLine);
   }
 
   Widget _buildVarHistoryTab(bool isDark) {

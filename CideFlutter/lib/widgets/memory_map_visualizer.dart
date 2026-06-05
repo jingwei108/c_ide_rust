@@ -362,7 +362,9 @@ class MemoryMapVisualizer extends StatelessWidget {
                       message: label != null
                           ? '0x${addr.toRadixString(16).toUpperCase().padLeft(5, '0')} - $label'
                           : '0x${addr.toRadixString(16).toUpperCase().padLeft(5, '0')} (空闲)',
-                      child: Container(
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
                         decoration: BoxDecoration(
                           color: color,
                           borderRadius: BorderRadius.circular(2),

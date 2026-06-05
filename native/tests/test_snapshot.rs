@@ -171,6 +171,62 @@ int main() {
 }
 
 #[test]
+fn test_snapshot_continue_execution_equals_direct_run() {
+    // 核心一致性测试：snapshot → restore → 继续执行 的结果必须与 直接执行 完全一致
+    let source = r#"
+int main() {
+    int sum = 0;
+    for (int i = 0; i < 10; i++) {
+        sum = sum + i;
+    }
+    return sum;
+}
+"#;
+    // 路径 A：直接执行到结束
+    let mut session_a = make_session(source);
+    let mut vm_a = setup_vm_for_session(&mut session_a);
+    loop {
+        match vm_a.step(&mut session_a) {
+            cide_native::vm::vm::StepResult::Finished => break,
+            cide_native::vm::vm::StepResult::Trap => panic!("path A trap: {}", vm_a.get_error()),
+            _ => {}
+        }
+    }
+    let final_steps_a = vm_a.get_executed_steps();
+    let final_line_a = vm_a.get_current_line();
+    let final_stack_a = vm_a.get_stack().to_vec();
+
+    // 路径 B：执行 15 步 → snapshot → restore → 继续执行到结束
+    let mut session_b = make_session(source);
+    let mut vm_b = setup_vm_for_session(&mut session_b);
+    for _ in 0..15 {
+        let _ = vm_b.step(&mut session_b);
+    }
+    let snap = vm_b.snapshot(&session_b);
+
+    // 修改状态（模拟执行）
+    for _ in 0..5 {
+        let _ = vm_b.step(&mut session_b);
+    }
+
+    // 从快照恢复
+    vm_b.restore(&snap, &mut session_b);
+
+    // 继续执行到结束
+    loop {
+        match vm_b.step(&mut session_b) {
+            cide_native::vm::vm::StepResult::Finished => break,
+            cide_native::vm::vm::StepResult::Trap => panic!("path B trap: {}", vm_b.get_error()),
+            _ => {}
+        }
+    }
+
+    assert_eq!(vm_b.get_executed_steps(), final_steps_a, "step count mismatch");
+    assert_eq!(vm_b.get_current_line(), final_line_a, "final line mismatch");
+    assert_eq!(vm_b.get_stack(), final_stack_a.as_slice(), "final stack mismatch");
+}
+
+#[test]
 fn test_f64_constants_cleared_on_recompile() {
     // 回归测试：复编译时 f64_constants 必须被清空
     let source1 = r#"

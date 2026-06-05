@@ -5,8 +5,9 @@ import '../providers/unified_provider.dart';
 /// 调用栈面板：集成统一模式，从 frameCache 读取历史调用栈。
 class CallstackTab extends ConsumerWidget {
   final bool isDark;
+  final void Function(int line)? onScrollToLine;
 
-  const CallstackTab({super.key, required this.isDark});
+  const CallstackTab({super.key, required this.isDark, this.onScrollToLine});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -88,9 +89,23 @@ class CallstackTab extends ConsumerWidget {
                       ],
                     ),
                     const SizedBox(height: 2),
-                    Text(
-                      frame.returnLine > 0 ? '返回行 ${frame.returnLine}' : '入口',
-                      style: TextStyle(fontSize: 11, color: subTextColor, fontFamily: 'monospace'),
+                    InkWell(
+                      onTap: frame.returnLine > 0 && onScrollToLine != null
+                          ? () => onScrollToLine!(frame.returnLine)
+                          : null,
+                      child: Text(
+                        frame.returnLine > 0 ? '第 ${frame.returnLine} 行 →' : '入口',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: frame.returnLine > 0 && onScrollToLine != null
+                              ? Colors.blueAccent
+                              : subTextColor,
+                          fontFamily: 'monospace',
+                          decoration: frame.returnLine > 0 && onScrollToLine != null
+                              ? TextDecoration.underline
+                              : null,
+                        ),
+                      ),
                     ),
                   ],
                 ),

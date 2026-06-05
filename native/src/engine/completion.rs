@@ -36,6 +36,7 @@ pub enum CompletionKind {
     Macro,
     Snippet,
     FormatSpecifier,
+    Operator,
 }
 
 impl CompletionKind {
@@ -52,6 +53,7 @@ impl CompletionKind {
             CompletionKind::Macro => "macro",
             CompletionKind::Snippet => "snippet",
             CompletionKind::FormatSpecifier => "format",
+            CompletionKind::Operator => "operator",
         }
     }
 }
@@ -111,19 +113,29 @@ struct LocalSymbol {
     is_param: bool,
 }
 
+/// 表达式上下文提示
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExprHint {
+    General,
+    IfCondition,
+    AssignRhs,
+    MallocArg,
+    ForCondition,
+}
+
 /// 补全上下文
 #[derive(Debug, Clone)]
 enum CompletionContext {
-    /// `expr.` 或 `expr->`
-    MemberAccess { base_name: String, is_pointer: bool },
+    /// `expr.` 或 `expr->`（expr 可能为链式如 `a.b.c`）
+    MemberAccess { expr: String, is_pointer: bool },
     /// 类型位置（如 `int |`, `struct |`）
     TypePosition,
     /// 预处理
     Preprocessor,
     /// printf / scanf 等格式字符串内
     FormatString { func_name: String },
-    /// 一般表达式
-    Expression,
+    /// 一般表达式（含上下文提示）
+    Expression { hint: ExprHint },
 }
 
 // ============================================================================
@@ -306,18 +318,18 @@ pub fn get_completion_candidates(
 
     let mut candidates: Vec<CompletionCandidate> = match &context {
         CompletionContext::MemberAccess {
-            base_name,
+            expr,
             is_pointer,
         } => {
-            complete_members(session, &snapshot, source, line, column, base_name, *is_pointer)
+            complete_members(session, &snapshot, source, line, column, expr, *is_pointer)
         }
         CompletionContext::TypePosition => complete_types(&snapshot, prefix),
         CompletionContext::Preprocessor => complete_preprocessor(prefix),
         CompletionContext::FormatString { func_name } => {
             complete_format_string(func_name, prefix)
         }
-        CompletionContext::Expression => {
-            complete_expression(session, &snapshot, source, line, column, prefix)
+        CompletionContext::Expression { hint } => {
+            complete_expression(session, &snapshot, source, line, column, prefix, *hint)
         }
     };
 
@@ -356,10 +368,10 @@ fn detect_context(source: &str, line: usize, column: usize) -> CompletionContext
         return CompletionContext::FormatString { func_name };
     }
 
-    // 3. 成员访问上下文：识别 `identifier.` 或 `identifier->`
-    if let Some((name, is_pointer)) = detect_member_access(&before) {
+    // 3. 成员访问上下文：识别 `expr.` 或 `expr->`（支持链式如 `a.b.c.`）
+    if let Some((expr, is_pointer)) = detect_member_access(&before) {
         return CompletionContext::MemberAccess {
-            base_name: name,
+            expr,
             is_pointer,
         };
     }
@@ -369,7 +381,46 @@ fn detect_context(source: &str, line: usize, column: usize) -> CompletionContext
         return CompletionContext::TypePosition;
     }
 
-    CompletionContext::Expression
+    // 5. 表达式子上下文
+    let hint = detect_expression_hint(&before);
+    CompletionContext::Expression { hint }
+}
+
+/// 判断名称是否为常见循环变量。
+fn is_likely_loop_var(name: &str) -> bool {
+    matches!(
+        name,
+        "i" | "j" | "k" | "idx" | "index" | "m" | "n" | "left" | "right" | "mid" | "low"
+            | "high" | "pivot" | "gap" | "l" | "r"
+    )
+}
+
+/// 根据光标前文本推断表达式上下文。
+fn detect_expression_hint(before: &str) -> ExprHint {
+    let trimmed = before.trim();
+    // If condition: 最近未闭合的 `if (`
+    if trimmed.rfind("if(").is_some() || trimmed.rfind("if (").is_some() {
+        return ExprHint::IfCondition;
+    }
+    // For condition: 最近未闭合的 `for (`
+    if trimmed.rfind("for(").is_some() || trimmed.rfind("for (").is_some() {
+        return ExprHint::ForCondition;
+    }
+    // Assignment RHS: 最近有一个 `=` 且没有 `;` / `{` 隔断
+    if let Some(eq_pos) = trimmed.rfind('=') {
+        let after_eq = &trimmed[eq_pos + 1..];
+        if !after_eq.contains(';') && !after_eq.contains('{') {
+            return ExprHint::AssignRhs;
+        }
+    }
+    // Malloc arg: 最近未闭合的 `malloc(` / `calloc(` / `realloc(`
+    if trimmed.rfind("malloc(").is_some()
+        || trimmed.rfind("calloc(").is_some()
+        || trimmed.rfind("realloc(").is_some()
+    {
+        return ExprHint::MallocArg;
+    }
+    ExprHint::General
 }
 
 /// 提取光标前的文本（行内 + 前行末尾）
@@ -436,7 +487,8 @@ fn detect_format_function(before: &str) -> Option<String> {
     None
 }
 
-/// 检测成员访问：`identifier.` 或 `identifier->`
+/// 检测成员访问：`expr.` 或 `expr->`（支持链式如 `a.b.c.`）。
+/// 返回 `(expr, is_pointer)`，其中 expr 为点号/箭头前的完整表达式。
 fn detect_member_access(before: &str) -> Option<(String, bool)> {
     let bytes = before.as_bytes();
     let mut i = bytes.len();
@@ -462,21 +514,48 @@ fn detect_member_access(before: &str) -> Option<(String, bool)> {
         i -= 1;
     }
 
-    // 提取 identifier
-    let mut start = i;
-    while start > 0 {
-        let c = bytes[start - 1] as char;
-        if c.is_alphanumeric() || c == '_' {
-            start -= 1;
+    // 向前扫描，收集完整的链式表达式（允许 identifier、.、->）
+    let expr_end = i;
+    let mut expect_ident = true;
+    loop {
+        if expect_ident {
+            // 提取 identifier
+            let mut start = i;
+            while start > 0 {
+                let c = bytes[start - 1] as char;
+                if c.is_alphanumeric() || c == '_' {
+                    start -= 1;
+                } else {
+                    break;
+                }
+            }
+            if start == i {
+                break; // 没有 identifier，结束
+            }
+            i = start;
+            expect_ident = false;
         } else {
-            break;
+            // 期望 . 或 ->
+            if i >= 2 && bytes[i - 2] == b'-' && bytes[i - 1] == b'>' {
+                i -= 2;
+                expect_ident = true;
+            } else if i > 0 && bytes[i - 1] == b'.' {
+                i -= 1;
+                expect_ident = true;
+            } else {
+                break;
+            }
+            // 跳过空白
+            while i > 0 && bytes[i - 1].is_ascii_whitespace() {
+                i -= 1;
+            }
         }
     }
 
-    if start < i {
-        let name = String::from_utf8_lossy(&bytes[start..i]).to_string();
-        if !name.is_empty() {
-            return Some((name, is_pointer));
+    if i < expr_end {
+        let expr = String::from_utf8_lossy(&bytes[i..expr_end]).to_string();
+        if !expr.is_empty() {
+            return Some((expr, is_pointer));
         }
     }
 
@@ -692,23 +771,58 @@ fn complete_members(
     source: &str,
     line: usize,
     column: usize,
-    base_name: &str,
-    is_pointer: bool,
+    expr: &str,
+    _is_pointer: bool,
 ) -> Vec<CompletionCandidate> {
     let mut candidates = Vec::new();
 
-    // 1. 确定 base_name 的类型
-    let base_type = find_variable_type(snapshot, source, line, column, base_name);
+    // 1. 将链式表达式拆分为路径段（如 "a.b.c" -> ["a", "b", "c"]）
+    let segments: Vec<&str> = expr.split("->").flat_map(|s| s.split('.')).filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return candidates;
+    }
 
-    let type_name = match base_type {
-        Some(ty) => {
-            if is_pointer {
-                // 去掉末尾的 *
-                ty.trim_end_matches(" *").trim_end_matches('*').trim().to_string()
-            } else {
-                ty.trim().to_string()
+    // 2. 逐级解析类型
+    let mut current_type = find_variable_type(snapshot, source, line, column, segments[0]);
+
+    for seg in segments.iter().skip(1) {
+        let ty = match current_type {
+            Some(ref t) => t.clone(),
+            None => return candidates,
+        };
+        // 去掉指针/struct/union 前缀
+        let clean = ty
+            .trim_end_matches(" *")
+            .trim_end_matches('*')
+            .trim_start_matches("struct ")
+            .trim_start_matches("union ")
+            .trim()
+            .to_string();
+        // 查找 clean 类型中 seg 字段的类型
+        let mut found = None;
+        for s in &snapshot.structs {
+            if s.name == clean {
+                found = s.fields.iter().find(|(n, _)| n == seg).map(|(_, t)| t.clone());
+                break;
             }
         }
+        if found.is_none() {
+            for u in &snapshot.unions {
+                if u.name == clean {
+                    found = u.fields.iter().find(|(n, _)| n == seg).map(|(_, t)| t.clone());
+                    break;
+                }
+            }
+        }
+        current_type = found;
+    }
+
+    let type_name = match current_type {
+        Some(ty) => ty
+            .trim_end_matches(" *")
+            .trim_end_matches('*')
+            .trim()
+            .to_string(),
         None => return candidates,
     };
 
@@ -846,20 +960,93 @@ fn complete_expression(
     source: &str,
     line: usize,
     column: usize,
-    _prefix: &str,
+    prefix: &str,
+    hint: ExprHint,
 ) -> Vec<CompletionCandidate> {
     let mut candidates: Vec<CompletionCandidate> = Vec::new();
+
+    // 上下文感知 Snippet（高优先级）
+    if prefix.is_empty() || "for".starts_with(prefix) {
+        candidates.push(CompletionCandidate {
+            label: "for (i < n)".to_string(),
+            kind: CompletionKind::Snippet,
+            detail: "for 循环模板".to_string(),
+            documentation: String::new(),
+            insert_text: "for (int i = 0; i < n; i++) {\n\t\n}".to_string(),
+            sort_text: "z0_for_snippet".to_string(),
+        });
+    }
+    if prefix.is_empty() || "while".starts_with(prefix) {
+        candidates.push(CompletionCandidate {
+            label: "while (cond)".to_string(),
+            kind: CompletionKind::Snippet,
+            detail: "while 循环模板".to_string(),
+            documentation: String::new(),
+            insert_text: "while (condition) {\n\t\n}".to_string(),
+            sort_text: "z0_while_snippet".to_string(),
+        });
+    }
+    if prefix.is_empty() || "if".starts_with(prefix) {
+        candidates.push(CompletionCandidate {
+            label: "if (cond)".to_string(),
+            kind: CompletionKind::Snippet,
+            detail: "if 分支模板".to_string(),
+            documentation: String::new(),
+            insert_text: "if (condition) {\n\t\n}".to_string(),
+            sort_text: "z0_if_snippet".to_string(),
+        });
+    }
+    if hint == ExprHint::MallocArg && (prefix.is_empty() || "sizeof".starts_with(prefix)) {
+        candidates.push(CompletionCandidate {
+            label: "sizeof(type)".to_string(),
+            kind: CompletionKind::Snippet,
+            detail: "计算类型大小".to_string(),
+            documentation: String::new(),
+            insert_text: "sizeof()".to_string(),
+            sort_text: "z0_sizeof_snippet".to_string(),
+        });
+    }
+    if hint == ExprHint::IfCondition {
+        for op in ["==", "!=", "<", ">", "<=", ">="] {
+            candidates.push(CompletionCandidate {
+                label: op.to_string(),
+                kind: CompletionKind::Operator,
+                detail: "比较运算符".to_string(),
+                documentation: String::new(),
+                insert_text: op.to_string(),
+                sort_text: format!("z1_{}", op),
+            });
+        }
+    }
 
     // 1. 局部变量（增量扫描）
     let locals = scan_local_symbols(source, line, column);
     for local in &locals {
+        // 上下文感知排序微调
+        let sort_prefix = match hint {
+            ExprHint::ForCondition => {
+                if is_likely_loop_var(&local.name) {
+                    "0a"
+                } else {
+                    "0b"
+                }
+            }
+            ExprHint::IfCondition => {
+                if local.ty.contains("int") || local.ty.contains("char") || local.ty.contains("bool") {
+                    "0a"
+                } else {
+                    "0b"
+                }
+            }
+            _ => "0",
+        };
         candidates.push(CompletionCandidate {
             label: local.name.clone(),
             kind: CompletionKind::Variable,
             detail: local.ty.clone(),
             documentation: String::new(),
             insert_text: local.name.clone(),
-            sort_text: format!("0_{}", local.name), // 局部变量最优先
+            sort_text: format!("{}_{}", sort_prefix, local.name),
         });
     }
 

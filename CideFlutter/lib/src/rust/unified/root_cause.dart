@@ -25,11 +25,19 @@ class RootCauseHint {
   /// "FixArraySize", "SetNullAfterFree", "AvoidDivZero", "None".
   final String suggestedFixKind;
 
+  /// Specific line number where the fix should be applied (if known).
+  final int? suggestedFixLine;
+
+  /// Human-readable description of the exact fix (e.g. "将 <= 改为 <").
+  final String? suggestedFixDesc;
+
   const RootCauseHint({
     required this.category,
     required this.oneLiner,
     required this.relatedLines,
     required this.suggestedFixKind,
+    this.suggestedFixLine,
+    this.suggestedFixDesc,
   });
 
   @override
@@ -37,7 +45,9 @@ class RootCauseHint {
       category.hashCode ^
       oneLiner.hashCode ^
       relatedLines.hashCode ^
-      suggestedFixKind.hashCode;
+      suggestedFixKind.hashCode ^
+      suggestedFixLine.hashCode ^
+      suggestedFixDesc.hashCode;
 
   @override
   bool operator ==(Object other) =>
@@ -47,5 +57,7 @@ class RootCauseHint {
           category == other.category &&
           oneLiner == other.oneLiner &&
           relatedLines == other.relatedLines &&
-          suggestedFixKind == other.suggestedFixKind;
+          suggestedFixKind == other.suggestedFixKind &&
+          suggestedFixLine == other.suggestedFixLine &&
+          suggestedFixDesc == other.suggestedFixDesc;
 }

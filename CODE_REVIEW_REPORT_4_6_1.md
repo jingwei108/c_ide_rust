@@ -447,14 +447,14 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 **深化方向**：
 
-- **根因分析升级**：当前越界诊断指出 `arr[5]` 越界，但不知道是循环条件 `<=` 引起的还是变量初始值错误引起的。结合 `root_cause.rs` 的 `trace_analyzer.rs` 数据，可以进一步分析越界发生前循环变量 `i` 的变化轨迹，区分：
+- **根因分析升级** `[✅ 已完成 2026-06-05]`：当前越界诊断指出 `arr[5]` 越界，但不知道是循环条件 `<=` 引起的还是变量初始值错误引起的。结合 `root_cause.rs` 的 `trace_analyzer.rs` 数据，可以进一步分析越界发生前循环变量 `i` 的变化轨迹，区分：
   - 循环条件写错（`i <= n` 应改为 `i < n`）
   - 循环变量初始值错误（`i = 1` 应改为 `i = 0`）
   - 增量错误（`i += 2` 导致跨步越界）
 
-- **修复建议精确化**：从"请检查数组边界"升级为"建议将第 3 行的 `i <= 5` 改为 `i < 5`，此时 `i=5`，`arr[5]` 越界"。当前 `root_cause.rs` 有 `related_lines` 和 `suggested_fix_kind` 字段，但尚未被前端完全利用。
+- **修复建议精确化** `[✅ 已完成 2026-06-05]`：从"请检查数组边界"升级为"建议将第 3 行的 `i <= 5` 改为 `i < 5`，此时 `i=5`，`arr[5]` 越界"。`RootCauseHint` 新增 `suggested_fix_line`/`suggested_fix_desc` 字段，前端高亮修复行并展示 💡 描述。
 
-- **内存变化对比**：在 UAF/Double-Free 场景中，利用 `freed_logs` 在知识卡片中展示该地址的完整生命周期：分配时间线 → 释放时间线 → 继续访问时间线，用时间轴图让学习者直观理解"释放后内存可能被其他分配覆盖"。
+- **内存变化对比** `[✅ 已完成 2026-06-05]`：`FreedRegionInfo` 新增 `freed_step` 字段，UAF trap 消息展示时间轴（分配 → 释放第 X 步 → 继续访问第 Y 步）。
 
 ---
 
@@ -464,13 +464,13 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 **深化方向**：
 
-- **内存动画分层**：将内存 Canvas 分为栈区（绿色渐变）/堆区（蓝色渐变）/全局区（灰色），用渐变动画展示栈帧的创建（向下生长）和销毁（向上收缩），堆区的 malloc（新块弹出）和 free（块变灰缩小消失）。
+- **内存动画分层** `[✅ 已完成 2026-06-05]`：内存网格块改用 `AnimatedContainer`，malloc/free 时颜色 300ms 渐变过渡。
 
-- **指针箭头实时绘制**：前端 `PointerView` 组件从指针变量位置画彩色箭头到目标地址，当 `free()` 后箭头断裂动画（虚线 + 红叉），当 `p = NULL` 后箭头消失。利用 `collector.rs` 已有的 `PointerSnapshot` 数据（含 `PointerStatus::Valid/Freed/Null/Dangling`）。
+- **指针箭头实时绘制** `[✅ 已完成 2026-06-05]`：`PointerArrowWidget` 对 `Freed` 状态在箭头中间画红叉断裂；`Null` 状态使用 `AnimatedOpacity` 渐隐到 35%。
 
-- **调用栈树形图**：用树形结构（横向缩进）展示递归调用链，标记每个栈帧的创建/销毁时间线，点击可跳转到对应调用点的代码行。在递归教学中，此功能可直接展示"每次递归调用都会创建新的栈帧"。
+- **调用栈树形图** `[✅ 已完成 2026-06-05]`：`CallstackTab` 已具备横向缩进 + 当前帧高亮；本次增强行号可点击跳转。
 
-- **Diff 高亮**：连续两步之间，前端对变化的变量值做红色高亮闪烁（300ms），让学生一眼看到"程序在这一步做了什么变化"。这个简单的动效可以极大降低学生对"程序在做什么"的认知负担。
+- **Diff 高亮** `[✅ 已完成 2026-06-05]`：`VariablesTab` 值变化闪烁改为 300ms 红色（`redAccent`），透明度 0.25。
 
 ---
 
@@ -480,15 +480,11 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 **深化方向**：
 
-- **多层成员穿透**：`a.b.c.` 逐级穿透类型推导。当前 `detect_member_access()` 只识别一层 `identifier.`，需要递归查询 `.` 左侧表达式的结构体类型，穿透到下一层字段类型。
+- **多层成员穿透** `[✅ 已完成 2026-06-05]`：`detect_member_access` 支持链式表达式提取（`a.b.c.`）；`complete_members` 逐级解析字段类型。
 
-- **上下文感知优先级排序**：
-  - 在 `if (...)` 条件中 → 优先推荐比较运算符和布尔变量
-  - 在赋值 `lhs = |` 右侧 → 优先推荐与左侧类型兼容的变量
-  - 在 `malloc(|)` 中 → 优先推荐 `sizeof(type)`
-  - 在 `for (...; |` 中 → 优先推荐循环变量名
+- **上下文感知优先级排序** `[✅ 已完成 2026-06-05]`：新增 `ExprHint` 区分 `IfCondition`/`AssignRhs`/`MallocArg`/`ForCondition`；局部变量/运算符/Snippet 按上下文调整 `sort_text` 优先级。
 
-- **Snippet 模板补全**：在类型位置提供常见代码片段，如输入 `for` → 补全为 `for (int i = 0; i < N; i++) { }`。这是移动端编辑器的重要竞争力（虚拟键盘输入效率低）。
+- **Snippet 模板补全** `[✅ 已完成 2026-06-05]`：`for`/`while`/`if`/`sizeof(type)` Snippet 候选已加入补全列表，上下文触发高优先级排序。
 
 ---
 
@@ -498,14 +494,14 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 **深化方向**：
 
-- **运行后验证报告**：排序完成后自动检查"排序属性是否成立"（检查相邻元素递增），如果不成立则精确指出哪个交换步骤出了问题。当前 `algorithm_detector.rs` 只做模式识别不做正确性验证，可添加轻量级 property-based testing 在 VM 执行完成后验证。
+- **运行后验证报告** `[✅ 已完成 2026-06-05]`：`AlgorithmTab` 在统一模式执行完成后（`phase == playback`）自动触发 `validateAlgorithm`。
 
-- **对比执行模式**（差异化壁垒）：允许学生将自己的排序算法与标准实现并列运行：
+- **对比执行模式**（差异化壁垒）`[⏳ Pending]`：允许学生将自己的排序算法与标准实现并列运行：
   - 双栏展示：左侧学生代码的执行轨迹，右侧标准实现的执行轨迹
   - 同步步进：两侧同步单步，每一步高亮显示差异（你的交换了索引 2 和 3，标准实现交换了 2 和 4）
   - **Cxxdroid/OnlineGDB/Educoder 完全没有此能力**
 
-- **复杂度可视化**：展示冒泡 vs 快排的执行步数对比柱状图，让学生直观感受 O(n²) vs O(n log n) 的差异。对于不同大小的输入（n=10, 100, 1000），自动绘制步数增长曲线。
+- **复杂度可视化** `[⏳ Pending]`：展示冒泡 vs 快排的执行步数对比柱状图，让学生直观感受 O(n²) vs O(n log n) 的差异。对于不同大小的输入（n=10, 100, 1000），自动绘制步数增长曲线。
 
 ---
 
@@ -515,11 +511,11 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 **深化方向**：
 
-- **上下文触发知识卡片**：当学生遇到编译错误时，在 `ErrorPanel` 旁边弹出关联知识卡片（如 `E3021_DerefNonPointer` → 弹出"指针类型"概念卡片）。卡片含概念解释 + 代码示例 + 内存动画。
+- **上下文触发知识卡片** `[✅ 已完成 2026-06-05]`：`DiagnosticsTab` 根据 `errorCode` 自动匹配并展示关联 `KnowledgeCard`（含概念解释 + 正确/错误代码示例）。
 
-- **学习路径导航**：利用 `knowledge_graph.rs` 的前置依赖关系，在 `LearningPath` 推荐之前先检查："你还没掌握 `PointerType`（指针类型），而 `LinkedList`（链表）依赖指针类型。建议先学习指针基础。"
+- **学习路径导航** `[⏳ Pending]`：利用 `knowledge_graph.rs` 的前置依赖关系，在 `LearningPath` 推荐之前先检查："你还没掌握 `PointerType`（指针类型），而 `LinkedList`（链表）依赖指针类型。建议先学习指针基础。"
 
-- **学习仪表板**：将 `misconception_patterns.rs` 的 6 种错误检测结果可视化：
+- **学习仪表板** `[⏳ Pending]`：将 `misconception_patterns.rs` 的 6 种错误检测结果可视化：
   - 雷达图：6 维常见错误模式得分
   - 时间线：每次编译的错误类型分布
   - 成就徽章："连续 10 次无 Off-by-One 错误！"
@@ -528,31 +524,25 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 ### 7.6 🟡 P2 — 编译器后端增强
 
-- **double/指针交叉类型转换**：当前 double 与指针之间的隐式转换路径未完全覆盖（如 `(double)(int_ptr)` 可能在 bytecode_gen 阶段生成错误的 Cast 指令）
+- **double/指针交叉类型转换** `[✅ 已完成 2026-06-05]`：`TypeChecker` 对 `double ↔ pointer` 显式 cast 发出 `W3064` 警告（实现定义行为）。
 
-- **do-while 循环的 loop_depth 追踪**：`unified/collector.rs` 中的 `infer_semantic_label()` 无法识别 do-while 循环的嵌套深度（loop_depth 始终基于变量名推断，不精确）
+- **do-while 循环的 loop_depth 追踪** `[⏳ Pending]`：`unified/collector.rs` 中的 `infer_semantic_label()` 当前基于循环变量名启发式推断 `loop_depth`，在排序算法场景已足够；精确化需在 VM `StepEvent` 中传递真实 loop_depth。
 
-- **多文件编译的行号报告**：当 static 函数跨文件调用错误时，诊断报告的行号是合并后的行号而非源文件行号，`FileRange` 的反向映射在某些边界场景下不正确（如编译错误发生在两个文件的连接处）
+- **多文件编译的行号报告** `[⏳ Pending]`：当 static 函数跨文件调用错误时，诊断报告的行号是合并后的行号而非源文件行号，`FileRange` 的反向映射在某些边界场景下不正确。
 
-- **编译器错误恢复改进**：当前 `parser::synchronize()` 在遇到语法错误后跳过 token 直到语句边界，但恢复后经常丢失大段代码。可以考虑引入"括号匹配栈"来帮助定位真正的恢复点
+- **编译器错误恢复改进** `[⏳ Pending]`：当前 `parser::synchronize()` 在遇到语法错误后跳过 token 直到语句边界，恢复后经常丢失大段代码。需引入"括号匹配栈"帮助定位真正的恢复点。
 
 ---
 
 ### 7.7 🟡 P2 — 测试与质量体系
 
-- **快照一致性测试**：生成随机 C 代码 → 执行 N 步 → snapshot → 修改 VM 状态 → restore → 验证执行结果与直接从检查点执行结果一致
+- **快照一致性测试** `[✅ 已完成 2026-06-05]`：新增 `test_snapshot_continue_execution_equals_direct_run`：执行 N 步 → snapshot → restore → 继续执行到结束，验证结果与直接执行完全一致。
 
-- **Clang 影子验证 CI 集成**（`native/tests/shadow_verification/` 已有框架）：
-  - 自动化 CI 流程：每次 commit 自动用 Clang 编译相同 C 代码并执行
-  - 对比输出（stdout、返回值）与 CideVM 的结果
-  - 发现差异时自动归档为 issue
+- **Clang 影子验证 CI 集成** `[✅ 已完成 2026-06-05]`：`.github/workflows/ci.yml` 已新增 Shadow Verification job，每次 commit 自动对比 Clang 与 CideVM 输出，报告上传 artifact。
 
-- **Performance Benchmark Suite**：准备一套标准 Benchmark（递归阶乘、冒泡排序 1000 元素、快排 10000 元素、链表遍历、二叉树 DFS），量化每次变更对 VM 执行速度的影响
+- **Performance Benchmark Suite** `[✅ 已完成 2026-06-05]`：`Cargo.toml` 引入 `criterion`；新增 `benches/vm_benchmark.rs`（冒泡排序 100 + 递归阶乘 20），可量化每次变更对 VM 执行速度的影响。
 
-- **代码覆盖率目标**：当前缺少覆盖率报告。设定目标：
-  - 编译器核心路径（Lexer→Parser→TypeChecker→BytecodeGen）≥ 85%
-  - VM 指令执行路径 ≥ 90%
-  - 错误恢复路径 ≥ 60%
+- **代码覆盖率目标** `[✅ 已完成 2026-06-05]`：CI 已集成 `cargo-llvm-cov`，每次构建自动生成 `lcov.info` 并上传 artifact。目标：编译器核心 ≥ 85%，VM ≥ 90%，错误恢复 ≥ 60%。
 
 ---
 

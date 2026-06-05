@@ -84,7 +84,7 @@ class PointerArrowWidget extends StatelessWidget {
         ? '0x0000'
         : '0x${targetAddr.toRadixString(16).toUpperCase().padLeft(4, '0')}';
 
-    return Padding(
+    Widget content = Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
       child: Row(
         children: [
@@ -104,6 +104,7 @@ class PointerArrowWidget extends StatelessWidget {
                   color: style.arrowColor,
                   isDashed: style.isDashed,
                   isNull: status == PointerStatus.null_,
+                  showBreak: status == PointerStatus.freed,
                 ),
               ),
             ),
@@ -117,6 +118,18 @@ class PointerArrowWidget extends StatelessWidget {
         ],
       ),
     );
+
+    // NULL 指针渐隐动画
+    if (status == PointerStatus.null_) {
+      content = AnimatedOpacity(
+        opacity: 0.35,
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOut,
+        child: content,
+      );
+    }
+
+    return content;
   }
 
   Widget _buildVarCard({
@@ -216,11 +229,13 @@ class _ArrowPainter extends CustomPainter {
   final Color color;
   final bool isDashed;
   final bool isNull;
+  final bool showBreak;
 
   _ArrowPainter({
     required this.color,
     this.isDashed = false,
     this.isNull = false,
+    this.showBreak = false,
   });
 
   @override
@@ -259,26 +274,63 @@ class _ArrowPainter extends CustomPainter {
       return;
     }
 
-    // 普通箭头
-    if (isDashed) {
-      final path = Path()
+    // 普通箭头（断裂时分为两段）
+    if (showBreak) {
+      final breakCenter = Offset(size.width / 2, size.height / 2);
+      final breakSize = 6.0;
+      // 左段
+      final leftPath = Path()
         ..moveTo(start.dx, start.dy)
+        ..lineTo(breakCenter.dx - breakSize, start.dy);
+      // 右段
+      final rightPath = Path()
+        ..moveTo(breakCenter.dx + breakSize, start.dy)
         ..lineTo(end.dx, start.dy);
-      canvas.drawPath(
-        _dashPath(path, dashLength: 5, dashSpace: 3),
-        paint,
+      if (isDashed) {
+        canvas.drawPath(_dashPath(leftPath, dashLength: 5, dashSpace: 3), paint);
+        canvas.drawPath(_dashPath(rightPath, dashLength: 5, dashSpace: 3), paint);
+      } else {
+        canvas.drawPath(leftPath, paint);
+        canvas.drawPath(rightPath, paint);
+      }
+      // 红叉
+      final xPaint = Paint()
+        ..color = const Color(0xFFFF453A)
+        ..strokeWidth = 2.5
+        ..style = PaintingStyle.stroke;
+      canvas.drawLine(
+        Offset(breakCenter.dx - breakSize, breakCenter.dy - breakSize),
+        Offset(breakCenter.dx + breakSize, breakCenter.dy + breakSize),
+        xPaint,
+      );
+      canvas.drawLine(
+        Offset(breakCenter.dx + breakSize, breakCenter.dy - breakSize),
+        Offset(breakCenter.dx - breakSize, breakCenter.dy + breakSize),
+        xPaint,
       );
     } else {
-      canvas.drawLine(start, end, paint);
+      if (isDashed) {
+        final path = Path()
+          ..moveTo(start.dx, start.dy)
+          ..lineTo(end.dx, start.dy);
+        canvas.drawPath(
+          _dashPath(path, dashLength: 5, dashSpace: 3),
+          paint,
+        );
+      } else {
+        canvas.drawLine(start, end, paint);
+      }
     }
 
-    // 箭头头部
-    const arrowSize = 8.0;
-    final arrowPath = Path()
-      ..moveTo(end.dx - arrowSize, end.dy - arrowSize / 2)
-      ..lineTo(end.dx, end.dy)
-      ..lineTo(end.dx - arrowSize, end.dy + arrowSize / 2);
-    canvas.drawPath(arrowPath, paint..strokeWidth = 2);
+    // 箭头头部（断裂时不画）
+    if (!showBreak) {
+      const arrowSize = 8.0;
+      final arrowPath = Path()
+        ..moveTo(end.dx - arrowSize, end.dy - arrowSize / 2)
+        ..lineTo(end.dx, end.dy)
+        ..lineTo(end.dx - arrowSize, end.dy + arrowSize / 2);
+      canvas.drawPath(arrowPath, paint..strokeWidth = 2);
+    }
   }
 
   Path _dashPath(Path source, {required double dashLength, required double dashSpace}) {

@@ -8,6 +8,33 @@ use crate::session::Session;
 use crate::unified::root_cause::RootCauseHint;
 use crate::unified::types::{ApiVariableSnapshot, StepPayload};
 
+/// Fine-grained sub-category for array-bounds traps.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BoundsCategory {
+    /// `i <= n` should be `i < n`.
+    OffByOne,
+    /// Loop starts at wrong value (e.g. `i = 1` instead of `i = 0`).
+    WrongInit,
+    /// Step size causes skip-over (e.g. `i += 2`).
+    WrongIncrement,
+    /// Index variable likely uninitialized or from external input.
+    UninitializedIndex,
+    /// Generic fallback when pattern cannot be determined.
+    Generic,
+}
+
+impl BoundsCategory {
+    fn as_str(&self) -> &'static str {
+        match self {
+            BoundsCategory::OffByOne => "OffByOne",
+            BoundsCategory::WrongInit => "WrongInit",
+            BoundsCategory::WrongIncrement => "WrongIncrement",
+            BoundsCategory::UninitializedIndex => "UninitializedIndex",
+            BoundsCategory::Generic => "GenericBounds",
+        }
+    }
+}
+
 pub struct TraceAnalyzer;
 
 impl TraceAnalyzer {
@@ -50,6 +77,7 @@ impl TraceAnalyzer {
     ) -> Option<RootCauseHint> {
         let (array_name, accessed_index) = parse_bounds_message(trap_message)?;
         let trap_payload = steps.get(trap_step)?;
+        let array_size = extract_array_size(trap_message).unwrap_or(0);
 
         // Try to locate the loop variable whose current value equals the bad index.
         let suspect_var = trap_payload
@@ -62,99 +90,65 @@ impl TraceAnalyzer {
             .map(|v| v.name.clone());
 
         let mut related_lines = Vec::new();
-        let (one_liner, fix_kind) = if let Some(ref var_name) = suspect_var {
-            // Slice the variable's history over the last few steps.
-            let history = slice_variable_history(steps, var_name, trap_step, 8);
 
-            // Look at the source line where the trap occurred.
-            let _trap_line_text = get_source_line(session, trap_payload.code_line);
+        let (category, one_liner, fix_kind, fix_line, fix_desc) =
+            if let Some(ref var_name) = suspect_var {
+                // Slice a longer history (up to 20 steps) for pattern inference.
+                let history = slice_variable_history(steps, var_name, trap_step, 20);
+                let hist_vals: Vec<i32> = history
+                    .iter()
+                    .filter_map(|v| v.value.parse::<i32>().ok())
+                    .collect();
 
-            // Check surrounding lines for loop conditions containing '<='.
-            let mut has_le_condition = false;
-            for offset in -3..=3 {
-                let line_no = trap_payload.code_line + offset;
-                if line_no <= 0 {
-                    continue;
+                // Scan surrounding source for loop constructs.
+                let loop_info =
+                    scan_loop_info(session, trap_payload.code_line, var_name, &array_name);
+                related_lines.extend(&loop_info.lines);
+                if !related_lines.contains(&trap_payload.code_line) {
+                    related_lines.push(trap_payload.code_line);
                 }
-                let line_text = get_source_line(session, line_no);
-                if line_text.contains("<=") && line_text.contains(&array_name) {
-                    has_le_condition = true;
-                    related_lines.push(line_no);
-                }
-            }
-            // Also add the trap line itself.
-            if !related_lines.contains(&trap_payload.code_line) {
-                related_lines.push(trap_payload.code_line);
-            }
-            related_lines.sort();
-            related_lines.dedup();
+                related_lines.sort();
+                related_lines.dedup();
 
-            // Infer root-cause category.
-            let array_size = extract_array_size(trap_message).unwrap_or(0);
-            if accessed_index == array_size && has_le_condition {
-                (
-                    format!(
-                        "数组越界是因为循环条件使用了 <=，数组 '{}' 大小为 {}，最后一个有效索引是 {}。建议将 <= 改为 <。",
-                        array_name, array_size, array_size.saturating_sub(1)
-                    ),
-                    String::from("ChangeLeToLt"),
-                )
-            } else if accessed_index == array_size {
-                (
-                    format!(
-                        "数组 '{}' 的有效索引是 0~{}，但你访问了索引 {}。请检查循环边界或索引计算。",
-                        array_name,
-                        array_size.saturating_sub(1),
-                        accessed_index
-                    ),
-                    String::from("ChangeLeToLt"),
-                )
-            } else if accessed_index > array_size {
-                (
-                    format!(
-                        "索引 {} 远超数组 '{}' 的大小 {}。请检查循环起始值或索引表达式是否写错。",
-                        accessed_index, array_name, array_size
-                    ),
-                    String::from("FixLoopStart"),
-                )
-            } else if history.len() < 2 {
-                // Very little history → likely uninitialized or coming from scanf.
-                (
-                    format!(
-                        "索引变量 '{}' 的值是 {}，但执行历史太短，可能是变量未初始化或从外部输入读取了非法值。",
-                        var_name, accessed_index
-                    ),
-                    String::from("InitVariable"),
-                )
+                // Infer fine-grained category from history + source patterns.
+                let category = infer_bounds_category(
+                    &hist_vals,
+                    accessed_index,
+                    array_size,
+                    &loop_info,
+                );
+
+                let (one_liner, fix_kind, fix_line, fix_desc) = build_bounds_hint(
+                    category,
+                    var_name,
+                    &array_name,
+                    accessed_index,
+                    array_size,
+                    &loop_info,
+                    &hist_vals,
+                );
+                (category, one_liner, fix_kind, fix_line, fix_desc)
             } else {
+                related_lines.push(trap_payload.code_line);
                 (
+                    BoundsCategory::Generic,
                     format!(
-                        "数组 '{}' 访问了越界索引 {}。请检查 '{}' 的最近变化：{}。",
-                        array_name,
-                        accessed_index,
-                        var_name,
-                        format_history(&history)
+                        "数组 '{}' 访问了越界索引 {}。请检查数组声明大小和所有使用该数组的循环条件。",
+                        array_name, accessed_index
                     ),
                     String::from("None"),
+                    None,
+                    None,
                 )
-            }
-        } else {
-            // Could not identify a specific loop variable; give generic hint.
-            related_lines.push(trap_payload.code_line);
-            (
-                format!(
-                    "数组 '{}' 访问了越界索引 {}。请检查数组声明大小和所有使用该数组的循环条件。",
-                    array_name, accessed_index
-                ),
-                String::from("None"),
-            )
-        };
+            };
 
         Some(RootCauseHint {
-            category: String::from("OffByOne"),
+            category: category.as_str().to_string(),
             one_liner,
             related_lines,
             suggested_fix_kind: fix_kind,
+            suggested_fix_line: fix_line,
+            suggested_fix_desc: fix_desc,
         })
     }
 
@@ -199,6 +193,8 @@ impl TraceAnalyzer {
             one_liner,
             related_lines,
             suggested_fix_kind: String::from("SetNullAfterFree"),
+            suggested_fix_line: Some(freed_line),
+            suggested_fix_desc: Some(String::from("free 后执行 p = NULL")),
         })
     }
 
@@ -228,6 +224,8 @@ impl TraceAnalyzer {
             one_liner,
             related_lines,
             suggested_fix_kind: String::from("SetNullAfterFree"),
+            suggested_fix_line: Some(freed_line),
+            suggested_fix_desc: Some(String::from("free 后执行 p = NULL")),
         })
     }
 
@@ -278,6 +276,8 @@ impl TraceAnalyzer {
             one_liner,
             related_lines: vec![trap_payload.code_line],
             suggested_fix_kind: String::from("AvoidDivZero"),
+            suggested_fix_line: Some(trap_payload.code_line),
+            suggested_fix_desc: Some(String::from("除法前检查除数是否为 0")),
         })
     }
 
@@ -326,11 +326,14 @@ impl TraceAnalyzer {
             }
         }
 
+        let fix_line = related_lines.first().copied();
         Some(RootCauseHint {
             category: String::from("NullDeref"),
             one_liner,
             related_lines,
             suggested_fix_kind: String::from("AddNullCheck"),
+            suggested_fix_line: fix_line,
+            suggested_fix_desc: Some(String::from("使用指针前检查是否为 NULL")),
         })
     }
 }
@@ -398,6 +401,281 @@ fn parse_alloc_freed_lines(msg: &str) -> Option<(i32, i32)> {
     Some((alloc_line, freed_line))
 }
 
+/// Information about a loop construct gathered from source scanning.
+#[derive(Default)]
+struct LoopInfo {
+    /// Source lines that belong to the loop header / condition.
+    lines: Vec<i32>,
+    /// True if a `<=` operator is present in the condition.
+    has_le: bool,
+    /// True if a `>=` operator is present in the condition.
+    has_ge: bool,
+    /// Detected start value literal (e.g. `int i = 1` → Some(1)).
+    start_val: Option<i32>,
+    /// Detected increment literal (e.g. `i += 2` → Some(2), `i++` → Some(1)).
+    increment: Option<i32>,
+}
+
+/// Scan source lines around `trap_line` looking for loop constructs that involve
+/// `var_name` and/or `array_name`.
+fn scan_loop_info(
+    session: &Session,
+    trap_line: i32,
+    var_name: &str,
+    array_name: &str,
+) -> LoopInfo {
+    let mut info = LoopInfo::default();
+    // Scan a window of ±6 lines around the trap.
+    for offset in -6_i32..=6_i32 {
+        let line_no = trap_line + offset;
+        if line_no <= 0 {
+            continue;
+        }
+        let text = get_source_line(session, line_no);
+        if text.is_empty() {
+            continue;
+        }
+        // Heuristic: line contains the variable or array name and looks like a loop.
+        let looks_like_loop = text.contains("for(") || text.contains("for (");
+        let looks_like_while = text.contains("while(") || text.contains("while (");
+        let refers_var = text.contains(var_name);
+        let refers_array = text.contains(array_name);
+        if (looks_like_loop || looks_like_while) && (refers_var || refers_array) {
+            info.lines.push(line_no);
+            if text.contains("<=") {
+                info.has_le = true;
+            }
+            if text.contains(">=") {
+                info.has_ge = true;
+            }
+            // Try to extract `int i = X` or `i = X`.
+            if let Some(val) = extract_assignment_rhs(&text, var_name) {
+                info.start_val = Some(val);
+            }
+        }
+        // Also look for increment statements on their own line: `i++`, `i += 2`, etc.
+        if refers_var && !looks_like_loop && !looks_like_while {
+            if let Some(inc) = extract_increment(&text, var_name) {
+                info.increment = Some(inc);
+                if !info.lines.contains(&line_no) {
+                    info.lines.push(line_no);
+                }
+            }
+        }
+    }
+    info.lines.sort();
+    info.lines.dedup();
+    info
+}
+
+/// Try to extract the RHS of an assignment like `int i = 1` or `i = 1`.
+fn extract_assignment_rhs(line: &str, var: &str) -> Option<i32> {
+    // Pattern: var = digits
+    let pat = format!("{} = ", var);
+    if let Some(pos) = line.find(&pat) {
+        let rest = &line[pos + pat.len()..];
+        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+        return num_str.parse::<i32>().ok();
+    }
+    // Pattern: var=digits (no spaces)
+    let pat2 = format!("{}=", var);
+    if let Some(pos) = line.find(&pat2) {
+        let rest = &line[pos + pat2.len()..];
+        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+        return num_str.parse::<i32>().ok();
+    }
+    None
+}
+
+/// Try to extract the increment step from `i++`, `i += 2`, `i = i + 2`, etc.
+fn extract_increment(line: &str, var: &str) -> Option<i32> {
+    let trimmed = line.trim();
+    // i++ or ++i
+    if trimmed == format!("{}++;", var) || trimmed == format!("++{};", var) {
+        return Some(1);
+    }
+    // i += N
+    let pat = format!("{} += ", var);
+    if let Some(pos) = trimmed.find(&pat) {
+        let rest = &trimmed[pos + pat.len()..];
+        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        return num_str.parse::<i32>().ok();
+    }
+    // i = i + N
+    let pat2 = format!("{} = {} + ", var, var);
+    if let Some(pos) = trimmed.find(&pat2) {
+        let rest = &trimmed[pos + pat2.len()..];
+        let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+        return num_str.parse::<i32>().ok();
+    }
+    None
+}
+
+/// Infer the fine-grained bounds category from variable history and loop info.
+fn infer_bounds_category(
+    hist_vals: &[i32],
+    accessed_index: i32,
+    array_size: i32,
+    loop_info: &LoopInfo,
+) -> BoundsCategory {
+    if hist_vals.len() < 2 {
+        return BoundsCategory::UninitializedIndex;
+    }
+
+    let start_val = hist_vals.first().copied().unwrap_or(0);
+    let is_monotonic_inc = hist_vals.windows(2).all(|w| w[1] >= w[0]);
+    let diffs: Vec<i32> = hist_vals.windows(2).map(|w| w[1] - w[0]).collect();
+    let max_step = diffs.iter().copied().max().unwrap_or(0);
+
+    // Off-by-one: monotonic +1, ends exactly at array_size, and source has <=.
+    if accessed_index == array_size
+        && is_monotonic_inc
+        && max_step == 1
+        && start_val == 0
+        && loop_info.has_le
+    {
+        return BoundsCategory::OffByOne;
+    }
+
+    // Wrong init: starts at >0, monotonic +1, and reaches or exceeds array size.
+    if start_val > 0
+        && is_monotonic_inc
+        && max_step == 1
+        && accessed_index >= array_size
+    {
+        return BoundsCategory::WrongInit;
+    }
+
+    // Wrong increment: step > 1 causes skip-over.
+    if max_step > 1 && is_monotonic_inc {
+        return BoundsCategory::WrongIncrement;
+    }
+
+    // Fallback: still OffByOne if classic pattern matches even without full history.
+    if accessed_index == array_size && loop_info.has_le {
+        return BoundsCategory::OffByOne;
+    }
+
+    BoundsCategory::Generic
+}
+
+/// Build the human-readable hint, fix-kind, fix-line and fix-desc from the inferred category.
+fn build_bounds_hint(
+    category: BoundsCategory,
+    var_name: &str,
+    array_name: &str,
+    accessed_index: i32,
+    array_size: i32,
+    loop_info: &LoopInfo,
+    hist_vals: &[i32],
+) -> (String, String, Option<i32>, Option<String>) {
+    match category {
+        BoundsCategory::OffByOne => {
+            let line = loop_info.lines.first().copied();
+            let msg = if let Some(l) = line {
+                format!(
+                    "数组越界是因为第 {} 行的循环条件使用了 '<='。数组 '{}' 大小为 {}，最后一个有效索引是 {}。建议将 '<=' 改为 '<'。",
+                    l, array_name, array_size, array_size.saturating_sub(1)
+                )
+            } else {
+                format!(
+                    "数组越界是因为循环条件使用了 '<='。数组 '{}' 大小为 {}，最后一个有效索引是 {}。建议将 '<=' 改为 '<'。",
+                    array_name, array_size, array_size.saturating_sub(1)
+                )
+            };
+            (
+                msg,
+                String::from("ChangeLeToLt"),
+                line,
+                Some(String::from("将 <= 改为 <")),
+            )
+        }
+        BoundsCategory::WrongInit => {
+            let start_val = hist_vals.first().copied().unwrap_or(0);
+            let line = loop_info.lines.first().copied();
+            let msg = if let Some(l) = line {
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。循环变量 '{}' 从 {} 开始，导致最终访问到索引 {}。建议将第 {} 行的初始值改为 0。",
+                    array_name, accessed_index, var_name, start_val, accessed_index, l
+                )
+            } else {
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。循环变量 '{}' 从 {} 开始，导致最终访问到索引 {}。建议将初始值改为 0。",
+                    array_name, accessed_index, var_name, start_val, accessed_index
+                )
+            };
+            (
+                msg,
+                String::from("FixLoopStart"),
+                line,
+                Some(format!("将 {} 的初始值 {} 改为 0", var_name, start_val)),
+            )
+        }
+        BoundsCategory::WrongIncrement => {
+            let step = loop_info.increment.unwrap_or(2);
+            let line = loop_info.lines.first().copied();
+            let msg = if let Some(l) = line {
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。循环变量 '{}' 的步长是 {}，导致跳过了边界检查。建议将第 {} 行的步长改为 1，或调整循环条件。",
+                    array_name, accessed_index, var_name, step, l
+                )
+            } else {
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。循环变量 '{}' 的步长是 {}，导致跳过了边界检查。建议将步长改为 1，或调整循环条件。",
+                    array_name, accessed_index, var_name, step
+                )
+            };
+            (
+                msg,
+                String::from("FixLoopIncrement"),
+                line,
+                Some(format!("将步长 {} 改为 1", step)),
+            )
+        }
+        BoundsCategory::UninitializedIndex => {
+            let msg = format!(
+                "索引变量 '{}' 的值是 {}，但执行历史太短，可能是变量未初始化或从外部输入读取了非法值。建议在使用前初始化 '{}'。",
+                var_name, accessed_index, var_name
+            );
+            (
+                msg,
+                String::from("InitVariable"),
+                None,
+                Some(format!("初始化 '{}'", var_name)),
+            )
+        }
+        BoundsCategory::Generic => {
+            let msg = if hist_vals.len() >= 2 {
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。请检查 '{}' 的最近变化：{}。",
+                    array_name,
+                    accessed_index,
+                    var_name,
+                    format_history_vals(hist_vals)
+                )
+            } else {
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。请检查循环边界或索引计算。",
+                    array_name, accessed_index
+                )
+            };
+            (msg, String::from("None"), None, None)
+        }
+    }
+}
+
+/// Format a short variable-history string from raw values.
+fn format_history_vals(vals: &[i32]) -> String {
+    if vals.len() <= 4 {
+        vals.iter()
+            .map(|v| v.to_string())
+            .collect::<Vec<_>>()
+            .join(" → ")
+    } else {
+        format!("{} → ... → {}", vals.first().unwrap(), vals.last().unwrap())
+    }
+}
+
 /// Retrieve a source line from the first compile unit (matches collector.rs logic).
 fn get_source_line(session: &Session, line: i32) -> String {
     if line <= 0 {
@@ -425,23 +703,7 @@ fn is_likely_loop_var(name: &str) -> bool {
     )
 }
 
-/// Format a short variable-history string for the one-liner.
-fn format_history(history: &[&ApiVariableSnapshot]) -> String {
-    if history.len() <= 3 {
-        history
-            .iter()
-            .map(|v| format!("{}={}", v.name, v.value))
-            .collect::<Vec<_>>()
-            .join(", ")
-    } else {
-        let first = history.first().unwrap();
-        let last = history.last().unwrap();
-        format!(
-            "{}={} → ... → {}={}",
-            first.name, first.value, last.name, last.value
-        )
-    }
-}
+
 
 // ===================================================================
 // Unit tests
@@ -527,5 +789,101 @@ mod tests {
         assert_eq!(hist.len(), 2);
         assert_eq!(hist[0].value, "0");
         assert_eq!(hist[1].value, "1");
+    }
+
+    #[test]
+    fn test_infer_off_by_one() {
+        // History: i goes 0→1→2→3→4→5, array_size=5, accessed=5, source has <=
+        let hist = vec![0, 1, 2, 3, 4, 5];
+        let loop_info = LoopInfo {
+            lines: vec![3],
+            has_le: true,
+            has_ge: false,
+            start_val: Some(0),
+            increment: Some(1),
+        };
+        let cat = infer_bounds_category(&hist, 5, 5, &loop_info);
+        assert_eq!(cat, BoundsCategory::OffByOne);
+
+        let (msg, fix, fix_line, fix_desc) = build_bounds_hint(cat, "i", "arr", 5, 5, &loop_info, &hist);
+        assert!(msg.contains("<="));
+        assert!(msg.contains("第 3 行"));
+        assert_eq!(fix, "ChangeLeToLt");
+        assert_eq!(fix_line, Some(3));
+        assert_eq!(fix_desc, Some("将 <= 改为 <".to_string()));
+    }
+
+    #[test]
+    fn test_infer_wrong_init() {
+        // History: i goes 1→2→3→4→5, array_size=5, accessed=5 (should have been 0..4)
+        let hist = vec![1, 2, 3, 4, 5];
+        let loop_info = LoopInfo {
+            lines: vec![3],
+            has_le: false,
+            has_ge: false,
+            start_val: Some(1),
+            increment: Some(1),
+        };
+        let cat = infer_bounds_category(&hist, 5, 5, &loop_info);
+        assert_eq!(cat, BoundsCategory::WrongInit);
+
+        let (msg, fix, fix_line, fix_desc) = build_bounds_hint(cat, "i", "arr", 5, 5, &loop_info, &hist);
+        assert!(msg.contains("从 1 开始"));
+        assert!(msg.contains("改为 0"));
+        assert_eq!(fix, "FixLoopStart");
+        assert_eq!(fix_line, Some(3));
+        assert_eq!(fix_desc, Some("将 i 的初始值 1 改为 0".to_string()));
+    }
+
+    #[test]
+    fn test_infer_wrong_increment() {
+        // History: i goes 0→2→4→6, array_size=5, accessed=6 (step=2 skips over)
+        let hist = vec![0, 2, 4, 6];
+        let loop_info = LoopInfo {
+            lines: vec![3, 5],
+            has_le: false,
+            has_ge: false,
+            start_val: Some(0),
+            increment: Some(2),
+        };
+        let cat = infer_bounds_category(&hist, 6, 5, &loop_info);
+        assert_eq!(cat, BoundsCategory::WrongIncrement);
+
+        let (msg, fix, fix_line, fix_desc) = build_bounds_hint(cat, "i", "arr", 6, 5, &loop_info, &hist);
+        assert!(msg.contains("步长是 2"));
+        assert_eq!(fix, "FixLoopIncrement");
+        assert_eq!(fix_line, Some(3));
+        assert_eq!(fix_desc, Some("将步长 2 改为 1".to_string()));
+    }
+
+    #[test]
+    fn test_infer_uninitialized_index() {
+        let hist: Vec<i32> = vec![];
+        let loop_info = LoopInfo::default();
+        let cat = infer_bounds_category(&hist, 99, 5, &loop_info);
+        assert_eq!(cat, BoundsCategory::UninitializedIndex);
+
+        let (msg, fix, fix_line, fix_desc) = build_bounds_hint(cat, "idx", "arr", 99, 5, &loop_info, &hist);
+        assert!(msg.contains("未初始化"));
+        assert_eq!(fix, "InitVariable");
+        assert_eq!(fix_line, None);
+        assert_eq!(fix_desc, Some("初始化 'idx'".to_string()));
+    }
+
+    #[test]
+    fn test_extract_assignment_rhs() {
+        assert_eq!(extract_assignment_rhs("int i = 0;", "i"), Some(0));
+        assert_eq!(extract_assignment_rhs("int i = 5;", "i"), Some(5));
+        assert_eq!(extract_assignment_rhs("i=3", "i"), Some(3));
+        assert_eq!(extract_assignment_rhs("j = 10", "i"), None);
+    }
+
+    #[test]
+    fn test_extract_increment() {
+        assert_eq!(extract_increment("i++;", "i"), Some(1));
+        assert_eq!(extract_increment("++i;", "i"), Some(1));
+        assert_eq!(extract_increment("i += 2;", "i"), Some(2));
+        assert_eq!(extract_increment("i = i + 3;", "i"), Some(3));
+        assert_eq!(extract_increment("j += 2;", "i"), None);
     }
 }

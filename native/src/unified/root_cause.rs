@@ -22,4 +22,10 @@ pub struct RootCauseHint {
     /// "ChangeLeToLt", "AddNullCheck", "InitVariable", "FixLoopStart",
     /// "FixArraySize", "SetNullAfterFree", "AvoidDivZero", "None".
     pub suggested_fix_kind: String,
+
+    /// Specific line number where the fix should be applied (if known).
+    pub suggested_fix_line: Option<i32>,
+
+    /// Human-readable description of the exact fix (e.g. "将 <= 改为 <").
+    pub suggested_fix_desc: Option<String>,
 }

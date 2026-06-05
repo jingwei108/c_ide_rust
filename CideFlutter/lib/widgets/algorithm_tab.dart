@@ -69,6 +69,27 @@ class AlgorithmTab extends ConsumerWidget {
         final validationResults = <int, AlgorithmValidationResult>{};
         final validating = <int, bool>{};
         final expandedVis = <int, bool>{};
+        final hasAutoValidated = <int, bool>{};
+
+        // 统一模式执行完成后自动验证算法
+        if (unifiedState.phase == ExecutionPhase.playback) {
+          for (var i = 0; i < matches.length; i++) {
+            if (hasAutoValidated[i] != true && validationResults[i] == null) {
+              hasAutoValidated[i] = true;
+              final match = matches[i];
+              final notifier = ref.read(ideProvider.notifier);
+              Future.microtask(() async {
+                setState(() => validating[i] = true);
+                final res = await notifier.validateAlgorithm(match);
+                setState(() {
+                  validating[i] = false;
+                  validationResults[i] = res;
+                });
+              });
+            }
+          }
+        }
+
         return ListView.builder(
           itemCount: matches.length,
           itemBuilder: (context, index) {

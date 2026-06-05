@@ -954,9 +954,19 @@ impl TypeChecker {
                 *ty = Type::int();
                 ty.clone()
             }
-            Expr::Cast { expr, target_type, ty, .. } => {
-                self.resolve_expr_type(expr);
+            Expr::Cast { expr, target_type, ty, loc, .. } => {
+                let expr_ty = self.resolve_expr_type(expr);
                 *ty = target_type.clone();
+                // Warn on pointer <-> double cast (implementation-defined behavior)
+                if (target_type.is_pointer() && matches!(expr_ty.kind(), TypeKind::Float | TypeKind::Double))
+                    || (expr_ty.is_pointer() && matches!(target_type.kind(), TypeKind::Float | TypeKind::Double))
+                {
+                    self.report_warning(
+                        &format!("将 '{}' 转换为 '{}' 是实现定义的行为，结果可能不可移植", expr_ty, target_type),
+                        loc,
+                        ErrorCode::W3064_DoublePointerCast,
+                    );
+                }
                 ty.clone()
             }
             Expr::InitList { elements, ty, .. } => {

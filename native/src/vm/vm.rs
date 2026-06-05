@@ -41,6 +41,10 @@ pub struct FreedRegionInfo {
     pub size: u32,
     pub alloc_line: i32,
     pub freed_line: i32,
+    /// Step index when the memory was allocated (for unified-mode timeline).
+    pub alloc_step: i32,
+    /// Step index when the memory was freed (for unified-mode timeline).
+    pub freed_step: i32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -673,6 +677,14 @@ impl CideVM {
         self.freed_logs
             .iter()
             .find(|log| addr < log.addr + log.size && addr + size > log.addr)
+    }
+
+    fn format_uaf_message(&self, log: &FreedRegionInfo, is_write: bool) -> String {
+        let action = if is_write { "写入" } else { "读取" };
+        format!(
+            "💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行（第 {} 步）被 free 的内存{}（由第 {} 行的 malloc/realloc 分配）。\n\n⏱️ 时间轴：分配 → 释放（第 {} 步）→ 继续访问（第 {} 步）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针（另一个指针也指向同一块内存）。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。",
+            log.freed_line, log.freed_step, action, log.alloc_line, log.freed_step, self.step_count
+        )
     }
 
     fn check_mem_access(&mut self, addr: u32, size: u32, loc: &SourceLoc, is_write: bool) -> bool {
@@ -1310,7 +1322,7 @@ impl CideVM {
                         OpCode::LoadMem => {
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 4) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针（另一个指针也指向同一块内存）。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, false);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1321,7 +1333,7 @@ impl CideVM {
                             let val = self.pop() as i32;
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 4) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, true);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1330,7 +1342,7 @@ impl CideVM {
                         OpCode::LoadMemD => {
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 8) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, false);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1341,7 +1353,7 @@ impl CideVM {
                             let val = self.pop();
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 8) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, true);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1357,7 +1369,7 @@ impl CideVM {
                         OpCode::LoadMemByte => {
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 1) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, false);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1368,7 +1380,7 @@ impl CideVM {
                             let val = self.pop() as i32;
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 1) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, true);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1377,7 +1389,7 @@ impl CideVM {
                         OpCode::LoadMemQ => {
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 8) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在读取一块已经在第 {} 行被 free 的内存（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, false);
                                 self.trap(&msg, loc);
                                 return;
                             }
@@ -1388,7 +1400,7 @@ impl CideVM {
                             let val = self.pop();
                             let addr = self.pop() as u32;
                             if let Some(log) = self.check_uaf(addr, 8) {
-                                let msg = format!("💥 Use-After-Free (E3060)：你正在向一块已经在第 {} 行被 free 的内存写入（由第 {} 行的 malloc/realloc 分配）。\n\n💡 原因：指针在 free 后没有置为 NULL，或者存在别名指针。\n✅ 解决方法：free(p) 后立即写 p = NULL;，并确保不再通过其他指针访问这块内存。", log.freed_line, log.alloc_line);
+                                let msg = self.format_uaf_message(log, true);
                                 self.trap(&msg, loc);
                                 return;
                             }

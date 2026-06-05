@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../providers/ide_provider.dart';
+import '../models/knowledge_card.dart';
+import 'knowledge_card_item.dart';
 
 class DiagnosticsTab extends StatelessWidget {
   final IdeState state;
@@ -39,6 +41,9 @@ class DiagnosticsTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final diag = state.diagnostics[index];
         final isError = diag.severity == 0;
+        final relatedCards = diag.errorCode > 0
+            ? KnowledgeCard.findByErrorCode(diag.errorCode)
+            : <KnowledgeCard>[];
         return InkWell(
           onTap: () {
             notifier.highlightLine(diag.line);
@@ -150,6 +155,31 @@ class DiagnosticsTab extends StatelessWidget {
                       ),
                     ),
                   ),
+                // 关联知识卡片
+                if (relatedCards.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: isDark ? const Color(0xFF2A2A2C) : const Color(0xFFF5F5F7),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          '相关知识',
+                          style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey),
+                        ),
+                        const SizedBox(height: 6),
+                        ...relatedCards.map((card) => KnowledgeCardItem(
+                          card: card,
+                          isDark: isDark,
+                        )),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
