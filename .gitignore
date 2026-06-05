@@ -122,3 +122,34 @@ scripts/__pycache__/build_utils.cpython-314.pyc
 scripts/__pycache__/build_utils.cpython-314.pyc
 native/tests/test_detect.*
 native/examples/repro*.rs
+
+# ==========================================
+# 补充：防止构建产物再次进入历史
+# ==========================================
+# Android CMake 生成的编译器检测文件
+**/CMakeFiles/**/CMakeCXXCompilerId.cpp
+**/CMakeFiles/**/CMakeCCompilerId.c
+
+# Flutter Android .cxx 目录（NDK 构建缓存）
+CideFlutter/android/app/.cxx/
+
+# Windows 桌面构建产物
+CideFlutter/build/windows/
+CideFlutter/build/web/
+
+# iOS/macOS 构建产物
+CideFlutter/build/ios/
+CideFlutter/build/macos/
+
+# 第三方库 map 文件（体积大且非必须）
+**/*.css.map
+**/*.js.map
+
+# 字体文件（如果很大且可外部获取）
+# 注意：保留 .ttf 跟踪，因为可能是自定义字体
+# 如果是标准开源字体（如 OpenSans），建议改为 CDN 引用
+
+# Rust 增量编译产物（保险起见）
+native/target/
+**/*.rmeta
+**/*.timestamp
