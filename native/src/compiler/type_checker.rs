@@ -810,7 +810,10 @@ impl TypeChecker {
             Expr::Literal { .. } => Type::int(),
             Expr::FloatLiteral { .. } => Type::float(),
             Expr::LongLiteral { .. } => Type::long_long(),
-            Expr::StringLiteral { .. } => Type::pointer_to(Type::char()),
+            Expr::StringLiteral { value, .. } => {
+                let array_size = value.len() as i32 + 1;
+                Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false }
+            }
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
                     *ty = sym.ty;
@@ -1082,6 +1085,159 @@ impl TypeChecker {
         Type::void()
     }
 
+    /// 解析 printf/scanf 格式字符串，返回非 %% 的格式说明符列表。
+    /// 每个元素为 (spec_char, length_mod) 例如 ('d', "") 或 ('f', "l")
+    fn parse_format_specs(fmt: &str) -> Vec<(char, String)> {
+        let mut specs = Vec::new();
+        let mut chars = fmt.chars().peekable();
+        while let Some(ch) = chars.next() {
+            if ch == '%' {
+                if let Some(&next) = chars.peek() {
+                    if next == '%' {
+                        chars.next(); // skip %%
+                        continue;
+                    }
+                }
+                // skip flags
+                while let Some(&c) = chars.peek() {
+                    if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+                        chars.next();
+                    } else { break; }
+                }
+                // skip width
+                while let Some(&c) = chars.peek() {
+                    if c.is_ascii_digit() || c == '*' { chars.next(); } else { break; }
+                }
+                // skip precision
+                if let Some(&'.') = chars.peek() {
+                    chars.next();
+                    while let Some(&c) = chars.peek() {
+                        if c.is_ascii_digit() || c == '*' { chars.next(); } else { break; }
+                    }
+                }
+                // length modifier
+                let mut len_mod = String::new();
+                if let Some(&c) = chars.peek() {
+                    if c == 'l' || c == 'h' || c == 'L' || c == 'z' || c == 'j' || c == 't' {
+                        chars.next();
+                        len_mod.push(c);
+                        if c == 'l' || c == 'h' {
+                            if let Some(&c2) = chars.peek() {
+                                if c2 == c {
+                                    chars.next();
+                                    len_mod.push(c2);
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(&spec) = chars.peek() {
+                    chars.next();
+                    specs.push((spec, len_mod));
+                }
+            }
+        }
+        specs
+    }
+
+    fn check_printf_format(&mut self, fmt: &str, args: &mut [Expr], loc: &SourceLoc) {
+        let specs = Self::parse_format_specs(fmt);
+        if specs.len() != args.len() {
+            self.report_error(
+                &format!("printf 格式说明符数量（{}）与参数数量（{}）不匹配", specs.len(), args.len()),
+                loc,
+                ErrorCode::E3032_PrintfArgType,
+            );
+        }
+        for (i, ((spec, len_mod), arg)) in specs.iter().zip(args.iter_mut()).enumerate() {
+            let arg_type = self.resolve_expr_type(arg);
+            let ok = match (*spec, len_mod.as_str()) {
+                ('d' | 'i' | 'u' | 'x' | 'X' | 'o' | 'n', "") => {
+                    matches!(arg_type.kind(), TypeKind::Int | TypeKind::Char)
+                }
+                ('d' | 'i' | 'u' | 'x' | 'X' | 'o', "l" | "ll") => {
+                    matches!(arg_type.kind(), TypeKind::LongLong | TypeKind::Int)
+                }
+                ('f' | 'e' | 'g' | 'E' | 'G', "") => {
+                    matches!(arg_type.kind(), TypeKind::Float | TypeKind::Double)
+                }
+                ('f' | 'e' | 'g' | 'E' | 'G', "l") | ('F', "") => {
+                    matches!(arg_type.kind(), TypeKind::Double | TypeKind::Float)
+                }
+                ('c', "") => {
+                    matches!(arg_type.kind(), TypeKind::Int | TypeKind::Char)
+                }
+                ('s', "") => {
+                    arg_type.is_pointer() || arg_type.is_array()
+                }
+                ('p', "") => {
+                    arg_type.is_pointer() || arg_type.is_array()
+                }
+                _ => true, // unknown spec, be permissive
+            };
+            if !ok {
+                self.report_error(
+                    &format!("printf 格式 '%{}' 与第 {} 个参数类型 '{}' 不匹配", spec, i + 2, arg_type),
+                    loc,
+                    ErrorCode::E3062_PrintfFormatMismatch,
+                );
+            }
+        }
+    }
+
+    fn check_scanf_format(&mut self, fmt: &str, args: &mut [Expr], loc: &SourceLoc) {
+        let specs = Self::parse_format_specs(fmt);
+        if specs.len() != args.len() {
+            self.report_error(
+                &format!("scanf 格式说明符数量（{}）与参数数量（{}）不匹配", specs.len(), args.len()),
+                loc,
+                ErrorCode::E3035_ScanfArgType,
+            );
+        }
+        for (i, ((spec, len_mod), arg)) in specs.iter().zip(args.iter_mut()).enumerate() {
+            let arg_type = self.resolve_expr_type(arg);
+            // scanf args must be pointers
+            let pointee = if let Type::Pointer { pointee, .. } = &arg_type {
+                Some((**pointee).clone())
+            } else if let Type::Array { element, .. } = &arg_type {
+                Some((**element).clone())
+            } else {
+                None
+            };
+            let ok = match (*spec, len_mod.as_str()) {
+                ('d' | 'i' | 'u' | 'x' | 'X' | 'o' | 'n', "") => {
+                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Int | TypeKind::Char))
+                }
+                ('d' | 'i' | 'u' | 'x' | 'X' | 'o', "l" | "ll") => {
+                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::LongLong | TypeKind::Int))
+                }
+                ('f' | 'e' | 'g' | 'E' | 'G', "") => {
+                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Float | TypeKind::Int))
+                }
+                ('f' | 'e' | 'g' | 'E' | 'G', "l") | ('F', "") => {
+                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Double | TypeKind::Float | TypeKind::Int))
+                }
+                ('c', "") => {
+                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Char | TypeKind::Int))
+                }
+                ('s', "") => {
+                    arg_type.is_pointer() || arg_type.is_array()
+                }
+                ('p', "") => {
+                    arg_type.is_pointer() || arg_type.is_array()
+                }
+                _ => true,
+            };
+            if !ok {
+                self.report_error(
+                    &format!("scanf 格式 '%{}' 与第 {} 个参数类型 '{}' 不匹配", spec, i + 2, arg_type),
+                    loc,
+                    ErrorCode::E3063_ScanfFormatMismatch,
+                );
+            }
+        }
+    }
+
     fn check_builtin_printf(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if args.is_empty() {
             self.report_error(
@@ -1098,14 +1254,25 @@ impl TypeChecker {
                     ErrorCode::E3031_PrintfFirstArg,
                 );
             }
-            for (i, arg) in args.iter_mut().enumerate().skip(1) {
-                let arg_type = self.resolve_expr_type(arg);
-                if !self.is_scalar(&arg_type) && !arg_type.is_pointer() && !arg_type.is_array() {
-                    self.report_error(
-                        &format!("printf 的第 {} 个参数必须是 int、float、char 或指针", i + 1),
-                        loc,
-                        ErrorCode::E3032_PrintfArgType,
-                    );
+            // 如果格式字符串是字面量，进行格式-参数类型匹配检查
+            let fmt_str = if let Expr::StringLiteral { ref value, .. } = args[0] {
+                Some(value.clone())
+            } else {
+                None
+            };
+            if let Some(fmt) = fmt_str {
+                self.check_printf_format(&fmt, &mut args[1..], loc);
+            } else {
+                // 非字面量格式字符串，只做粗略检查
+                for (i, arg) in args.iter_mut().enumerate().skip(1) {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !self.is_scalar(&arg_type) && !arg_type.is_pointer() && !arg_type.is_array() {
+                        self.report_error(
+                            &format!("printf 的第 {} 个参数必须是 int、float、char 或指针", i + 1),
+                            loc,
+                            ErrorCode::E3032_PrintfArgType,
+                        );
+                    }
                 }
             }
         }
@@ -1128,14 +1295,23 @@ impl TypeChecker {
                     ErrorCode::E3034_ScanfFirstArg,
                 );
             }
-            for (i, arg) in args.iter_mut().enumerate().skip(1) {
-                let arg_type = self.resolve_expr_type(arg);
-                if !arg_type.is_pointer() && !arg_type.is_array() {
-                    self.report_error(
-                        &format!("scanf 的第 {} 个参数必须是指针", i + 1),
-                        loc,
-                        ErrorCode::E3035_ScanfArgType,
-                    );
+            let fmt_str = if let Expr::StringLiteral { ref value, .. } = args[0] {
+                Some(value.clone())
+            } else {
+                None
+            };
+            if let Some(fmt) = fmt_str {
+                self.check_scanf_format(&fmt, &mut args[1..], loc);
+            } else {
+                for (i, arg) in args.iter_mut().enumerate().skip(1) {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !arg_type.is_pointer() && !arg_type.is_array() {
+                        self.report_error(
+                            &format!("scanf 的第 {} 个参数必须是指针", i + 1),
+                            loc,
+                            ErrorCode::E3035_ScanfArgType,
+                        );
+                    }
                 }
             }
         }

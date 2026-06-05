@@ -78,4 +78,8 @@ pub enum ErrorCode {
     H3057_ImplicitConversionHint = 3057,
     E3058_StaticFuncAccess = 3058,
     E3059_StaticGlobalAccess = 3059,
+    E3060_UseAfterFree = 3060,
+    E3061_DoubleFree = 3061,
+    E3062_PrintfFormatMismatch = 3062,
+    E3063_ScanfFormatMismatch = 3063,
 }
