@@ -113,6 +113,13 @@ impl BytecodeGen {
             self.union_defs.insert(u.name.clone(), u.fields.clone());
         }
 
+        // Pre-fill func_index so global initializers can resolve function names
+        for f in &program.funcs {
+            if f.body.is_none() { continue; }
+            self.func_index.insert(f.name.clone(), self.next_func_idx);
+            self.next_func_idx += 1;
+        }
+
         // Pass 1: Register globals (byte offsets)
         for g in &program.globals {
             let sz = self.type_size(&g.ty);
@@ -192,6 +199,12 @@ impl BytecodeGen {
                             self.globals_init_32.push((offset as u32, (*value as f32).to_bits() as i32));
                         }
                     }
+                    Expr::Identifier { name, .. } => {
+                        // 全局函数指针初始化：int (*fp)(int) = myFunc;
+                        if let Some(&idx) = self.func_index.get(name) {
+                            self.globals_init_32.push((offset as u32, idx));
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -209,11 +222,9 @@ impl BytecodeGen {
 
         self.string_mem_offset = 0x1000 + self.next_global_offset as u32;
 
-        // Pass 2: Register function metadata
+        // Pass 2: Register function metadata (func_index already filled above)
         for f in &program.funcs {
             if f.body.is_none() { continue; }
-            self.func_index.insert(f.name.clone(), self.next_func_idx);
-            self.next_func_idx += 1;
             let param_sizes: Vec<i32> = f.params.iter().map(|p| {
                 if p.ty.is_array() { 4 } else { self.type_size(&p.ty) }
             }).collect();
@@ -1180,6 +1191,9 @@ impl BytecodeGen {
                                     self.emit(OpCode::Add, 0, &loc);
                                 } else if let Some(&offset) = self.global_indices.get(name) {
                                     self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                                } else if let Some(&idx) = self.func_index.get(name) {
+                                    // &func_name — 取函数地址
+                                    self.emit(OpCode::PushConst, idx, &loc);
                                 } else {
                                     self.report_error("取地址暂不支持此表达式", &loc);
                                     self.emit(OpCode::PushConst, 0, &loc);
@@ -1351,11 +1365,12 @@ impl BytecodeGen {
                 }
             }
             Expr::CallPtr { callee, args, .. } => {
-                // Optimization: direct named call can use Call instead of CallPtr
-                let is_direct_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
-                    self.func_index.contains_key(name)
+                // Determine if this CallPtr will resolve to a user function call (needs SplitD/SplitQ)
+                // or a host/built-in call (passes 64-bit values directly).
+                let is_user_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
+                    self.func_index.contains_key(name) || self.resolve_host_func_id(name) < 0
                 } else {
-                    false
+                    true // indirect calls are always user calls
                 };
                 for arg in args.iter_mut().rev() {
                     let arg_ty = arg.ty().clone();
@@ -1385,12 +1400,12 @@ impl BytecodeGen {
                         }
                     } else if arg_ty.kind() == TypeKind::Double {
                         self.gen_expr(arg);
-                        if is_direct_call {
+                        if is_user_call {
                             self.emit(OpCode::SplitD, 0, &loc);
                         }
                     } else if arg_ty.kind() == TypeKind::LongLong {
                         self.gen_expr(arg);
-                        if is_direct_call {
+                        if is_user_call {
                             self.emit(OpCode::SplitQ, 0, &loc);
                         }
                     } else {

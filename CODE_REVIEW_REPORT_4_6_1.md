@@ -408,7 +408,7 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 | 功能 | 规划文档 | 当前状态 | 备注 |
 |:---|:---|:---|:---|
-| **函数指针完整支持**（用户声明语法 `int (*fp)(int) = myFunc;`） | `C_SUBSET_SPEC.md:529`；`DESIGN.md` Phase 8；`ROADMAP.md:245` | ⚠️ 部分实现 | `CallPtr` 指令和 `qsort` 回调已工作；Parser 有 `DeclaratorNode::Function` 节点，但**用户代码中直接声明函数指针变量并赋值**的语法路径未完全打通。`sizeof(int (*)(int))` 等已支持（Phase 24）。 |
+| ~~**函数指针完整支持**（用户声明语法 `int (*fp)(int) = myFunc;`）~~ | `C_SUBSET_SPEC.md:529`；`DESIGN.md` Phase 8；`ROADMAP.md:245` | ✅ **已实现** | 全局/局部函数指针初始化、`&func_name` 取地址、结构体成员函数指针、`double`/`long long` 参数间接调用均已支持。新增 5 个 E2E 测试。 |
 | ~~知识图谱前端交互展示~~ | `ROADMAP.md:248`；`DESIGN.md` Phase 8 | ✅ **已实现** | `ConceptGraphView` CustomPainter 三列布局已完成（Phase 22）。**原报告误判为未实现，特此修正。** |
 | ~~链表/树可视化增强~~ | `DESIGN.md:774` Phase 8 | ✅ **已实现** | `LinkedListVisualizer` / `TreeVisualizer` / `LinkedListVisTab` / `TreeVisTab` 均已完成（Phase 15）。**原报告误判为未实现，特此修正。** |
 | **社区贡献算法模板** | `ROADMAP.md:249` | ❌ 未实现 | 需要模板上传/审核/评分系统 |
@@ -426,7 +426,7 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 | 功能 | 竞品状态 | 建议实现 | 原因 |
 |:---|:---|:---:|:---|
-| **函数指针完整支持** | 所有竞品均支持（标准 C 编译器） | 🟡 中优先级 | 教学场景中函数指针是进阶话题，不是核心语法。当前 `qsort` 回调覆盖最常见场景。但影响部分高级教学代码（函数指针数组、策略模式） |
+| ~~**函数指针完整支持**~~ | 所有竞品均支持（标准 C 编译器） | ✅ **已实现** | 全局/局部初始化、`&func_name`、结构体成员、`double`/`long long` 参数间接调用均已支持。 |
 | **知识图谱前端交互** | 所有竞品均无 | ✅ **已实现** | 这是本项目的**核心壁垒**。后端已就绪，前端 `ConceptGraphView` 已落地。**原报告误判，特此修正。** |
 | **链表/树可视化增强** | Cxxdroid/OnlineGDB 无 | ✅ **已实现** | 数据结构可视化是算法教学的**核心痛点**，竞品完全没有此能力。`LinkedListVisTab` / `TreeVisTab` 已集成统一模式。**原报告误判，特此修正。** |
 | **iOS 支持** | Cxxdroid 不支持；OnlineGDB 通过 Web 间接支持 | 🟡 中优先级 | iOS 用户在编程教学中占一定比例，Flutter 跨平台优势可使迁移成本较低，但不是当前最紧急的壁垒加强项 |

@@ -799,7 +799,7 @@ impl Parser {
     fn parse_param_list(&mut self) -> Vec<Param> {
         let mut params = Vec::new();
         if self.check(TokenType::RParen) { return params; }
-        if (self.check(TokenType::Void) || self.check(TokenType::Float) || self.check(TokenType::Double)) && self.peek(1).ty == TokenType::RParen {
+        if self.check(TokenType::Void) && self.peek(1).ty == TokenType::RParen {
             self.advance();
             return params;
         }

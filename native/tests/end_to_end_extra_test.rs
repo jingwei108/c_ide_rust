@@ -3745,6 +3745,110 @@ int main() {
     assert_eq!(out[0], "12 4");
 }
 
+#[test]
+fn test_e2e_global_function_pointer_init() {
+    let src = r#"
+#include <stdio.h>
+int add(int a, int b) { return a + b; }
+int (*global_fp)(int, int) = add;
+int main() {
+    printf("%d\n", global_fp(3, 4));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "7");
+}
+
+#[test]
+fn test_e2e_address_of_function() {
+    let src = r#"
+#include <stdio.h>
+int double_val(int x) { return x * 2; }
+int main() {
+    int (*fp)(int) = &double_val;
+    printf("%d\n", fp(5));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "10");
+}
+
+#[test]
+fn test_e2e_struct_member_function_pointer() {
+    let src = r#"
+#include <stdio.h>
+int add(int a, int b) { return a + b; }
+int sub(int a, int b) { return a - b; }
+struct Ops {
+    int (*op)(int, int);
+};
+int main() {
+    struct Ops ops;
+    ops.op = add;
+    printf("%d\n", ops.op(3, 4));
+    ops.op = sub;
+    printf("%d\n", ops.op(7, 2));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "7");
+    assert_eq!(out[1], "5");
+}
+
+#[test]
+fn test_e2e_function_pointer_double_arg() {
+    let src = r#"
+#include <stdio.h>
+double apply_double(double (*op)(double), double x) { return op(x); }
+double inc_double(double x) { return x + 1.5; }
+int main() {
+    double (*fp)(double) = inc_double;
+    printf("%.1f\n", apply_double(fp, 2.5));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "4.0");
+}
+
+#[test]
+fn test_e2e_function_pointer_longlong_arg() {
+    let src = r#"
+#include <stdio.h>
+long long apply_ll(long long (*op)(long long), long long x) { return op(x); }
+long long inc_ll(long long x) { return x + 10000000000LL; }
+int main() {
+    long long (*fp)(long long) = inc_ll;
+    printf("%lld\n", apply_ll(fp, 1LL));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    let out = filter_outputs(outputs);
+    assert_eq!(out[0], "10000000001");
+}
 
 #[test]
 fn test_e2e_memory_leak_report() {
@@ -3861,3 +3965,4 @@ int main() {
         err
     );
 }
+

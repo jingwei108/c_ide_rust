@@ -191,13 +191,18 @@ docs/                   设计文档、事故报告
   - `fprintf(stream, format, ...)`：忽略 stream 参数，输出行为与 `printf` 相同；Lexer 预定义 `stdout=1`、`stderr=2` 宏
   - `realloc(ptr, new_size)`：完整支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
   - `qsort(base, nmemb, size, compar)`：支持用户自定义比较函数，通过 `vm.call_user_function` 在 host 上下文中调用用户函数
-- **函数指针基础支持**：TypeChecker 将函数名识别为 `int`（函数索引）；BytecodeGen 生成 `PushConst func_idx`；支持将函数名作为参数传递（如 `qsort(..., cmp)`）
-- **函数指针高级语法（2026-05-18）**：
-  - 多级函数指针：`int (**pp)(int) = &fp;`（指向函数指针的指针）
+- **函数指针完整支持（2026-06-05）**：
+  - 局部/全局函数指针变量声明与初始化：`int (*fp)(int) = add;`、`int (*global_fp)(int, int) = add;`
+  - 取函数地址：`int (*fp)(int) = &add;`
+  - 函数指针作为参数传递：`apply(int (*op)(int), x)`
+  - 函数指针调用：`fp(3, 4)`、`(*pp)(5)`、`ops[0](3, 4)`
+  - 结构体成员函数指针：`struct Ops { int (*op)(int, int); }; ops.op = add; ops.op(3, 4);`
+  - 多级函数指针：`int (**pp)(int) = &fp;`
   - 返回指针的函数指针：`int *(*fp)(int) = greet;`
-  - `sizeof` 函数指针类型：`sizeof(int (*)(int))`、`sizeof(int (**)(int))`
-  - `typedef` 函数指针（全局/局部均支持）：`typedef int (*Op)(int, int); Op op = mul; Op ops[2] = {mul, divi};`
-  - `static` 局部变量：`static int arr[3] = {1, 2, 3};`（函数体内静态存储期）
+  - `sizeof` 函数指针类型：`sizeof(int (*)(int))`
+  - `typedef` 函数指针：`typedef int (*Op)(int, int); Op op = mul; Op ops[2] = {mul, divi};`
+  - 支持 `double`/`long long` 参数的函数指针间接调用（`SplitD`/`SplitQ` 正确处理）
+  - `static` 局部变量：`static int arr[3] = {1, 2, 3};`
 - **算法可视化事件 FRB 集成**：`VisEvent` 扩展 `context` 字段保留比较上下文（如 `arr[i]:arr[i+1]`）；Flutter 算法面板支持展开查看关键比较事件列表
 - **内存映射 Canvas 组件**：1MB 内存以 256×4KB 网格可视化，彩色编码（栈/堆/全局/代码/NULL陷阱/已释放），点击块显示详细 BottomSheet
 - **堆内存可视化增强**：
