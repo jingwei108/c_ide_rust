@@ -566,3 +566,120 @@ int main() {
     let (_, outputs) = result.unwrap();
     assert!(outputs.iter().any(|l| l.contains("null")), "outputs: {:?}", outputs);
 }
+
+#[test]
+fn test_e2e_anonymous_struct_var_decl_global() {
+    let src = r#"
+#include <stdio.h>
+struct {
+    int x;
+    int y;
+} p;
+int main() {
+    p.x = 3;
+    p.y = 4;
+    printf("%d", p.x + p.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("7")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_anonymous_struct_var_decl_local() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    struct {
+        int a;
+        char b;
+    } s;
+    s.a = 10;
+    s.b = 5;
+    printf("%d", s.a + s.b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("15")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_anonymous_struct_var_decl_with_init() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    struct {
+        int x;
+        int y;
+    } p = { 7, 8 };
+    printf("%d", p.x + p.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("15")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_sizeof_string_literal() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    printf("%d", sizeof("hello"));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("6")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_global_char_array_string_init() {
+    let src = r#"
+#include <stdio.h>
+char s[6] = "hello";
+int main() {
+    printf("%d", strlen(s));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("5")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_for_loop_scope_isolation() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int i = 100;
+    for (int i = 0; i < 3; i++) {
+        printf("%d ", i);
+    }
+    printf("%d", i);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("0 1 2 100")), "Outputs: {:?}", outputs);
+}

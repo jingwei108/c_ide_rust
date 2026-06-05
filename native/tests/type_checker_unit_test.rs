@@ -103,3 +103,42 @@ fn test_type_checker_duplicate_var() {
     let (errors, _, _) = type_check("int main() { int x; int x; return 0; }");
     assert!(!errors.is_empty(), "Expected error for duplicate variable");
 }
+
+
+#[test]
+fn test_type_checker_printf_format_mismatch() {
+    let src = r#"int main() { printf("%f", 5); return 0; }"#;
+    let (errors, _, _) = type_check(src);
+    assert!(!errors.is_empty(), "Expected error for printf format mismatch");
+    assert!(errors.iter().any(|e| e.message.contains("格式") || e.message.contains("不匹配")), "Expected format mismatch message, got: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_printf_format_ok() {
+    let src = r#"int main() { printf("%d %f %s", 5, 3.14, "hello"); return 0; }"#;
+    let (errors, _, _) = type_check(src);
+    assert!(errors.is_empty(), "Expected no errors for correct printf format: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_scanf_format_mismatch() {
+    let src = r#"int main() { float f; scanf("%d", &f); return 0; }"#;
+    let (errors, _, _) = type_check(src);
+    assert!(!errors.is_empty(), "Expected error for scanf format mismatch");
+    assert!(errors.iter().any(|e| e.message.contains("格式") || e.message.contains("不匹配")), "Expected format mismatch message, got: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_scanf_format_ok() {
+    let src = r#"int main() { int a; float f; char s[10]; scanf("%d %f %s", &a, &f, s); return 0; }"#;
+    let (errors, _, _) = type_check(src);
+    assert!(errors.is_empty(), "Expected no errors for correct scanf format: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_printf_arg_count_mismatch() {
+    let src = r#"int main() { printf("%d %d", 5); return 0; }"#;
+    let (errors, _, _) = type_check(src);
+    assert!(!errors.is_empty(), "Expected error for printf arg count mismatch");
+    assert!(errors.iter().any(|e| e.message.contains("不匹配")), "Expected count mismatch message, got: {:?}", errors);
+}
