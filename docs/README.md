@@ -11,9 +11,10 @@
 | 文档 | 说明 |
 |------|------|
 | [`current/DESIGN.md`](current/DESIGN.md) | 总体架构设计（Rust 后端 + Flutter 前端 + CideVM） |
-| [`current/ROADMAP.md`](current/ROADMAP.md) | 项目路线图与开发阶段（Stage 0~8） |
+| [`current/ROADMAP.md`](current/ROADMAP.md) | 项目路线图与开发阶段（Stage 0~8，CideVM 106 条指令） |
 | [`current/C_SUBSET_SPEC.md`](current/C_SUBSET_SPEC.md) | C 语言教学子集规范（支持语法 / 排除清单） |
 | [`current/MEMORY_SAFETY.md`](current/MEMORY_SAFETY.md) | 内存安全规范（Rust + Flutter） |
+| [`current/RECURSIVE_TYPE_SYSTEM_REFACTOR.md`](current/RECURSIVE_TYPE_SYSTEM_REFACTOR.md) | 递归类型系统重构方案（进行中） |
 
 #### 统一模式 / 时间旅行
 
@@ -44,31 +45,30 @@
 
 | 文档 | 说明 |
 |------|------|
-| [`current/FLUTTER_MIGRATION_PLAN.md`](current/FLUTTER_MIGRATION_PLAN.md) | Flutter 前端迁移计划（MAUI → Flutter） |
-| [`current/FLUTTER_MIGRATION_STATUS.md`](current/FLUTTER_MIGRATION_STATUS.md) | Flutter 迁移当前状态与验证结果 |
-| [`current/UI_ISSUES_AND_PLAN.md`](current/UI_ISSUES_AND_PLAN.md) | UI 问题与改进计划 |
 | [`current/PANEL_DRAG_GESTURE_DESIGN.md`](current/PANEL_DRAG_GESTURE_DESIGN.md) | 面板拖拽手势设计（底部 Tab ↔ 悬浮球交换） |
 | [`current/CUSTOM_KEYBOARD.md`](current/CUSTOM_KEYBOARD.md) | 自定义键盘与沉浸编辑模式设计 |
 | [`current/EDITOR_LONG_PRESS_MENU.md`](current/EDITOR_LONG_PRESS_MENU.md) | 编辑器长按上下文菜单设计 |
-| [`current/BUG_FLUTTER_OVERLAY_MATERIAL_20260517.md`](current/BUG_FLUTTER_OVERLAY_MATERIAL_20260517.md) | Flutter Overlay Material 缺失 Bug 记录 |
+| [`current/CIDE_EDITOR_REFACTOR_PLAN.md`](current/CIDE_EDITOR_REFACTOR_PLAN.md) | 编辑器重构架构方案（草案） |
+
+#### 认知推理
+
+| 文档 | 说明 |
+|------|------|
+| [`current/COGNITIVE_REASONING_ROADMAP.md`](current/COGNITIVE_REASONING_ROADMAP.md) | 认知推理系统路线图（根因分析 / 认知误区 / 知识图谱 / 意图推断） |
 
 #### 代码审查与测试
 
 | 文档 | 说明 |
 |------|------|
-| [`current/CODE_REVIEW_5_16.md`](current/CODE_REVIEW_5_16.md) | 全面代码审查报告（2026-05-16） |
-| [`current/CODE_REVIEW_REPORT_5_17.md`](current/CODE_REVIEW_REPORT_5_17.md) | 全面多维度锐评报告（2026-05-17） |
-| [`current/TASK_TRACKER_POST_CODE_REVIEW.md`](current/TASK_TRACKER_POST_CODE_REVIEW.md) | 代码审查后任务追踪 |
+| [`current/CODE_REVIEW_REPORT_2026_06_05.md`](current/CODE_REVIEW_REPORT_2026_06_05.md) | 全面地毯式代码审阅报告（2026-06-05，~44K 行代码审查） |
 | [`current/STUDENT_ERROR_TEST_CASES.md`](current/STUDENT_ERROR_TEST_CASES.md) | 学生常见错误测试用例 |
 
-#### 计划与方案
+#### 计划与方案（待实现）
 
 | 文档 | 说明 |
 |------|------|
-| [`current/MEMORY_EXPAND_VFS_PLAN.md`](current/MEMORY_EXPAND_VFS_PLAN.md) | 内存扩容（256KB → 1MB ✅）+ VFS File I/O 计划 |
 | [`current/LOCAL_PERSISTENCE_PLAN.md`](current/LOCAL_PERSISTENCE_PLAN.md) | 简单数据持久化与自动恢复方案 |
 | [`current/IMAGE_INPUT_INTEGRATION_PLAN.md`](current/IMAGE_INPUT_INTEGRATION_PLAN.md) | 拍照与本地图片输入集成方案 |
-| [`current/DOUBLE_TYPE_SUPPORT_PLAN.md`](current/DOUBLE_TYPE_SUPPORT_PLAN.md) | `double` 类型支持计划（✅ 已完成） |
 
 ---
 
@@ -78,6 +78,7 @@
 - 各阶段迁移计划（MAUI → Flutter、C++ → Rust、WASM → 自定义 VM）
 - 历史代码审查报告与事故复盘
 - 已废弃技术方案（WASM、CodeMirror6、OCR 导入等）
+- 已完成的实现计划（double 支持 / 函数指针 / 多文件编译 / 内存扩容等）
 - 一次性修复记录与进度报告
 
 > ⚠️ **archive/ 中的文档仅供追溯参考，内容可能已严重过时。**
