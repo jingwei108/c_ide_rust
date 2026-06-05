@@ -112,10 +112,9 @@ int main() {
     assert!(!output.contains("[JIT]"), "JIT should not trigger for short loop, got: {}", output);
 }
 
-// 已知限制：嵌套循环的 trace 录制可能只捕获内层循环的一部分，
-// 导致外层循环变量未正确递增。暂时忽略，后续优化。
+// 嵌套循环 trace 录制优化：确保只捕获以 start_ip 为目标的 backward jump，
+// 并在条件跳转退出循环时正确设置 end_ip，避免无限重复执行。
 #[test]
-#[ignore]
 fn test_jit_nested_loop() {
     let source = r#"
 #include <stdio.h>
@@ -134,6 +133,6 @@ int main() {
     assert_eq!(ret, 0);
     let output = outputs.join("\n");
     assert!(output.contains("400"), "Output should contain 400, got: {}", output);
-    // 内层循环 20*20=400 次，但每个循环本身只有 20 次迭代，小于阈值 100
-    assert!(!output.contains("[JIT]"), "JIT should not trigger for small nested loops, got: {}", output);
+    // 内层循环 backward jump 目标被命中 400 次（>阈值 100），JIT 应触发并正确加速
+    assert!(output.contains("[JIT]"), "JIT should trigger for nested loops, got: {}", output);
 }

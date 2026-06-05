@@ -24,6 +24,8 @@ pub struct JitEntry {
 /// 编译后的 trace
 pub struct CompiledTrace {
     pub start_ip: usize,
+    /// trace 正常结束后应到达的下一条指令地址。
+    pub end_ip: usize,
     pub entries: Vec<JitEntry>,
 }
 
@@ -457,6 +459,7 @@ pub fn compile_trace(trace: &JitTrace) -> CompiledTrace {
     }
     CompiledTrace {
         start_ip: trace.start_ip,
+        end_ip: trace.end_ip,
         entries,
     }
 }
@@ -496,6 +499,13 @@ pub fn execute_trace_bulk(
     let steps_per_iter = trace.entries.len() as u64;
     let entry_steps = trace.entries.len() as i32;
     let mut total_steps = 0u64;
+    let ends_with_conditional = trace.entries.last().is_some_and(|e| {
+        matches!(
+            e.func as usize,
+            x if x == (tpl_jump_if_zero as *const ()) as usize
+                || x == (tpl_jump_if_not_zero as *const ()) as usize
+        )
+    });
 
     for _ in 0..MAX_TRACE_ITERATIONS {
         // 执行一轮 trace
@@ -506,6 +516,15 @@ pub fn execute_trace_bulk(
 
         // 如果 ip 没有回到 trace 起点，说明循环已退出
         if vm.get_ip() != start_ip {
+            total_steps += steps_per_iter;
+            return (None, total_steps);
+        }
+
+        // trace 正常执行完但 ip 仍在起点：
+        // 如果 trace 以条件跳转结尾，说明条件为假（循环退出），
+        // 将 ip 推进到 trace 结束后的地址，避免无限重复执行同一条 trace。
+        if ends_with_conditional {
+            vm.set_ip(trace.end_ip);
             total_steps += steps_per_iter;
             return (None, total_steps);
         }

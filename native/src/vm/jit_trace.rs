@@ -18,6 +18,9 @@ pub struct JitStats {
 #[derive(Debug, Clone)]
 pub struct JitTrace {
     pub start_ip: usize,
+    /// trace 正常结束后应到达的下一条指令地址。
+    /// 用于条件跳转（JumpIfZero/JumpIfNotZero）为假时正确退出循环。
+    pub end_ip: usize,
     pub instructions: Vec<Instruction>,
 }
 
@@ -25,6 +28,7 @@ pub struct JitTrace {
 #[derive(Debug, Clone)]
 pub struct TraceRecorder {
     start_ip: usize,
+    end_ip: usize,
     instructions: Vec<Instruction>,
     recording: bool,
 }
@@ -46,6 +50,7 @@ impl TraceRecorder {
     pub fn new() -> Self {
         Self {
             start_ip: 0,
+            end_ip: 0,
             instructions: Vec::new(),
             recording: false,
         }
@@ -53,6 +58,7 @@ impl TraceRecorder {
 
     pub fn start(&mut self, ip: usize) {
         self.start_ip = ip;
+        self.end_ip = ip;
         self.instructions.clear();
         self.recording = true;
     }
@@ -60,9 +66,9 @@ impl TraceRecorder {
     /// 尝试将一条指令录入 trace。
     ///
     /// - `Continue` — 录制成功，继续下一条
-    /// - `Finish`   — 自然结束（backward jump 或长度超限），可以编译
-    /// - `Abort`    — 遇到不应录制的指令，trace 应被丢弃
-    pub fn record(&mut self, inst: Instruction) -> RecordResult {
+    /// - `Finish`   — 自然结束（backward jump 回到起点），可以编译
+    /// - `Abort`    — 遇到不应录制的指令或路径分叉，trace 应被丢弃
+    pub fn record(&mut self, inst: Instruction, ip: usize, next_ip: usize) -> RecordResult {
         if !self.recording {
             return RecordResult::Abort;
         }
@@ -87,14 +93,19 @@ impl TraceRecorder {
         }
 
         self.instructions.push(inst);
+        self.end_ip = ip + 1;
 
-        // backward jump → 完成循环体录制
+        // 判断跳转行为：
+        // 1. backward jump 回到起点 → 完成循环体录制
+        // 2. 任何其他跳转被 taken（next_ip != ip+1 且不是回到起点）→ 路径分叉，abort
         if matches!(inst.op, OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero) {
-            let target = inst.operand as usize;
-            let current_ip = self.start_ip + self.instructions.len();
-            if target < current_ip {
+            if next_ip == self.start_ip {
                 self.recording = false;
                 return RecordResult::Finish;
+            }
+            if next_ip != ip + 1 {
+                self.recording = false;
+                return RecordResult::Abort;
             }
         }
 
@@ -111,6 +122,7 @@ impl TraceRecorder {
         }
         let trace = JitTrace {
             start_ip: self.start_ip,
+            end_ip: self.end_ip,
             instructions: std::mem::take(&mut self.instructions),
         };
         Some(trace)

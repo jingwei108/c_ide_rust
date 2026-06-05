@@ -2078,7 +2078,7 @@ impl CideVM {
 
         // --- JIT: trace 录制 ---
         if self.trace_recorder.is_recording() {
-            match self.trace_recorder.record(inst) {
+            match self.trace_recorder.record(inst, ip_before, self.ip) {
                 crate::vm::jit_trace::RecordResult::Continue => {}
                 crate::vm::jit_trace::RecordResult::Finish | crate::vm::jit_trace::RecordResult::Abort => {
                     if let Some(trace) = self.trace_recorder.finish() {
