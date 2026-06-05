@@ -561,6 +561,9 @@ impl CideVM {
 
     /// 将 C 风格字符串安全写入 VM 内存的指定地址（含 null 终止符）。
     /// 若目标地址超出边界则静默跳过。
+    /// 
+    /// 注意：边界检查 `a + bytes.len() < len` 已隐含为末尾的 null 终止符预留了 1 字节空间，
+    /// 因此当 `addr + bytes.len() == MEM_SIZE` 时会正确拒绝写入，避免越界。
     pub fn write_cstring(&mut self, addr: u32, s: &str) {
         let a = addr as usize;
         let bytes = s.as_bytes();

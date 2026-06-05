@@ -54,7 +54,7 @@ pub fn reset_runtime(session: &mut Session) {
     session.runtime.trace.clear();
     session.memory.regions.clear();
     session.memory.free_list.clear();
-    session.memory.heap_offset = 0x5000;
+    session.memory.heap_offset = crate::vm::vm::HEAP_START;
     session.memory.alloc_counter = 0;
     session.vfs = crate::vm::vfs::VirtualFileSystem::new();
     session.runtime.running = true;

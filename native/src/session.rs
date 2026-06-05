@@ -208,12 +208,23 @@ pub struct FreeBlock {
     pub size: i32,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryState {
     pub regions: Vec<MemoryRegion>,
     pub free_list: Vec<FreeBlock>,
     pub heap_offset: u32,
     pub alloc_counter: i32,
+}
+
+impl Default for MemoryState {
+    fn default() -> Self {
+        Self {
+            regions: Vec::new(),
+            free_list: Vec::new(),
+            heap_offset: crate::vm::vm::HEAP_START,
+            alloc_counter: 0,
+        }
+    }
 }
 
 impl MemoryState {

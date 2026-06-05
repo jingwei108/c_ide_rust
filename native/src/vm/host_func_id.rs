@@ -26,17 +26,11 @@ pub const ATOI: u32 = 40;
 pub const FPRINTF: u32 = 50;
 pub const REALLOC: u32 = 51;
 pub const QSORT: u32 = 52;
-// 以下为预留扩展的文件 I/O 常量，当前沙盒中未实现。
-// 若编译器错误引用将导致运行时 crash，请勿使用。
-#[allow(dead_code)]
+// VFS-backed 文件 I/O host 函数常量（已在 host_funcs.rs / vfs.rs 完整实现）。
 pub const FOPEN: u32 = 60;
-#[allow(dead_code)]
 pub const FREAD: u32 = 61;
-#[allow(dead_code)]
 pub const FWRITE: u32 = 62;
-#[allow(dead_code)]
 pub const FCLOSE: u32 = 63;
-#[allow(dead_code)]
 pub const FEOF: u32 = 64;
 
 /// 将用户代码中的函数名解析为 host function ID。
