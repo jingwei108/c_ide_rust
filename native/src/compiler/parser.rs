@@ -54,6 +54,7 @@ pub struct Parser {
     errors: Vec<ParseError>,
     typedef_names: HashMap<String, Type>,
     pos: usize,
+    anonymous_structs: Vec<StructDecl>,
 }
 
 impl Parser {
@@ -66,12 +67,19 @@ impl Parser {
             errors: Vec::new(),
             typedef_names,
             pos: 0,
+            anonymous_structs: Vec::new(),
         }
     }
 
     pub fn parse(mut self) -> (Option<ProgramNode>, Vec<ParseError>) {
-        let prog = self.parse_program();
-        (prog, self.errors)
+        let prog = match self.parse_program() {
+            Some(mut p) => {
+                p.structs.append(&mut self.anonymous_structs);
+                p
+            }
+            None => return (None, self.errors),
+        };
+        (Some(prog), self.errors)
     }
 
     // =========================================================================
@@ -240,20 +248,34 @@ impl Parser {
                 let checkpoint = self.pos;
                 let errors_checkpoint = self.errors.len();
                 self.advance();
+                if self.check(TokenType::Identifier) {
+                    self.advance();
+                }
                 if self.check(TokenType::LBrace) {
+                    // 向前跳过结构体体，判断后面是变量声明还是纯类型定义
+                    let mut brace_depth = 0;
+                    while !self.is_at_end() {
+                        if self.check(TokenType::LBrace) {
+                            brace_depth += 1;
+                        } else if self.check(TokenType::RBrace) {
+                            brace_depth -= 1;
+                            self.advance();
+                            if brace_depth == 0 { break; }
+                            continue;
+                        }
+                        self.advance();
+                    }
+                    let is_var_decl = self.check(TokenType::Identifier)
+                        || self.check(TokenType::Star)
+                        || self.check(TokenType::Semicolon);
+                    // 纯 struct { ... };（无变量名）仍视为结构体定义
+                    let is_pure_decl = self.check(TokenType::Semicolon);
                     self.pos = checkpoint;
                     self.errors.truncate(errors_checkpoint);
-                    program.structs.push(self.parse_struct_decl());
-                } else if self.check(TokenType::Identifier) {
-                    self.advance();
-                    if self.check(TokenType::LBrace) {
-                        self.pos = checkpoint;
-                        self.errors.truncate(errors_checkpoint);
-                        program.structs.push(self.parse_struct_decl());
-                    } else {
-                        self.pos = checkpoint;
-                        self.errors.truncate(errors_checkpoint);
+                    if is_var_decl && !is_pure_decl {
                         self.parse_global_var_or_func(&mut program, false);
+                    } else {
+                        program.structs.push(self.parse_struct_decl());
                     }
                 } else {
                     self.pos = checkpoint;
@@ -304,8 +326,7 @@ impl Parser {
             self.pos = checkpoint;
             program.funcs.push(self.parse_func_decl(is_static));
         } else {
-            let (ty, _name) = self.parse_declarator(&base_type);
-            let name_tok = self.previous().clone();
+            let (ty, name) = self.parse_declarator(&base_type);
             let init = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
@@ -314,14 +335,13 @@ impl Parser {
                 }
             } else { None };
             program.globals.push(GlobalDecl {
-                loc: SourceLoc { line: name_tok.line, column: name_tok.column },
-                ty: ty.clone(), name: name_tok.text, init,
+                loc: SourceLoc { line: self.previous().line, column: self.previous().column },
+                ty: ty.clone(), name, init,
                 is_static,
                 source_file: String::new(),
             });
             while self.match_token(TokenType::Comma) {
-                let (extra_ty, _) = self.parse_declarator(&base_type);
-                let extra_name_tok = self.previous().clone();
+                let (extra_ty, extra_name) = self.parse_declarator(&base_type);
                 let extra_init = if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
@@ -330,8 +350,8 @@ impl Parser {
                     }
                 } else { None };
                 program.globals.push(GlobalDecl {
-                    loc: SourceLoc { line: extra_name_tok.line, column: extra_name_tok.column },
-                    ty: extra_ty, name: extra_name_tok.text, init: extra_init,
+                    loc: SourceLoc { line: self.previous().line, column: self.previous().column },
+                    ty: extra_ty, name: extra_name, init: extra_init,
                     is_static,
                     source_file: String::new(),
                 });
@@ -489,9 +509,15 @@ impl Parser {
             if self.check(TokenType::Identifier) {
                 let name_tok = self.advance().clone();
                 Type::struct_type(name_tok.text)
+            } else if self.check(TokenType::LBrace) {
+                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+                let name = format!("__anon_struct_{}", self.pos);
+                let decl = self.parse_struct_body(name.clone(), loc);
+                self.anonymous_structs.push(decl);
+                Type::struct_type(name)
             } else {
                 self.errors.push(ParseError {
-                    message: "匿名结构体变量声明暂不支持，请使用 typedef struct { ... } Name; 先定义类型别名".to_string(),
+                    message: "struct 后预期标识符或 '{'".to_string(),
                     line: self.current().line,
                     column: self.current().column,
                     code: ErrorCode::E1006_UnsupportedFeature as i32,
@@ -1406,7 +1432,8 @@ impl Parser {
         if self.match_token(TokenType::String) {
             let value = self.previous().text.clone();
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::StringLiteral { value, loc, ty: Type::pointer_to(Type::char()) };
+            let array_size = value.len() as i32 + 1; // including null terminator
+            return Expr::StringLiteral { value, loc, ty: Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false } };
         }
         if self.match_token(TokenType::Null) {
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
