@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/unified/stream.dart' as stream;
+import 'package:cide/src/rust/unified/types.dart' as types;
 import '../models/unified_state.dart';
 import 'ide_provider.dart';
 
 class UnifiedNotifier extends Notifier<UnifiedState> {
-  Timer? _playbackTimer;
+  StreamSubscription<stream.StepStreamBatch>? _streamSubscription;
 
   @override
   UnifiedState build() {
@@ -60,67 +62,235 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
   // ========== 自动收集循环 ==========
 
   void _startCollectionLoop() {
-    _playbackTimer?.cancel();
-    // 播放速度映射：1.0x → 50ms, 0.5x → 100ms, 2.0x → 25ms
-    final intervalMs = (50 / state.playbackSpeed).round().clamp(16, 500);
-    _playbackTimer = Timer.periodic(
-      Duration(milliseconds: intervalMs),
-      (_) => _collectBatch(),
+    _streamSubscription?.cancel();
+
+    final stream = rust.runAutoStepsStream(batchSize: 100);
+    _streamSubscription = stream.listen(
+      _onBatchReceived,
+      onError: (Object e) {
+        state = state.copyWith(
+          phase: ExecutionPhase.error,
+          isPlaying: false,
+          errorMessage: '执行异常: $e',
+        );
+      },
     );
   }
 
-  Future<void> _collectBatch() async {
+  void _onBatchReceived(stream.StepStreamBatch batch) {
     if (state.phase != ExecutionPhase.collecting) {
       return;
     }
 
-    try {
-      final result = await rust.runAutoSteps(batchSize: 5);
-
-      if (result.payloads.isNotEmpty) {
-        final newCache = [...state.frameCache, ...result.payloads];
-        final lastPayload = result.payloads.last;
-        state = state.copyWith(
-          frameCache: newCache,
-          maxCollectedStep: lastPayload.stepIndex,
-          currentStep: lastPayload.stepIndex,
-          currentLine: lastPayload.codeLine,
-        );
-      }
-
-      if (result.paused) {
-        _playbackTimer?.cancel();
-        state = state.copyWith(
-          phase: ExecutionPhase.paused,
-          isPlaying: false,
-        );
-      } else if (result.finished || result.trapped || result.waitingInput) {
-        _playbackTimer?.cancel();
-        final heatmap = await rust.getHeatmap();
-        state = state.copyWith(
-          phase: result.trapped ? ExecutionPhase.error : ExecutionPhase.playback,
-          isPlaying: false,
-          totalSteps: state.maxCollectedStep,
-          heatmap: heatmap,
-          errorMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
-          trapMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
-          clearTrap: !result.trapped,
-        );
-        // 记录学习进度
-        await ref.read(ideProvider.notifier).recordUnifiedRun(
-          steps: state.maxCollectedStep,
-          trapped: result.trapped,
-          trapMessage: result.trapped ? (result.trapMessage ?? '运行时错误') : null,
-        );
-      }
-    } catch (e) {
-      _playbackTimer?.cancel();
+    final payloads = _decodeBatch(batch);
+    if (payloads.isNotEmpty) {
+      final newCache = [...state.frameCache, ...payloads];
+      final lastPayload = payloads.last;
       state = state.copyWith(
-        phase: ExecutionPhase.error,
-        isPlaying: false,
-        errorMessage: '执行异常: $e',
+        frameCache: newCache,
+        maxCollectedStep: lastPayload.stepIndex,
+        currentStep: lastPayload.stepIndex,
+        currentLine: lastPayload.codeLine,
       );
     }
+
+    if (batch.paused) {
+      _streamSubscription?.cancel();
+      state = state.copyWith(
+        phase: ExecutionPhase.paused,
+        isPlaying: false,
+      );
+    } else if (batch.finished || batch.trapped || batch.waitingInput) {
+      _streamSubscription?.cancel();
+      _fetchHeatmapAndFinish(batch.trapped, batch.trapMessage);
+    }
+  }
+
+  Future<void> _fetchHeatmapAndFinish(bool trapped, String? trapMessage) async {
+    final heatmap = await rust.getHeatmap();
+    state = state.copyWith(
+      phase: trapped ? ExecutionPhase.error : ExecutionPhase.playback,
+      isPlaying: false,
+      totalSteps: state.maxCollectedStep,
+      heatmap: heatmap,
+      errorMessage: trapped ? (trapMessage ?? '运行时错误') : null,
+      trapMessage: trapped ? (trapMessage ?? '运行时错误') : null,
+      clearTrap: !trapped,
+    );
+    await ref.read(ideProvider.notifier).recordUnifiedRun(
+      steps: state.maxCollectedStep,
+      trapped: trapped,
+      trapMessage: trapped ? (trapMessage ?? '运行时错误') : null,
+    );
+  }
+
+  /// 将 StepStreamBatch 解码为完整的 StepPayload 列表。
+  List<types.StepPayload> _decodeBatch(stream.StepStreamBatch batch) {
+    if (batch.basePayloads.isEmpty) return [];
+
+    final sym = batch.symbolTable;
+    final result = <types.StepPayload>[];
+
+    // 解码 base payload
+    result.add(_decodeStepPayloadRef(batch.basePayloads.first, sym));
+
+    // 维护当前变量状态（按 nameIdx 索引）
+    final currentVars = <int, types.ApiVariableSnapshot>{};
+    for (final v in batch.basePayloads.first.localVars) {
+      currentVars[v.nameIdx] = types.ApiVariableSnapshot(
+        name: sym[v.nameIdx],
+        addr: v.addr,
+        isLocal: v.isLocal,
+        tyName: sym[v.tyNameIdx],
+        value: v.value,
+      );
+    }
+
+    // 维护变量出现顺序（base 顺序 + 后续新增追加到末尾）
+    final varOrder = batch.basePayloads.first.localVars.map((v) => v.nameIdx).toList();
+    final varOrderSet = <int>{...varOrder};
+
+    for (final delta in batch.deltas) {
+      // 应用变化的变量
+      for (final d in delta.varDeltas) {
+        if (currentVars.containsKey(d.nameIdx)) {
+          final old = currentVars[d.nameIdx]!;
+          currentVars[d.nameIdx] = types.ApiVariableSnapshot(
+            name: old.name,
+            addr: old.addr,
+            isLocal: old.isLocal,
+            tyName: old.tyName,
+            value: d.value,
+          );
+        }
+      }
+
+      // 移除消失的变量
+      for (final idx in delta.removedVarNameIndices) {
+        currentVars.remove(idx);
+        varOrderSet.remove(idx);
+      }
+
+      // 添加新变量
+      for (final v in delta.newVars) {
+        currentVars[v.nameIdx] = types.ApiVariableSnapshot(
+          name: _safeSym(sym, v.nameIdx),
+          addr: v.addr,
+          isLocal: v.isLocal,
+          tyName: _safeSym(sym, v.tyNameIdx),
+          value: v.value,
+        );
+        if (!varOrderSet.contains(v.nameIdx)) {
+          varOrder.add(v.nameIdx);
+          varOrderSet.add(v.nameIdx);
+        }
+      }
+
+      // 按 varOrder 构建 localVars（跳过已移除的）
+      final localVars = <types.ApiVariableSnapshot>[];
+      for (final nameIdx in varOrder) {
+        if (currentVars.containsKey(nameIdx)) {
+          localVars.add(currentVars[nameIdx]!);
+        }
+      }
+
+      result.add(types.StepPayload(
+        stepIndex: delta.stepIndex,
+        codeLine: delta.codeLine,
+        funcName: sym[delta.funcNameIdx],
+        semanticLabel: sym[delta.semanticLabelIdx],
+        algorithmStep: delta.algorithmStep == null
+            ? null
+            : types.AlgorithmStepSnapshot(
+                algorithmName: sym[delta.algorithmStep!.algorithmNameIdx],
+                displayName: sym[delta.algorithmStep!.displayNameIdx],
+                phase: sym[delta.algorithmStep!.phaseIdx],
+                description: sym[delta.algorithmStep!.descriptionIdx],
+              ),
+        localVars: localVars,
+        callStack: delta.callStack.map((f) => types.ApiFrameInfo(
+          funcName: sym[f.funcNameIdx],
+          returnLine: f.returnLine,
+        )).toList(),
+        visEvents: delta.visEvents,
+        heatmapLine: delta.heatmapLine,
+        heatmapCount: delta.heatmapCount,
+        accessedVars: delta.accessedVars.map((a) => types.AccessedVar(
+          name: sym[a.nameIdx],
+          accessType: sym[a.accessTypeIdx],
+        )).toList(),
+        arraySnapshots: delta.arraySnapshots.map((a) => types.ArraySnapshot(
+          name: sym[a.nameIdx],
+          elementTy: sym[a.elementTyIdx],
+          elements: a.elements,
+        )).toList(),
+        pointerSnapshots: delta.pointerSnapshots.map((p) => types.PointerSnapshot(
+          name: sym[p.nameIdx],
+          addr: p.addr,
+          tyName: sym[p.tyNameIdx],
+          targetAddr: p.targetAddr,
+          targetName: sym[p.targetNameIdx],
+          status: p.status,
+        )).toList(),
+        rootCauseHint: delta.rootCauseHint,
+      ));
+    }
+
+    return result;
+  }
+
+  String _safeSym(List<String> sym, int idx) {
+    if (idx >= 0 && idx < sym.length) return sym[idx];
+    return '';
+  }
+
+  types.StepPayload _decodeStepPayloadRef(stream.StepPayloadRef base, List<String> sym) {
+    return types.StepPayload(
+      stepIndex: base.stepIndex,
+      codeLine: base.codeLine,
+      funcName: _safeSym(sym, base.funcNameIdx),
+      semanticLabel: sym[base.semanticLabelIdx],
+      algorithmStep: base.algorithmStep == null
+          ? null
+          : types.AlgorithmStepSnapshot(
+              algorithmName: _safeSym(sym, base.algorithmStep!.algorithmNameIdx),
+              displayName: _safeSym(sym, base.algorithmStep!.displayNameIdx),
+              phase: _safeSym(sym, base.algorithmStep!.phaseIdx),
+              description: _safeSym(sym, base.algorithmStep!.descriptionIdx),
+            ),
+      localVars: base.localVars.map((v) => types.ApiVariableSnapshot(
+        name: _safeSym(sym, v.nameIdx),
+        addr: v.addr,
+        isLocal: v.isLocal,
+        tyName: _safeSym(sym, v.tyNameIdx),
+        value: v.value,
+      )).toList(),
+      callStack: base.callStack.map((f) => types.ApiFrameInfo(
+        funcName: _safeSym(sym, f.funcNameIdx),
+        returnLine: f.returnLine,
+      )).toList(),
+      visEvents: base.visEvents,
+      heatmapLine: base.heatmapLine,
+      heatmapCount: base.heatmapCount,
+      accessedVars: base.accessedVars.map((a) => types.AccessedVar(
+        name: _safeSym(sym, a.nameIdx),
+        accessType: _safeSym(sym, a.accessTypeIdx),
+      )).toList(),
+      arraySnapshots: base.arraySnapshots.map((a) => types.ArraySnapshot(
+        name: _safeSym(sym, a.nameIdx),
+        elementTy: _safeSym(sym, a.elementTyIdx),
+        elements: a.elements,
+      )).toList(),
+      pointerSnapshots: base.pointerSnapshots.map((p) => types.PointerSnapshot(
+        name: _safeSym(sym, p.nameIdx),
+        addr: p.addr,
+        tyName: _safeSym(sym, p.tyNameIdx),
+        targetAddr: p.targetAddr,
+        targetName: _safeSym(sym, p.targetNameIdx),
+        status: p.status,
+      )).toList(),
+      rootCauseHint: base.rootCauseHint,
+    );
   }
 
   bool get isPaused => state.phase == ExecutionPhase.paused;
@@ -130,7 +300,7 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
   void pause() {
     if (state.phase == ExecutionPhase.collecting) {
       rust.pauseExecution();
-      _playbackTimer?.cancel();
+      _streamSubscription?.cancel();
       state = state.copyWith(phase: ExecutionPhase.paused, isPlaying: false);
     }
   }
@@ -171,7 +341,7 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
     }
 
     state = state.copyWith(phase: ExecutionPhase.stepMode, isPlaying: false);
-    _playbackTimer?.cancel();
+    _streamSubscription?.cancel();
 
     try {
       final payload = await rust.stepNextUnified();
@@ -262,22 +432,21 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
 
   void setPlaybackSpeed(double speed) {
     state = state.copyWith(playbackSpeed: speed);
-    if (state.phase == ExecutionPhase.collecting) {
-      _startCollectionLoop(); // 重启 Timer 以应用新速度
-    }
+    // Stream 模式下 Rust 端尽快执行并推送，前端播放速度由 UI 刷新控制
+    // 如需调整，可在此处控制帧动画速度或添加节流逻辑
   }
 
   // ========== 重置 ==========
 
   void reset() {
-    _playbackTimer?.cancel();
+    _streamSubscription?.cancel();
     rust.resetSession();
     state = const UnifiedState();
   }
 
   void onCodeChanged() {
     if (state.phase != ExecutionPhase.idle) {
-      _playbackTimer?.cancel();
+      _streamSubscription?.cancel();
       state = state.copyWith(
         phase: ExecutionPhase.idle,
         isPlaying: false,

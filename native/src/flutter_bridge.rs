@@ -650,6 +650,32 @@ pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
     engine.get_payloads(start, end)
 }
 
+/// Stream 模式批量自动执行。
+pub fn run_auto_steps_stream(sink: crate::frb_generated::StreamSink<crate::unified::stream::StepStreamBatch>, batch_size: i32) {
+    std::thread::spawn(move || {
+        loop {
+            let result = run_auto_steps(batch_size);
+            let should_stop = result.finished || result.trapped || result.waiting_input || result.paused;
+
+            // 将 payloads 编码为优化后的 StepStreamBatch
+            let mut batch = crate::unified::stream::encode_payloads(&result.payloads);
+            batch.finished = result.finished;
+            batch.trapped = result.trapped;
+            batch.waiting_input = result.waiting_input;
+            batch.paused = result.paused;
+            batch.current_line = result.current_line;
+            batch.trap_message = result.trap_message;
+
+            if sink.add(batch).is_err() {
+                break;
+            }
+            if should_stop {
+                break;
+            }
+        }
+    });
+}
+
 /// 从指定步继续执行。
 pub fn continue_from_step(step: i32) -> UnifiedRunResult {
     let mut session = current_session();

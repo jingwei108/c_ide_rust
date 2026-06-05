@@ -125,6 +125,14 @@ pub use crate::unified::types::{
     HeatmapDelta, PointerSnapshot, PointerStatus, SeekResult, StepMeta, StepPayload, UnifiedRunResult,
 };
 
+// Stream 批量传输优化类型
+#[frb]
+pub use crate::unified::stream::{
+    StepStreamBatch, StepPayloadRef, StepPayloadDelta, ApiVarSnapshotRef, VarDelta,
+    PointerSnapshotRef, ArraySnapshotRef, AccessedVarRef, ApiFrameInfoRef,
+    AlgorithmStepSnapshotRef,
+};
+
 #[frb]
 #[derive(Debug, Clone)]
 pub struct VariableSnapshot {
@@ -358,6 +366,13 @@ pub fn get_heatmap() -> HeatmapData {
 #[frb]
 pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
     crate::flutter_bridge::get_step_payloads(start, end)
+}
+
+/// Stream 模式批量自动执行（batch_size=100）。
+/// Dart 端订阅返回的 Stream，Rust 在后台线程中循环执行并推送批次。
+#[frb]
+pub fn run_auto_steps_stream(sink: crate::frb_generated::StreamSink<StepStreamBatch>, batch_size: i32) {
+    crate::flutter_bridge::run_auto_steps_stream(sink, batch_size);
 }
 
 #[frb]
