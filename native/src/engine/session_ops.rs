@@ -98,6 +98,9 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
 
     let ret = vm.run(session);
 
+    // 收集 JIT 统计（在 vm 移入 session 之前）
+    let jit_stats = vm.jit_stats().clone();
+
     if vm.has_error() {
         session.runtime.error = vm.get_error().to_string();
         session.runtime.running = false;
@@ -107,6 +110,13 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
         session.vm = Some(vm);
         Ok((ret, true))
     } else {
+        if jit_stats.traces_compiled > 0 {
+            session.runtime.output_lines.push(format!(
+                "[JIT] 已编译 {} 条 trace，加速执行 {} 步",
+                jit_stats.traces_compiled,
+                jit_stats.steps_accelerated
+            ));
+        }
         session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
         append_leak_report(session);
         session.runtime.running = false;

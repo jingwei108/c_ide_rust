@@ -1,5 +1,8 @@
 use super::host_funcs::execute_host_func;
 use super::instruction::{Instruction, SourceLoc};
+use super::jit_templates::{CompiledTrace, execute_trace_bulk};
+use std::sync::Arc;
+use super::jit_trace::{JIT_THRESHOLD, JitStats, TraceRecorder};
 use super::opcode::OpCode;
 use crate::compiler::ast::Type;
 use crate::session::{Session, VisEvent};
@@ -111,6 +114,11 @@ pub struct CideVM {
     local_sym_map: HashMap<i32, String>,
     global_sym_map: HashMap<i32, String>,
     pub(crate) freed_logs: Vec<FreedRegionInfo>,
+    // --- JIT ---
+    ip_hits: HashMap<usize, u64>,
+    trace_recorder: TraceRecorder,
+    jit_traces: HashMap<usize, Arc<CompiledTrace>>,
+    jit_stats: JitStats,
 }
 
 impl Default for CideVM {
@@ -153,6 +161,10 @@ impl CideVM {
             local_sym_map: HashMap::new(),
             global_sym_map: HashMap::new(),
             freed_logs: Vec::new(),
+            ip_hits: HashMap::new(),
+            trace_recorder: TraceRecorder::new(),
+            jit_traces: HashMap::new(),
+            jit_stats: JitStats::default(),
         }
     }
 
@@ -185,6 +197,10 @@ impl CideVM {
         self.local_sym_map.clear();
         self.global_sym_map.clear();
         self.freed_logs.clear();
+        self.ip_hits.clear();
+        self.trace_recorder.reset();
+        self.jit_traces.clear();
+        self.jit_stats = JitStats::default();
         self.memory.fill(0);
         self.mem_stack_top = STACK_START;
     }
@@ -479,12 +495,52 @@ impl CideVM {
         &self.error
     }
 
+    pub fn code_len(&self) -> usize {
+        self.code.len()
+    }
+
+    pub fn code_ref(&self) -> &[Instruction] {
+        &self.code
+    }
+
+    pub fn set_ip(&mut self, ip: usize) {
+        self.ip = ip;
+    }
+
+    pub fn get_ip(&self) -> usize {
+        self.ip
+    }
+
     pub fn get_current_line(&self) -> i32 {
         self.current_line
     }
 
     pub fn get_executed_steps(&self) -> i32 {
         self.step_count
+    }
+
+    pub fn jit_stats(&self) -> &crate::vm::jit_trace::JitStats {
+        &self.jit_stats
+    }
+
+    pub fn jit_traces_mut(&mut self) -> &mut std::collections::HashMap<usize, std::sync::Arc<crate::vm::jit_templates::CompiledTrace>> {
+        &mut self.jit_traces
+    }
+
+    /// JIT trace 批量执行时调用：增加 step_count 并检查全局限制。
+    /// 返回 `true` 表示可以继续执行，`false` 表示已 trap。
+    pub(crate) fn bulk_step_check(&mut self, steps: i32) -> bool {
+        self.step_count = self.step_count.saturating_add(steps);
+        if self.step_count >= self.max_steps {
+            let msg = self.format_infinite_loop_error();
+            self.trap(&msg, &SourceLoc::default());
+            return false;
+        }
+        if self.cancelled {
+            self.trap("执行已取消。", &SourceLoc::default());
+            return false;
+        }
+        true
     }
 
     pub fn set_finished(&mut self, code: i32) {
@@ -998,6 +1054,30 @@ impl CideVM {
 
     pub fn run(&mut self, session: &mut Session) -> i32 {
         loop {
+            // --- JIT fast path ---
+            if let Some(trace) = self.jit_traces.get(&self.ip).cloned() {
+                let (result, steps) = execute_trace_bulk(self, session, &trace);
+                self.jit_stats.steps_accelerated += steps;
+                if let Some(r) = result {
+                    match r {
+                        StepResult::Finished => {
+                            return if self.finished { self.exit_code } else { self.stack.last().copied().unwrap_or(0) as i32 };
+                        }
+                        StepResult::Trap => return 0,
+                        StepResult::Paused => {
+                            self.trap("完整运行模式下遇到暂停状态（可能是断点配置不一致）", &SourceLoc::default());
+                            return 0;
+                        }
+                        StepResult::WaitingInput => {
+                            return 0;
+                        }
+                        StepResult::Ok => {}
+                    }
+                }
+                // trace 正常退出（ip 已离开循环），继续外层调度
+                continue;
+            }
+
             let result = self.step(session);
             match result {
                 StepResult::Finished => {
@@ -1840,6 +1920,88 @@ impl CideVM {
         }
     }
 
+    // --- Single instruction dispatch (used by both step() and JIT generic fallback) ---
+
+    pub(crate) fn dispatch_single_instruction(
+        &mut self,
+        op: OpCode,
+        operand: i32,
+        loc: &SourceLoc,
+        session: &mut Session,
+    ) -> Option<StepResult> {
+        match op {
+            OpCode::Nop => {}
+
+            OpCode::PushConst | OpCode::Pop | OpCode::Dup | OpCode::Swap => {
+                self.execute_stack(op, operand, loc);
+            }
+
+            OpCode::LoadLocal | OpCode::StoreLocal | OpCode::LoadLocalD | OpCode::StoreLocalD |
+            OpCode::LoadLocalQ | OpCode::StoreLocalQ | OpCode::GetFrameBase => {
+                self.execute_local(op, operand, loc);
+            }
+
+            OpCode::LoadGlobal | OpCode::StoreGlobal | OpCode::LoadGlobalD | OpCode::StoreGlobalD |
+            OpCode::LoadGlobalQ | OpCode::StoreGlobalQ => {
+                self.execute_global(op, operand, loc);
+            }
+
+            OpCode::LoadMem | OpCode::StoreMem | OpCode::LoadMemD | OpCode::StoreMemD |
+            OpCode::LoadMemByte | OpCode::StoreMemByte | OpCode::LoadMemQ | OpCode::StoreMemQ |
+            OpCode::SplitD | OpCode::SplitQ => {
+                self.execute_memory(op, operand, loc);
+            }
+
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg => {
+                self.execute_arithmetic(op, operand, loc);
+            }
+
+            OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge |
+            OpCode::And | OpCode::Or | OpCode::Not => {
+                self.execute_comparison(op, operand, loc);
+            }
+
+            OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor | OpCode::BitNot |
+            OpCode::Shl | OpCode::Shr => {
+                self.execute_bitwise(op, operand, loc);
+            }
+
+            OpCode::PushConstF | OpCode::AddF | OpCode::SubF | OpCode::MulF | OpCode::DivF |
+            OpCode::NegF | OpCode::EqF | OpCode::NeF | OpCode::LtF | OpCode::LeF |
+            OpCode::GtF | OpCode::GeF | OpCode::CastI2F | OpCode::CastF2I => {
+                self.execute_float(op, operand, loc);
+            }
+
+            OpCode::PushConstD | OpCode::AddD | OpCode::SubD | OpCode::MulD | OpCode::DivD |
+            OpCode::NegD | OpCode::CastI2D | OpCode::CastF2D | OpCode::CastD2I | OpCode::CastD2F |
+            OpCode::EqD | OpCode::NeD | OpCode::LtD | OpCode::LeD | OpCode::GtD | OpCode::GeD => {
+                self.execute_double(op, operand, loc);
+            }
+
+            OpCode::PushConstQ | OpCode::AddQ | OpCode::SubQ | OpCode::MulQ | OpCode::DivQ |
+            OpCode::ModQ | OpCode::NegQ | OpCode::CastI2Q | OpCode::CastQ2I | OpCode::CastQ2D |
+            OpCode::CastD2Q | OpCode::EqQ | OpCode::NeQ | OpCode::LtQ | OpCode::LeQ |
+            OpCode::GtQ | OpCode::GeQ => {
+                self.execute_longlong(op, operand, loc);
+            }
+
+            OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero |
+            OpCode::Call | OpCode::CallPtr | OpCode::CallHost | OpCode::Ret | OpCode::RetVoid => {
+                return self.execute_control_flow(op, operand, loc, session);
+            }
+
+            OpCode::StepEvent | OpCode::TrapBounds => {
+                return self.execute_debug(op, operand, loc);
+            }
+        }
+
+        if !self.error.is_empty() {
+            Some(StepResult::Trap)
+        } else {
+            None
+        }
+    }
+
     // --- Step (execute one instruction) ---
 
     pub fn step(&mut self, session: &mut Session) -> StepResult {
@@ -1875,6 +2037,7 @@ impl CideVM {
         }
 
         let inst = self.code[self.ip];
+        let ip_before = self.ip;
         self.ip += 1;
 
         // 记录执行热力图
@@ -1885,72 +2048,44 @@ impl CideVM {
         // 清空上一步的变量访问记录
         self.last_accessed_vars.clear();
 
-        match inst.op {
-            OpCode::Nop => {}
-
-            OpCode::PushConst | OpCode::Pop | OpCode::Dup | OpCode::Swap => {
-                self.execute_stack(inst.op, inst.operand, &inst.loc);
+        // --- JIT: 热点检测（backward jump 目标计数） ---
+        if matches!(inst.op, OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero) {
+            let target = inst.operand as usize;
+            if target < self.ip {
+                *self.ip_hits.entry(target).or_insert(0) += 1;
             }
+        }
 
-            OpCode::LoadLocal | OpCode::StoreLocal | OpCode::LoadLocalD | OpCode::StoreLocalD |
-            OpCode::LoadLocalQ | OpCode::StoreLocalQ | OpCode::GetFrameBase => {
-                self.execute_local(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::LoadGlobal | OpCode::StoreGlobal | OpCode::LoadGlobalD | OpCode::StoreGlobalD |
-            OpCode::LoadGlobalQ | OpCode::StoreGlobalQ => {
-                self.execute_global(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::LoadMem | OpCode::StoreMem | OpCode::LoadMemD | OpCode::StoreMemD |
-            OpCode::LoadMemByte | OpCode::StoreMemByte | OpCode::LoadMemQ | OpCode::StoreMemQ |
-            OpCode::SplitD | OpCode::SplitQ => {
-                self.execute_memory(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg => {
-                self.execute_arithmetic(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge |
-            OpCode::And | OpCode::Or | OpCode::Not => {
-                self.execute_comparison(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor | OpCode::BitNot |
-            OpCode::Shl | OpCode::Shr => {
-                self.execute_bitwise(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::PushConstF | OpCode::AddF | OpCode::SubF | OpCode::MulF | OpCode::DivF |
-            OpCode::NegF | OpCode::EqF | OpCode::NeF | OpCode::LtF | OpCode::LeF |
-            OpCode::GtF | OpCode::GeF | OpCode::CastI2F | OpCode::CastF2I => {
-                self.execute_float(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::PushConstD | OpCode::AddD | OpCode::SubD | OpCode::MulD | OpCode::DivD |
-            OpCode::NegD | OpCode::CastI2D | OpCode::CastF2D | OpCode::CastD2I | OpCode::CastD2F |
-            OpCode::EqD | OpCode::NeD | OpCode::LtD | OpCode::LeD | OpCode::GtD | OpCode::GeD => {
-                self.execute_double(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::PushConstQ | OpCode::AddQ | OpCode::SubQ | OpCode::MulQ | OpCode::DivQ |
-            OpCode::ModQ | OpCode::NegQ | OpCode::CastI2Q | OpCode::CastQ2I | OpCode::CastQ2D |
-            OpCode::CastD2Q | OpCode::EqQ | OpCode::NeQ | OpCode::LtQ | OpCode::LeQ |
-            OpCode::GtQ | OpCode::GeQ => {
-                self.execute_longlong(inst.op, inst.operand, &inst.loc);
-            }
-
-            OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero |
-            OpCode::Call | OpCode::CallPtr | OpCode::CallHost | OpCode::Ret | OpCode::RetVoid => {
-                if let Some(r) = self.execute_control_flow(inst.op, inst.operand, &inst.loc, session) {
-                    return r;
+        // --- JIT: trace 录制触发 ---
+        if !self.trace_recorder.is_recording()
+            && !self.jit_traces.contains_key(&ip_before)
+        {
+            if let Some(&hits) = self.ip_hits.get(&ip_before) {
+                if hits >= JIT_THRESHOLD {
+                    self.trace_recorder.start(ip_before);
                 }
             }
+        }
 
-            OpCode::StepEvent | OpCode::TrapBounds => {
-                if let Some(r) = self.execute_debug(inst.op, inst.operand, &inst.loc) {
-                    return r;
+        // 执行指令
+        if let Some(r) = self.dispatch_single_instruction(inst.op, inst.operand, &inst.loc, session) {
+            // trace 录制：遇到中断指令时取消
+            if self.trace_recorder.is_recording() {
+                self.trace_recorder.reset();
+            }
+            return r;
+        }
+
+        // --- JIT: trace 录制 ---
+        if self.trace_recorder.is_recording() {
+            match self.trace_recorder.record(inst) {
+                crate::vm::jit_trace::RecordResult::Continue => {}
+                crate::vm::jit_trace::RecordResult::Finish | crate::vm::jit_trace::RecordResult::Abort => {
+                    if let Some(trace) = self.trace_recorder.finish() {
+                        let compiled = crate::vm::jit_templates::compile_trace(&trace);
+                        self.jit_traces.insert(trace.start_ip, Arc::new(compiled));
+                        self.jit_stats.traces_compiled += 1;
+                    }
                 }
             }
         }
