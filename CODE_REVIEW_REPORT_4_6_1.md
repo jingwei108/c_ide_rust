@@ -366,7 +366,7 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 这项技术对教学场景有两重价值：
 1. 减少无限循环场景下的等待时间
 2. 可作为"编译原理"教学演示（展示解释 vs JIT 的性能差异）
-
+已实现
 ---
 
 ### 3.3 Flutter Bridge 通信优化
@@ -377,7 +377,7 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 - 使用 FRB 的 `Stream` 模式：批量传输 100 步 payloads 而非逐条
 - 对热数据（变量值变化）使用差分编码：`[("i", "1→2"), ("arr[3]", "5→7")]`
 - 对不变数据（类型名称、变量名称）进行符号表 dedup
-
+ 已完成
 ---
 
 ### 3.4 插件化诊断系统
@@ -395,10 +395,10 @@ static DISPATCH_TABLE: [DispatchFn; 256] = build_dispatch_table();
 
 | 限制 | 影响范围 | 备注 |
 |:---|:---|:---|
-| **匿名结构体变量声明不支持** | `struct { int x; } v;` | 仅支持 `typedef struct { ... } Name;` 间接使用 |
-| **`for (int i = 0; ...)` 循环变量作用域未隔离** | 循环变量与外部同名变量冲突 | 标准 C99 行为，当前与外部共享作用域 |
-| **字符串字面量 `strlen` 与 Clang 不一致** | Cide 计算长度可能与 Clang 不同 | AGENTS.md 记载已知差异 |
-| **`printf`/`scanf` 格式字符串参数类型检查缺失** | `printf("%f", 5)` 传入 int 不报错 | 当前不做格式与参数的类型匹配检查 |
+| ~~**匿名结构体变量声明不支持**~~ | ~~`struct { int x; } v;`~~ | ✅ **已解决（2026-06-05）**：Parser 支持匿名结构体变量声明，生成内部唯一名称并暂存到 `program.structs` |
+| ~~**`for (int i = 0; ...)` 循环变量作用域未隔离**~~ | ~~循环变量与外部同名变量冲突~~ | ✅ **已解决（2026-06-05）**：BytecodeGen 新增 `local_scope_stack` 作用域栈，`Block` 和 `For` 语句进出时保存/恢复局部变量映射 |
+| ~~**字符串字面量 `strlen` 与 Clang 不一致**~~ | ~~Cide 计算长度可能与 Clang 不同~~ | ✅ **已解决（2026-06-05）**：字符串字面量类型改为 `char[N]` 数组；修复全局数组声明变量名被误设为 `]` 的 Parser bug |
+| ~~**`printf`/`scanf` 格式字符串参数类型检查缺失**~~ | ~~`printf("%f", 5)` 传入 int 不报错~~ | ✅ **已解决（2026-06-05）**：TypeChecker 新增格式字符串静态解析，支持 `%d/%f/%s/%p/%c/%ld/%lf/%x/%o` 等说明符与参数类型的编译期匹配检查（E3062/E3063） |
 
 ---
 

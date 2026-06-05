@@ -91,18 +91,22 @@ docs/                   设计文档、事故报告
 ## 已知限制
 
 ### 当前不支持
-- **匿名结构体变量声明** — `struct { int x; } v;`（直接以匿名 struct 类型声明变量暂不支持；仅支持通过 `typedef struct { ... } Name;` 间接使用）
 - **`double`** — ✅ **已完整支持**（64 位 f64，字节偏移架构，含 `sizeof(double)=8`、`printf("%f")` 读取 f64）
-- **函数调用参数的隐式转换提示** — 当前对 `printf` 格式字符串 `%f` 的参数不做类型检查，传入 int 不会自动转换（已知限制）
+- **~~函数调用参数的隐式转换提示~~** — ✅ **已解决（2026-06-05）**：`printf`/`scanf`/`fprintf` 格式字符串与参数类型静态匹配检查已落地。传入 int 给 `%f`、传入 float* 给 `%d` 等不匹配场景会在编译期报错（E3062/E3063）
 
 ### 已支持的关键特性
 - **逗号分隔的多变量声明** — `int a = 1, b = 2;`
 - **多维数组**（`int arr[3][3]`）— 声明、嵌套初始化列表 `{ {1,2}, {3,4} }`、索引访问 `arr[i][j]`、函数参数传递 `void f(int[][3])`
 - **`#define` 宏** — 简单常量替换（如 `#define N 100`）
+- **for 循环变量作用域隔离** — `for (int i = 0; i < 3; i++)` 中的 `i` 只在循环体内可见，不覆盖外部同名变量；Block 语句块同样支持作用域隔离
 - **printf 可变参数** — 支持任意数量参数（如 `printf("%d %d %d", a, b, c)`）
+- **`printf`/`scanf` 格式字符串参数类型检查** — `printf("%f", 5)` 编译期报错（int 不匹配 `%f`）；`scanf("%d", &f)` 编译期报错（float* 不匹配 `%d`）。支持 `%d/%f/%s/%p/%c/%ld/%lf/%x/%o` 等常见格式说明符与参数类型的静态匹配
 - **局部 `char` 数组字符串初始化** — `char s[6] = "hello"; printf("%s", s);`
+- **全局 `char` 数组字符串初始化** — `char s[6] = "hello";`（全局作用域字符串初始化，正确写入连续字节）
+- **`sizeof(字符串字面量)`** — `sizeof("hello")` 返回 6（含 `\0`），类型识别为 `char[N]` 数组而非 `char*` 指针
 - **`enum` 局部/全局变量声明** — `enum Color c = GREEN;`（需先声明 enum 类型）
 - **`typedef`** — `typedef int Integer; Integer a = 42;`
+- **匿名结构体变量声明** — `struct { int x; } v;`（直接以匿名 struct 类型声明变量，局部/全局均支持，含初始化列表）
 - **`typedef struct`** — `typedef struct { int x; } Point; Point p;`（匿名结构体 + typedef 别名）以及 `typedef struct Vec { int x; } VecAlias;`（命名结构体 + typedef 别名）
 - **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(union U)`、`sizeof(arr)`、`sizeof(ptr)`
 - **`scanf` 多参数** — `scanf("%d %d %d", &a, &b, &c)`
@@ -164,7 +168,9 @@ docs/                   设计文档、事故报告
 - **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、八进制 `077`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
 - **影子验证发现 bug #4（2026-05-17）**：八进制字面量 `077` 被误解析为十进制 77 → Lexer `number()` 新增八进制分支
 - **影子验证发现 bug #5（2026-05-17）**：`&&` / `||` 无短路求值，右侧表达式总是被求值 → BytecodeGen 新增 `Dup` + `JumpIfZero` / `JumpIfNotZero` 短路逻辑
-- **已知问题（2026-05-17）**：`for (int i = 0; ...)` 循环变量作用域未隔离外部同名变量；字符串字面量 `strlen` 手动计算长度与 Clang 不一致（Cide 输出 10 vs Clang 5）
+- ~~**已知问题（2026-05-17）**：`for (int i = 0; ...)` 循环变量作用域未隔离外部同名变量~~ → ✅ **已解决（2026-06-05）**：BytecodeGen 新增 `local_scope_stack` 作用域栈，Block 和 For 语句进入/退出时正确保存/恢复局部变量映射，循环变量不再泄漏到外部作用域
+- **全局数组变量声明名字错误（2026-06-05）**：`char s[6];` 等全局数组声明中，`parse_global_var_or_func` 使用 `self.previous()` 获取变量名，在数组后缀 `]` consume 后导致变量名被错误设为 `]` → 改用 `parse_declarator` 返回的 `name`
+- **字符串字面量类型精度（2026-06-05）**：Parser 将字符串字面量类型设为 `char*`（指针），导致 `sizeof("hello")` 返回指针大小 4 而非数组大小 6 → 改为 `char[N]` 数组类型，TypeChecker 同步更新；数组到指针退化由现有 `check_array_pointer_assignable` 处理
 - **C 子集 P1 拓展（2026-05-10）**：复合赋值扩展到数组索引/指针解引用/结构体成员（`a[i]+=1`、`*p+=1`、`s.mem+=1`）、取地址扩展到复杂左值（`&a[i]`、`&s.mem`）、全局结构体变量成员访问、自增/自减扩展到复杂左值（`a[i]++`、`*p++`、`s.mem++`）→ BytecodeGen 全部支持，新增 7 个 E2E 测试
 - **C 子集 P2 拓展（2026-05-10）**：位运算符 `& | ^ ~ << >>` 全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM），新增 2 个 E2E 测试；三目运算符 `? :` 全管线支持，新增 1 个 E2E 测试
 - **BytecodeGen 指针步长修复（2026-05-10）**：`BinaryOp::Add` 指针+整数时硬编码 `PushConst 4` → 改用 `ptr_step_size()`，正确支持 `char*`（步长 1）和 `struct*`（步长为结构体大小）
