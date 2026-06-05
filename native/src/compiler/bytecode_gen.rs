@@ -38,6 +38,7 @@ pub struct BytecodeGen {
     local_indices: HashMap<String, i32>,
     local_types: HashMap<String, Type>,
     next_local_offset: i32,
+    local_scope_stack: Vec<Vec<(String, Option<i32>)>>,
     temp_slot0: i32,
     temp_slot1: i32,
     temp_slot2: i32,
@@ -80,6 +81,7 @@ impl BytecodeGen {
             local_indices: HashMap::new(),
             local_types: HashMap::new(),
             next_local_offset: 0,
+            local_scope_stack: Vec::new(),
             temp_slot0: -1,
             temp_slot1: -1,
             temp_slot2: -1,
@@ -299,6 +301,7 @@ impl BytecodeGen {
         self.current_func = name.to_string();
         self.local_indices.clear();
         self.local_types.clear();
+        self.local_scope_stack.clear();
         self.next_local_offset = 0;
         let mut offset = 0;
         let mut param_sizes = Vec::new();
@@ -344,6 +347,30 @@ impl BytecodeGen {
         self.current_func.clear();
         self.local_indices.clear();
         self.local_types.clear();
+        self.local_scope_stack.clear();
+    }
+
+    fn enter_scope(&mut self) {
+        self.local_scope_stack.push(Vec::new());
+    }
+
+    fn exit_scope(&mut self) {
+        if let Some(scope_vars) = self.local_scope_stack.pop() {
+            for (name, old_offset) in scope_vars {
+                if let Some(old) = old_offset {
+                    self.local_indices.insert(name, old);
+                } else {
+                    self.local_indices.remove(&name);
+                }
+            }
+        }
+    }
+
+    fn record_scope_var(&mut self, name: &str) {
+        if let Some(scope) = self.local_scope_stack.last_mut() {
+            let old_offset = self.local_indices.get(name).copied();
+            scope.push((name.to_string(), old_offset));
+        }
     }
 
     fn resolve_local(&self, name: &str) -> i32 {
@@ -500,7 +527,9 @@ impl BytecodeGen {
         }
         match stmt {
             Stmt::Block { stmts, .. } => {
+                self.enter_scope();
                 for s in stmts { self.gen_stmt(s); }
+                self.exit_scope();
             }
             Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
                 let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
@@ -508,6 +537,7 @@ impl BytecodeGen {
                     let aligned_sz = (sz + 3) & !3;
                     let local_offset = self.next_local_offset;
                     self.next_local_offset += aligned_sz;
+                    self.record_scope_var(n);
                     self.local_indices.insert(n.to_string(), local_offset);
                     self.local_types.insert(n.to_string(), vty.clone());
                     self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
@@ -738,6 +768,7 @@ impl BytecodeGen {
                 self.loop_start_ips.pop();
             }
             Stmt::For { init, cond, step, body, loc } => {
+                self.enter_scope();
                 if let Some(ref mut i) = init { self.gen_stmt(i); }
                 let start_ip = self.current_ip();
                 let mut cond_jump = 0;
@@ -757,6 +788,7 @@ impl BytecodeGen {
                 }
                 self.emit(OpCode::Jump, start_ip as i32, loc);
                 let end_ip = self.current_ip();
+                self.exit_scope();
                 if cond.is_some() {
                     self.patch_jump(cond_jump, end_ip);
                 }
