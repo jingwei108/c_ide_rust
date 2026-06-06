@@ -54,6 +54,10 @@ native/tests/shadow_verification/reports/
 !native/tests/shadow_verification/reports/SHADOW_VERIFICATION_REPORT_*.md
 !native/tests/shadow_verification/reports/.gitkeep
 
+# Template sync & e2e auto-generated artifacts
+native/tests/cases_golden/golden_failures.log
+native/tests/TEST_REPORT.md
+
 # Build logs & artifacts
 *.binlog
 artifacts/

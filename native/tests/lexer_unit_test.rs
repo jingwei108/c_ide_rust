@@ -25,7 +25,7 @@ fn test_lexer_basic_tokens() {
 fn test_lexer_hex_literal() {
     let tokens = tokenize("0xFF 0x80000000 0x0");
     assert_eq!(tokens[0], (TokenType::Number, "255".to_string()));
-    assert_eq!(tokens[1], (TokenType::Number, "2147483648".to_string()));
+    assert_eq!(tokens[1], (TokenType::UnsignedLiteral, "2147483648".to_string()));
     assert_eq!(tokens[2], (TokenType::Number, "0".to_string()));
 }
 

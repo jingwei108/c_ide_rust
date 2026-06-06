@@ -121,7 +121,6 @@ docs/                   设计文档、事故报告
 - **参数化宏调用后带分号** — 形如 `SWAP(int,x,y);` 的参数化宏调用，若宏体本身已包含大括号 `{ ... }`，展开后形成 `{ ... };`（复合语句 + 空语句），当前 Parser 无法正确解析。 workaround：宏调用后不加额外分号（如 `SWAP(int,x,y)`），或使用 `do { ... } while(0)` 模式
 - **VLA 边界检查** — VLA 数组索引暂不支持编译期/运行时的 `TrapBounds` 边界检查（`bound_size` 为 0，检查被跳过）
 - **`sizeof(VLA类型)`** — `sizeof(int[n])` 暂不支持，需使用 `sizeof(VLA变量)`（如 `sizeof(a)`）
-
 ### 已支持的关键特性
 - **逗号分隔的多变量声明** — `int a = 1, b = 2;`
 - **多维数组**（`int arr[3][3]`）— 声明、嵌套初始化列表 `{ {1,2}, {3,4} }`、索引访问 `arr[i][j]`、函数参数传递 `void f(int[][3])`
@@ -174,8 +173,8 @@ docs/                   设计文档、事故报告
 - **链表可视化** — `LinkedListVisualizer` CustomPainter 绘制节点+箭头，支持 NodeCreate/Access/Delete 闪色；渐进式入场动画；`LinkedListVisTab` 集成统一模式，从 `StepPayload.localVars` 读取头指针驱动时间旅行
 - **二叉树可视化** — `TreeVisualizer` 满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制；`TreeVisTab` 集成统一模式
 - **变量级高亮** — `re_editor` `spanBuilder` 集成：当前执行行的被读变量名显示淡蓝底色、被写变量名显示淡橙底色，保留语法高亮；`VariablesTab` 值变化背景闪烁动画
-- **代码模板扩展** — 总计 **82 个模板**，按领域拆分为 11 个独立文件（`templates/sort.dart`、`tree.dart`、`linked_list.dart`、`graph.dart`、`stack_queue.dart`、`basic.dart`、`string.dart`、`search.dart`、`dp.dart`、`recursion.dart`、`other_struct.dart`），通过 `template_registry.dart` 聚合为 `allTemplates`；覆盖排序（冒泡/选择/插入/快速/归并/堆排序/希尔排序/计数排序/基数排序/桶排序/外部排序）、查找（线性/二分/插值/斐波那契）、图算法（BFS/DFS/Prim/Kruskal/Dijkstra/Floyd/拓扑排序/关键路径/Bellman-Ford/SPFA）、动态规划（斐波那契/01背包/LCS/LIS/硬币找零/矩阵连乘）、数据结构（顺序表、链表节点/头插/尾插/遍历/删除/双向链表/循环链表/静态链表/有序表合并/多项式相加、二叉树节点/先序/中序/后序/层序遍历/BST插入与查找/BST删除/线索二叉树/哈夫曼树/AVL树/验证BST/红黑树/B树/树森林转换、栈/链栈/队列/链队列/循环队列/括号匹配/中缀表达式求值/双端队列、哈希表、并查集）、字符串（反转/朴素模式匹配/KMP/串基本操作/nextval优化）、基础（数组遍历、指针交换、GCD、素数判断/埃氏筛、约瑟夫环、活动安排）、递归（阶乘/斐波那契/汉诺塔）
-- **代码模板参数化 + 交互式教程** — 核心算法模板（冒泡/选择/插入/快速/归并/二分/线性查找）支持参数占位符（如 `{{n:5}}`、`{{target:3}}`）；`TemplateParamDialog` 底部弹窗收集参数；`TemplateTutorialPanel` 逐步骤高亮代码行并展示教学描述；每步骤的关键行带 💡 `ExpansionTile` 可展开查看详细解释；教程最后一步点击"运行代码"自动插入生成代码、编译并启动统一模式；`LearningProgress` 记录 `completedTutorials`
+- **代码模板扩展** — 总计 **82 个模板**，源码为合法 C 代码，存放于 `templates/<key>/source.c`，运行时通过 `TemplateLoader` 从 `assets/templates/index.json` + `.c` 加载；覆盖排序（冒泡/选择/插入/快速/归并/堆排序/希尔排序/计数排序/基数排序/桶排序/外部排序）、查找（线性/二分/插值/斐波那契）、图算法（BFS/DFS/Prim/Kruskal/Dijkstra/Floyd/拓扑排序/关键路径/Bellman-Ford/SPFA）、动态规划（斐波那契/01背包/LCS/LIS/硬币找零/矩阵连乘）、数据结构（顺序表、链表节点/头插/尾插/遍历/删除/双向链表/循环链表/静态链表/有序表合并/多项式相加、二叉树节点/先序/中序/后序/层序遍历/BST插入与查找/BST删除/线索二叉树/哈夫曼树/AVL树/验证BST/红黑树/B树/树森林转换、栈/链栈/队列/链队列/循环队列/括号匹配/中缀表达式求值/双端队列、哈希表、并查集）、字符串（反转/朴素模式匹配/KMP/串基本操作/nextval优化）、基础（数组遍历、指针交换、GCD、素数判断/埃氏筛、约瑟夫环、活动安排）、递归（阶乘/斐波那契/汉诺塔）
+- **代码模板参数化 + 交互式教程** — 核心算法模板（冒泡/选择/插入/快速/归并/二分/线性查找）支持参数占位符（合法 C 注释语法 `/*__PARAM_n__*/ 5`）；`TemplateParamDialog` 底部弹窗收集参数；`TemplateTutorialPanel` 逐步骤高亮代码行并展示教学描述；每步骤的关键行带 💡 `ExpansionTile` 可展开查看详细解释；教程最后一步点击"运行代码"自动插入生成代码、编译并启动统一模式；`LearningProgress` 记录 `completedTutorials`
 - **Use-After-Free / Double-Free 运行时检测** — VM `execute_memory` 指令层在每次堆内存解引用前检查 `freed_logs`；访问已释放但尚未重用的堆内存时立即 trap 并弹出知识卡片（E3060），报告分配行号和释放行号；`host_free` 检测到对同一块内存重复释放时 trap（E3061）；`malloc`/`realloc` 重用内存时自动清理对应 `freed_logs`；统一模式 Trap 自动回退到上一步；新增 3 个 E2E 测试
 - **认知推理 P0（运行时根因分析）** — `TraceAnalyzer` 基于执行历史切片推断 Trap 根因：数组越界时识别 OffByOne（`<=` 条件）、索引变量未初始化、循环起始错误；Use-After-Free / Double-Free 时提取分配/释放时间线；除零时定位值为 0 的除数变量；NULL 指针时追踪指针历史变化。`RootCauseHint` 结构化数据（category/one_liner/related_lines/fix_kind）经 FRB 传输；前端 `RootCauseBanner` 以琥珀/深橙/紫/青等颜色编码展示根因，附带可点击行号跳转和修复建议标签
 - **认知推理 P1（教学推理层）** — `MisconceptionPattern` 定义 6 种认知误解模式（边界混淆 M01、指针生命周期混淆 M02、赋值与比较混淆 M03、数组指针退化误解 M04、递归边界遗漏 M05、格式化字符串误用 M06）；`detect_misconceptions` 基于最近 20 次编译记录滑动窗口检测稳定犯错模式；`recommend_learning_paths` 为每种检测到的模式组装知识卡片→模板高亮→练习的最小有效学习路径；Flutter `LearningProgress` 新增 `recentCompileRecords` 字段（SharedPreferences 持久化）；`LearningPathPanel` BottomSheet 面板展示诊断结果与彩色路径卡片，点击步骤可直接加载模板/启动教程
@@ -207,7 +206,7 @@ docs/                   设计文档、事故报告
 - **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、八进制 `077`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
 - **影子验证发现 bug #4（2026-05-17）**：八进制字面量 `077` 被误解析为十进制 77 → Lexer `number()` 新增八进制分支
 - **影子验证发现 bug #5（2026-05-17）**：`&&` / `||` 无短路求值，右侧表达式总是被求值 → BytecodeGen 新增 `Dup` + `JumpIfZero` / `JumpIfNotZero` 短路逻辑
-- **影子验证新增（2026-06-06）**：为数据结构教材语法拓展补充 8 个影子测试用例（参数化宏 `MAX`/`SWAP`/`SQUARE`/`MIN` 嵌套、static 局部变量计数器/数组持久化、`fgets`/`fputs` 文件读写），全部与 Clang 输出匹配；`shadow_verify.py` 新增内存泄漏检测报告过滤
+- **影子验证新增（2026-06-06）**：为数据结构教材语法拓展补充 8 个影子测试用例（参数化宏 `MAX`/`SWAP`/`SQUARE`/`MIN` 嵌套、static 局部变量计数器/数组持久化、`fgets`/`fputs` 文件读写）。**后续发现**：这些用例存在 Python 字符串 `\n` 转义陷阱（`\n` 被解析为字面量 `\` + `n` 而非换行），导致 Clang 与 Cide 均编译失败，产生假性 match（both fail）；真实状态待修复转义后重新验证；`shadow_verify.py` 新增内存泄漏检测报告过滤
 - ~~**已知问题（2026-05-17）**：`for (int i = 0; ...)` 循环变量作用域未隔离外部同名变量~~ → ✅ **已解决（2026-06-05）**：BytecodeGen 新增 `local_scope_stack` 作用域栈，Block 和 For 语句进入/退出时正确保存/恢复局部变量映射，循环变量不再泄漏到外部作用域
 - **全局数组变量声明名字错误（2026-06-05）**：`char s[6];` 等全局数组声明中，`parse_global_var_or_func` 使用 `self.previous()` 获取变量名，在数组后缀 `]` consume 后导致变量名被错误设为 `]` → 改用 `parse_declarator` 返回的 `name`
 - **字符串字面量类型精度（2026-06-05）**：Parser 将字符串字面量类型设为 `char*`（指针），导致 `sizeof("hello")` 返回指针大小 4 而非数组大小 6 → 改为 `char[N]` 数组类型，TypeChecker 同步更新；数组到指针退化由现有 `check_array_pointer_assignable` 处理
@@ -216,6 +215,7 @@ docs/                   设计文档、事故报告
 - **BytecodeGen 指针步长修复（2026-05-10）**：`BinaryOp::Add` 指针+整数时硬编码 `PushConst 4` → 改用 `ptr_step_size()`，正确支持 `char*`（步长 1）和 `struct*`（步长为结构体大小）
 - **VM 栈-堆碰撞保护修复（2026-05-10）**：`heap_limit` 闭包在 `setup_vm` 时按值捕获初始 `heap_offset`，后续 `malloc` 修改不反映 → 删除闭包机制，`Call` 指令处直接读取 `session.memory.heap_offset`
 - **TypeChecker 警告透传修复（2026-05-10）**：`W3050`~`W3056` 被 `_type_warnings` 丢弃，前端完全看不到 → 新增 `push_warnings()`，severity 设为 1，Flutter 前端正确渲染为 warning 行
+- **全局二维数组嵌套初始化子元素大小计算错误（2026-06-06）**：`codegen/mod.rs` 的 `flatten_global_init` 在处理 `int g[2][3] = {{1,2,3},{4,5,6}}` 时，`elem_type_size(target_ty)` 通过 `base_kind` 递归取最内层类型，导致子数组大小被算成 4（`int`）而非 12（`int[3]`）。修复：改用 `type_size(&inner_ty)` 计算直接子元素大小。该 bug 导致 BFS/DFS 等依赖全局二维数组的模板输出与 Golden 不一致
 - **VM 移位指令越界保护（2026-05-10）**：`Shl`/`Shr` 直接执行 `a << b` 不检查边界 → 添加 `!(0..32).contains(&b)` 检查，越界时 `trap` 报告未定义行为
 - **位运算错误码勘误（2026-05-10）**：位运算报错借用 `E3019_LogicTypeError` → 新增 `E3048_BitOpTypeError` 专用错误码
 - **Session Default 冲突修复（2026-05-10）**：`session.rs` 同时存在 `#[derive(Default)]` 和手动 `impl Default` → 删除派生宏，保留手动实现（`vm: Some(CideVM::default())`）

@@ -333,7 +333,54 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
 # 为 Clang 添加标准头文件前缀
 CLANG_HEADER = '#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\n'
 
-# ===== 测试用例库 =====
+
+
+def load_case_files() -> List[ShadowCase]:
+    """从 .c 文件加载用例，替代硬编码 SHADOW_CASES 列表"""
+    import re
+    cases = []
+    for root in [
+        Path("tests/cases/baseline"),
+        Path("tests/cases/gap"),
+        Path("tests/cases_template_generated"),
+    ]:
+        root_path = NATIVE_DIR / root
+        if not root_path.exists():
+            continue
+        for path in root_path.glob("*.c"):
+            source = path.read_text(encoding="utf-8")
+            # 提取 @category 注释
+            cat_match = re.search(r'@category:\s*(\S+)', source)
+            category = cat_match.group(1) if cat_match else "baseline"
+            # 移除注释标记，保留纯源码
+            lines = source.splitlines()
+            clean_lines = []
+            for line in lines:
+                stripped = line.strip()
+                if stripped.startswith("// @"):
+                    continue
+                clean_lines.append(line)
+            clean_source = "\n".join(clean_lines)
+            cases.append(ShadowCase(
+                name=path.stem,
+                source=clean_source,
+                category=category
+            ))
+    return cases
+
+# 保持向后兼容：优先从文件加载，回退到硬编码列表
+try:
+    FILE_CASES = load_case_files()
+except Exception as e:
+    print(f"从文件加载用例失败: {e}, 使用硬编码列表")
+    FILE_CASES = None
+
+# ===== 测试用例库（已废弃） =====
+# ⚠️  硬编码用例列表已废弃。新用例请直接添加到以下目录：
+#   - native/tests/cases/baseline/     (Cide 应支持的特性)
+#   - native/tests/cases/gap/          (Cide 暂不支持的特性)
+#   - native/tests/cases_template_generated/  (模板自动生成的用例)
+# 本列表仅作为文件加载失败时的 fallback，不再维护新增用例。
 SHADOW_CASES: List[ShadowCase] = [
     # ===== 当前应支持的特性（验证基准） =====
     ShadowCase("hello_world", 'int main() { printf("Hello\\n"); return 0; }', "baseline"),
@@ -619,7 +666,35 @@ SHADOW_CASES: List[ShadowCase] = [
     ShadowCase("file_fwrite", 'int main() { FILE* f = fopen("out.txt", "w"); fwrite("hello", 1, 5, f); fclose(f); printf("ok"); return 0; }', "file_io"),
     ShadowCase("goto_basic", 'int main() { int x = 0; goto end; x = 1; end: printf("%d", x); return 0; }', "goto"),
     ShadowCase("designated_init", 'int main() { int a[3] = {[0] = 1, [2] = 3}; printf("%d", a[2]); return 0; }', "designated_initializer"),
-    ShadowCase("variable_length_array", 'int main() { int n = 3; int a[n]; a[0] = 1; printf("%d", a[0]); return 0; }', "variable_length_array"),
+    # ---- 函数按值返回结构体 ----
+    ShadowCase("struct_return_by_value_basic", 'struct S { int x; }; struct S make() { struct S s; s.x = 42; return s; } int main() { struct S s = make(); printf("%d", s.x); return 0; }', "baseline"),
+    ShadowCase("struct_return_by_value_direct", 'struct S { int x; }; struct S make() { struct S s; s.x = 42; return s; } int main() { printf("%d", make().x); return 0; }', "baseline"),
+    ShadowCase("struct_return_by_value_as_arg", 'struct Vec { int x; int y; }; int area(struct Vec v) { return v.x * v.y; } struct Vec make_vec(int a, int b) { struct Vec v; v.x = a; v.y = b; return v; } int main() { printf("%d", area(make_vec(3,4))); return 0; }', "baseline"),
+    # ---- 多级指针 cast ----
+    ShadowCase("multi_level_ptr_cast_int", 'int main() { int x = 5; int* p = &x; int** pp = &p; void* vp = pp; int** pp2 = (int**)vp; printf("%d", **pp2); return 0; }', "baseline"),
+    ShadowCase("multi_level_ptr_cast_struct", 'struct Node { int x; }; int main() { struct Node n; n.x = 42; struct Node* p = &n; struct Node** pp = &p; void* vp = pp; struct Node** pp2 = (struct Node**)vp; printf("%d", (*pp2)->x); return 0; }', "baseline"),
+    # ---- unsigned 全链路语义 ----
+    ShadowCase("unsigned_cmp_wrap", 'int main() { unsigned int a = 0xFFFFFFFFU; unsigned int b = 0; printf("%d", a > b); return 0; }', "baseline"),
+    ShadowCase("unsigned_div_mod", 'int main() { unsigned int a = 17; unsigned int b = 5; printf("%d %d", a / b, a % b); return 0; }', "baseline"),
+    ShadowCase("unsigned_lshr", 'int main() { unsigned int a = 0xFFFFFFFFU; printf("%u", a >> 1); return 0; }', "baseline"),
+    ShadowCase("unsigned_printf_u", 'int main() { unsigned int u = 100; printf("%u", u); return 0; }', "baseline"),
+    ShadowCase("unsigned_printf_x", 'int main() { unsigned int u = 255; printf("%x", u); return 0; }', "baseline"),
+    ShadowCase("unsigned_printf_X", 'int main() { unsigned int u = 255; printf("%X", u); return 0; }', "baseline"),
+    ShadowCase("unsigned_printf_o", 'int main() { unsigned int u = 8; printf("%o", u); return 0; }', "baseline"),
+    ShadowCase("unsigned_printf_lu", 'int main() { unsigned long u = 100; printf("%lu", u); return 0; }', "baseline"),
+    # ---- 结构体数组嵌套初始化 ----
+    ShadowCase("struct_array_nested_init", 'struct S { int x; int y; }; int main() { struct S arr[] = {{1,2},{3,4}}; printf("%d %d", arr[0].x, arr[1].y); return 0; }', "baseline"),
+    ShadowCase("struct_nested_init", 'struct Inner { int a; int b; }; struct Outer { struct Inner i; int c; }; int main() { struct Outer o = {{1,2},3}; printf("%d %d %d", o.i.a, o.i.b, o.c); return 0; }', "baseline"),
+    # ---- extern 声明 ----
+    ShadowCase("extern_var", 'extern int g; int g = 42; int main() { printf("%d", g); return 0; }', "baseline"),
+    ShadowCase("extern_func", 'extern int foo(int); int main() { printf("%d", foo(5)); return 0; } int foo(int x) { return x*2; }', "baseline"),
+    # ---- sizeof 数组退化 ----
+    ShadowCase("sizeof_array_param", 'int f(int a[5]) { return sizeof(a); } int main() { int arr[5]; printf("%d", f(arr)); return 0; }', "arch_diff_bug"),
+    # ---- VLA 变长数组 ----
+    ShadowCase("variable_length_array", 'int main() { int n = 3; int a[n]; a[0] = 1; printf("%d", a[0]); return 0; }', "baseline"),
+    ShadowCase("vla_2d", 'int main() { int n = 2; int a[n][3]; a[0][0] = 1; a[0][1] = 2; a[1][0] = 3; printf("%d %d", a[0][1], a[1][0]); return 0; }', "baseline"),
+    ShadowCase("vla_sizeof", 'int main() { int n = 4; int a[n]; printf("%d", sizeof(a)); return 0; }', "baseline"),
+    ShadowCase("vla_param_decay", 'int sum(int n, int a[n]) { int s = 0; for (int i = 0; i < n; i++) s += a[i]; return s; } int main() { int arr[3] = {1,2,3}; printf("%d", sum(3, arr)); return 0; }', "baseline"),
     ShadowCase("static_assert", 'int main() { _Static_assert(1 == 1, "ok"); printf("ok"); return 0; }', "static_assert"),
     ShadowCase("complex_number", 'int main() { double complex z = 1.0 + 2.0*I; printf("%.1f", creal(z)); return 0; }', "complex_number"),
 
@@ -643,8 +718,9 @@ def main():
 
     diffs: List[ShadowDiff] = []
 
-    for i, case in enumerate(SHADOW_CASES, 1):
-        print(f"\n[{i}/{len(SHADOW_CASES)}] {case.name} ({case.category})")
+    CASES = FILE_CASES if FILE_CASES else SHADOW_CASES
+    for i, case in enumerate(CASES, 1):
+        print(f"\n[{i}/{len(CASES)}] {case.name} ({case.category})")
 
         clang_res = run_with_clang(case.source)
         print(f"  Clang: compile={'OK' if clang_res.compile_success else 'FAIL'}, run={'OK' if clang_res.run_success else 'FAIL'}")

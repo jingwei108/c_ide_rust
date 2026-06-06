@@ -1,0 +1,2 @@
+// @category: baseline
+int main() { int i = 0; for (; i < 3; i++) printf("%d", i); return 0; }

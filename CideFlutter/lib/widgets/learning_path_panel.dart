@@ -199,16 +199,17 @@ class _LearningPathPanelState extends ConsumerState<LearningPathPanel> {
     );
   }
 
-  void _executeStep(rust_lp.PathStep step, IdeNotifier notifier) {
+  void _executeStep(rust_lp.PathStep step, IdeNotifier notifier) async {
     switch (step.stepType) {
       case 'ReadKnowledgeCard':
         Navigator.pop(context);
         // Switch to knowledge card tab would be handled by parent or state
         break;
       case 'StudyTemplate':
-        final template = allTemplates.firstWhere(
+        final templates = await getDynamicTemplates();
+        final template = templates.firstWhere(
           (t) => t.key == step.targetId,
-          orElse: () => allTemplates.first,
+          orElse: () => templates.first,
         );
         final generated = template.params.isEmpty
             ? template.code

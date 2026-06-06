@@ -63,11 +63,11 @@ class CodeTemplate {
   });
 
   /// 用学生填入的参数替换代码中的占位符。
-  /// 占位符语法: {{key:defaultValue}}
+  /// 占位符语法 (合法C注释): /*__PARAM_key__*/ defaultValue
   String buildCode(Map<String, String> values) {
     var result = code;
-    final placeholderPattern = RegExp(r'\{\{(\w+):([^}]*)\}\}');
-    result = result.replaceAllMapped(placeholderPattern, (match) {
+    final pattern = RegExp(r'/\*__PARAM_(\w+)__\*/\s*([^ \t\n\r\[\]();,]+)');
+    result = result.replaceAllMapped(pattern, (match) {
       final paramKey = match.group(1)!;
       final paramDefault = match.group(2)!;
       return values[paramKey] ?? paramDefault;

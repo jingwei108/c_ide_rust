@@ -1,0 +1,42 @@
+#include <stdio.h>
+#include <stdlib.h>
+
+struct TreeNode {
+    int val;
+    struct TreeNode* left;
+    struct TreeNode* right;
+};
+
+struct TreeNode* createNode(int val) {
+    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));
+    node->val = val;
+    node->left = NULL;
+    node->right = NULL;
+    return node;
+}
+
+#define MAX 20
+
+void levelOrder(struct TreeNode* root) {
+    if (root == NULL) return;
+    struct TreeNode* queue[MAX];
+    int front = 0, rear = 0;
+    queue[rear++] = root;
+    while (front < rear) {
+        struct TreeNode* node = queue[front++];
+        printf("%d ", node->val);
+        if (node->left != NULL) queue[rear++] = node->left;
+        if (node->right != NULL) queue[rear++] = node->right;
+    }
+}
+
+int main() {
+    struct TreeNode* root = createNode(1);
+    root->left = createNode(2);
+    root->right = createNode(3);
+    root->left->left = createNode(4);
+    root->left->right = createNode(5);
+    levelOrder(root);
+    printf("\n");
+    return 0;
+}

@@ -168,7 +168,9 @@ impl TypeChecker {
                 };
                 ty.clone()
             }
-            Expr::Literal { .. } => Type::int(),
+            Expr::Literal { ty, .. } => {
+                if ty.is_unsigned() { ty.clone() } else { Type::int() }
+            }
             Expr::FloatLiteral { .. } => Type::float(),
             Expr::LongLiteral { .. } => Type::long_long(),
             Expr::StringLiteral { value, .. } => {

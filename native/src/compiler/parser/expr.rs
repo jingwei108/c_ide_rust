@@ -358,6 +358,20 @@ impl Parser {
             let loc = SourceLoc { line: prev.line, column: prev.column };
             return Expr::Literal { value, loc, ty: Type::int() };
         }
+        if self.match_token(TokenType::UnsignedLiteral) {
+            let prev = self.previous().clone();
+            let value: i32 = prev.text.parse::<u32>().unwrap_or_else(|_| {
+                self.errors.push(ParseError {
+                    message: format!("unsigned 常量 '{}' 超出范围", prev.text),
+                    line: prev.line,
+                    column: prev.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                0
+            }) as i32;
+            let loc = SourceLoc { line: prev.line, column: prev.column };
+            return Expr::Literal { value, loc, ty: Type::unsigned_int() };
+        }
         if self.match_token(TokenType::LongLiteral) {
             let prev = self.previous().clone();
             let value: i64 = prev.text.parse().unwrap_or_else(|_| {

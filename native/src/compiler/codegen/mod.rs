@@ -2008,8 +2008,8 @@ impl BytecodeGen {
                         self.flatten_global_init(&fields[i].ty, elem, base_offset + field_offset);
                     }
                 } else if target_ty.is_array() {
-                    let elem_size = self.elem_type_size(target_ty) as u32;
                     let inner_ty = target_ty.subscript_type();
+                    let elem_size = self.type_size(&inner_ty) as u32;
                     for (i, elem) in elements.iter().enumerate() {
                         let elem_offset = (i as u32) * elem_size;
                         self.flatten_global_init(&inner_ty, elem, base_offset + elem_offset);

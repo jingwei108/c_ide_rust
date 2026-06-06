@@ -1,0 +1,2 @@
+// @category: baseline
+void init(int data[], int* len) { *len = 0; } void listInsert(int data[], int* len, int pos, int x) { for (int i = *len; i > pos; i--) data[i] = data[i-1]; data[pos] = x; (*len)++; } int main() { int data[10]; int len; init(data, &len); listInsert(data, &len, 0, 5); listInsert(data, &len, 1, 3); listInsert(data, &len, 2, 8); printf("%d %d %d", data[0], data[1], data[2]); return 0; }

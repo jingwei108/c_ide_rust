@@ -43,11 +43,26 @@ python shadow_verify.py
 
 ### 2.2 添加新用例
 
-编辑 `shadow_verify.py`，在 `SHADOW_CASES` 列表中追加：
+用例优先以独立 `.c` 文件形式存放，支持热加载：
 
-```python
-ShadowCase("用例名称", 'C 源码', "预期分类")
+```bash
+# baseline 用例（Cide 应支持）
+native/tests/cases/baseline/<name>.c
+
+# gap 用例（Cide 暂不支持）
+native/tests/cases/gap/<name>.c
+
+# 模板生成的用例（从 templates/ 自动同步）
+native/tests/cases_template_generated/<name>.c
 ```
+
+`.c` 文件头部可选添加分类注释：
+```c
+// @category: baseline
+int main() { ... }
+```
+
+`shadow_verify.py` 启动时会自动扫描上述目录加载用例；加载失败时 fallback 到硬编码 `SHADOW_CASES` 列表。
 
 **分类命名规范**：
 - `baseline`：Cide 已支持的特性（用于验证基准）
@@ -166,6 +181,7 @@ ShadowCase("string_reverse",
 ### 5.3 已修复的历史事故
 
 - **2026-06-06**：修复 14 个用例的转义问题，包括 `string_reverse`（`\0`）、`hanoi_tower`（`\n`）、`circular_queue`/`hash_table_linear`/`josephus_ring` 等（`\n`）。修复前产生 1 个假性编译缺口、1 个假性 match(both fail)。
+- **2026-06-06（本次发现）**：为"数据结构教材算法模板体系扩展"新增的 8 个用例（`parametric_macro_max`/`swap`/`square`/`nested`、`static_local_counter`/`init_once`/`array`、`fgets_fputs_basic`）同样存在 `\n` 转义陷阱——Python 字符串中的 `\n` 被解析为字面量 `\` + `n`，导致 `#define` 与后续代码、函数定义之间缺少实际换行。结果 Clang 与 Cide 均编译失败，产生**假性 match（both fail）**。此前 AGENTS.md 记录"全部与 Clang 输出匹配"系基于错误观察。真实状态待修复 `\n` → `\n` 后重新验证。
 
 ---
 
@@ -189,6 +205,9 @@ ShadowCase("string_reverse",
 | 2026-05-17 | 120 | 107 (89%) | 13 (10%) | 新增 17 个 baseline 用例；**发现第 4 个真实 bug：八进制字面量 `077` 被误解析为十进制 77** → Lexer 修复 |
 | 2026-05-17 | 234 | 219 (93%) | 13 (5%) | 扩展至 234 用例；新增 114 个 baseline 覆盖算法/控制流/指针/结构体/数组等；**发现第 5 个 bug：`&&`/`||` 无短路求值** → BytecodeGen 修复；2 个已知问题待修复（循环变量作用域、字符串存储） |
 | 2026-06-06 | 274 | 266 (97%) | 6 (2%) | 扩展至 274 用例（新增 43 个算法/数据结构模板用例）；**修复 Shadow 框架 Python 字符串转义陷阱**（`\n`/`\0` 被 Python 解析为实际换行/NUL，导致 14 个假性失败）；**发现第 6 个真实 bug：BytecodeGen 对复杂左值赋值的副作用重复执行**（`queue[rear++] = v` 中 `rear++` 执行两次）→ `gen_assign` 中 Index/Deref/Member 分支改为保存地址临时变量，避免重新求值左值表达式 |
+| 2026-06-06 | 295 | 282 (95%) | 8 (2%) | 为 **函数按值返回结构体 / 多级指针 cast / Phase 27 语法拓展 / VLA** 新增 21 个影子验证用例；将 `variable_length_array` 从缺失特性移回 baseline（VLA 已支持）；`sizeof_array_param` 标记为 `arch_diff_bug`（32位 VM 指针大小为 4，非 bug）；**发现 2 个真实问题**：(1) `0xFFFFFFFFU` 不被支持 — Lexer 将 `0xFFFFFFFF` 按有符号 int 解析导致溢出，且不支持 `U` 后缀；(2) `extern int foo(int);` 函数原型声明不被 Parser 接受 — 报"预期 struct、函数或全局变量声明" |
+| 2026-06-06 | 295 | 275 (93%) | 8 (2%) | **算法模板与验证解耦**：82 个 Dart 硬编码模板全部文件化为 `templates/<key>/source.c` + `meta.yaml`；295 个影子用例全部文件化到 `cases/baseline/` 和 `cases/gap/`；`shadow_verify.py` 改造为从文件热加载；新增 `scripts/sync_templates.py` 一键同步模板 → 测试用例 → Golden → Flutter assets；新增 `native/tests/cide_e2e.rs` Rust e2e 测试（baseline 275 + template 74 全绿，8 已知失败监控）；**修复全局二维数组嵌套初始化子元素大小计算错误**（`flatten_global_init` 中 `elem_type_size` 递归取最内层类型导致 `int[2][3]` 子数组大小算成 4 而非 12）；Flutter 端完成运行时加载骨架（`TemplateLoader` + `FutureBuilder`），`explanations` 与 `focusLines` 通过从 Dart 硬编码提取实现数据完整性 |
+| 2026-06-06 | 295 | 285 (97%) | 5 (1%) | **修复影子验证发现的 2 个真实问题**：(1) Lexer 按 C 标准实现整数常量类型推导 — 支持 `U`/`u` 后缀、八进制/十六进制超出有符号 int 范围自动提升为 `unsigned int`（`0xFFFFFFFF` → `UnsignedLiteral`）；(2) Parser 修复 `extern int foo(int);` 纯原型声明不消费分号导致后续解析失败的 bug；`unsigned_cmp_wrap`/`unsigned_lshr`/`extern_func` 3 个用例从 gap 移回 baseline；剩余 5 个编译缺口均为明确不支持的特性（`goto`/`static_assert`/`typeof`/`designated_initializer`/`inline_asm`） |
 
 ---
 

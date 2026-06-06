@@ -535,9 +535,17 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   // ========== 模板快捷栏 ==========
 
   Widget _buildTemplateBar(IdeState state, IdeNotifier notifier) {
-    return TemplateBar(
-      templates: allTemplates,
-      onSelectTemplate: _handleTemplateSelect,
+    return FutureBuilder<List<CodeTemplate>>(
+      future: getDynamicTemplates(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const SizedBox.shrink();
+        }
+        return TemplateBar(
+          templates: snapshot.data!,
+          onSelectTemplate: _handleTemplateSelect,
+        );
+      },
     );
   }
 

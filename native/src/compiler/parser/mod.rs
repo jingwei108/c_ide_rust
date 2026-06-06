@@ -446,7 +446,7 @@ impl Parser {
 
         let params = self.parse_param_list();
         self.consume(TokenType::RParen, "预期 ')'");
-        let body = if is_extern { None } else if self.check(TokenType::LBrace) {
+        let body = if self.check(TokenType::LBrace) {
             Some(self.parse_block())
         } else {
             self.consume(TokenType::Semicolon, "函数声明后预期 ';' 或 '{'");
