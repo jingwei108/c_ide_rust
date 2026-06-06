@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/code_template.dart';
+import '../models/template_registry.dart';
 //  // CompileSnapshot from ide_provider state
 import '../providers/ide_provider.dart';
 import '../src/rust/api/cide.dart' as rust;
@@ -206,9 +206,9 @@ class _LearningPathPanelState extends ConsumerState<LearningPathPanel> {
         // Switch to knowledge card tab would be handled by parent or state
         break;
       case 'StudyTemplate':
-        final template = CodeTemplate.defaults.firstWhere(
+        final template = allTemplates.firstWhere(
           (t) => t.key == step.targetId,
-          orElse: () => CodeTemplate.defaults.first,
+          orElse: () => allTemplates.first,
         );
         final generated = template.params.isEmpty
             ? template.code

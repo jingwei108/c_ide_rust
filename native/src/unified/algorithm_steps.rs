@@ -49,6 +49,20 @@ pub fn infer_algorithm_step(
         "bst_search" => infer_bst_search(&source_line, &vars, algorithm, func_name),
         "hash_table" => infer_hash_table(&source_line, &vars, algorithm),
         "josephus" => infer_josephus(&source_line, &vars, algorithm),
+        "circular_linked_list" => infer_circular_linked_list(&source_line, &vars, algorithm),
+        "static_linked_list" => infer_static_linked_list(&source_line, &vars, algorithm),
+        "string_match_bf" => infer_string_match_bf(&source_line, &vars, algorithm),
+        "string_match_kmp" => infer_string_match_kmp(&source_line, &vars, algorithm),
+        "threaded_binary_tree" => infer_threaded_binary_tree(&source_line, &vars, algorithm),
+        "huffman_tree" => infer_huffman_tree(&source_line, &vars, algorithm),
+        "union_find" => infer_union_find(&source_line, &vars, algorithm),
+        "avl_tree" => infer_avl_tree(&source_line, &vars, algorithm),
+        "prim_mst" => infer_prim_mst(&source_line, &vars, algorithm),
+        "kruskal_mst" => infer_kruskal_mst(&source_line, &vars, algorithm),
+        "dijkstra" => infer_dijkstra(&source_line, &vars, algorithm),
+        "floyd" => infer_floyd(&source_line, &vars, algorithm),
+        "topological_sort" => infer_topological_sort(&source_line, &vars, algorithm),
+        "radix_sort" => infer_radix_sort(&source_line, &vars, algorithm),
         _ => None,
     }
 }
@@ -1252,6 +1266,380 @@ fn infer_josephus(
 
     if line_lower.starts_with("return") {
         return Some(build_step(algorithm, "finish", "约瑟夫环淘汰完成"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 循环链表
+// ============================================================================
+
+fn infer_circular_linked_list(
+    source_line: &str,
+    _vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+
+    if line_lower.contains("next") && line_lower.contains("head") && line_lower.contains('=') {
+        return Some(build_step(algorithm, "link", "尾节点回指头节点，形成循环"));
+    }
+
+    if line_lower.contains("do") {
+        return Some(build_step(algorithm, "traverse", "do-while 遍历循环链表"));
+    }
+
+    if line_lower.starts_with("return") {
+        return Some(build_step(algorithm, "finish", "循环链表操作完成"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 静态链表
+// ============================================================================
+
+fn infer_static_linked_list(
+    source_line: &str,
+    _vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+
+    if line_lower.contains("cur") && line_lower.contains("i + 1") {
+        return Some(build_step(algorithm, "init", "初始化备用链表"));
+    }
+
+    if line_lower.contains("space[0].cur") && line_lower.contains("space[i].cur") {
+        return Some(build_step(algorithm, "malloc", "从备用链表分配节点"));
+    }
+
+    if line_lower.contains("space[k].cur") && line_lower.contains("space[0].cur") {
+        return Some(build_step(algorithm, "free", "回收节点到备用链表"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 朴素模式匹配
+// ============================================================================
+
+fn infer_string_match_bf(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let i = vars.get_int_any(&["i"]).unwrap_or(-1);
+    let j = vars.get_int_any(&["j"]).unwrap_or(-1);
+
+    if line_lower.contains("s[") && line_lower.contains("t[") && line_lower.contains("==") {
+        return Some(build_step(algorithm, "compare", &format!("比较 S[{}] 与 T[{}]", i, j)));
+    }
+
+    if line_lower.contains("i - j + 1") {
+        return Some(build_step(algorithm, "backtrack", "字符不匹配，主串回溯"));
+    }
+
+    if line_lower.starts_with("return") && line_lower.contains("-1") {
+        return Some(build_step(algorithm, "not_found", "模式匹配失败"));
+    }
+
+    None
+}
+
+// ============================================================================
+// KMP 模式匹配
+// ============================================================================
+
+fn infer_string_match_kmp(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let j = vars.get_int_any(&["j"]).unwrap_or(-1);
+    let k = vars.get_int_any(&["k"]).unwrap_or(-1);
+
+    if line_lower.contains("getnext") || (line_lower.contains("next[") && line_lower.contains('=')) {
+        return Some(build_step(algorithm, "build_next", &format!("构建 next 数组，next[{}]={}", j, k)));
+    }
+
+    if line_lower.contains("s[") && line_lower.contains("t[") && line_lower.contains("==") {
+        return Some(build_step(algorithm, "compare", "比较主串与模式串字符"));
+    }
+
+    if line_lower.contains("next[j]") {
+        return Some(build_step(algorithm, "skip", &format!("j 回溯到 next[{}]={}", j, k)));
+    }
+
+    None
+}
+
+// ============================================================================
+// 线索二叉树
+// ============================================================================
+
+fn infer_threaded_binary_tree(
+    source_line: &str,
+    _vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+
+    if line_lower.contains("ltag") && line_lower.contains("thread") {
+        return Some(build_step(algorithm, "thread_left", "建立左线索指向前驱"));
+    }
+
+    if line_lower.contains("rtag") && line_lower.contains("thread") {
+        return Some(build_step(algorithm, "thread_right", "建立右线索指向后继"));
+    }
+
+    if line_lower.contains("ltag") && line_lower.contains("link") {
+        return Some(build_step(algorithm, "find_leftmost", "沿左孩子找到最左节点"));
+    }
+
+    if line_lower.contains("rtag") && line_lower.contains("thread") && line_lower.contains("while") {
+        return Some(build_step(algorithm, "follow_thread", "沿后继线索访问节点"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 哈夫曼树
+// ============================================================================
+
+fn infer_huffman_tree(
+    source_line: &str,
+    _vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+
+    if line_lower.contains("parent") && line_lower.contains("-1") && line_lower.contains("weight") {
+        return Some(build_step(algorithm, "select", "在森林中选择两个最小权值节点"));
+    }
+
+    if line_lower.contains("parent") && line_lower.contains('=') && !line_lower.contains("-1") {
+        return Some(build_step(algorithm, "merge", "合并两个节点为新树"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 并查集
+// ============================================================================
+
+fn infer_union_find(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let x = vars.get_int_any(&["x"]).unwrap_or(-1);
+
+    if line_lower.contains("parent[x]") && line_lower.contains("< 0") {
+        return Some(build_step(algorithm, "find", &format!("查找 {} 的根节点", x)));
+    }
+
+    if line_lower.contains("parent[x]") && line_lower.contains("find") && line_lower.contains('=') {
+        return Some(build_step(algorithm, "compress", "路径压缩，直接指向根"));
+    }
+
+    if line_lower.contains("union") && line_lower.contains("root") {
+        return Some(build_step(algorithm, "union", "合并两个集合"));
+    }
+
+    None
+}
+
+// ============================================================================
+// AVL 树
+// ============================================================================
+
+fn infer_avl_tree(
+    source_line: &str,
+    _vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+
+    if line_lower.contains("r_rotate") || line_lower.contains("l_rotate") {
+        return Some(build_step(algorithm, "rotate", "旋转调整平衡"));
+    }
+
+    if line_lower.contains("leftbalance") || line_lower.contains("rightbalance") {
+        return Some(build_step(algorithm, "balance", "平衡因子失衡，进行平衡调整"));
+    }
+
+    if line_lower.contains("bf") && line_lower.contains('=') && !line_lower.contains("null") {
+        return Some(build_step(algorithm, "update_bf", "更新平衡因子"));
+    }
+
+    None
+}
+
+// ============================================================================
+// Prim 最小生成树
+// ============================================================================
+
+fn infer_prim_mst(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let k = vars.get_int_any(&["k"]).unwrap_or(-1);
+
+    if line_lower.contains("lowcost") && line_lower.contains("min") && line_lower.contains("inf") {
+        return Some(build_step(algorithm, "select_min", &format!("选择最小边，顶点 k={}", k)));
+    }
+
+    if line_lower.contains("lowcost") && line_lower.contains('0') && line_lower.contains('=') && !line_lower.contains("!=") {
+        return Some(build_step(algorithm, "add_vertex", &format!("顶点 {} 加入生成树", k)));
+    }
+
+    if line_lower.contains("g[k]") && line_lower.contains("lowcost") && line_lower.contains('<') {
+        return Some(build_step(algorithm, "update", "更新邻接顶点的最小边权"));
+    }
+
+    None
+}
+
+// ============================================================================
+// Kruskal 最小生成树
+// ============================================================================
+
+fn infer_kruskal_mst(
+    source_line: &str,
+    _vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+
+    if line_lower.contains("edges") && line_lower.contains("w") && line_lower.contains('<') {
+        return Some(build_step(algorithm, "sort", "按边权排序"));
+    }
+
+    if line_lower.contains("find") && line_lower.contains("parent") && line_lower.contains("!=") {
+        return Some(build_step(algorithm, "check_cycle", "并查集判环"));
+    }
+
+    if line_lower.contains("union") && line_lower.contains("parent") {
+        return Some(build_step(algorithm, "add_edge", "加入生成树并合并集合"));
+    }
+
+    None
+}
+
+// ============================================================================
+// Dijkstra 最短路径
+// ============================================================================
+
+fn infer_dijkstra(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let u = vars.get_int_any(&["u"]).unwrap_or(-1);
+
+    if line_lower.contains("dist") && line_lower.contains("min") && line_lower.contains("inf") {
+        return Some(build_step(algorithm, "select", &format!("选择距离最小的未确定顶点 u={}", u)));
+    }
+
+    if line_lower.contains("visited") && line_lower.contains('=') && line_lower.contains('1') {
+        return Some(build_step(algorithm, "confirm", &format!("顶点 {} 的最短距离已确定", u)));
+    }
+
+    if line_lower.contains("dist[u]") && line_lower.contains("g[u]") && line_lower.contains('+') {
+        return Some(build_step(algorithm, "relax", "松弛操作，更新邻接顶点距离"));
+    }
+
+    None
+}
+
+// ============================================================================
+// Floyd 最短路径
+// ============================================================================
+
+fn infer_floyd(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let k = vars.get_int_any(&["k"]).unwrap_or(-1);
+
+    if line_lower.starts_with("for ") && line_lower.contains('k') {
+        return Some(build_step(algorithm, "outer_loop", &format!("枚举中间顶点 k={}", k)));
+    }
+
+    if line_lower.contains("g[i][k]") && line_lower.contains("g[k][j]") && line_lower.contains('<') {
+        return Some(build_step(algorithm, "relax", "检查经 k 中转是否更短"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 拓扑排序
+// ============================================================================
+
+fn infer_topological_sort(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let u = vars.get_int_any(&["u"]).unwrap_or(-1);
+
+    if line_lower.contains("indegree") && line_lower.contains("0") && line_lower.contains("queue") {
+        return Some(build_step(algorithm, "enqueue", "入度为 0 的顶点入队"));
+    }
+
+    if line_lower.contains("queue[front++]") || (line_lower.contains("front") && line_lower.contains("u")) {
+        return Some(build_step(algorithm, "output", &format!("输出顶点 {}", u)));
+    }
+
+    if line_lower.contains("indegree") && line_lower.contains("--") {
+        return Some(build_step(algorithm, "decrease", "删边，邻接点入度减 1"));
+    }
+
+    None
+}
+
+// ============================================================================
+// 基数排序
+// ============================================================================
+
+fn infer_radix_sort(
+    source_line: &str,
+    vars: &VarMap,
+    algorithm: &AlgorithmMatch,
+) -> Option<AlgorithmStepSnapshot> {
+    let line_lower = source_line.to_lowercase();
+    let exp = vars.get_int_any(&["exp"]).unwrap_or(-1);
+
+    if line_lower.contains("exp") && line_lower.contains("max") && line_lower.contains("/") {
+        return Some(build_step(algorithm, "digit_loop", &format!("按第 {} 位进行分配-收集", exp)));
+    }
+
+    if line_lower.contains("count[") && line_lower.contains("++") && !line_lower.contains("+=") {
+        return Some(build_step(algorithm, "count", "统计当前位各数字出现次数"));
+    }
+
+    if line_lower.contains("count[i]") && line_lower.contains("count[i - 1]") {
+        return Some(build_step(algorithm, "prefix", "计算前缀和，确定位置"));
+    }
+
+    if line_lower.contains("output[") && line_lower.contains("count[") && line_lower.contains('=') {
+        return Some(build_step(algorithm, "place", "按前缀和放置元素"));
     }
 
     None

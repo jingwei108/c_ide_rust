@@ -383,6 +383,160 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
         ));
     }
 
+    // P0: 循环链表
+    if name_lower.contains("circular") && name_lower.contains("list") {
+        matches.push(build_match(
+            "circular_linked_list",
+            "循环链表",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 静态链表
+    if name_lower.contains("static") && name_lower.contains("list") {
+        matches.push(build_match(
+            "static_linked_list",
+            "静态链表",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 朴素模式匹配
+    if name_lower.contains("indexbf") || name_lower.contains("bfmatch") || name_lower.contains("brute") {
+        matches.push(build_match(
+            "string_match_bf",
+            "朴素模式匹配",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: KMP 模式匹配
+    if name_lower.contains("kmp") || name_lower.contains("indexkmp") || name_lower.contains("getnext") {
+        matches.push(build_match(
+            "string_match_kmp",
+            "KMP 模式匹配",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 线索二叉树
+    if name_lower.contains("thread") && name_lower.contains("tree") {
+        matches.push(build_match(
+            "threaded_binary_tree",
+            "线索二叉树",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 哈夫曼树
+    if name_lower.contains("huffman") {
+        matches.push(build_match(
+            "huffman_tree",
+            "哈夫曼树",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 并查集
+    if name_lower.contains("unionfind") || (name_lower.contains("union") && name_lower.contains("find")) {
+        matches.push(build_match(
+            "union_find",
+            "并查集",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: AVL 树
+    if name_lower.contains("avl") {
+        matches.push(build_match(
+            "avl_tree",
+            "AVL 树",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: Prim 最小生成树
+    if name_lower.contains("prim") {
+        matches.push(build_match(
+            "prim_mst",
+            "Prim 最小生成树",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: Kruskal 最小生成树
+    if name_lower.contains("kruskal") {
+        matches.push(build_match(
+            "kruskal_mst",
+            "Kruskal 最小生成树",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: Dijkstra 最短路径
+    if name_lower.contains("dijkstra") {
+        matches.push(build_match(
+            "dijkstra",
+            "Dijkstra 最短路径",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: Floyd 最短路径
+    if name_lower.contains("floyd") {
+        matches.push(build_match(
+            "floyd",
+            "Floyd 最短路径",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 拓扑排序
+    if name_lower.contains("topolog") {
+        matches.push(build_match(
+            "topological_sort",
+            "拓扑排序",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // P0: 基数排序
+    if name_lower.contains("radix") {
+        matches.push(build_match(
+            "radix_sort",
+            "基数排序",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
     matches
 }
 
@@ -888,6 +1042,20 @@ fn build_match(
         "bst_search" => "BST 查找：利用二叉搜索树性质，每次比较可排除一半子树，平均时间复杂度 O(log n)。".to_string(),
         "hash_table" => "哈希表：通过哈希函数直接定位存储位置，理想情况下查找时间复杂度 O(1)。".to_string(),
         "josephus" => "约瑟夫环：经典的循环报数淘汰问题，可用数组模拟圆圈解决。".to_string(),
+        "circular_linked_list" => "循环链表：尾节点 next 回指头节点，遍历时需用 do-while 判断终止。".to_string(),
+        "static_linked_list" => "静态链表：用数组游标模拟指针，下标 0 作为备用链表头。".to_string(),
+        "string_match_bf" => "朴素模式匹配：双指针逐位比较，失配后主串回溯、模式串归零。时间复杂度 O(m·n)。".to_string(),
+        "string_match_kmp" => "KMP 模式匹配：利用 next 数组避免主串回溯，时间复杂度 O(m+n)。".to_string(),
+        "threaded_binary_tree" => "线索二叉树：利用空指针域存储中序前驱和后继，实现无栈遍历。".to_string(),
+        "huffman_tree" => "哈夫曼树：每次选两个最小权值节点合并，构造带权路径长度最小的二叉树。".to_string(),
+        "union_find" => "并查集：用数组表示森林，支持路径压缩和按秩合并，近乎 O(1) 的查询与合并。".to_string(),
+        "avl_tree" => "AVL 树：自平衡二叉搜索树，通过旋转保持左右子树高度差不超过 1。".to_string(),
+        "prim_mst" => "Prim 最小生成树：从顶点出发，每次选连接两集合的最小边，贪心扩展生成树。".to_string(),
+        "kruskal_mst" => "Kruskal 最小生成树：按边权排序后用并查集判环，贪心选取不形成环的边。".to_string(),
+        "dijkstra" => "Dijkstra 最短路径：单源最短路径，每次选距离最近的未确定顶点进行松弛。".to_string(),
+        "floyd" => "Floyd 最短路径：三重循环枚举中间点，动态规划求所有顶点对最短路径。".to_string(),
+        "topological_sort" => "拓扑排序：Kahn 算法，利用入度和队列，输出有向无环图的一个线性序列。".to_string(),
+        "radix_sort" => "基数排序：按位进行稳定计数排序，从低位到高位依次分配收集。时间复杂度 O(d·(n+k))。".to_string(),
         _ => String::new(),
     };
 
