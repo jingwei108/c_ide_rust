@@ -834,10 +834,11 @@ impl Parser {
             TokenType::Switch => self.parse_switch_stmt(),
             TokenType::Case | TokenType::Default => self.parse_case_stmt(),
             _ if self.is_type_token() || self.is_static_token() => {
-                if self.is_static_token() {
+                let is_static = self.is_static_token();
+                if is_static {
                     self.advance(); // consume 'static'
                 }
-                self.parse_var_decl_stmt()
+                self.parse_var_decl_stmt(is_static)
             }
             _ => {
                 let checkpoint = self.pos;
@@ -876,7 +877,7 @@ impl Parser {
         Stmt::Block { stmts, loc: SourceLoc { line: loc.line, column: loc.column } }
     }
 
-    fn parse_var_decl_stmt(&mut self) -> Stmt {
+    fn parse_var_decl_stmt(&mut self, is_static: bool) -> Stmt {
         let loc = self.current().clone();
         let base_type = self.parse_base_type();
         let (var_type, name) = self.parse_declarator(&base_type);
@@ -902,7 +903,7 @@ impl Parser {
         }
 
         self.consume(TokenType::Semicolon, "变量声明后预期 ';'");
-        Stmt::VarDecl { var_type, name, init, extra_vars, loc: SourceLoc { line: loc.line, column: loc.column } }
+        Stmt::VarDecl { var_type, name, init, extra_vars, is_static, loc: SourceLoc { line: loc.line, column: loc.column } }
     }
 
     fn parse_if_stmt(&mut self) -> Stmt {
@@ -983,7 +984,7 @@ impl Parser {
                 extra_vars.push((extra_ty, extra_name, extra_init));
             }
             Some(Box::new(Stmt::VarDecl {
-                var_type, name, init: init_expr, extra_vars,
+                var_type, name, init: init_expr, extra_vars, is_static: false,
                 loc: SourceLoc { line: var_loc.line, column: var_loc.column },
             }))
         } else if !self.check(TokenType::Semicolon) {

@@ -1,5 +1,5 @@
 use crate::diagnostics::error_codes::ErrorCode;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
@@ -37,31 +37,43 @@ pub struct LexerError {
     pub code: i32,
 }
 
+#[derive(Debug, Clone)]
+struct MacroDef {
+    params: Vec<String>,
+    body: Vec<Token>,
+}
+
 pub struct Lexer {
     chars: Vec<char>,
     errors: Vec<LexerError>,
     pos: usize,
     line: i32,
     column: i32,
-    macros: HashMap<String, Vec<Token>>,
+    macros: HashMap<String, MacroDef>,
 }
 
 impl Lexer {
     pub fn new(source: &str) -> Self {
         let mut macros = HashMap::new();
         // Predefine common stdio macros for fprintf compatibility
-        macros.insert("stdout".to_string(), vec![Token {
-            ty: TokenType::Number,
-            text: "1".to_string(),
-            line: 0,
-            column: 0,
-        }]);
-        macros.insert("stderr".to_string(), vec![Token {
-            ty: TokenType::Number,
-            text: "2".to_string(),
-            line: 0,
-            column: 0,
-        }]);
+        macros.insert("stdout".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token {
+                ty: TokenType::Number,
+                text: "1".to_string(),
+                line: 0,
+                column: 0,
+            }],
+        });
+        macros.insert("stderr".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token {
+                ty: TokenType::Number,
+                text: "2".to_string(),
+                line: 0,
+                column: 0,
+            }],
+        });
         Self {
             chars: source.chars().collect(),
             errors: Vec::new(),
@@ -559,6 +571,59 @@ impl Lexer {
         }
         let name: String = self.chars[name_start..self.pos].iter().collect();
 
+        let mut params: Vec<String> = Vec::new();
+        // 检查是否有参数列表：宏名后紧跟 '('（中间无空白）
+        if self.peek(0) == '(' {
+            self.advance(); // consume '('
+            loop {
+                self.skip_whitespace();
+                if self.peek(0) == ')' {
+                    self.advance();
+                    break;
+                }
+                if !(self.peek(0).is_ascii_alphabetic() || self.peek(0) == '_') {
+                    self.errors.push(LexerError {
+                        message: "宏参数必须是标识符".to_string(),
+                        line: self.line,
+                        column: self.column,
+                        code: ErrorCode::E1005_InvalidDefine as i32,
+                    });
+                    while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                        self.advance();
+                    }
+                    return;
+                }
+                let p_start = self.pos;
+                while self.pos < self.chars.len() {
+                    let c = self.peek(0);
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        self.advance();
+                    } else {
+                        break;
+                    }
+                }
+                params.push(self.chars[p_start..self.pos].iter().collect());
+                self.skip_whitespace();
+                if self.peek(0) == ',' {
+                    self.advance();
+                } else if self.peek(0) == ')' {
+                    self.advance();
+                    break;
+                } else {
+                    self.errors.push(LexerError {
+                        message: "宏参数列表格式错误".to_string(),
+                        line: self.line,
+                        column: self.column,
+                        code: ErrorCode::E1005_InvalidDefine as i32,
+                    });
+                    while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                        self.advance();
+                    }
+                    return;
+                }
+            }
+        }
+
         self.skip_whitespace();
 
         let body_start = self.pos;
@@ -568,26 +633,105 @@ impl Lexer {
         let body: String = self.chars[body_start..self.pos].iter().collect();
 
         let (body_tokens, _) = Lexer::new(&body).tokenize();
-        let mut macros = HashMap::new();
-        macros.insert(name, body_tokens.into_iter().filter(|t| t.ty != TokenType::Eof).collect());
-        self.macros.extend(macros);
+        let mdef = MacroDef {
+            params,
+            body: body_tokens.into_iter().filter(|t| t.ty != TokenType::Eof).collect(),
+        };
+        self.macros.insert(name, mdef);
     }
 
     fn expand_macros(&self, tokens: Vec<Token>) -> Vec<Token> {
+        self.expand_macros_inner(&tokens, &mut HashSet::new())
+    }
+
+    fn expand_macros_inner(&self, tokens: &[Token], expanding: &mut HashSet<String>) -> Vec<Token> {
         let mut result = Vec::new();
-        for tok in tokens {
+        let mut i = 0;
+        while i < tokens.len() {
+            let tok = &tokens[i];
             if tok.ty == TokenType::Identifier {
-                if let Some(macro_tokens) = self.macros.get(&tok.text) {
-                    for mt in macro_tokens {
-                        let mut expanded = mt.clone();
-                        expanded.line = tok.line;
-                        expanded.column = tok.column;
-                        result.push(expanded);
+                if let Some(mdef) = self.macros.get(&tok.text) {
+                    if expanding.contains(&tok.text) {
+                        result.push(tok.clone());
+                        i += 1;
+                        continue;
                     }
-                    continue;
+                    if mdef.params.is_empty() {
+                        // 对象式宏
+                        expanding.insert(tok.text.clone());
+                        let expanded = self.expand_macros_inner(&mdef.body, expanding);
+                        expanding.remove(&tok.text);
+                        for mut mt in expanded {
+                            mt.line = tok.line;
+                            mt.column = tok.column;
+                            result.push(mt);
+                        }
+                        i += 1;
+                        continue;
+                    } else {
+                        // 参数化宏：检查下一个 token 是否是 (
+                        if i + 1 < tokens.len() && tokens[i + 1].ty == TokenType::LParen {
+                            let mut args: Vec<Vec<Token>> = Vec::new();
+                            let mut current_arg: Vec<Token> = Vec::new();
+                            let mut depth = 1;
+                            let mut j = i + 2; // skip LParen
+                            while j < tokens.len() && depth > 0 {
+                                match tokens[j].ty {
+                                    TokenType::LParen => {
+                                        depth += 1;
+                                        current_arg.push(tokens[j].clone());
+                                    }
+                                    TokenType::RParen => {
+                                        depth -= 1;
+                                        if depth == 0 {
+                                            break;
+                                        }
+                                        current_arg.push(tokens[j].clone());
+                                    }
+                                    TokenType::Comma if depth == 1 => {
+                                        args.push(current_arg);
+                                        current_arg = Vec::new();
+                                    }
+                                    _ => current_arg.push(tokens[j].clone()),
+                                }
+                                j += 1;
+                            }
+                            args.push(current_arg);
+
+                            if args.len() != mdef.params.len() {
+                                // 参数数量不匹配，不展开，保留原 token
+                                result.push(tok.clone());
+                                i += 1;
+                                continue;
+                            }
+
+                            // 替换 body 中的参数
+                            expanding.insert(tok.text.clone());
+                            let mut substituted = Vec::new();
+                            for bt in &mdef.body {
+                                if bt.ty == TokenType::Identifier {
+                                    if let Some(param_idx) = mdef.params.iter().position(|p| p == &bt.text) {
+                                        substituted.extend(args[param_idx].iter().cloned());
+                                        continue;
+                                    }
+                                }
+                                substituted.push(bt.clone());
+                            }
+                            let expanded = self.expand_macros_inner(&substituted, expanding);
+                            expanding.remove(&tok.text);
+                            for mut mt in expanded {
+                                mt.line = tok.line;
+                                mt.column = tok.column;
+                                result.push(mt);
+                            }
+                            i = j + 1;
+                            continue;
+                        }
+                    }
                 }
             }
-            result.push(tok);
+            result.push(tok.clone());
+            i += 1;
         }
         result
     }

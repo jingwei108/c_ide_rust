@@ -37,6 +37,8 @@ pub struct BytecodeGen {
     global_types: HashMap<String, Type>,
     local_indices: HashMap<String, i32>,
     local_types: HashMap<String, Type>,
+    static_local_indices: HashMap<String, i32>,
+    static_local_types: HashMap<String, Type>,
     next_local_offset: i32,
     local_scope_stack: Vec<Vec<(String, Option<i32>)>>,
     temp_slot0: i32,
@@ -80,6 +82,8 @@ impl BytecodeGen {
             global_types: HashMap::new(),
             local_indices: HashMap::new(),
             local_types: HashMap::new(),
+            static_local_indices: HashMap::new(),
+            static_local_types: HashMap::new(),
             next_local_offset: 0,
             local_scope_stack: Vec::new(),
             temp_slot0: -1,
@@ -542,8 +546,97 @@ impl BytecodeGen {
                 for s in stmts { self.gen_stmt(s); }
                 self.exit_scope();
             }
-            Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
-                let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc| {
+            Stmt::VarDecl { var_type, name, init, extra_vars, is_static, loc } => {
+                let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc, is_static: bool| {
+                    if is_static {
+                        if self.static_local_indices.contains_key(n) {
+                            return;
+                        }
+                        let sz = self.type_size(vty);
+                        let aligned_sz = (sz + 3) & !3;
+                        let global_offset = (self.string_mem_offset - crate::vm::vm::GLOBAL_START) as i32;
+                        self.string_mem_offset += aligned_sz as u32;
+                        self.static_local_indices.insert(n.to_string(), global_offset);
+                        self.static_local_types.insert(n.to_string(), vty.clone());
+                        self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
+                        self.symbols.push(VMSymbol {
+                            name: n.to_string(),
+                            addr: (crate::vm::vm::GLOBAL_START as i32 + global_offset) as u32,
+                            is_local: false,
+                            ty: vty.clone(),
+                            scope_depth: 0,
+                            func_name: self.current_func.clone(),
+                        });
+                        if let Some(e) = init {
+                            match e {
+                                Expr::InitList { elements, .. } => {
+                                    if base_kind(vty) == TypeKind::Char {
+                                        let values = flatten_init_list(elements, &mut self.errors);
+                                        for i in 0..sz as usize {
+                                            self.globals_init_32.push((global_offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
+                                        }
+                                    } else {
+                                        let elem_size = self.elem_type_size(vty);
+                                        let count = vty.total_elements();
+                                        if elem_size == 8 {
+                                            for (i, elem) in elements.iter().enumerate() {
+                                                let addr = global_offset as u32 + (i as u32) * elem_size as u32;
+                                                if let Expr::FloatLiteral { value, .. } = elem {
+                                                    self.globals_init_64.push((addr, value.to_bits()));
+                                                } else if let Expr::LongLiteral { value, .. } = elem {
+                                                    self.globals_init_64.push((addr, *value as u64));
+                                                } else {
+                                                    let val = flatten_init_list(&vec![elem.clone()], &mut self.errors).get(0).copied().unwrap_or(0);
+                                                    self.globals_init_32.push((addr, val));
+                                                }
+                                            }
+                                        } else {
+                                            let values = flatten_init_list(elements, &mut self.errors);
+                                            for i in 0..count as usize {
+                                                let addr = global_offset as u32 + (i as u32) * elem_size as u32;
+                                                self.globals_init_32.push((addr, values.get(i).copied().unwrap_or(0)));
+                                            }
+                                        }
+                                    }
+                                }
+                                Expr::StringLiteral { value, .. } => {
+                                    for i in 0..sz as usize {
+                                        let byte = if i < value.len() { value.as_bytes()[i] as i32 } else { 0 };
+                                        self.globals_init_32.push((global_offset as u32 + i as u32, byte));
+                                    }
+                                }
+                                Expr::Literal { value, .. } => {
+                                    self.globals_init_32.push((global_offset as u32, *value));
+                                }
+                                Expr::LongLiteral { value, .. } => {
+                                    self.globals_init_64.push((global_offset as u32, *value as u64));
+                                }
+                                Expr::FloatLiteral { value, .. } => {
+                                    if vty.kind() == TypeKind::Double {
+                                        self.globals_init_64.push((global_offset as u32, value.to_bits()));
+                                    } else {
+                                        self.globals_init_32.push((global_offset as u32, (*value as f32).to_bits() as i32));
+                                    }
+                                }
+                                Expr::Identifier { name: id_name, .. } => {
+                                    if let Some(&idx) = self.func_index.get(id_name) {
+                                        self.globals_init_32.push((global_offset as u32, idx));
+                                    }
+                                }
+                                _ => {
+                                    self.gen_expr(e);
+                                    if vty.kind() == TypeKind::Double {
+                                        self.emit(OpCode::StoreGlobalD, global_offset, loc);
+                                    } else if vty.kind() == TypeKind::LongLong {
+                                        self.emit(OpCode::StoreGlobalQ, global_offset, loc);
+                                    } else {
+                                        self.emit(OpCode::StoreGlobal, global_offset, loc);
+                                    }
+                                }
+                            }
+                        }
+                        return;
+                    }
                     let sz = self.type_size(vty);
                     let aligned_sz = (sz + 3) & !3;
                     let local_offset = self.next_local_offset;
@@ -710,9 +803,9 @@ impl BytecodeGen {
                         }
                     }
                 };
-                emit_one(var_type, name, init, loc);
+                emit_one(var_type, name, init, loc, *is_static);
                 for (ety, ename, einit) in extra_vars.iter_mut() {
-                    emit_one(ety, ename, einit, loc);
+                    emit_one(ety, ename, einit, loc, *is_static);
                 }
             }
             Stmt::Expr { expr, .. } => {
@@ -950,6 +1043,23 @@ impl BytecodeGen {
                 // Function name used as value (function pointer)
                 if let Some(&idx) = self.func_index.get(name) {
                     self.emit(OpCode::PushConst, idx, &loc);
+                    return;
+                }
+                // static local variable
+                if let Some(&static_offset) = self.static_local_indices.get(name) {
+                    if let Some(ty) = self.static_local_types.get(name) {
+                        if ty.is_array() {
+                            self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + static_offset, &loc);
+                        } else if ty.kind() == TypeKind::Double {
+                            self.emit(OpCode::LoadGlobalD, static_offset, &loc);
+                        } else if ty.kind() == TypeKind::LongLong {
+                            self.emit(OpCode::LoadGlobalQ, static_offset, &loc);
+                        } else {
+                            self.emit(OpCode::LoadGlobal, static_offset, &loc);
+                        }
+                    } else {
+                        self.emit(OpCode::LoadGlobal, static_offset, &loc);
+                    }
                     return;
                 }
                 let local_offset = self.resolve_local(name);
@@ -1211,6 +1321,8 @@ impl BytecodeGen {
                                     self.emit(OpCode::GetFrameBase, 0, &loc);
                                     self.emit(OpCode::PushConst, offset, &loc);
                                     self.emit(OpCode::Add, 0, &loc);
+                                } else if let Some(&offset) = self.static_local_indices.get(name) {
+                                    self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
                                 } else if let Some(&offset) = self.global_indices.get(name) {
                                     self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
                                 } else if let Some(&idx) = self.func_index.get(name) {
@@ -1282,27 +1394,38 @@ impl BytecodeGen {
                                     self.ptr_step_size(ty)
                                 } else if let Some(ty) = self.global_types.get(name) {
                                     self.ptr_step_size(ty)
+                                } else if let Some(ty) = self.static_local_types.get(name) {
+                                    self.ptr_step_size(ty)
                                 } else { 1 };
-                                let local_idx = self.resolve_local(name);
-                                if local_idx >= 0 {
-                                    self.emit(OpCode::LoadLocal, local_idx, &loc);
+                                if let Some(&static_idx) = self.static_local_indices.get(name) {
+                                    self.emit(OpCode::LoadGlobal, static_idx, &loc);
                                     if !is_pre { self.emit(OpCode::Dup, 0, &loc); }
                                     self.emit(OpCode::PushConst, step, &loc);
                                     self.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, &loc);
                                     if is_pre { self.emit(OpCode::Dup, 0, &loc); }
-                                    self.emit(OpCode::StoreLocal, local_idx, &loc);
+                                    self.emit(OpCode::StoreGlobal, static_idx, &loc);
                                 } else {
-                                    let global_idx = self.resolve_global(name);
-                                    if global_idx >= 0 {
-                                        self.emit(OpCode::LoadGlobal, global_idx, &loc);
+                                    let local_idx = self.resolve_local(name);
+                                    if local_idx >= 0 {
+                                        self.emit(OpCode::LoadLocal, local_idx, &loc);
                                         if !is_pre { self.emit(OpCode::Dup, 0, &loc); }
                                         self.emit(OpCode::PushConst, step, &loc);
                                         self.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, &loc);
                                         if is_pre { self.emit(OpCode::Dup, 0, &loc); }
-                                        self.emit(OpCode::StoreGlobal, global_idx, &loc);
+                                        self.emit(OpCode::StoreLocal, local_idx, &loc);
                                     } else {
-                                        self.report_error("自增/自减暂只支持简单变量", &loc);
-                                        self.emit(OpCode::PushConst, 0, &loc);
+                                        let global_idx = self.resolve_global(name);
+                                        if global_idx >= 0 {
+                                            self.emit(OpCode::LoadGlobal, global_idx, &loc);
+                                            if !is_pre { self.emit(OpCode::Dup, 0, &loc); }
+                                            self.emit(OpCode::PushConst, step, &loc);
+                                            self.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, &loc);
+                                            if is_pre { self.emit(OpCode::Dup, 0, &loc); }
+                                            self.emit(OpCode::StoreGlobal, global_idx, &loc);
+                                        } else {
+                                            self.report_error("自增/自减暂只支持简单变量", &loc);
+                                            self.emit(OpCode::PushConst, 0, &loc);
+                                        }
                                     }
                                 }
                             }
@@ -1341,6 +1464,10 @@ impl BytecodeGen {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
                                 for i in (0..words).rev() {
                                     self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                }
+                            } else if let Some(&offset) = self.static_local_indices.get(arg_name) {
+                                for i in (0..words).rev() {
+                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
                                 }
                             } else if let Some(&offset) = self.global_indices.get(arg_name) {
                                 for i in (0..words).rev() {
@@ -1403,6 +1530,10 @@ impl BytecodeGen {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
                                 for i in (0..words).rev() {
                                     self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                }
+                            } else if let Some(&offset) = self.static_local_indices.get(arg_name) {
+                                for i in (0..words).rev() {
+                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
                                 }
                             } else if let Some(&offset) = self.global_indices.get(arg_name) {
                                 for i in (0..words).rev() {
@@ -1742,6 +1873,24 @@ impl BytecodeGen {
         };
 
         if let Expr::Identifier { name, .. } = left {
+            if let Some(&static_offset) = self.static_local_indices.get(name) {
+                if *op != AssignOp::Assign {
+                    if left_is_double { self.emit(OpCode::LoadGlobalD, static_offset, loc); }
+                    else if left_is_long_long { self.emit(OpCode::LoadGlobalQ, static_offset, loc); }
+                    else { self.emit(OpCode::LoadGlobal, static_offset, loc); }
+                    self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
+                    emit_compound(self, loc);
+                } else {
+                    self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
+                }
+                if left_is_double { self.emit(OpCode::StoreGlobalD, static_offset, loc); }
+                else if left_is_long_long { self.emit(OpCode::StoreGlobalQ, static_offset, loc); }
+                else { self.emit(OpCode::StoreGlobal, static_offset, loc); }
+                if left_is_double { self.emit(OpCode::LoadGlobalD, static_offset, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadGlobalQ, static_offset, loc); }
+                else { self.emit(OpCode::LoadGlobal, static_offset, loc); }
+                return;
+            }
             let local_offset = self.resolve_local(name);
             if local_offset >= 0 {
                 if *op != AssignOp::Assign {
@@ -1782,8 +1931,8 @@ impl BytecodeGen {
             }
         } else if let Expr::Index { array, index, ty, .. } = left {
             let result_ty = ty.clone();
+            self.gen_index(array, index, &result_ty, loc, true);
             if *op != AssignOp::Assign {
-                self.gen_index(array, index, &result_ty, loc, true);
                 self.emit(OpCode::Dup, 0, loc);
                 if result_ty.kind() == TypeKind::Char {
                     self.emit(OpCode::LoadMemByte, 0, loc);
@@ -1794,8 +1943,13 @@ impl BytecodeGen {
                 } else {
                     self.emit(OpCode::LoadMem, 0, loc);
                 }
+                self.emit(OpCode::Swap, 0, loc);
+                let addr_temp = self.get_temp_slot(0);
+                self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                self.emit(OpCode::Swap, 0, loc);
                 if result_ty.kind() == TypeKind::Char {
                     self.emit(OpCode::StoreMemByte, 0, loc);
                 } else if result_ty.kind() == TypeKind::Double {
@@ -1805,8 +1959,20 @@ impl BytecodeGen {
                 } else {
                     self.emit(OpCode::StoreMem, 0, loc);
                 }
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                if result_ty.kind() == TypeKind::Char {
+                    self.emit(OpCode::LoadMemByte, 0, loc);
+                } else if result_ty.kind() == TypeKind::Double {
+                    self.emit(OpCode::LoadMemD, 0, loc);
+                } else if result_ty.kind() == TypeKind::LongLong {
+                    self.emit(OpCode::LoadMemQ, 0, loc);
+                } else {
+                    self.emit(OpCode::LoadMem, 0, loc);
+                }
             } else {
-                self.gen_index(array, index, &result_ty, loc, true);
+                self.emit(OpCode::Dup, 0, loc);
+                let addr_temp = self.get_temp_slot(0);
+                self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 if result_ty.kind() == TypeKind::Char {
                     self.emit(OpCode::StoreMemByte, 0, loc);
@@ -1817,56 +1983,87 @@ impl BytecodeGen {
                 } else {
                     self.emit(OpCode::StoreMem, 0, loc);
                 }
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                if result_ty.kind() == TypeKind::Char {
+                    self.emit(OpCode::LoadMemByte, 0, loc);
+                } else if result_ty.kind() == TypeKind::Double {
+                    self.emit(OpCode::LoadMemD, 0, loc);
+                } else if result_ty.kind() == TypeKind::LongLong {
+                    self.emit(OpCode::LoadMemQ, 0, loc);
+                } else {
+                    self.emit(OpCode::LoadMem, 0, loc);
+                }
             }
-            self.gen_index(array, index, &result_ty, loc, false);
             return;
         } else if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left {
+            self.gen_expr(operand);
             if *op != AssignOp::Assign {
-                self.gen_expr(operand);
                 self.emit(OpCode::Dup, 0, loc);
                 if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
+                self.emit(OpCode::Swap, 0, loc);
+                let addr_temp = self.get_temp_slot(0);
+                self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                self.emit(OpCode::Swap, 0, loc);
                 if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
                 else { self.emit(OpCode::StoreMem, 0, loc); }
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
+                else { self.emit(OpCode::LoadMem, 0, loc); }
             } else {
-                self.gen_expr(operand);
+                self.emit(OpCode::Dup, 0, loc);
+                let addr_temp = self.get_temp_slot(0);
+                self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
                 else { self.emit(OpCode::StoreMem, 0, loc); }
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
+                else { self.emit(OpCode::LoadMem, 0, loc); }
             }
-            self.gen_expr(operand);
-            if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
-            else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
-            else { self.emit(OpCode::LoadMem, 0, loc); }
             return;
         } else if let Expr::Member { object, member, .. } = left {
+            self.gen_member_addr(object, member, loc);
             if *op != AssignOp::Assign {
-                self.gen_member_addr(object, member, loc);
                 self.emit(OpCode::Dup, 0, loc);
                 if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
+                self.emit(OpCode::Swap, 0, loc);
+                let addr_temp = self.get_temp_slot(0);
+                self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 emit_compound(self, loc);
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                self.emit(OpCode::Swap, 0, loc);
                 if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
                 else { self.emit(OpCode::StoreMem, 0, loc); }
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
+                else { self.emit(OpCode::LoadMem, 0, loc); }
             } else {
-                self.gen_member_addr(object, member, loc);
+                self.emit(OpCode::Dup, 0, loc);
+                let addr_temp = self.get_temp_slot(0);
+                self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
                 if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
                 else { self.emit(OpCode::StoreMem, 0, loc); }
+                self.emit(OpCode::LoadLocal, addr_temp, loc);
+                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
+                else { self.emit(OpCode::LoadMem, 0, loc); }
             }
-            self.gen_member_addr(object, member, loc);
-            if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
-            else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
-            else { self.emit(OpCode::LoadMem, 0, loc); }
             return;
         }
 

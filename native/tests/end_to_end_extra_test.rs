@@ -4111,3 +4111,167 @@ int main() {
     // diff = 1.0 > EPS_F32 => normal comparison
     assert_eq!(out.join(""), "0110", "Far apart floats should compare normally");
 }
+
+
+// ============================================================================
+// 数据结构教材语法拓展测试（参数化宏、static局部变量、fgets/fputs）
+// ============================================================================
+
+#[test]
+fn test_e2e_parametric_macro_max() {
+    let src = r#"
+#include <stdio.h>
+#define MAX(a,b) ((a)>(b)?(a):(b))
+int main() {
+    int x = 5;
+    int y = 10;
+    printf("%d\n", MAX(x, y));
+    printf("%d\n", MAX(3, 2));
+    printf("%d\n", MAX(x + 1, y - 3));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "1037", "Parametric macro MAX should work");
+}
+
+#[test]
+fn test_e2e_parametric_macro_swap() {
+    let src = r#"
+#include <stdio.h>
+#define SWAP(t,a,b) { t temp=a; a=b; b=temp; }
+int main() {
+    int x = 1;
+    int y = 2;
+    SWAP(int, x, y)
+    printf("%d %d\n", x, y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "2 1", "Parametric macro SWAP should work");
+}
+
+#[test]
+fn test_e2e_parametric_macro_nested() {
+    let src = r#"
+#include <stdio.h>
+#define MAX(a,b) ((a)>(b)?(a):(b))
+#define MIN(a,b) ((a)<(b)?(a):(b))
+int main() {
+    int r = MAX(1, MIN(2, 3));
+    printf("%d\n", r);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "2", "Nested parametric macros should work");
+}
+
+#[test]
+fn test_e2e_static_local_var_counter() {
+    let src = r#"
+#include <stdio.h>
+int count_calls() {
+    static int count = 0;
+    count++;
+    return count;
+}
+int main() {
+    printf("%d\n", count_calls());
+    printf("%d\n", count_calls());
+    printf("%d\n", count_calls());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "123", "Static local variable should persist across calls");
+}
+
+#[test]
+fn test_e2e_static_local_var_init_only_once() {
+    let src = r#"
+#include <stdio.h>
+int get_value() {
+    static int v = 42;
+    v = v + 1;
+    return v;
+}
+int main() {
+    printf("%d\n", get_value());
+    printf("%d\n", get_value());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "4344", "Static local should initialize only once");
+}
+
+#[test]
+fn test_e2e_static_local_var_array() {
+    let src = r#"
+#include <stdio.h>
+int sum_arr() {
+    static int arr[3] = {1, 2, 3};
+    int s = 0;
+    for (int i = 0; i < 3; i++) {
+        s = s + arr[i];
+        arr[i] = arr[i] + 1;
+    }
+    return s;
+}
+int main() {
+    printf("%d\n", sum_arr());
+    printf("%d\n", sum_arr());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "69", "Static local array should persist and mutate");
+}
+
+#[test]
+fn test_e2e_fgets_fputs() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    FILE *fp = fopen("test.txt", "w");
+    fputs("hello\n", fp);
+    fputs("world\n", fp);
+    fclose(fp);
+
+    fp = fopen("test.txt", "r");
+    char buf[20];
+    fgets(buf, 20, fp);
+    printf("%s", buf);
+    fgets(buf, 20, fp);
+    printf("%s", buf);
+    fclose(fp);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert!(out.iter().any(|l| l.contains("hello")), "fgets should read first line: {:?}", out);
+    assert!(out.iter().any(|l| l.contains("world")), "fgets should read second line: {:?}", out);
+}

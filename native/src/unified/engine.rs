@@ -34,6 +34,66 @@ impl UnifiedEngine {
         }
     }
 
+    /// 轻量级语义标签推断（仅基于源码行，不访问变量值）。
+    /// 用于智能检查点判断，避免每步都计算完整语义标签。
+    fn quick_semantic_label(code_line: i32, session: &Session) -> String {
+        if code_line <= 0 {
+            return String::new();
+        }
+        let source_line = session
+            .compile
+            .compile_units
+            .first()
+            .and_then(|u| {
+                u.source
+                    .lines()
+                    .nth((code_line - 1) as usize)
+                    .map(|s| s.trim())
+            })
+            .unwrap_or("");
+
+        if source_line.starts_with("for ") || source_line.starts_with("while ") {
+            "循环边界".to_string()
+        } else if source_line.starts_with("return") {
+            "返回".to_string()
+        } else if source_line.contains("malloc") || source_line.contains("calloc") {
+            "内存分配".to_string()
+        } else if source_line.contains("free(") {
+            "释放内存".to_string()
+        } else if source_line.contains("temp")
+            && (source_line.contains("arr[") || source_line.contains("a["))
+            && source_line.contains('=')
+        {
+            "交换".to_string()
+        } else if source_line.contains('(')
+            && !source_line.starts_with("if ")
+            && !source_line.starts_with("while ")
+            && !source_line.starts_with("for ")
+            && !source_line.starts_with("switch ")
+            && !source_line.starts_with("return ")
+            && !source_line.starts_with("//")
+            && !source_line.starts_with("/*")
+        {
+            // 尝试提取函数名
+            let after_assign = if let Some(pos) = source_line.find('=') {
+                source_line[pos + 1..].trim()
+            } else {
+                source_line
+            };
+            if let Some(paren_pos) = after_assign.find('(') {
+                let name = after_assign[..paren_pos].trim();
+                if !name.is_empty()
+                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')
+                {
+                    return format!("调用 {}", name);
+                }
+            }
+            "调用".to_string()
+        } else {
+            String::new()
+        }
+    }
+
     pub fn reset(&mut self) {
         self.checkpoints.clear();
         self.frame_cache.clear();
@@ -76,7 +136,8 @@ impl UnifiedEngine {
 
             let step = vm.get_executed_steps();
 
-            // 检查点保存
+            // 检查点保存（固定间隔 + 智能边界）
+            let semantic_label = Self::quick_semantic_label(vm.get_current_line(), session);
             let meta = StepMeta {
                 code_line: vm.get_current_line(),
                 func_name: vm
@@ -85,7 +146,7 @@ impl UnifiedEngine {
                     .map(|f| f.func_name.clone())
                     .unwrap_or_default(),
                 loop_depth: 0,
-                semantic_label: String::new(),
+                semantic_label,
             };
             if self.checkpoints.should_checkpoint(step, &meta) {
                 self.checkpoints.save(step, vm, session);
@@ -185,7 +246,7 @@ impl UnifiedEngine {
             };
         }
 
-        // 找到最近检查点
+        // 找到最近检查点（增量快照会在此重建为全量）
         let (checkpoint_step, snap) = match self.checkpoints.nearest(target) {
             Some(v) => v,
             None => {
@@ -198,7 +259,7 @@ impl UnifiedEngine {
         };
 
         // 恢复 VM 状态
-        vm.restore(snap, session);
+        vm.restore(&snap, session);
 
         // 正向重放到目标步
         for step in checkpoint_step..target {
@@ -209,6 +270,12 @@ impl UnifiedEngine {
                     error: Some("执行已取消".to_string()),
                 };
             }
+
+            // 重放过程中动态保存检查点，加速后续 seek
+            if step > checkpoint_step && step % self.checkpoints.interval == 0 {
+                self.checkpoints.save(step, vm, session);
+            }
+
             match vm.step(session) {
                 StepResult::Ok | StepResult::Paused => {
                     let payload = StepCollector::collect(vm, session, step);

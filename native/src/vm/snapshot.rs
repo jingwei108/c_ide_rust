@@ -3,7 +3,52 @@ use std::collections::{HashMap, HashSet};
 use crate::session::{FreeBlock, MemoryRegion, RuntimeState, TraceEntry, VisEvent};
 use crate::vm::vm::CallFrame;
 
-/// VM 全量快照（约 1MB + 少量元数据）。
+/// VM 内存快照：全量或页级增量（页大小 4KB）。
+#[derive(Clone)]
+pub enum MemoryImage {
+    /// 完整 1MB 内存拷贝。
+    Full(Vec<u8>),
+    /// 相对于某全量检查点的脏页集合。
+    /// 页索引 0..255，每页 4096 字节。
+    Delta {
+        base_step: i32,
+        pages: Vec<(u16, Vec<u8>)>,
+    },
+}
+
+impl MemoryImage {
+    /// 获取内存总字节数（用于调试/统计）。
+    pub fn byte_size(&self) -> usize {
+        match self {
+            MemoryImage::Full(v) => v.len(),
+            MemoryImage::Delta { pages, .. } => pages.iter().map(|(_, p)| p.len()).sum(),
+        }
+    }
+
+    /// 重建完整 1MB 内存，写入到提供的 buffer 中。
+    /// 调用者应确保 `dst` 长度至少为 1MB，且已填充基础内存内容。
+    pub fn apply_to(&self, dst: &mut [u8]) {
+        match self {
+            MemoryImage::Full(v) => {
+                let len = v.len().min(dst.len());
+                dst[..len].copy_from_slice(&v[..len]);
+            }
+            MemoryImage::Delta { pages, .. } => {
+                for (page_idx, page_data) in pages {
+                    let offset = (*page_idx as usize) * PAGE_SIZE;
+                    if offset + page_data.len() <= dst.len() {
+                        dst[offset..offset + page_data.len()].copy_from_slice(page_data);
+                    }
+                }
+            }
+        }
+    }
+}
+
+pub const PAGE_SIZE: usize = 4096;
+pub const PAGE_COUNT: usize = 256; // 1MB / 4KB
+
+/// VM 全量/增量快照。
 ///
 /// 注意：快照**不保存**编译期常量（bytecode、函数表、符号表等），
 /// 因为这些可以从 `Session.compile` 重建。
@@ -11,7 +56,7 @@ use crate::vm::vm::CallFrame;
 #[derive(Clone)]
 pub struct VMSnapshot {
     // VM 核心运行时状态
-    pub memory: Vec<u8>,
+    pub memory: MemoryImage,
     pub stack: Vec<u64>,
     pub call_stack: Vec<CallFrame>,
     pub ip: usize,

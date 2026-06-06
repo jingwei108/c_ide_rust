@@ -863,6 +863,112 @@ class CodeTemplate {
       ],
     ),
     CodeTemplate(
+      'inorder',
+      '中序遍历',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct TreeNode {\n'
+      '    int val;\n'
+      '    struct TreeNode* left;\n'
+      '    struct TreeNode* right;\n'
+      '};\n'
+      '\n'
+      'struct TreeNode* createTreeNode(int val) {\n'
+      '    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));\n'
+      '    node->val = val;\n'
+      '    node->left = NULL;\n'
+      '    node->right = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'void inorder(struct TreeNode* root) {\n'
+      '    if (root == NULL) return;\n'
+      '    inorder(root->left);\n'
+      '    printf("%d ", root->val);\n'
+      '    inorder(root->right);\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct TreeNode* root = createTreeNode(1);\n'
+      '    root->left = createTreeNode(2);\n'
+      '    root->right = createTreeNode(3);\n'
+      '    root->left->left = createTreeNode(4);\n'
+      '    root->left->right = createTreeNode(5);\n'
+      '    inorder(root);\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '递归遍历',
+          description: '中序遍历的顺序是：左子树 → 根节点 → 右子树。对二叉搜索树进行中序遍历可得到有序序列。',
+          focusLines: [18, 19, 20, 21, 22],
+          explanations: [
+            LineExplanation(line: 18, short: '终止条件', detail: 'root == NULL 表示空树，直接返回。'),
+            LineExplanation(line: 19, short: '递归左子树', detail: 'inorder(root->left) 先遍历左子树。'),
+            LineExplanation(line: 20, short: '访问根', detail: '左子树遍历完成后，打印当前节点的值。'),
+            LineExplanation(line: 21, short: '递归右子树', detail: '最后遍历右子树。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'postorder',
+      '后序遍历',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct TreeNode {\n'
+      '    int val;\n'
+      '    struct TreeNode* left;\n'
+      '    struct TreeNode* right;\n'
+      '};\n'
+      '\n'
+      'struct TreeNode* createTreeNode(int val) {\n'
+      '    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));\n'
+      '    node->val = val;\n'
+      '    node->left = NULL;\n'
+      '    node->right = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'void postorder(struct TreeNode* root) {\n'
+      '    if (root == NULL) return;\n'
+      '    postorder(root->left);\n'
+      '    postorder(root->right);\n'
+      '    printf("%d ", root->val);\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct TreeNode* root = createTreeNode(1);\n'
+      '    root->left = createTreeNode(2);\n'
+      '    root->right = createTreeNode(3);\n'
+      '    root->left->left = createTreeNode(4);\n'
+      '    root->left->right = createTreeNode(5);\n'
+      '    postorder(root);\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '递归遍历',
+          description: '后序遍历的顺序是：左子树 → 右子树 → 根节点。常用于释放树的内存（先释放子节点，再释放根节点）。',
+          focusLines: [18, 19, 20, 21, 22],
+          explanations: [
+            LineExplanation(line: 18, short: '终止条件', detail: 'root == NULL 表示空树，直接返回。'),
+            LineExplanation(line: 19, short: '递归左子树', detail: 'postorder(root->left) 先遍历左子树。'),
+            LineExplanation(line: 20, short: '递归右子树', detail: '再遍历右子树。'),
+            LineExplanation(line: 21, short: '访问根', detail: '左右子树都遍历完成后，打印当前节点的值。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
       'stackArray',
       '栈（数组）',
       '结构',
@@ -915,6 +1021,1514 @@ class CodeTemplate {
           explanations: [
             LineExplanation(line: 10, short: '判空', detail: 'top < 0 时栈为空，返回 -1 表示出错。'),
             LineExplanation(line: 11, short: '后置--', detail: 'stack[top--] 先取 top 位置的值，再自减，栈顶下移。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'queueArray',
+      '队列（数组）',
+      '结构',
+      '#include <stdio.h>\n'
+      '\n'
+      'int queue[100];\n'
+      'int front = 0, rear = 0;\n'
+      '\n'
+      'void enqueue(int x) {\n'
+      '    queue[rear++] = x;\n'
+      '}\n'
+      '\n'
+      'int dequeue() {\n'
+      '    if (front == rear) return -1;\n'
+      '    return queue[front++];\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    enqueue(10);\n'
+      '    enqueue(20);\n'
+      '    enqueue(30);\n'
+      '    printf("%d ", dequeue());\n'
+      '    printf("%d ", dequeue());\n'
+      '    printf("%d\\n", dequeue());\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '队列的定义',
+          description: '用数组实现队列，front 指向队头，rear 指向队尾下一个位置。front == rear 时队列为空。',
+          focusLines: [4, 5],
+          explanations: [
+            LineExplanation(line: 4, short: '数组', detail: 'queue[100] 是队列的底层存储，容量 100。'),
+            LineExplanation(line: 5, short: '头尾指针', detail: 'front 和 rear 都从 0 开始。front 是待出队位置，rear 是待入队位置。'),
+          ],
+        ),
+        TutorialStep(
+          title: '入队',
+          description: 'rear++ 先使用当前 rear 作为索引存放 x，再让 rear 后移一位。',
+          focusLines: [7],
+          explanations: [
+            LineExplanation(line: 7, short: '后置++', detail: 'queue[rear++] = x 先把 x 放到 queue[rear]，然后 rear 自增。'),
+          ],
+        ),
+        TutorialStep(
+          title: '出队',
+          description: '先检查队列是否为空，再返回队头元素并让 front 后移。',
+          focusLines: [10, 11],
+          explanations: [
+            LineExplanation(line: 10, short: '判空', detail: 'front == rear 时队列为空，返回 -1 表示出错。'),
+            LineExplanation(line: 11, short: '后置++', detail: 'queue[front++] 先取 front 位置的值，再自增，队头上移。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'heapSort',
+      '堆排序',
+      '排序',
+      '#include <stdio.h>\n'
+      '\n'
+      'void heapify(int arr[], int n, int i) {\n'
+      '    int largest = i;\n'
+      '    int left = 2 * i + 1;\n'
+      '    int right = 2 * i + 2;\n'
+      '    if (left < n && arr[left] > arr[largest])\n'
+      '        largest = left;\n'
+      '    if (right < n && arr[right] > arr[largest])\n'
+      '        largest = right;\n'
+      '    if (largest != i) {\n'
+      '        int temp = arr[i];\n'
+      '        arr[i] = arr[largest];\n'
+      '        arr[largest] = temp;\n'
+      '        heapify(arr, n, largest);\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'void heapSort(int arr[], int n) {\n'
+      '    for (int i = n / 2 - 1; i >= 0; i--)\n'
+      '        heapify(arr, n, i);\n'
+      '    for (int i = n - 1; i > 0; i--) {\n'
+      '        int temp = arr[0];\n'
+      '        arr[0] = arr[i];\n'
+      '        arr[i] = temp;\n'
+      '        heapify(arr, i, 0);\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int arr[{{n:5}}] = {12, 11, 13, 5, 6};\n'
+      '    int n = {{n:5}};\n'
+      '    heapSort(arr, n);\n'
+      '    for (int i = 0; i < n; i++) {\n'
+      '        printf("%d ", arr[i]);\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '数组长度', defaultValue: '5', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '堆化函数',
+          description: 'heapify 假设左右子树已经是堆，只需要把根节点下沉到正确位置，使整个子树满足堆性质。',
+          focusLines: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17],
+          explanations: [
+            LineExplanation(line: 4, short: '当前节点', detail: 'largest 初始设为 i，表示当前假设 i 就是最大值。'),
+            LineExplanation(line: 5, short: '左孩子', detail: 'left = 2*i + 1，完全二叉树左孩子下标公式。'),
+            LineExplanation(line: 6, short: '右孩子', detail: 'right = 2*i + 2，右孩子下标公式。'),
+            LineExplanation(line: 7, short: '比较左孩子', detail: '如果左孩子存在且比当前最大值大，更新 largest。'),
+            LineExplanation(line: 9, short: '比较右孩子', detail: '同理比较右孩子。'),
+            LineExplanation(line: 11, short: '需要交换', detail: 'largest != i 说明孩子比父亲大，需要交换。'),
+            LineExplanation(line: 12, short: '交换', detail: '经典三变量交换，把最大值放到根位置。'),
+            LineExplanation(line: 15, short: '递归下沉', detail: '交换后原来 largest 位置的值变小了，需要递归对它继续 heapify。'),
+          ],
+        ),
+        TutorialStep(
+          title: '建堆与排序',
+          description: 'heapSort 先自底向上建堆，再反复把堆顶（最大值）换到末尾，缩小堆范围继续 heapify。',
+          focusLines: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
+          explanations: [
+            LineExplanation(line: 20, short: '建堆起点', detail: '从最后一个非叶子节点 n/2-1 开始往前逐个 heapify。'),
+            LineExplanation(line: 22, short: '交换堆顶', detail: 'arr[0] 是当前最大值，把它换到位置 i（末尾）。'),
+            LineExplanation(line: 26, short: '缩小堆', detail: 'heapify(arr, i, 0) 只对前 i 个元素重新堆化，末尾已有序部分不再参与。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'bfs',
+      'BFS 广度优先',
+      '图算法',
+      '#include <stdio.h>\n'
+      '\n'
+      'int graph[5][5] = {\n'
+      '    {0, 1, 1, 0, 0},\n'
+      '    {1, 0, 0, 1, 1},\n'
+      '    {1, 0, 0, 0, 0},\n'
+      '    {0, 1, 0, 0, 0},\n'
+      '    {0, 1, 0, 0, 0}\n'
+      '};\n'
+      'int visited[5] = {0, 0, 0, 0, 0};\n'
+      'int queue[5];\n'
+      'int front = 0, rear = 0;\n'
+      '\n'
+      'void bfs(int start, int n) {\n'
+      '    visited[start] = 1;\n'
+      '    queue[rear++] = start;\n'
+      '    while (front < rear) {\n'
+      '        int u = queue[front++];\n'
+      '        printf("%d ", u);\n'
+      '        for (int v = 0; v < n; v++) {\n'
+      '            if (graph[u][v] == 1 && visited[v] == 0) {\n'
+      '                visited[v] = 1;\n'
+      '                queue[rear++] = v;\n'
+      '            }\n'
+      '        }\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int n = {{n:5}};\n'
+      '    bfs(0, n);\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '节点数', defaultValue: '5', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '图与队列',
+          description: 'BFS 使用队列实现。graph 是邻接矩阵，visited 标记已访问节点，queue 存储待访问节点。',
+          focusLines: [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+          explanations: [
+            LineExplanation(line: 3, short: '邻接矩阵', detail: 'graph[i][j] = 1 表示节点 i 和 j 之间有边。'),
+            LineExplanation(line: 10, short: '访问标记', detail: 'visited 数组防止节点被重复访问。'),
+            LineExplanation(line: 11, short: '队列', detail: 'queue 存放按层序待访问的节点。'),
+          ],
+        ),
+        TutorialStep(
+          title: 'BFS 过程',
+          description: '从起点出发，标记为已访问并入队。每次出队一个节点，访问其所有未访问的邻居并入队。',
+          focusLines: [15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+          explanations: [
+            LineExplanation(line: 15, short: '标记起点', detail: 'visited[start] = 1，标记起点已访问。'),
+            LineExplanation(line: 16, short: '起点入队', detail: 'queue[rear++] = start，起点入队。'),
+            LineExplanation(line: 17, short: '循环条件', detail: 'front < rear 表示队列非空。'),
+            LineExplanation(line: 18, short: '出队', detail: 'u = queue[front++]，取出队头节点。'),
+            LineExplanation(line: 20, short: '扫描邻居', detail: 'v 从 0 到 n-1 扫描所有可能邻居。'),
+            LineExplanation(line: 21, short: '未访问邻居', detail: 'graph[u][v] == 1 且 visited[v] == 0 说明是未访问的邻居。'),
+            LineExplanation(line: 22, short: '标记并入队', detail: '先标记 visited[v]，再入队，保证同一节点不会重复入队。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'dfs',
+      'DFS 深度优先',
+      '图算法',
+      '#include <stdio.h>\n'
+      '\n'
+      'int graph[5][5] = {\n'
+      '    {0, 1, 1, 0, 0},\n'
+      '    {1, 0, 0, 1, 1},\n'
+      '    {1, 0, 0, 0, 0},\n'
+      '    {0, 1, 0, 0, 0},\n'
+      '    {0, 1, 0, 0, 0}\n'
+      '};\n'
+      'int visited[5] = {0, 0, 0, 0, 0};\n'
+      '\n'
+      'void dfs(int u, int n) {\n'
+      '    visited[u] = 1;\n'
+      '    printf("%d ", u);\n'
+      '    for (int v = 0; v < n; v++) {\n'
+      '        if (graph[u][v] == 1 && visited[v] == 0) {\n'
+      '            dfs(v, n);\n'
+      '        }\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int n = {{n:5}};\n'
+      '    dfs(0, n);\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '节点数', defaultValue: '5', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '图与访问标记',
+          description: 'DFS 使用递归实现。graph 是邻接矩阵，visited 标记已访问节点，防止循环访问。',
+          focusLines: [3, 4, 5, 6, 7, 8, 9, 10],
+          explanations: [
+            LineExplanation(line: 3, short: '邻接矩阵', detail: 'graph[i][j] = 1 表示节点 i 和 j 之间有边。'),
+            LineExplanation(line: 10, short: '访问标记', detail: 'visited 数组防止节点被重复访问和无限递归。'),
+          ],
+        ),
+        TutorialStep(
+          title: 'DFS 过程',
+          description: '从当前节点出发，标记为已访问并输出。然后对每个未访问的邻居递归调用 dfs，一条路走到黑再回溯。',
+          focusLines: [12, 13, 14, 15, 16, 17, 18, 19, 20],
+          explanations: [
+            LineExplanation(line: 12, short: '标记访问', detail: 'visited[u] = 1，标记当前节点已访问。'),
+            LineExplanation(line: 13, short: '输出节点', detail: '打印当前节点编号。'),
+            LineExplanation(line: 14, short: '扫描邻居', detail: 'v 从 0 到 n-1 扫描所有可能邻居。'),
+            LineExplanation(line: 15, short: '未访问邻居', detail: 'graph[u][v] == 1 且 visited[v] == 0 说明是未访问的邻居。'),
+            LineExplanation(line: 16, short: '递归深入', detail: 'dfs(v, n) 递归访问邻居，直到没有未访问邻居才返回。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'dpFib',
+      'DP 斐波那契',
+      '动态规划',
+      '#include <stdio.h>\n'
+      '\n'
+      'int main() {\n'
+      '    int n = {{n:10}};\n'
+      '    int dp[20];\n'
+      '    dp[0] = 0;\n'
+      '    dp[1] = 1;\n'
+      '    for (int i = 2; i <= n; i++) {\n'
+      '        dp[i] = dp[i - 1] + dp[i - 2];\n'
+      '    }\n'
+      '    printf("%d\\n", dp[n]);\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '求第 n 项', defaultValue: '10', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '状态定义',
+          description: 'dp[i] 表示斐波那契数列的第 i 项。用数组保存中间结果，避免递归的重复计算。',
+          focusLines: [4, 5, 6, 7],
+          explanations: [
+            LineExplanation(line: 4, short: '边界', detail: 'dp[0] = 0 是数列第 0 项。'),
+            LineExplanation(line: 5, short: '边界', detail: 'dp[1] = 1 是数列第 1 项。'),
+            LineExplanation(line: 6, short: '递推', detail: 'dp[i] = dp[i-1] + dp[i-2]，从底向上填充。'),
+          ],
+        ),
+        TutorialStep(
+          title: '与递归对比',
+          description: '递归版本 fib(n) 会重复计算 fib(n-2) 等子问题。DP 版本每个子问题只算一次，时间复杂度从指数降为线性。',
+          focusLines: [8, 9],
+          explanations: [
+            LineExplanation(line: 8, short: '循环填充', detail: 'for 循环从 2 到 n 依次计算，保证计算 dp[i] 时 dp[i-1] 和 dp[i-2] 都已知。'),
+            LineExplanation(line: 9, short: '结果输出', detail: 'dp[n] 即为所求，时间复杂度 O(n)，空间复杂度 O(n)。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'dpKnapsack',
+      '01 背包',
+      '动态规划',
+      '#include <stdio.h>\n'
+      '\n'
+      'int max(int a, int b) {\n'
+      '    return a > b ? a : b;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int W = {{capacity:10}};\n'
+      '    int wt[4] = {2, 3, 4, 5};\n'
+      '    int val[4] = {3, 4, 5, 6};\n'
+      '    int n = 4;\n'
+      '    int dp[5][15];\n'
+      '    for (int i = 0; i < 5; i++) {\n'
+      '        for (int j = 0; j < 15; j++) {\n'
+      '            dp[i][j] = 0;\n'
+      '        }\n'
+      '    }\n'
+      '    for (int i = 1; i <= n; i++) {\n'
+      '        for (int w = 1; w <= W; w++) {\n'
+      '            if (wt[i - 1] <= w) {\n'
+      '                dp[i][w] = max(val[i - 1] + dp[i - 1][w - wt[i - 1]], dp[i - 1][w]);\n'
+      '            } else {\n'
+      '                dp[i][w] = dp[i - 1][w];\n'
+      '            }\n'
+      '        }\n'
+      '    }\n'
+      '    printf("%d\\n", dp[n][W]);\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'capacity', label: '背包容量', defaultValue: '10', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '状态定义',
+          description: 'dp[i][w] 表示前 i 个物品、背包容量为 w 时能获得的最大价值。',
+          focusLines: [11, 12, 13, 14, 15, 16, 17],
+          explanations: [
+            LineExplanation(line: 11, short: '表格', detail: 'dp[5][15] 足够存放 4 个物品、容量 10 以内的所有状态。'),
+            LineExplanation(line: 12, short: '初始化', detail: '用双重循环把 dp 全部清零，表示初始价值为 0。'),
+          ],
+        ),
+        TutorialStep(
+          title: '状态转移',
+          description: '对每个物品，有两种选择：放或不放。如果重量 wt[i-1] 不超过当前容量 w，取两者最大值；否则只能不放。',
+          focusLines: [18, 19, 20, 21, 22, 23, 24, 25],
+          explanations: [
+            LineExplanation(line: 19, short: '能放下', detail: 'wt[i-1] <= w 表示当前物品可以放入背包。'),
+            LineExplanation(line: 20, short: '放或不放', detail: 'max(放入后的价值, 不放的价值)。放入后的价值 = 当前物品价值 + 剩余容量的最优价值。'),
+            LineExplanation(line: 22, short: '放不下', detail: 'wt[i-1] > w 时只能继承前 i-1 个物品的最优值。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'shellSort',
+      '希尔排序',
+      '排序',
+      '#include <stdio.h>\n'
+      '\n'
+      'void shellSort(int arr[], int n) {\n'
+      '    for (int gap = n / 2; gap > 0; gap /= 2) {\n'
+      '        for (int i = gap; i < n; i++) {\n'
+      '            int temp = arr[i];\n'
+      '            int j;\n'
+      '            for (j = i; j >= gap && arr[j - gap] > temp; j -= gap)\n'
+      '                arr[j] = arr[j - gap];\n'
+      '            arr[j] = temp;\n'
+      '        }\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int arr[{{n:5}}] = {64, 34, 25, 12, 22};\n'
+      '    int n = {{n:5}};\n'
+      '    shellSort(arr, n);\n'
+      '    for (int i = 0; i < n; i++) {\n'
+      '        printf("%d ", arr[i]);\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '数组长度', defaultValue: '5', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '增量序列',
+          description: '希尔排序先取一个增量 gap，把数组分成 gap 组，每组内部进行插入排序。然后逐步缩小 gap，最后 gap=1 时就是普通的插入排序。',
+          focusLines: [4],
+          explanations: [
+            LineExplanation(line: 4, short: 'gap 初始值', detail: 'gap 从 n/2 开始，每次减半。gap 较大时元素移动跨度大，能快速减少逆序。'),
+          ],
+        ),
+        TutorialStep(
+          title: '分组插入排序',
+          description: '对每个元素，和它同组前面 gap 距离的元素比较，如果前面更大就后移，直到找到正确位置插入 temp。',
+          focusLines: [5, 6, 7, 8, 9, 10],
+          explanations: [
+            LineExplanation(line: 5, short: '遍历无序区', detail: 'i 从 gap 开始，因为前 gap 个元素分别是各组的第一个元素，默认有序。'),
+            LineExplanation(line: 6, short: '保存当前值', detail: 'temp = arr[i]，防止在移动过程中被覆盖。'),
+            LineExplanation(line: 8, short: '同组比较', detail: 'j >= gap 保证 j-gap 不会越界；arr[j-gap] > temp 说明前面更大，需要后移。'),
+            LineExplanation(line: 9, short: '元素后移', detail: 'arr[j] = arr[j-gap]，把前面较大的元素后移 gap 个位置。'),
+            LineExplanation(line: 10, short: '插入到位', detail: '循环结束时 j 指向应插入的位置，把 temp 放进去。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'countingSort',
+      '计数排序',
+      '排序',
+      '#include <stdio.h>\n'
+      '\n'
+      'void countingSort(int arr[], int n) {\n'
+      '    int count[10] = {0};\n'
+      '    for (int i = 0; i < n; i++) {\n'
+      '        count[arr[i]]++;\n'
+      '    }\n'
+      '    int index = 0;\n'
+      '    for (int i = 0; i < 10; i++) {\n'
+      '        while (count[i] > 0) {\n'
+      '            arr[index++] = i;\n'
+      '            count[i]--;\n'
+      '        }\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int arr[{{n:5}}] = {4, 2, 2, 8, 3};\n'
+      '    int n = {{n:5}};\n'
+      '    countingSort(arr, n);\n'
+      '    for (int i = 0; i < n; i++) {\n'
+      '        printf("%d ", arr[i]);\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '数组长度', defaultValue: '5', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '统计出现次数',
+          description: '计数排序假设数据范围很小（这里固定为 0~9）。用 count 数组统计每个数字出现了几次。',
+          focusLines: [4, 5, 6],
+          explanations: [
+            LineExplanation(line: 4, short: '计数数组', detail: 'count[10] 初始全为 0，下标代表数值，值代表出现次数。'),
+            LineExplanation(line: 5, short: '遍历原数组', detail: '逐个读取 arr[i]。'),
+            LineExplanation(line: 6, short: '统计', detail: 'count[arr[i]]++，对应数值的计数加 1。'),
+          ],
+        ),
+        TutorialStep(
+          title: '回填有序数组',
+          description: '按从小到大的顺序扫描 count 数组，如果 count[i] 有 k 个，就把 k 个 i 依次写回原数组。',
+          focusLines: [8, 9, 10, 11, 12],
+          explanations: [
+            LineExplanation(line: 8, short: '扫描计数数组', detail: 'i 从 0 到 9 扫描所有可能的数值。'),
+            LineExplanation(line: 9, short: '还有剩余', detail: 'count[i] > 0 说明数值 i 还没放完。'),
+            LineExplanation(line: 10, short: '回填', detail: 'arr[index++] = i，把数值 i 放到结果数组，index 后移。'),
+            LineExplanation(line: 11, short: '计数减一', detail: 'count[i]--，该数值的剩余个数减 1。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'linkedDelete',
+      '链表删除',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct Node {\n'
+      '    int data;\n'
+      '    struct Node* next;\n'
+      '};\n'
+      '\n'
+      'struct Node* createNode(int data) {\n'
+      '    struct Node* node = (struct Node*)malloc(sizeof(struct Node));\n'
+      '    node->data = data;\n'
+      '    node->next = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'struct Node* deleteNode(struct Node* head, int key) {\n'
+      '    struct Node* temp = head;\n'
+      '    struct Node* prev = NULL;\n'
+      '    if (temp != NULL && temp->data == key) {\n'
+      '        head = temp->next;\n'
+      '        free(temp);\n'
+      '        return head;\n'
+      '    }\n'
+      '    while (temp != NULL && temp->data != key) {\n'
+      '        prev = temp;\n'
+      '        temp = temp->next;\n'
+      '    }\n'
+      '    if (temp == NULL) return head;\n'
+      '    prev->next = temp->next;\n'
+      '    free(temp);\n'
+      '    return head;\n'
+      '}\n'
+      '\n'
+      'void printList(struct Node* head) {\n'
+      '    struct Node* p = head;\n'
+      '    while (p != NULL) {\n'
+      '        printf("%d ", p->data);\n'
+      '        p = p->next;\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct Node* head = createNode(1);\n'
+      '    head->next = createNode(2);\n'
+      '    head->next->next = createNode(3);\n'
+      '    head = deleteNode(head, 2);\n'
+      '    printList(head);\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '删除头节点',
+          description: '如果要删除的节点正好是头节点，直接让 head 指向下一个节点，然后释放原头节点。',
+          focusLines: [16, 17, 18, 19, 20, 21, 22],
+          explanations: [
+            LineExplanation(line: 16, short: '初始化', detail: 'temp 从头节点开始扫描，prev 记录前一个节点。'),
+            LineExplanation(line: 17, short: '头节点判断', detail: 'temp != NULL && temp->data == key，检查头节点是否就是要删除的目标。'),
+            LineExplanation(line: 18, short: '移动头指针', detail: 'head = temp->next，让头指针跳过待删除节点。'),
+            LineExplanation(line: 19, short: '释放内存', detail: 'free(temp) 释放被删除节点的堆内存，防止内存泄漏。'),
+          ],
+        ),
+        TutorialStep(
+          title: '删除中间/尾节点',
+          description: '从头开始遍历，找到目标节点后让前一个节点的 next 跳过目标节点，然后释放目标节点。',
+          focusLines: [23, 24, 25, 26, 27, 28, 29, 30, 31],
+          explanations: [
+            LineExplanation(line: 23, short: '遍历查找', detail: 'while 循环沿着链表搜索，直到找到 key 或到达末尾。'),
+            LineExplanation(line: 24, short: '保存前驱', detail: 'prev = temp，在 temp 前移前先保存当前位置。'),
+            LineExplanation(line: 25, short: '前移', detail: 'temp = temp->next，继续向后扫描。'),
+            LineExplanation(line: 27, short: '未找到', detail: 'temp == NULL 说明遍历完整个链表也没找到 key，直接返回原 head。'),
+            LineExplanation(line: 28, short: '跳过目标', detail: 'prev->next = temp->next，让前驱节点直接指向目标的后继，完成逻辑删除。'),
+            LineExplanation(line: 29, short: '释放内存', detail: 'free(temp) 释放被删除节点的堆内存。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'bstInsert',
+      'BST 插入',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct TreeNode {\n'
+      '    int val;\n'
+      '    struct TreeNode* left;\n'
+      '    struct TreeNode* right;\n'
+      '};\n'
+      '\n'
+      'struct TreeNode* createNode(int val) {\n'
+      '    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));\n'
+      '    node->val = val;\n'
+      '    node->left = NULL;\n'
+      '    node->right = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'struct TreeNode* insert(struct TreeNode* root, int val) {\n'
+      '    if (root == NULL) return createNode(val);\n'
+      '    if (val < root->val)\n'
+      '        root->left = insert(root->left, val);\n'
+      '    else\n'
+      '        root->right = insert(root->right, val);\n'
+      '    return root;\n'
+      '}\n'
+      '\n'
+      'void inorder(struct TreeNode* root) {\n'
+      '    if (root == NULL) return;\n'
+      '    inorder(root->left);\n'
+      '    printf("%d ", root->val);\n'
+      '    inorder(root->right);\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct TreeNode* root = NULL;\n'
+      '    root = insert(root, 5);\n'
+      '    insert(root, 3);\n'
+      '    insert(root, 7);\n'
+      '    insert(root, 1);\n'
+      '    insert(root, 9);\n'
+      '    inorder(root);\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: 'BST 性质',
+          description: '二叉搜索树（BST）的左子树所有节点值小于根，右子树所有节点值大于等于根。中序遍历可得到升序序列。',
+          focusLines: [4, 5, 6, 7],
+          explanations: [
+            LineExplanation(line: 5, short: '节点值', detail: 'val 存储当前节点的数据。'),
+            LineExplanation(line: 6, short: '左子树', detail: 'left 指向比当前节点值小的子树。'),
+            LineExplanation(line: 7, short: '右子树', detail: 'right 指向比当前节点值大或相等的子树。'),
+          ],
+        ),
+        TutorialStep(
+          title: '递归插入',
+          description: '从根出发，如果为空则创建新节点；如果待插入值小于当前节点值就递归插入左子树，否则插入右子树。',
+          focusLines: [18, 19, 20, 21, 22, 23, 24],
+          explanations: [
+            LineExplanation(line: 18, short: '空树', detail: 'root == NULL 表示找到了正确的空位，创建新节点并返回。'),
+            LineExplanation(line: 19, short: '去左边', detail: 'val < root->val 说明新节点应该放在左子树。'),
+            LineExplanation(line: 20, short: '递归左插', detail: 'root->left = insert(root->left, val)，递归插入并更新左指针。'),
+            LineExplanation(line: 22, short: '去右边', detail: 'val >= root->val 时放入右子树。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'stringReverse',
+      '字符串反转',
+      '字符串',
+      '#include <stdio.h>\n'
+      '\n'
+      'int main() {\n'
+      '    char str[] = "hello";\n'
+      '    int len = 0;\n'
+      '    while (str[len] != \'\\0\') {\n'
+      '        len++;\n'
+      '    }\n'
+      '    for (int i = 0; i < len / 2; i++) {\n'
+      '        char temp = str[i];\n'
+      '        str[i] = str[len - i - 1];\n'
+      '        str[len - i - 1] = temp;\n'
+      '    }\n'
+      '    printf("%s\\n", str);\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '求字符串长度',
+          description: 'C 语言字符串以 \\0 结尾。通过 while 循环逐个扫描字符，直到遇到 \\0，统计出长度。',
+          focusLines: [4, 5, 6, 7],
+          explanations: [
+            LineExplanation(line: 4, short: '字符数组', detail: 'char str[] = "hello"，编译器自动分配 6 字节（含 \\0）。'),
+            LineExplanation(line: 5, short: '初始化', detail: 'len = 0，从第一个字符开始计数。'),
+            LineExplanation(line: 6, short: '循环条件', detail: 'str[len] != \\0 表示还没到达字符串结尾。'),
+            LineExplanation(line: 7, short: '计数', detail: 'len++，每遇到一个字符长度加 1。'),
+          ],
+        ),
+        TutorialStep(
+          title: '双指针交换',
+          description: '只交换前半部分和对应的后半部分。i 从头向中间走，len-i-1 从尾向中间走，两两交换。',
+          focusLines: [8, 9, 10, 11],
+          explanations: [
+            LineExplanation(line: 8, short: '循环范围', detail: 'i < len / 2，只需要交换前半部分，后半部分自然配对。'),
+            LineExplanation(line: 9, short: '暂存', detail: 'temp = str[i]，保存左侧字符。'),
+            LineExplanation(line: 10, short: '左←右', detail: 'str[i] = str[len-i-1]，把右侧字符放到左侧。'),
+            LineExplanation(line: 11, short: '右←暂存', detail: 'str[len-i-1] = temp，把左侧字符放到右侧，完成交换。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'gcd',
+      '辗转相除',
+      '基础',
+      '#include <stdio.h>\n'
+      '\n'
+      'int gcd(int a, int b) {\n'
+      '    while (b != 0) {\n'
+      '        int temp = b;\n'
+      '        b = a % b;\n'
+      '        a = temp;\n'
+      '    }\n'
+      '    return a;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int a = {{a:48}}, b = {{b:18}};\n'
+      '    printf("%d\\n", gcd(a, b));\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'a', label: '第一个数', defaultValue: '48', type: ParamType.int),
+        TemplateParam(key: 'b', label: '第二个数', defaultValue: '18', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '欧几里得算法',
+          description: '辗转相除法的核心：gcd(a,b) = gcd(b, a mod b)。当 b 变为 0 时，a 就是最大公约数。',
+          focusLines: [3, 4, 5, 6, 7, 8, 9],
+          explanations: [
+            LineExplanation(line: 4, short: '循环条件', detail: 'b != 0 时继续，因为 gcd(a,0) = a。'),
+            LineExplanation(line: 5, short: '保存 b', detail: 'temp = b，因为下一步 b 会被覆盖。'),
+            LineExplanation(line: 6, short: '取模', detail: 'b = a % b，这是算法的核心递推关系。'),
+            LineExplanation(line: 7, short: '更新 a', detail: 'a = temp，原来的 b 变成新的 a。'),
+            LineExplanation(line: 9, short: '结果', detail: '循环结束时 b 为 0，a 就是最大公约数。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'isPrime',
+      '判断素数',
+      '基础',
+      '#include <stdio.h>\n'
+      '\n'
+      'int isPrime(int n) {\n'
+      '    if (n <= 1) return 0;\n'
+      '    for (int i = 2; i * i <= n; i++) {\n'
+      '        if (n % i == 0) return 0;\n'
+      '    }\n'
+      '    return 1;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int n = {{n:17}};\n'
+      '    if (isPrime(n))\n'
+      '        printf("%d is prime\\n", n);\n'
+      '    else\n'
+      '        printf("%d is not prime\\n", n);\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '待判断的数', defaultValue: '17', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '特殊情况',
+          description: '小于等于 1 的数都不是素数，直接返回 0。',
+          focusLines: [4],
+          explanations: [
+            LineExplanation(line: 4, short: '排除', detail: 'n <= 1 时直接返回 0（假）。'),
+          ],
+        ),
+        TutorialStep(
+          title: '试除法',
+          description: '只需要检查 2 到 sqrt(n) 之间的数是否能整除 n。如果都没有，则 n 是素数。',
+          focusLines: [5, 6, 7, 8],
+          explanations: [
+            LineExplanation(line: 5, short: '优化上界', detail: 'i * i <= n 等价于 i <= sqrt(n)，避免浮点运算。'),
+            LineExplanation(line: 6, short: '整除判断', detail: 'n % i == 0 说明 i 是 n 的因子，n 不是素数。'),
+            LineExplanation(line: 8, short: '是素数', detail: '循环正常结束说明没有因子，返回 1（真）。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'hanoi',
+      '汉诺塔',
+      '递归',
+      '#include <stdio.h>\n'
+      '\n'
+      'void hanoi(int n, char from, char to, char aux) {\n'
+      '    if (n == 1) {\n'
+      '        printf("Move disk 1 from %c to %c\\n", from, to);\n'
+      '        return;\n'
+      '    }\n'
+      '    hanoi(n - 1, from, aux, to);\n'
+      '    printf("Move disk %d from %c to %c\\n", n, from, to);\n'
+      '    hanoi(n - 1, aux, to, from);\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    int n = {{n:3}};\n'
+      '    hanoi(n, \'A\', \'C\', \'B\');\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'n', label: '盘子数量', defaultValue: '3', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '递归思想',
+          description: '汉诺塔的核心是分治：要把 n 个盘子从 A 移到 C，只需先把上面 n-1 个移到 B，再把最底下的移到 C，最后把 n-1 个从 B 移到 C。',
+          focusLines: [3, 4, 5, 6, 7, 8, 9, 10],
+          explanations: [
+            LineExplanation(line: 3, short: '参数', detail: 'n 是盘子数，from 是起始柱，to 是目标柱，aux 是辅助柱。'),
+            LineExplanation(line: 4, short: '基准情况', detail: 'n == 1 时直接把盘子从 from 移到 to。'),
+            LineExplanation(line: 7, short: '第一步', detail: 'hanoi(n-1, from, aux, to)：把上面 n-1 个盘子从起始柱移到辅助柱。'),
+            LineExplanation(line: 8, short: '第二步', detail: '把第 n 个（最大的）盘子从起始柱直接移到目标柱。'),
+            LineExplanation(line: 9, short: '第三步', detail: 'hanoi(n-1, aux, to, from)：把辅助柱上的 n-1 个盘子移到目标柱。'),
+          ],
+        ),
+      ],
+    ),
+    // ========== 数据结构（经典教材案例） ==========
+    CodeTemplate(
+      'seqList',
+      '顺序表',
+      '结构',
+      '#include <stdio.h>\n'
+      '#define MAXSIZE 10\n'
+      '\n'
+      'struct SeqList {\n'
+      '    int data[MAXSIZE];\n'
+      '    int length;\n'
+      '};\n'
+      '\n'
+      'void init(struct SeqList* L) {\n'
+      '    L->length = 0;\n'
+      '}\n'
+      '\n'
+      'int listInsert(struct SeqList* L, int pos, int x) {\n'
+      '    if (pos < 0 || pos > L->length || L->length >= MAXSIZE) return 0;\n'
+      '    for (int i = L->length; i > pos; i--)\n'
+      '        L->data[i] = L->data[i - 1];\n'
+      '    L->data[pos] = x;\n'
+      '    L->length++;\n'
+      '    return 1;\n'
+      '}\n'
+      '\n'
+      'int listDelete(struct SeqList* L, int pos) {\n'
+      '    if (pos < 0 || pos >= L->length) return 0;\n'
+      '    for (int i = pos; i < L->length - 1; i++)\n'
+      '        L->data[i] = L->data[i + 1];\n'
+      '    L->length--;\n'
+      '    return 1;\n'
+      '}\n'
+      '\n'
+      'int listFind(struct SeqList* L, int x) {\n'
+      '    for (int i = 0; i < L->length; i++) {\n'
+      '        if (L->data[i] == x) return i;\n'
+      '    }\n'
+      '    return -1;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct SeqList L;\n'
+      '    init(&L);\n'
+      '    listInsert(&L, 0, 5);\n'
+      '    listInsert(&L, 1, 3);\n'
+      '    listInsert(&L, 2, 8);\n'
+      '    listDelete(&L, 1);\n'
+      '    for (int i = 0; i < L.length; i++) {\n'
+      '        printf("%d ", L.data[i]);\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '顺序表结构',
+          description: '顺序表是用一段地址连续的存储单元依次存储数据元素。这里用数组 data 存数据，length 记录当前长度。',
+          focusLines: [4, 5, 6, 7],
+          explanations: [
+            LineExplanation(line: 5, short: '数据区', detail: 'data[MAXSIZE] 是底层数组，MAXSIZE 定义了最大容量。'),
+            LineExplanation(line: 6, short: '当前长度', detail: 'length 表示表中实际元素个数，不是数组总大小。'),
+          ],
+        ),
+        TutorialStep(
+          title: '插入操作',
+          description: '在位置 pos 插入元素时，需要把 pos 及之后的元素全部后移一位，然后放入新元素，长度加 1。',
+          focusLines: [13, 14, 15, 16, 17, 18, 19, 20],
+          explanations: [
+            LineExplanation(line: 13, short: '合法性检查', detail: 'pos 必须在 [0, length] 范围内，且表不能已满。'),
+            LineExplanation(line: 14, short: '后移元素', detail: '从末尾开始逐个后移，避免覆盖数据。'),
+            LineExplanation(line: 16, short: '放入新元素', detail: '在腾出的位置 pos 放入 x。'),
+            LineExplanation(line: 17, short: '长度加 1', detail: 'length++ 反映表长变化。'),
+          ],
+        ),
+        TutorialStep(
+          title: '删除与查找',
+          description: '删除时把 pos 之后的元素前移；查找时逐个比较。',
+          focusLines: [22, 23, 24, 25, 26, 27, 30, 31, 32, 33, 34, 35],
+          explanations: [
+            LineExplanation(line: 23, short: '前移元素', detail: '从 pos 开始，用后一个元素覆盖前一个。'),
+            LineExplanation(line: 32, short: '按值查找', detail: '顺序扫描，时间复杂度 O(n)。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'linkedListTail',
+      '链表尾插法',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct Node {\n'
+      '    int data;\n'
+      '    struct Node* next;\n'
+      '};\n'
+      '\n'
+      'struct Node* createNode(int data) {\n'
+      '    struct Node* node = (struct Node*)malloc(sizeof(struct Node));\n'
+      '    node->data = data;\n'
+      '    node->next = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'struct Node* append(struct Node* head, int data) {\n'
+      '    struct Node* newNode = createNode(data);\n'
+      '    if (head == NULL) return newNode;\n'
+      '    struct Node* p = head;\n'
+      '    while (p->next != NULL) p = p->next;\n'
+      '    p->next = newNode;\n'
+      '    return head;\n'
+      '}\n'
+      '\n'
+      'void printList(struct Node* head) {\n'
+      '    struct Node* p = head;\n'
+      '    while (p != NULL) {\n'
+      '        printf("%d ", p->data);\n'
+      '        p = p->next;\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct Node* head = NULL;\n'
+      '    head = append(head, 1);\n'
+      '    append(head, 2);\n'
+      '    append(head, 3);\n'
+      '    printList(head);\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '尾插法',
+          description: '尾插法将新节点追加到链表末尾，这样遍历输出的顺序与插入顺序一致。',
+          focusLines: [16, 17, 18, 19, 20, 21, 22, 23],
+          explanations: [
+            LineExplanation(line: 16, short: '创建新节点', detail: 'createNode 在堆上分配节点内存。'),
+            LineExplanation(line: 17, short: '空表处理', detail: '如果链表为空，新节点就是头节点。'),
+            LineExplanation(line: 19, short: '找尾节点', detail: 'while 循环一直走到最后一个节点（next 为 NULL）。'),
+            LineExplanation(line: 21, short: '链接', detail: 'p->next = newNode，把新节点挂到末尾。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'doublyLinkedList',
+      '双向链表',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct DNode {\n'
+      '    int data;\n'
+      '    struct DNode* prev;\n'
+      '    struct DNode* next;\n'
+      '};\n'
+      '\n'
+      'struct DNode* createNode(int data) {\n'
+      '    struct DNode* node = (struct DNode*)malloc(sizeof(struct DNode));\n'
+      '    node->data = data;\n'
+      '    node->prev = NULL;\n'
+      '    node->next = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'struct DNode* append(struct DNode* head, int data) {\n'
+      '    struct DNode* newNode = createNode(data);\n'
+      '    if (head == NULL) return newNode;\n'
+      '    struct DNode* p = head;\n'
+      '    while (p->next != NULL) p = p->next;\n'
+      '    p->next = newNode;\n'
+      '    newNode->prev = p;\n'
+      '    return head;\n'
+      '}\n'
+      '\n'
+      'void printForward(struct DNode* head) {\n'
+      '    struct DNode* p = head;\n'
+      '    while (p != NULL) {\n'
+      '        printf("%d ", p->data);\n'
+      '        p = p->next;\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct DNode* head = NULL;\n'
+      '    head = append(head, 1);\n'
+      '    head = append(head, 2);\n'
+      '    head = append(head, 3);\n'
+      '    printForward(head);\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '双向节点',
+          description: '双向链表每个节点有两个指针：prev 指向前驱，next 指向后继。可以双向遍历。',
+          focusLines: [4, 5, 6, 7, 8],
+          explanations: [
+            LineExplanation(line: 5, short: '数据', detail: 'data 存储节点值。'),
+            LineExplanation(line: 6, short: '前驱', detail: 'prev 指向前一个节点，头节点的 prev 为 NULL。'),
+            LineExplanation(line: 7, short: '后继', detail: 'next 指向下一个节点，尾节点的 next 为 NULL。'),
+          ],
+        ),
+        TutorialStep(
+          title: '尾插与双向链接',
+          description: '尾插时不仅要让原尾节点的 next 指向新节点，还要让新节点的 prev 指向原尾节点，维护双向关系。',
+          focusLines: [18, 19, 20, 21, 22, 23, 24, 25],
+          explanations: [
+            LineExplanation(line: 23, short: '正向链接', detail: 'p->next = newNode，原尾节点指向新节点。'),
+            LineExplanation(line: 24, short: '反向链接', detail: 'newNode->prev = p，新节点指回原尾节点。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'circularQueue',
+      '循环队列',
+      '结构',
+      '#include <stdio.h>\n'
+      '#define MAXSIZE 5\n'
+      '\n'
+      'struct CircularQueue {\n'
+      '    int data[MAXSIZE];\n'
+      '    int front;\n'
+      '    int rear;\n'
+      '};\n'
+      '\n'
+      'void init(struct CircularQueue* q) {\n'
+      '    q->front = 0;\n'
+      '    q->rear = 0;\n'
+      '}\n'
+      '\n'
+      'int isEmpty(struct CircularQueue* q) {\n'
+      '    return q->front == q->rear;\n'
+      '}\n'
+      '\n'
+      'int isFull(struct CircularQueue* q) {\n'
+      '    return (q->rear + 1) % MAXSIZE == q->front;\n'
+      '}\n'
+      '\n'
+      'void enqueue(struct CircularQueue* q, int x) {\n'
+      '    if (isFull(q)) return;\n'
+      '    q->data[q->rear] = x;\n'
+      '    q->rear = (q->rear + 1) % MAXSIZE;\n'
+      '}\n'
+      '\n'
+      'int dequeue(struct CircularQueue* q) {\n'
+      '    if (isEmpty(q)) return -1;\n'
+      '    int x = q->data[q->front];\n'
+      '    q->front = (q->front + 1) % MAXSIZE;\n'
+      '    return x;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct CircularQueue q;\n'
+      '    init(&q);\n'
+      '    enqueue(&q, 10);\n'
+      '    enqueue(&q, 20);\n'
+      '    enqueue(&q, 30);\n'
+      '    printf("%d ", dequeue(&q));\n'
+      '    printf("%d ", dequeue(&q));\n'
+      '    printf("%d\\n", dequeue(&q));\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '循环队列结构',
+          description: '用数组实现队列，front 指向队头，rear 指向队尾下一个位置。故意牺牲一个单元来区分空和满。',
+          focusLines: [4, 5, 6, 7, 8],
+          explanations: [
+            LineExplanation(line: 5, short: '数组', detail: 'data[MAXSIZE] 是底层存储。'),
+            LineExplanation(line: 6, short: '队头', detail: 'front 指向队头元素。'),
+            LineExplanation(line: 7, short: '队尾', detail: 'rear 指向队尾下一个空位。'),
+          ],
+        ),
+        TutorialStep(
+          title: '判空与判满',
+          description: '空队列时 front == rear；满队列时 (rear+1)%MAXSIZE == front。牺牲一个单元避免了用计数器或标记位。',
+          focusLines: [15, 16, 17, 19, 20, 21],
+          explanations: [
+            LineExplanation(line: 16, short: '空', detail: 'front == rear 表示队列空。'),
+            LineExplanation(line: 20, short: '满', detail: '(rear+1)%MAXSIZE == front 表示队列满，此时还剩一个空位未用。'),
+          ],
+        ),
+        TutorialStep(
+          title: '入队与出队',
+          description: '入队和出队都用取模运算让指针在数组末尾绕回到开头，形成"循环"。',
+          focusLines: [23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+          explanations: [
+            LineExplanation(line: 26, short: '入队', detail: 'q->data[q->rear] = x，元素放到 rear 位置。'),
+            LineExplanation(line: 27, short: 'rear 前移', detail: '(q->rear + 1) % MAXSIZE，rear 绕回数组开头。'),
+            LineExplanation(line: 31, short: '出队', detail: '取出 front 位置元素。'),
+            LineExplanation(line: 32, short: 'front 前移', detail: '(q->front + 1) % MAXSIZE，front 绕回数组开头。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'linkedStack',
+      '链栈',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct Node {\n'
+      '    int data;\n'
+      '    struct Node* next;\n'
+      '};\n'
+      '\n'
+      'struct Node* push(struct Node* top, int x) {\n'
+      '    struct Node* node = (struct Node*)malloc(sizeof(struct Node));\n'
+      '    node->data = x;\n'
+      '    node->next = top;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'struct Node* pop(struct Node* top) {\n'
+      '    if (top == NULL) return NULL;\n'
+      '    struct Node* temp = top;\n'
+      '    top = top->next;\n'
+      '    free(temp);\n'
+      '    return top;\n'
+      '}\n'
+      '\n'
+      'void printStack(struct Node* top) {\n'
+      '    struct Node* p = top;\n'
+      '    while (p != NULL) {\n'
+      '        printf("%d ", p->data);\n'
+      '        p = p->next;\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct Node* top = NULL;\n'
+      '    top = push(top, 30);\n'
+      '    top = push(top, 20);\n'
+      '    top = push(top, 10);\n'
+      '    printStack(top);\n'
+      '    top = pop(top);\n'
+      '    printStack(top);\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '链栈结构',
+          description: '链栈用单链表实现，top 指针指向栈顶。没有容量限制（除非内存耗尽）。',
+          focusLines: [9, 10, 11, 12, 13],
+          explanations: [
+            LineExplanation(line: 10, short: '分配节点', detail: 'malloc 申请新节点内存。'),
+            LineExplanation(line: 12, short: '链接原栈顶', detail: 'node->next = top，新节点指向原来的栈顶。'),
+            LineExplanation(line: 13, short: '更新栈顶', detail: '返回新节点作为新 top。'),
+          ],
+        ),
+        TutorialStep(
+          title: '出栈与内存释放',
+          description: '出栈时保存当前栈顶，让 top 指向下一个节点，然后释放原栈顶内存。',
+          focusLines: [16, 17, 18, 19, 20, 21, 22],
+          explanations: [
+            LineExplanation(line: 17, short: '判空', detail: 'top == NULL 时栈已空。'),
+            LineExplanation(line: 19, short: '下移栈顶', detail: 'top = top->next，栈顶指针下移。'),
+            LineExplanation(line: 20, short: '释放内存', detail: 'free(temp) 释放弹出的节点，防止泄漏。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'linkedQueue',
+      '链队列',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct QNode {\n'
+      '    int data;\n'
+      '    struct QNode* next;\n'
+      '};\n'
+      '\n'
+      'struct LinkedQueue {\n'
+      '    struct QNode* front;\n'
+      '    struct QNode* rear;\n'
+      '};\n'
+      '\n'
+      'void init(struct LinkedQueue* q) {\n'
+      '    q->front = NULL;\n'
+      '    q->rear = NULL;\n'
+      '}\n'
+      '\n'
+      'void enqueue(struct LinkedQueue* q, int x) {\n'
+      '    struct QNode* node = (struct QNode*)malloc(sizeof(struct QNode));\n'
+      '    node->data = x;\n'
+      '    node->next = NULL;\n'
+      '    if (q->rear == NULL) {\n'
+      '        q->front = node;\n'
+      '        q->rear = node;\n'
+      '    } else {\n'
+      '        q->rear->next = node;\n'
+      '        q->rear = node;\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int dequeue(struct LinkedQueue* q) {\n'
+      '    if (q->front == NULL) return -1;\n'
+      '    struct QNode* temp = q->front;\n'
+      '    int x = temp->data;\n'
+      '    q->front = q->front->next;\n'
+      '    if (q->front == NULL) q->rear = NULL;\n'
+      '    free(temp);\n'
+      '    return x;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct LinkedQueue q;\n'
+      '    init(&q);\n'
+      '    enqueue(&q, 10);\n'
+      '    enqueue(&q, 20);\n'
+      '    enqueue(&q, 30);\n'
+      '    printf("%d ", dequeue(&q));\n'
+      '    printf("%d ", dequeue(&q));\n'
+      '    printf("%d\\n", dequeue(&q));\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '链队列结构',
+          description: '链队列用 front 指向队头节点，rear 指向队尾节点。队空时两者都为 NULL。',
+          focusLines: [9, 10, 11, 12],
+          explanations: [
+            LineExplanation(line: 10, short: '队头', detail: 'front 指向队头节点。'),
+            LineExplanation(line: 11, short: '队尾', detail: 'rear 指向队尾节点。'),
+          ],
+        ),
+        TutorialStep(
+          title: '入队',
+          description: '新节点放入队尾。如果队列为空，新节点既是队头也是队尾。',
+          focusLines: [19, 20, 21, 22, 23, 24, 25, 26, 27, 28],
+          explanations: [
+            LineExplanation(line: 22, short: '空队', detail: 'rear == NULL 时队列空，front 和 rear 都指向新节点。'),
+            LineExplanation(line: 27, short: '链接', detail: 'q->rear->next = node，原尾节点指向新节点。'),
+            LineExplanation(line: 28, short: '更新尾指针', detail: 'q->rear = node，rear 指向新尾节点。'),
+          ],
+        ),
+        TutorialStep(
+          title: '出队',
+          description: '从队头移除节点。如果移除后队列为空，需要把 rear 也置为 NULL。',
+          focusLines: [31, 32, 33, 34, 35, 36, 37, 38, 39],
+          explanations: [
+            LineExplanation(line: 35, short: '前移队头', detail: 'q->front = q->front->next，队头指向下一个。'),
+            LineExplanation(line: 36, short: '处理空队', detail: '如果 front 变为 NULL，说明队列已空，rear 也要置空。'),
+            LineExplanation(line: 37, short: '释放内存', detail: 'free(temp) 释放被删除节点。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'levelOrder',
+      '层序遍历',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct TreeNode {\n'
+      '    int val;\n'
+      '    struct TreeNode* left;\n'
+      '    struct TreeNode* right;\n'
+      '};\n'
+      '\n'
+      'struct TreeNode* createNode(int val) {\n'
+      '    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));\n'
+      '    node->val = val;\n'
+      '    node->left = NULL;\n'
+      '    node->right = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      '#define MAX 20\n'
+      '\n'
+      'void levelOrder(struct TreeNode* root) {\n'
+      '    if (root == NULL) return;\n'
+      '    struct TreeNode* queue[MAX];\n'
+      '    int front = 0, rear = 0;\n'
+      '    queue[rear++] = root;\n'
+      '    while (front < rear) {\n'
+      '        struct TreeNode* node = queue[front++];\n'
+      '        printf("%d ", node->val);\n'
+      '        if (node->left != NULL) queue[rear++] = node->left;\n'
+      '        if (node->right != NULL) queue[rear++] = node->right;\n'
+      '    }\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct TreeNode* root = createNode(1);\n'
+      '    root->left = createNode(2);\n'
+      '    root->right = createNode(3);\n'
+      '    root->left->left = createNode(4);\n'
+      '    root->left->right = createNode(5);\n'
+      '    levelOrder(root);\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '队列辅助',
+          description: '层序遍历（广度优先）需要用队列记录每一层的节点。先访问根节点，然后把左右子节点依次入队。',
+          focusLines: [20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+          explanations: [
+            LineExplanation(line: 20, short: '空树', detail: 'root == NULL 直接返回。'),
+            LineExplanation(line: 21, short: '队列', detail: 'queue[MAX] 是用数组模拟的队列，存放节点指针。'),
+            LineExplanation(line: 23, short: '根入队', detail: 'queue[rear++] = root，根节点入队。'),
+            LineExplanation(line: 24, short: '循环', detail: 'front < rear 表示队列非空。'),
+            LineExplanation(line: 25, short: '出队', detail: 'node = queue[front++]，取出队头节点。'),
+            LineExplanation(line: 28, short: '左子入队', detail: '如果左子树非空，左子节点入队。'),
+            LineExplanation(line: 29, short: '右子入队', detail: '如果右子树非空，右子节点入队。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'bstSearch',
+      'BST 查找',
+      '结构',
+      '#include <stdio.h>\n'
+      '#include <stdlib.h>\n'
+      '\n'
+      'struct TreeNode {\n'
+      '    int val;\n'
+      '    struct TreeNode* left;\n'
+      '    struct TreeNode* right;\n'
+      '};\n'
+      '\n'
+      'struct TreeNode* createNode(int val) {\n'
+      '    struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode));\n'
+      '    node->val = val;\n'
+      '    node->left = NULL;\n'
+      '    node->right = NULL;\n'
+      '    return node;\n'
+      '}\n'
+      '\n'
+      'struct TreeNode* insert(struct TreeNode* root, int val) {\n'
+      '    if (root == NULL) return createNode(val);\n'
+      '    if (val < root->val)\n'
+      '        root->left = insert(root->left, val);\n'
+      '    else\n'
+      '        root->right = insert(root->right, val);\n'
+      '    return root;\n'
+      '}\n'
+      '\n'
+      'struct TreeNode* search(struct TreeNode* root, int key) {\n'
+      '    if (root == NULL || root->val == key) return root;\n'
+      '    if (key < root->val)\n'
+      '        return search(root->left, key);\n'
+      '    else\n'
+      '        return search(root->right, key);\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct TreeNode* root = NULL;\n'
+      '    root = insert(root, 5);\n'
+      '    insert(root, 3);\n'
+      '    insert(root, 7);\n'
+      '    insert(root, 1);\n'
+      '    insert(root, 9);\n'
+      '    struct TreeNode* res = search(root, 7);\n'
+      '    if (res != NULL)\n'
+      '        printf("Found %d\\n", res->val);\n'
+      '    else\n'
+      '        printf("Not found\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: 'BST 查找',
+          description: '利用二叉搜索树性质：左子树所有节点小于根，右子树大于等于根。每次比较可以排除一半子树。',
+          focusLines: [27, 28, 29, 30, 31, 32, 33],
+          explanations: [
+            LineExplanation(line: 27, short: '基准情况', detail: 'root == NULL 表示没找到；root->val == key 表示找到。'),
+            LineExplanation(line: 29, short: '去左边', detail: 'key < root->val 时目标只能在左子树。'),
+            LineExplanation(line: 31, short: '去右边', detail: 'key >= root->val 时目标在右子树。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'hashTable',
+      '哈希表',
+      '结构',
+      '#include <stdio.h>\n'
+      '#define TABLE_SIZE 10\n'
+      '\n'
+      'struct HashEntry {\n'
+      '    int key;\n'
+      '    int occupied;\n'
+      '};\n'
+      '\n'
+      'int hash(int key) {\n'
+      '    return key % TABLE_SIZE;\n'
+      '}\n'
+      '\n'
+      'void insert(struct HashEntry table[], int key) {\n'
+      '    int idx = hash(key);\n'
+      '    while (table[idx].occupied) {\n'
+      '        idx = (idx + 1) % TABLE_SIZE;\n'
+      '    }\n'
+      '    table[idx].key = key;\n'
+      '    table[idx].occupied = 1;\n'
+      '}\n'
+      '\n'
+      'int search(struct HashEntry table[], int key) {\n'
+      '    int idx = hash(key);\n'
+      '    while (table[idx].occupied) {\n'
+      '        if (table[idx].key == key) return idx;\n'
+      '        idx = (idx + 1) % TABLE_SIZE;\n'
+      '    }\n'
+      '    return -1;\n'
+      '}\n'
+      '\n'
+      'int main() {\n'
+      '    struct HashEntry table[TABLE_SIZE];\n'
+      '    for (int i = 0; i < TABLE_SIZE; i++) {\n'
+      '        table[i].occupied = 0;\n'
+      '    }\n'
+      '    insert(table, 5);\n'
+      '    insert(table, 15);\n'
+      '    insert(table, 25);\n'
+      '    int idx = search(table, 15);\n'
+      '    printf("%d\\n", idx);\n'
+      '    return 0;\n'
+      '}',
+      params: [],
+      tutorialSteps: [
+        TutorialStep(
+          title: '哈希与冲突',
+          description: '哈希表通过哈希函数把关键字映射到数组下标。当两个关键字映射到同一位置（冲突）时，用线性探测法向后找空位。',
+          focusLines: [4, 5, 6, 7, 9, 10, 11],
+          explanations: [
+            LineExplanation(line: 5, short: '键', detail: 'key 存储实际关键字。'),
+            LineExplanation(line: 6, short: '标记', detail: 'occupied 标记该位置是否被占用。'),
+            LineExplanation(line: 10, short: '哈希函数', detail: 'key % TABLE_SIZE，取模运算把 key 映射到数组下标范围。'),
+          ],
+        ),
+        TutorialStep(
+          title: '线性探测',
+          description: '发生冲突时，从冲突位置开始顺序向后扫描，直到找到空位（插入）或找到目标（查找）。',
+          focusLines: [13, 14, 15, 16, 17, 18, 19, 20, 22, 23, 24, 25, 26, 27, 28],
+          explanations: [
+            LineExplanation(line: 15, short: '探测', detail: 'while (table[idx].occupied) 表示该位置已被占用，继续向后。'),
+            LineExplanation(line: 16, short: '步进', detail: 'idx = (idx + 1) % TABLE_SIZE，循环回到数组开头。'),
+            LineExplanation(line: 25, short: '查找命中', detail: 'table[idx].key == key 表示找到目标，返回下标。'),
+          ],
+        ),
+      ],
+    ),
+    CodeTemplate(
+      'josephus',
+      '约瑟夫环',
+      '基础',
+      '#include <stdio.h>\n'
+      '#define N 10\n'
+      '\n'
+      'int main() {\n'
+      '    int alive[N];\n'
+      '    for (int i = 0; i < N; i++) alive[i] = 1;\n'
+      '    int count = 0, i = 0, remain = N;\n'
+      '    int m = {{m:3}};\n'
+      '    while (remain > 0) {\n'
+      '        if (alive[i]) {\n'
+      '            count++;\n'
+      '            if (count == m) {\n'
+      '                alive[i] = 0;\n'
+      '                printf("%d ", i);\n'
+      '                count = 0;\n'
+      '                remain--;\n'
+      '            }\n'
+      '        }\n'
+      '        i = (i + 1) % N;\n'
+      '    }\n'
+      '    printf("\\n");\n'
+      '    return 0;\n'
+      '}',
+      params: [
+        TemplateParam(key: 'm', label: '报数上限', defaultValue: '3', type: ParamType.int),
+      ],
+      tutorialSteps: [
+        TutorialStep(
+          title: '初始化',
+          description: '用数组 alive 标记每个人是否存活，1 表示存活。N 个人围成一圈。',
+          focusLines: [4, 5, 6, 7, 8],
+          explanations: [
+            LineExplanation(line: 4, short: '状态数组', detail: 'alive[N] 记录每个人的存活状态。'),
+            LineExplanation(line: 5, short: '全部存活', detail: '初始时所有人都 alive[i] = 1。'),
+            LineExplanation(line: 7, short: '计数器', detail: 'count 记录当前报数，i 是当前位置，remain 是剩余人数。'),
+          ],
+        ),
+        TutorialStep(
+          title: '报数与淘汰',
+          description: '从第 0 个人开始，每遇到存活的人就报数。报到 m 的人淘汰（alive 置 0），然后从下一个人重新报数。',
+          focusLines: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+          explanations: [
+            LineExplanation(line: 10, short: '存活才报数', detail: 'if (alive[i]) 跳过已淘汰的人。'),
+            LineExplanation(line: 12, short: '报到 m', detail: 'count == m 时当前人淘汰。'),
+            LineExplanation(line: 13, short: '淘汰', detail: 'alive[i] = 0，标记为已淘汰。'),
+            LineExplanation(line: 18, short: '循环移动', detail: 'i = (i + 1) % N，下标绕回数组开头，模拟圆圈。'),
           ],
         ),
       ],

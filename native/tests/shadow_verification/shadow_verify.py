@@ -4,6 +4,15 @@
 Cide 影子验证框架
 对比 Clang 和 Cide 对同一份 C 代码的编译/运行结果
 收集 Clang 通过但 Cide 失败的用例，按缺失特性分类统计
+
+⚠️  添加新用例时注意 Python 字符串转义陷阱：
+    C 源码写在 Python 单引号字符串中，Python 会解析转义序列。
+    - '...\\n...'  → Python 解析为实际换行符，Cide 报 E1003 字符串跨行
+    - '...\\0...'  → Python 解析为 NUL 字符，Cide 字符串被截断
+    正确做法：C 转义序列在 Python 字符串中写为双反斜杠：
+    - \\n 表示 C 源码中的 \\n（换行转义）
+    - \\0 表示 C 源码中的 \\0（NUL 字符字面量）
+    可用 python check_escapes.py 扫描全部用例检查异常。
 """
 
 import os
@@ -183,6 +192,8 @@ def run_with_cide(source: str) -> RunResult:
             # 清理 Cide 的额外输出后缀（如 "程序运行完成，返回值：0"）
             import re
             stdout_str = re.sub(r'程序运行完成，返回值：-?\d+\n?', '', stdout_str)
+            # 清理内存泄漏检测报告
+            stdout_str = re.sub(r'===== 内存泄漏检测报告 =====.*?={30,}', '', stdout_str, flags=re.DOTALL)
             stdout_str = stdout_str.strip()
 
         err_ptr = dll.cide_get_runtime_error(session)
@@ -564,6 +575,44 @@ SHADOW_CASES: List[ShadowCase] = [
     ShadowCase("memcpy_manual", 'int main() { int src[3] = {1,2,3}; int dst[3]; for (int i = 0; i < 3; i++) dst[i] = src[i]; printf("%d", dst[2]); return 0; }', "baseline"),
     ShadowCase("matrix_trace", 'int main() { int a[2][2] = {{1,2},{3,4}}; int trace = a[0][0] + a[1][1]; printf("%d", trace); return 0; }', "baseline"),
 
+    # ---- 参数化宏 (数据结构教材语法拓展) ----
+    ShadowCase("parametric_macro_max", '#define MAX(a,b) ((a)>(b)?(a):(b))\\nint main() { printf("%d", MAX(3,5)); return 0; }', "baseline"),
+    ShadowCase("parametric_macro_swap", '#define SWAP(t,a,b) { t temp=a; a=b; b=temp; }\\nint main() { int x=1; int y=2; SWAP(int,x,y)\\nprintf("%d %d", x, y); return 0; }', "baseline"),
+    ShadowCase("parametric_macro_square", '#define SQUARE(x) ((x)*(x))\\nint main() { printf("%d", SQUARE(5)); return 0; }', "baseline"),
+    ShadowCase("parametric_macro_nested", '#define MAX(a,b) ((a)>(b)?(a):(b))\\n#define MIN(a,b) ((a)<(b)?(a):(b))\\nint main() { printf("%d", MAX(1, MIN(2,3))); return 0; }', "baseline"),
+    # ---- static 局部变量 (数据结构教材语法拓展) ----
+    ShadowCase("static_local_counter", 'int count() { static int c = 0; c++; return c; }\\nint main() { printf("%d %d %d", count(), count(), count()); return 0; }', "baseline"),
+    ShadowCase("static_local_init_once", 'int init() { static int v = 10; v++; return v; }\\nint main() { printf("%d %d", init(), init()); return 0; }', "baseline"),
+    ShadowCase("static_local_array", 'int accum(int x) { static int arr[3] = {0,0,0}; static int idx = 0; arr[idx] += x; int sum = arr[0]+arr[1]+arr[2]; idx = (idx+1)%3; return sum; }\\nint main() { printf("%d %d %d", accum(1), accum(2), accum(3)); return 0; }', "baseline"),
+    # ---- fgets/fputs (数据结构教材语法拓展) ----
+    ShadowCase("fgets_fputs_basic", '#include <stdio.h>\\nint main() { FILE* fp = fopen("test.txt", "w"); fputs("hello\\n", fp); fputs("world\\n", fp); fclose(fp); fp = fopen("test.txt", "r"); char buf[20]; fgets(buf, 20, fp); printf("%s", buf); fgets(buf, 20, fp); printf("%s", buf); fclose(fp); return 0; }', "baseline"),
+
+    # ---- 算法模板拓展（排序与搜索） ----
+    ShadowCase("heap_sort", 'void heapify(int arr[], int n, int i) { int largest = i, left = 2*i+1, right = 2*i+2; if (left < n && arr[left] > arr[largest]) largest = left; if (right < n && arr[right] > arr[largest]) largest = right; if (largest != i) { int t = arr[i]; arr[i] = arr[largest]; arr[largest] = t; heapify(arr, n, largest); } } void heapSort(int arr[], int n) { for (int i = n/2-1; i >= 0; i--) heapify(arr, n, i); for (int i = n-1; i > 0; i--) { int t = arr[0]; arr[0] = arr[i]; arr[i] = t; heapify(arr, i, 0); } } int main() { int arr[5] = {12,11,13,5,6}; heapSort(arr, 5); printf("%d %d %d %d %d", arr[0], arr[1], arr[2], arr[3], arr[4]); return 0; }', "baseline"),
+    ShadowCase("shell_sort", 'void shellSort(int arr[], int n) { for (int gap = n/2; gap > 0; gap /= 2) for (int i = gap; i < n; i++) { int temp = arr[i]; int j; for (j = i; j >= gap && arr[j-gap] > temp; j -= gap) arr[j] = arr[j-gap]; arr[j] = temp; } } int main() { int arr[5] = {64,34,25,12,22}; shellSort(arr, 5); printf("%d %d %d %d %d", arr[0], arr[1], arr[2], arr[3], arr[4]); return 0; }', "baseline"),
+    ShadowCase("counting_sort", 'void countingSort(int arr[], int n) { int count[10] = {0}; for (int i = 0; i < n; i++) count[arr[i]]++; int index = 0; for (int i = 0; i < 10; i++) while (count[i] > 0) { arr[index++] = i; count[i]--; } } int main() { int arr[5] = {4,2,2,8,3}; countingSort(arr, 5); printf("%d %d %d %d %d", arr[0], arr[1], arr[2], arr[3], arr[4]); return 0; }', "baseline"),
+    ShadowCase("bfs_graph", 'int graph[5][5] = {{0,1,1,0,0},{1,0,0,1,1},{1,0,0,0,0},{0,1,0,0,0},{0,1,0,0,0}}; int visited[5] = {0,0,0,0,0}; int queue[5]; int front = 0, rear = 0; void bfs(int start, int n) { visited[start] = 1; queue[rear++] = start; while (front < rear) { int u = queue[front++]; printf("%d ", u); for (int v = 0; v < n; v++) if (graph[u][v] == 1 && visited[v] == 0) { visited[v] = 1; queue[rear++] = v; } } } int main() { bfs(0, 5); return 0; }', "baseline"),
+    ShadowCase("dfs_graph", 'int graph[5][5] = {{0,1,1,0,0},{1,0,0,1,1},{1,0,0,0,0},{0,1,0,0,0},{0,1,0,0,0}}; int visited[5] = {0,0,0,0,0}; void dfs(int u, int n) { visited[u] = 1; printf("%d ", u); for (int v = 0; v < n; v++) if (graph[u][v] == 1 && visited[v] == 0) dfs(v, n); } int main() { dfs(0, 5); return 0; }', "baseline"),
+    ShadowCase("dp_fibonacci", 'int main() { int n = 10; int dp[20]; dp[0] = 0; dp[1] = 1; for (int i = 2; i <= n; i++) dp[i] = dp[i-1] + dp[i-2]; printf("%d", dp[n]); return 0; }', "baseline"),
+    ShadowCase("dp_knapsack", 'int max(int a, int b) { return a > b ? a : b; } int main() { int W = 10; int wt[4] = {2,3,4,5}; int val[4] = {3,4,5,6}; int n = 4; int dp[5][15]; for (int i = 0; i < 5; i++) for (int j = 0; j < 15; j++) dp[i][j] = 0; for (int i = 1; i <= n; i++) for (int w = 1; w <= W; w++) if (wt[i-1] <= w) dp[i][w] = max(val[i-1] + dp[i-1][w-wt[i-1]], dp[i-1][w]); else dp[i][w] = dp[i-1][w]; printf("%d", dp[n][W]); return 0; }', "baseline"),
+    ShadowCase("hanoi_tower", 'void hanoi(int n, char from, char to, char aux) { if (n == 1) { printf("Move 1 from %c to %c\\n", from, to); return; } hanoi(n - 1, from, aux, to); printf("Move %d from %c to %c\\n", n, from, to); hanoi(n - 1, aux, to, from); } int main() { hanoi(2, \'A\', \'C\', \'B\'); return 0; }', "baseline"),
+    ShadowCase("gcd_euclidean", 'int gcd(int a, int b) { while (b != 0) { int temp = b; b = a % b; a = temp; } return a; } int main() { printf("%d", gcd(48, 18)); return 0; }', "baseline"),
+    ShadowCase("is_prime", 'int isPrime(int n) { if (n <= 1) return 0; for (int i = 2; i * i <= n; i++) if (n % i == 0) return 0; return 1; } int main() { printf("%d", isPrime(17)); return 0; }', "baseline"),
+    ShadowCase("string_reverse", 'int main() { char str[] = "hello"; int len = 0; while (str[len] != \'\\0\') len++; for (int i = 0; i < len / 2; i++) { char temp = str[i]; str[i] = str[len - i - 1]; str[len - i - 1] = temp; } printf("%s", str); return 0; }', "baseline"),
+    # ---- 数据结构模板拓展（线性表/栈/队列） ----
+    ShadowCase("seq_list", 'void init(int data[], int* len) { *len = 0; } void listInsert(int data[], int* len, int pos, int x) { for (int i = *len; i > pos; i--) data[i] = data[i-1]; data[pos] = x; (*len)++; } int main() { int data[10]; int len; init(data, &len); listInsert(data, &len, 0, 5); listInsert(data, &len, 1, 3); listInsert(data, &len, 2, 8); printf("%d %d %d", data[0], data[1], data[2]); return 0; }', "baseline"),
+    ShadowCase("linked_list_tail", 'struct Node { int data; struct Node* next; }; struct Node* createNode(int data) { struct Node* node = (struct Node*)malloc(sizeof(struct Node)); node->data = data; node->next = NULL; return node; } struct Node* append(struct Node* head, int data) { struct Node* newNode = createNode(data); if (head == NULL) return newNode; struct Node* p = head; while (p->next != NULL) p = p->next; p->next = newNode; return head; } int main() { struct Node* head = NULL; head = append(head, 1); append(head, 2); append(head, 3); printf("%d %d %d", head->data, head->next->data, head->next->next->data); return 0; }', "baseline"),
+    ShadowCase("linked_list_delete", 'struct Node { int data; struct Node* next; }; struct Node* createNode(int data) { struct Node* node = (struct Node*)malloc(sizeof(struct Node)); node->data = data; node->next = NULL; return node; } struct Node* deleteNode(struct Node* head, int key) { struct Node* temp = head; struct Node* prev = NULL; if (temp != NULL && temp->data == key) { head = temp->next; free(temp); return head; } while (temp != NULL && temp->data != key) { prev = temp; temp = temp->next; } if (temp == NULL) return head; prev->next = temp->next; free(temp); return head; } int main() { struct Node* head = createNode(1); head->next = createNode(2); head->next->next = createNode(3); head = deleteNode(head, 2); printf("%d %d", head->data, head->next->data); return 0; }', "baseline"),
+    ShadowCase("doubly_linked_list", 'struct DNode { int data; struct DNode* prev; struct DNode* next; }; struct DNode* createNode(int data) { struct DNode* node = (struct DNode*)malloc(sizeof(struct DNode)); node->data = data; node->prev = NULL; node->next = NULL; return node; } struct DNode* append(struct DNode* head, int data) { struct DNode* newNode = createNode(data); if (head == NULL) return newNode; struct DNode* p = head; while (p->next != NULL) p = p->next; p->next = newNode; newNode->prev = p; return head; } int main() { struct DNode* head = NULL; head = append(head, 1); head = append(head, 2); printf("%d %d", head->data, head->next->data); return 0; }', "baseline"),
+    ShadowCase("circular_queue", '#define MAXSIZE 5\\nstruct CircularQueue { int data[MAXSIZE]; int front; int rear; };\\nvoid init(struct CircularQueue* q) { q->front = 0; q->rear = 0; }\\nint isFull(struct CircularQueue* q) { return (q->rear + 1) % MAXSIZE == q->front; }\\nvoid enqueue(struct CircularQueue* q, int x) { if (isFull(q)) return; q->data[q->rear] = x; q->rear = (q->rear + 1) % MAXSIZE; }\\nint dequeue(struct CircularQueue* q) { if (q->front == q->rear) return -1; int x = q->data[q->front]; q->front = (q->front + 1) % MAXSIZE; return x; }\\nint main() { struct CircularQueue q; init(&q); enqueue(&q, 10); enqueue(&q, 20); enqueue(&q, 30); printf("%d %d %d", dequeue(&q), dequeue(&q), dequeue(&q)); return 0; }', "baseline"),
+    ShadowCase("linked_stack", 'struct Node { int data; struct Node* next; }; struct Node* push(struct Node* top, int x) { struct Node* node = (struct Node*)malloc(sizeof(struct Node)); node->data = x; node->next = top; return node; } struct Node* pop(struct Node* top) { if (top == NULL) return NULL; struct Node* temp = top; top = top->next; free(temp); return top; } int main() { struct Node* top = NULL; top = push(top, 10); top = push(top, 20); top = push(top, 30); printf("%d", top->data); top = pop(top); printf(" %d", top->data); return 0; }', "baseline"),
+    ShadowCase("linked_queue", 'struct QNode { int data; struct QNode* next; }; struct LinkedQueue { struct QNode* front; struct QNode* rear; }; void init(struct LinkedQueue* q) { q->front = NULL; q->rear = NULL; } void enqueue(struct LinkedQueue* q, int x) { struct QNode* node = (struct QNode*)malloc(sizeof(struct QNode)); node->data = x; node->next = NULL; if (q->rear == NULL) { q->front = node; q->rear = node; } else { q->rear->next = node; q->rear = node; } } int dequeue(struct LinkedQueue* q) { if (q->front == NULL) return -1; struct QNode* temp = q->front; int x = temp->data; q->front = q->front->next; if (q->front == NULL) q->rear = NULL; free(temp); return x; } int main() { struct LinkedQueue q; init(&q); enqueue(&q, 10); enqueue(&q, 20); enqueue(&q, 30); printf("%d %d %d", dequeue(&q), dequeue(&q), dequeue(&q)); return 0; }', "baseline"),
+    # ---- 数据结构模板拓展（树/图/哈希） ----
+    ShadowCase("bst_insert_search", 'struct TreeNode { int val; struct TreeNode* left; struct TreeNode* right; }; struct TreeNode* createNode(int val) { struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode)); node->val = val; node->left = NULL; node->right = NULL; return node; } struct TreeNode* insert(struct TreeNode* root, int val) { if (root == NULL) return createNode(val); if (val < root->val) root->left = insert(root->left, val); else root->right = insert(root->right, val); return root; } struct TreeNode* search(struct TreeNode* root, int key) { if (root == NULL || root->val == key) return root; if (key < root->val) return search(root->left, key); else return search(root->right, key); } int main() { struct TreeNode* root = NULL; root = insert(root, 5); insert(root, 3); insert(root, 7); struct TreeNode* res = search(root, 7); printf("%d", res->val); return 0; }', "baseline"),
+    ShadowCase("tree_level_order", 'struct TreeNode { int val; struct TreeNode* left; struct TreeNode* right; }; struct TreeNode* createNode(int val) { struct TreeNode* node = (struct TreeNode*)malloc(sizeof(struct TreeNode)); node->val = val; node->left = NULL; node->right = NULL; return node; } void levelOrder(struct TreeNode* root) { if (root == NULL) return; struct TreeNode* queue[20]; int front = 0, rear = 0; queue[rear++] = root; while (front < rear) { struct TreeNode* node = queue[front++]; printf("%d ", node->val); if (node->left != NULL) queue[rear++] = node->left; if (node->right != NULL) queue[rear++] = node->right; } } int main() { struct TreeNode* root = createNode(1); root->left = createNode(2); root->right = createNode(3); root->left->left = createNode(4); root->left->right = createNode(5); levelOrder(root); return 0; }', "baseline"),
+    ShadowCase("hash_table_linear", '#define TABLE_SIZE 10\\nstruct HashEntry { int key; int occupied; };\\nint hash(int key) { return key % TABLE_SIZE; }\\nvoid insert(struct HashEntry table[], int key) { int idx = hash(key); while (table[idx].occupied) idx = (idx + 1) % TABLE_SIZE; table[idx].key = key; table[idx].occupied = 1; }\\nint search(struct HashEntry table[], int key) { int idx = hash(key); while (table[idx].occupied) { if (table[idx].key == key) return idx; idx = (idx + 1) % TABLE_SIZE; } return -1; }\\nint main() { struct HashEntry table[TABLE_SIZE]; for (int i = 0; i < TABLE_SIZE; i++) table[i].occupied = 0; insert(table, 5); insert(table, 15); int idx = search(table, 15); printf("%d", idx); return 0; }', "baseline"),
+    ShadowCase("josephus_ring", '#define N 10\\nint main() { int alive[N]; for (int i = 0; i < N; i++) alive[i] = 1; int count = 0, i = 0, remain = N, m = 3; while (remain > 0) { if (alive[i]) { count++; if (count == m) { alive[i] = 0; printf("%d ", i); count = 0; remain--; } } i = (i + 1) % N; } return 0; }', "baseline"),
+
     # ===== 已知缺失特性（预期会失败） =====
     ShadowCase("file_fopen", 'int main() { FILE* f = fopen("test.txt", "r"); if (f) printf("ok"); fclose(f); return 0; }', "file_io"),
     ShadowCase("file_fread", 'int main() { FILE* f = fopen("test.txt", "r"); char buf[20]; fread(buf, 1, 5, f); buf[5] = 0; printf("%s", buf); fclose(f); return 0; }', "file_io"),
@@ -576,7 +625,7 @@ SHADOW_CASES: List[ShadowCase] = [
 
     # ===== 边界/边缘用例 =====
     ShadowCase("inline_asm", 'int main() { int x = 1; __asm__ ("nop"); printf("%d", x); return 0; }', "inline_asm"),
-    ShadowCase("variadic_macro", '#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)\nint main() { LOG("%d", 42); return 0; }', "variadic_macro"),
+    ShadowCase("variadic_macro", '#define LOG(fmt, ...) printf(fmt, __VA_ARGS__)\\nint main() { LOG("%d", 42); return 0; }', "variadic_macro"),
     ShadowCase("typeof_operator", 'int main() { int x = 5; typeof(x) y = 10; printf("%d", y); return 0; }', "typeof"),
     ShadowCase("implicit_int", 'main() { printf("hello"); return 0; }', "implicit_int"),
 ]

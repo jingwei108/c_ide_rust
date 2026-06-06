@@ -136,6 +136,253 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
         ));
     }
 
+    // 堆排序
+    if name_lower.contains("heap")
+        || (features.is_recursive
+            && features.has_array_compare
+            && features.has_swap
+            && name_lower.contains("sort"))
+    {
+        matches.push(build_match(
+            "heap_sort",
+            "堆排序",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // BFS 广度优先搜索
+    if name_lower.contains("bfs")
+        || name_lower.contains("breadth")
+        || (name_lower.contains("search") && features.has_single_loop && features.cfg_has_back_edge)
+    {
+        matches.push(build_match(
+            "bfs",
+            "BFS 广度优先搜索",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // DFS 深度优先搜索
+    if name_lower.contains("dfs")
+        || name_lower.contains("depth")
+        || (features.is_recursive
+            && !features.has_partition_pattern
+            && !features.has_merge_pattern
+            && name_lower.contains("search"))
+    {
+        matches.push(build_match(
+            "dfs",
+            "DFS 深度优先搜索",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // DP 动态规划（斐波那契 / 背包 等）
+    if name_lower.contains("dp")
+        || name_lower.contains("knapsack")
+        || name_lower.contains("dynamic")
+    {
+        matches.push(build_match(
+            "dp",
+            "动态规划",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 希尔排序
+    if name_lower.contains("shell") {
+        matches.push(build_match(
+            "shell_sort",
+            "希尔排序",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 计数排序
+    if name_lower.contains("counting") {
+        matches.push(build_match(
+            "counting_sort",
+            "计数排序",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 链表操作（删除/插入等）
+    if name_lower.contains("deletenode") || name_lower.contains("delete_node") {
+        matches.push(build_match(
+            "linked_list_delete",
+            "链表删除",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 二叉搜索树
+    if name_lower.contains("bst") || name_lower.contains("insert") && features.is_recursive && features.cfg_has_back_edge {
+        matches.push(build_match(
+            "bst_insert",
+            "BST 插入",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 字符串操作
+    if name_lower.contains("reverse") && name_lower.contains("str") {
+        matches.push(build_match(
+            "string_reverse",
+            "字符串反转",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 数学算法
+    if name_lower.contains("gcd") || name_lower.contains("greatest") {
+        matches.push(build_match(
+            "gcd",
+            "最大公约数",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    if name_lower.contains("prime") || name_lower.contains("isprime") {
+        matches.push(build_match(
+            "is_prime",
+            "素数判断",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 汉诺塔
+    if name_lower.contains("hanoi") {
+        matches.push(build_match(
+            "hanoi",
+            "汉诺塔",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 顺序表 / 数组操作
+    if name_lower.contains("seqlist") || name_lower.contains("list_insert") || name_lower.contains("listdelete") {
+        matches.push(build_match(
+            "seq_list",
+            "顺序表",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 链表尾插 / 双向链表
+    if name_lower.contains("append") && (name_lower.contains("list") || name_lower.contains("node")) {
+        matches.push(build_match(
+            "linked_list_append",
+            "链表尾插",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 循环队列
+    if name_lower.contains("circular") && name_lower.contains("queue") {
+        matches.push(build_match(
+            "circular_queue",
+            "循环队列",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 链栈
+    if name_lower.contains("linked") && name_lower.contains("stack") {
+        matches.push(build_match(
+            "linked_stack",
+            "链栈",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 链队列
+    if name_lower.contains("linked") && name_lower.contains("queue") {
+        matches.push(build_match(
+            "linked_queue",
+            "链队列",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 层序遍历
+    if name_lower.contains("levelorder") || name_lower.contains("level_order") {
+        matches.push(build_match(
+            "level_order",
+            "层序遍历",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // BST 查找
+    if name_lower.contains("search") && features.is_recursive && features.cfg_has_back_edge {
+        matches.push(build_match(
+            "bst_search",
+            "BST 查找",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 哈希表
+    if name_lower.contains("hash") && !name_lower.contains("cash") {
+        matches.push(build_match(
+            "hash_table",
+            "哈希表",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
+    // 约瑟夫环
+    if name_lower.contains("josephus") {
+        matches.push(build_match(
+            "josephus",
+            "约瑟夫环",
+            &func.name,
+            func.loc.line,
+            &features.compare_lines,
+        ));
+    }
+
     matches
 }
 
@@ -620,6 +867,27 @@ fn build_match(
         "quick_sort" => "快速排序：通过分治法，选取枢轴将数组分区，再递归排序子数组。平均时间复杂度 O(n log n)。".to_string(),
         "merge_sort" => "归并排序：将数组递归分成两半，排序后合并。时间复杂度稳定为 O(n log n)。".to_string(),
         "binary_search" => "二分查找：在有序数组中每次将搜索范围减半。时间复杂度 O(log n)。".to_string(),
+        "heap_sort" => "堆排序：利用堆数据结构进行排序。先建堆再反复取出堆顶元素。时间复杂度 O(n log n)。".to_string(),
+        "bfs" => "BFS 广度优先搜索：从起点出发，逐层扩展访问邻居。适合求最短路径。".to_string(),
+        "dfs" => "DFS 深度优先搜索：从起点出发，沿着一条路径走到尽头再回溯。适合连通性判断。".to_string(),
+        "dp" => "动态规划：将复杂问题分解为子问题，保存子问题答案避免重复计算。".to_string(),
+        "shell_sort" => "希尔排序：通过增量分组进行插入排序，逐步缩小增量至 1。时间复杂度介于 O(n log n) 和 O(n²) 之间。".to_string(),
+        "counting_sort" => "计数排序：用统计数组记录元素出现次数，适合数据范围小的场景。时间复杂度 O(n+k)。".to_string(),
+        "linked_list_delete" => "链表删除：遍历链表找到目标节点，调整指针并释放内存。".to_string(),
+        "bst_insert" => "BST 插入：利用二叉搜索树性质，递归找到正确位置插入新节点。".to_string(),
+        "string_reverse" => "字符串反转：利用双指针从两端向中间交换字符。".to_string(),
+        "gcd" => "辗转相除法：gcd(a,b) = gcd(b, a mod b)，直到余数为 0。".to_string(),
+        "is_prime" => "素数判断：试除法，只需检查 2 到 sqrt(n) 是否能整除。".to_string(),
+        "hanoi" => "汉诺塔：经典递归问题，将 n 个盘子分解为移动 n-1 个盘子 + 移动最底下盘子 + 再移动 n-1 个盘子。".to_string(),
+        "seq_list" => "顺序表：用连续数组存储数据，支持按位置插入、删除和查找。".to_string(),
+        "linked_list_append" => "链表尾插法：将新节点追加到链表末尾，保持插入顺序。".to_string(),
+        "circular_queue" => "循环队列：用数组实现队列，front/rear 指针循环移动，牺牲一个单元区分空和满。".to_string(),
+        "linked_stack" => "链栈：用单链表实现栈，top 指针指向栈顶，没有固定容量限制。".to_string(),
+        "linked_queue" => "链队列：用链表实现队列，front 指向队头，rear 指向队尾。".to_string(),
+        "level_order" => "层序遍历：利用队列按从上到下、从左到右的顺序访问二叉树节点。".to_string(),
+        "bst_search" => "BST 查找：利用二叉搜索树性质，每次比较可排除一半子树，平均时间复杂度 O(log n)。".to_string(),
+        "hash_table" => "哈希表：通过哈希函数直接定位存储位置，理想情况下查找时间复杂度 O(1)。".to_string(),
+        "josephus" => "约瑟夫环：经典的循环报数淘汰问题，可用数组模拟圆圈解决。".to_string(),
         _ => String::new(),
     };
 

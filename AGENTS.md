@@ -93,11 +93,13 @@ docs/                   设计文档、事故报告
 ### 当前不支持
 - **`double`** — ✅ **已完整支持**（64 位 f64，字节偏移架构，含 `sizeof(double)=8`、`printf("%f")` 读取 f64）
 - **~~函数调用参数的隐式转换提示~~** — ✅ **已解决（2026-06-05）**：`printf`/`scanf`/`fprintf` 格式字符串与参数类型静态匹配检查已落地。传入 int 给 `%f`、传入 float* 给 `%d` 等不匹配场景会在编译期报错（E3062/E3063）
+- **参数化宏调用后带分号** — 形如 `SWAP(int,x,y);` 的参数化宏调用，若宏体本身已包含大括号 `{ ... }`，展开后形成 `{ ... };`（复合语句 + 空语句），当前 Parser 无法正确解析。 workaround：宏调用后不加额外分号（如 `SWAP(int,x,y)`），或使用 `do { ... } while(0)` 模式
 
 ### 已支持的关键特性
 - **逗号分隔的多变量声明** — `int a = 1, b = 2;`
 - **多维数组**（`int arr[3][3]`）— 声明、嵌套初始化列表 `{ {1,2}, {3,4} }`、索引访问 `arr[i][j]`、函数参数传递 `void f(int[][3])`
 - **`#define` 宏** — 简单常量替换（如 `#define N 100`）
+- **参数化宏** — `#define MAX(a,b) ((a)>(b)?(a):(b))`，支持多参数、嵌套括号实参、嵌套宏调用（如 `MAX(1, MIN(2,3))`）
 - **for 循环变量作用域隔离** — `for (int i = 0; i < 3; i++)` 中的 `i` 只在循环体内可见，不覆盖外部同名变量；Block 语句块同样支持作用域隔离
 - **printf 可变参数** — 支持任意数量参数（如 `printf("%d %d %d", a, b, c)`）
 - **`printf`/`scanf` 格式字符串参数类型检查** — `printf("%f", 5)` 编译期报错（int 不匹配 `%f`）；`scanf("%d", &f)` 编译期报错（float* 不匹配 `%d`）。支持 `%d/%f/%s/%p/%c/%ld/%lf/%x/%o` 等常见格式说明符与参数类型的静态匹配
@@ -115,9 +117,11 @@ docs/                   设计文档、事故报告
 - **字符串库函数** — `strlen(s)`、`strcpy(dest, src)`、`strcmp(a, b)`（宿主导入函数）
 - **显式类型转换（Cast）** — `(int*)p`、`(char*)arr`、`(float)a`、`(int)b` 等标量/指针间转换
 - **`fprintf`** — `fprintf(stdout, "format", ...)` / `fprintf(stderr, "format", ...)`，stream 参数被忽略，输出行为与 `printf` 相同
+- **`fgets`/`fputs`** — 文件逐行读写；`fgets(buf, n, fp)` 读取最多 `n-1` 字节或到换行，`fputs(s, fp)` 写入字符串；配合 `fopen`/`fclose` 实现完整文件 I/O 流程
 - **`realloc`** — `realloc(ptr, new_size)`，支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
 - **`qsort`** — `qsort(base, nmemb, size, compar)`，支持用户自定义比较函数（通过 VM 调用用户函数）
 - **`union` 类型** — `union U { int i; double d; }; union U u; u.i = 1; u.d = 3.14; printf("%.2f", u.d);`，内存布局为所有字段 offset=0、size=max(fields)，支持成员访问、指针访问（`p->i`）、`sizeof(union U)`
+- **`static` 局部变量** — `static int count = 0;` 分配在全局内存区，跨函数调用持久化；支持读写、自增自减、取地址、数组状态保持；初始化只在首次进入函数时执行一次
 - **统一模式 / 时间旅行** — 点击"运行"后自动逐语句执行并收集每步状态快照；可随时暂停、单步前进、拖动进度条回退到任意历史步；系统从最近检查点（每 20 步）恢复 VM 状态并正向重放；运行时异常自动回退到上一步并弹出知识卡片诊断
   - `VMSnapshot` 全量快照（`vm/snapshot.rs`）：1MB 内存 + 运行时状态 + 内存管理状态
   - `CheckpointManager` 检查点管理器（`unified/checkpoint.rs`）
@@ -129,13 +133,13 @@ docs/                   设计文档、事故报告
   - 后端：`StepCollector::collect_pointer_snapshots` 遍历变量快照，解析指针值，结合 `session.memory.regions` 判断是否为已释放堆内存
   - 前端：`PointerArrowWidget` 使用 `CustomPainter` 绘制箭头，左右卡片布局，状态色编码
 - **数组排序动画增强** — `ArrayVisualizer` 高亮脉冲（缩放+发光）、交换金色光晕、值变化弹性弹跳；`ArrayVisTab` 解析 Swap 语义标签驱动交换动画
-- **算法步骤语义标注** — 为 6 种算法（冒泡/选择/插入/快速/归并/二分）预定义步骤模板，运行时根据源码行特征和变量值推断当前阶段并生成中文教学描述
+- **算法步骤语义标注** — 为 27 种算法/数据结构操作（冒泡/选择/插入/快速/归并/堆排序/希尔排序/计数排序/二分/BFS/DFS/DP/链表删除与尾插/BST插入与查找/字符串反转/GCD/素数判断/汉诺塔/顺序表/循环队列/链栈/链队列/层序遍历/哈希表/约瑟夫环）预定义步骤模板，运行时根据源码行特征和变量值推断当前阶段并生成中文教学描述
   - 后端：`unified/algorithm_steps.rs` 推断引擎，每种算法独立推断逻辑；`StepPayload` 新增 `algorithm_step` 字段
   - 前端：`ExecutionControlPanel` 步骤横幅（按 phase 着色：outer_loop 蓝、swap 琥珀、compare 紫、finish 绿等）；`AlgorithmTab` 静态步骤流程预览（带运行时高亮）；`ArrayVisTab` 已排序边界绿色高亮（冒泡右侧/选择左侧/插入左侧）
 - **链表可视化** — `LinkedListVisualizer` CustomPainter 绘制节点+箭头，支持 NodeCreate/Access/Delete 闪色；渐进式入场动画；`LinkedListVisTab` 集成统一模式，从 `StepPayload.localVars` 读取头指针驱动时间旅行
 - **二叉树可视化** — `TreeVisualizer` 满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制；`TreeVisTab` 集成统一模式
 - **变量级高亮** — `re_editor` `spanBuilder` 集成：当前执行行的被读变量名显示淡蓝底色、被写变量名显示淡橙底色，保留语法高亮；`VariablesTab` 值变化背景闪烁动画
-- **代码模板扩展** — 新增选择排序、插入排序、归并排序、线性查找、链表头插法/遍历、二叉树节点/先序遍历、栈（数组实现）等 8 个模板，总计 16 个
+- **代码模板扩展** — 总计 **43 个模板**，覆盖排序（冒泡/选择/插入/快速/归并/堆排序/希尔排序/计数排序）、查找（线性/二分）、图算法（BFS/DFS）、动态规划（斐波那契/01背包）、数据结构（顺序表、链表节点/头插/尾插/遍历/删除/双向链表、二叉树节点/先序/中序/后序/层序遍历/BST插入与查找、栈/链栈/队列/链队列/循环队列、哈希表）、字符串（反转）、基础（数组遍历、指针交换、GCD、素数判断、约瑟夫环）、递归（阶乘/斐波那契/汉诺塔）
 - **代码模板参数化 + 交互式教程** — 核心算法模板（冒泡/选择/插入/快速/归并/二分/线性查找）支持参数占位符（如 `{{n:5}}`、`{{target:3}}`）；`TemplateParamDialog` 底部弹窗收集参数；`TemplateTutorialPanel` 逐步骤高亮代码行并展示教学描述；每步骤的关键行带 💡 `ExpansionTile` 可展开查看详细解释；教程最后一步点击"运行代码"自动插入生成代码、编译并启动统一模式；`LearningProgress` 记录 `completedTutorials`
 - **Use-After-Free / Double-Free 运行时检测** — VM `execute_memory` 指令层在每次堆内存解引用前检查 `freed_logs`；访问已释放但尚未重用的堆内存时立即 trap 并弹出知识卡片（E3060），报告分配行号和释放行号；`host_free` 检测到对同一块内存重复释放时 trap（E3061）；`malloc`/`realloc` 重用内存时自动清理对应 `freed_logs`；统一模式 Trap 自动回退到上一步；新增 3 个 E2E 测试
 - **认知推理 P0（运行时根因分析）** — `TraceAnalyzer` 基于执行历史切片推断 Trap 根因：数组越界时识别 OffByOne（`<=` 条件）、索引变量未初始化、循环起始错误；Use-After-Free / Double-Free 时提取分配/释放时间线；除零时定位值为 0 的除数变量；NULL 指针时追踪指针历史变化。`RootCauseHint` 结构化数据（category/one_liner/related_lines/fix_kind）经 FRB 传输；前端 `RootCauseBanner` 以琥珀/深橙/紫/青等颜色编码展示根因，附带可点击行号跳转和修复建议标签
@@ -168,6 +172,7 @@ docs/                   设计文档、事故报告
 - **C 子集 P0 拓展（2026-05-10）**：字符字面量 `'a'`、块注释 `/* */`、十六进制 `0xFF`、八进制 `077`、类型修饰符 `long/short/signed/const`、更多转义序列 `\r\a\b\f\v\xHH` → Lexer + Parser 全部支持，新增 5 个 E2E 测试
 - **影子验证发现 bug #4（2026-05-17）**：八进制字面量 `077` 被误解析为十进制 77 → Lexer `number()` 新增八进制分支
 - **影子验证发现 bug #5（2026-05-17）**：`&&` / `||` 无短路求值，右侧表达式总是被求值 → BytecodeGen 新增 `Dup` + `JumpIfZero` / `JumpIfNotZero` 短路逻辑
+- **影子验证新增（2026-06-06）**：为数据结构教材语法拓展补充 8 个影子测试用例（参数化宏 `MAX`/`SWAP`/`SQUARE`/`MIN` 嵌套、static 局部变量计数器/数组持久化、`fgets`/`fputs` 文件读写），全部与 Clang 输出匹配；`shadow_verify.py` 新增内存泄漏检测报告过滤
 - ~~**已知问题（2026-05-17）**：`for (int i = 0; ...)` 循环变量作用域未隔离外部同名变量~~ → ✅ **已解决（2026-06-05）**：BytecodeGen 新增 `local_scope_stack` 作用域栈，Block 和 For 语句进入/退出时正确保存/恢复局部变量映射，循环变量不再泄漏到外部作用域
 - **全局数组变量声明名字错误（2026-06-05）**：`char s[6];` 等全局数组声明中，`parse_global_var_or_func` 使用 `self.previous()` 获取变量名，在数组后缀 `]` consume 后导致变量名被错误设为 `]` → 改用 `parse_declarator` 返回的 `name`
 - **字符串字面量类型精度（2026-06-05）**：Parser 将字符串字面量类型设为 `char*`（指针），导致 `sizeof("hello")` 返回指针大小 4 而非数组大小 6 → 改为 `char[N]` 数组类型，TypeChecker 同步更新；数组到指针退化由现有 `check_array_pointer_assignable` 处理
@@ -315,6 +320,11 @@ docs/                   设计文档、事故报告
   - VM `step()` 超巨型 match（~720 行）：拆分为 12 个指令类别处理器（`execute_stack/local/global/memory/arithmetic/comparison/bitwise/float/double/longlong/control_flow/debug`），`step()` 缩减为 ~90 行分发逻辑
   - Host `printf` 严重重复：`host_printf_1/2` 复用已有的 `format_printf_string()`，消除重复格式解析逻辑
   - Flutter Bridge session 销毁不完整：`destroy_session` 同步清理 `UNIFIED_ENGINES`；`create_session` 与引擎管理对齐
+- **Phase 27 — 增量快照 + 智能检查点（2026-06-06）**：
+  - **F-02 增量快照**：VM 引入 4KB 页级脏页追踪（`dirty_pages: [u64; 4]` bitmap，覆盖 256 页）。所有内存写入操作（`store_i32/i64/i8`、`write_cstring`、`write_memory`、`copy_memory`、`local zero-fill`）自动标记脏页。`CheckpointManager` 每 `full_every=5` 个检查点保存一个全量基准，其余保存 `MemoryImage::Delta`（仅脏页）。`nearest()` 自动重建为完整 `MemoryImage::Full` 供 `restore()` 使用。检查点内存占用从 50MB（50×1MB）降至典型 5-10MB。
+  - **F-01 智能检查点**：`should_checkpoint` 从纯固定间隔升级为"固定间隔保底 + 智能边界触发"。基于源码行轻量级推断：`for`/`while` → 循环边界、`return` → 返回、`malloc`/`free` → 内存操作、含 `temp`+`arr[`+`=` → 数组交换、其他函数调用 → 调用。带 `min_gap = interval/4` 密集保护，避免检查点过于密集。
+  - **`seek_to` 重放动态检查点**：正向重放过程中每隔 `interval` 步自动保存新检查点，后续 seek 无需从旧检查点重新重放，显著加速长程序时间旅行。
+  - 新增 3 个专项测试：`test_incremental_snapshot_size`、`test_checkpoint_manager_incremental_chain`、`test_smart_checkpoint_triggers`。
 
 ## 构建命令
 

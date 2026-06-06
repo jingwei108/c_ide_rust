@@ -54,65 +54,21 @@
 
 #### 1.3.1 算法模板库
 
-```cpp
-// 算法模板定义
-struct AlgorithmTemplate {
-    std::string name;           // "bubble_sort"
-    std::string displayName;    // "冒泡排序"
-    ASTPattern astPattern;      // AST 结构模式
-    std::vector<Constraint> constraints;  // 约束条件
-    std::vector<CommonMistake> commonMistakes;  // 常见错误
-};
+当前系统内置 **43 个代码模板**，分为 9 大类：
 
-// 冒泡排序模板
-AlgorithmTemplate BubbleSortTemplate = {
-    .name = "bubble_sort",
-    .displayName = "冒泡排序",
-    .astPattern = {
-        .type = "function",
-        .parameters = {"int[]", "int"},  // arr[], n
-        .body = {
-            // 外层 for: for (int i = 0; i < n - 1; i++)
-            {.type = "for", .init = "i=0", .cond = "i < n - 1", .step = "i++"},
-            // 内层 for: for (int j = 0; j < n - i - 1; j++)
-            {.type = "for", .init = "j=0", .cond = "j < n - i - 1", .step = "j++"},
-            // if: if (arr[j] > arr[j + 1])
-            {.type = "if", .cond = "arr[j] > arr[j+1]"},
-            // swap
-            {.type = "swap", .vars = {"arr[j]", "arr[j+1]"}}
-        }
-    },
-    .constraints = {
-        // 约束：必须是相邻元素比较
-        {.type = "adjacent_compare", .message = "冒泡排序应比较相邻元素 arr[j] 和 arr[j+1]"},
-        // 约束：必须交换相邻元素
-        {.type = "adjacent_swap", .message = "冒泡排序应交换相邻元素"}
-    },
-    .commonMistakes = {
-        {
-            .name = "outer_boundary_wrong",
-            .pattern = "i < n",           // 学生写的
-            .correct = "i < n - 1",       // 应该是
-            .message = "外层循环只需执行 n-1 趟。最后一趟只剩一个元素，已经有序。",
-            .fixSuggestion = "将 i < n 改为 i < n - 1"
-        },
-        {
-            .name = "inner_boundary_wrong",
-            .pattern = "j < n",
-            .correct = "j < n - i - 1",
-            .message = "内层循环范围应随趟数减少。第 i 趟后，最后 i 个元素已有序。",
-            .fixSuggestion = "将 j < n 改为 j < n - i - 1"
-        },
-        {
-            .name = "comparison_direction_wrong",
-            .pattern = "arr[j] < arr[j+1]",
-            .correct = "arr[j] > arr[j+1]",
-            .message = "当前是降序比较，若要升序排序应将 > 改为 <（或反过来）。",
-            .fixSuggestion = "确认排序方向"
-        }
-    }
-};
-```
+| 类别 | 数量 | 包含模板 |
+|:---|:---|:---|
+| **排序** | 8 | 冒泡排序、选择排序、插入排序、快速排序、归并排序、堆排序、希尔排序、计数排序 |
+| **查找** | 2 | 线性查找、二分查找 |
+| **图算法** | 2 | BFS 广度优先搜索、DFS 深度优先搜索 |
+| **动态规划** | 2 | 斐波那契数列、01 背包 |
+| **数据结构** | 17 | 顺序表、链表节点/头插/尾插/遍历/删除/双向链表/循环链表、二叉树节点/先序/中序/后序/层序遍历、BST 插入与查找、链栈、链队列、循环队列、哈希表（线性探测）、约瑟夫环 |
+| **字符串** | 1 | 字符串反转 |
+| **基础** | 5 | 数组遍历求和、数组求最大值、指针交换两数、GCD 欧几里得、素数判断 |
+| **递归** | 3 | 阶乘、斐波那契、汉诺塔 |
+| **指针** | 1 | 指针基础操作 |
+
+模板实现为参数化 C 源码字符串，支持占位符替换。每个模板附带 `TutorialStep` 列表定义算法执行阶段（outer_loop / compare / swap / partition / merge / enqueue / dequeue / visit / finish 等），以及 `LineExplanation` 关键行中文解释。
 
 #### 1.3.2 AST 结构匹配算法
 
@@ -234,41 +190,29 @@ private:
 
 #### 1.4.1 Property-based Testing 实现
 
-**实现位置**：`~~Cide.Client.Shared/Core/AlgorithmValidator.cs~~（C# 代码已移除）`
+**实现位置**：`native/src/engine/algorithm_validator.rs`（Rust 后端）+ Flutter 前端
 
-```csharp
-public static class AlgorithmValidator
-{
-    public static AlgorithmValidationResult Validate(string sourceCode, AlgorithmMatch match)
-    {
-        // 1. 根据算法名称生成测试用例
-        var testCases = GenerateTestCases(match.Name);
-        
-        // 2. 对每个用例：构建测试桩 → 编译 → VM 执行 → 验证输出
-        foreach (var tc in testCases)
-        {
-            var result = RunSingleTest(sourceCode, match.FuncName, match.Name, tc);
-            if (!result.Passed) return result;  // 快速失败
+```rust
+pub fn validate_algorithm(source: &str, match_info: &AlgorithmMatch) -> ValidationResult {
+    let test_cases = generate_test_cases(&match_info.name);
+    for tc in &test_cases {
+        let result = run_single_test(source, &match_info.func_name, &match_info.name, tc);
+        if !result.passed {
+            return result;
         }
-        
-        return new AlgorithmValidationResult(true,
-            $"✅ {match.DisplayName} 通过了 {testCases.Count} 组测试用例！");
     }
+    ValidationResult::passed(format!("{} 通过了 {} 组测试用例！", match_info.display_name, test_cases.len()))
 }
 ```
 
 **测试桩生成**（替换学生的 `main()`）：
-```csharp
-// 原学生代码中的 main 被重命名为 __cide_original_main
-string modifiedSource = Regex.Replace(sourceCode, @"(?<!\w)int\s+main\s*\(", "int __cide_original_main(");
-
-// 生成新 main：准备数组 → 调用学生函数 → 打印结果
+```c
 int main() {
-    int arr[] = {5, 3, 8, 1, 2};  // 测试输入
+    int arr[] = {5, 3, 8, 1, 2};
     int n = 5;
-    bubbleSort(arr, n);            // 调用学生函数（通过 FuncName 定位）
+    bubbleSort(arr, n);
     for (int i = 0; i < n; i = i + 1) {
-        printf("%d ", arr[i]);     // 输出供验证
+        printf("%d ", arr[i]);
     }
     return 0;
 }
@@ -278,67 +222,29 @@ int main() {
 
 | 算法类型 | 属性 1 | 属性 2 | 属性 3 |
 |:---|:---|:---|:---|
-| **排序**（冒泡/选择/插入/快排/归并） | 输出长度 = 输入长度 | 非递减：`arr[i] <= arr[i+1]` | 元素守恒：排序后是输入的排列 |
+| **排序**（8 种） | 输出长度 = 输入长度 | 非递减 | 元素守恒 |
 | **二分查找** | 返回值为整数 | 目标存在时返回正确索引 | 目标不存在时返回 -1 |
-
-**测试用例覆盖**：
-
-```csharp
-// 排序算法：7 组用例
-new("随机数组", new[] { 5, 3, 8, 1, 2 }),
-new("已有序",   new[] { 1, 2, 3, 4, 5 }),
-new("逆序",     new[] { 5, 4, 3, 2, 1 }),
-new("单元素",   new[] { 42 }),
-new("全部相同", new[] { 2, 2, 2, 2 }),
-new("空数组",   Array.Empty<int>()),
-new("包含负数", new[] { -3, 5, -1, 0, 2 }),
-
-// 二分查找：8 组用例
-new("找到目标",     new[] { 1, 3, 5, 7, 9 }, 5),
-new("找到首个",     new[] { 1, 3, 5, 7, 9 }, 1),
-new("找到末尾",     new[] { 1, 3, 5, 7, 9 }, 9),
-new("未找到（偏小）", new[] { 1, 3, 5, 7, 9 }, 0),
-new("未找到（偏大）", new[] { 1, 3, 5, 7, 9 }, 10),
-new("单元素找到",   new[] { 5 }, 5),
-new("单元素未找到", new[] { 5 }, 3),
-new("空数组",       Array.Empty<int>(), 1),
-```
+| **BFS/DFS** | 访问节点数正确 | 无重复访问 | - |
+| **链表操作** | 链表不断裂 | 头指针不为 NULL | - |
 
 #### 1.4.2 前端集成
 
-**Desktop** (`MainView.axaml`)：
+**Flutter** (`AlgorithmTab`)：
 - 算法 Tab 中每个检测到的算法卡片显示 "🔍 验证算法" 按钮
-- 点击后通过 `ValidateAlgorithmCommand` 调用 `AlgorithmValidator.Validate()`
-- 结果输出到控制台面板
+- 点击后通过 FRB 调用 Rust `validate_algorithm()`
+- 结果以 BottomSheet 展示：绿色（通过）/ 红色（失败）
+- 失败时显示具体用例、输入数组、实际输出与预期输出对比
 
-**Maui** (`Home.razor`)：
-- 算法 Tab 中每个检测到的算法卡片显示验证按钮
-- 验证结果面板：绿色（通过）/ 红色（失败）样式
-- 失败时显示具体用例描述、输入数组、实际输出
+#### 1.4.3 关键依赖：`func_name` 字段
 
-#### 1.4.3 关键依赖：`funcName` 字段
-
-为使验证能正确定位学生代码中的目标函数，`AlgorithmMatch` 新增了 `FuncName` 字段：
-
-```cpp
-// C++ 后端
-struct AlgorithmMatch {
-    std::string algorithmName;
-    std::string funcName;  // 检测到的函数名，如 "bubbleSort"
-    // ...
-};
-
-// C API
-cide_algorithm_match_get(s, index, ..., funcName, sizeof(funcName));
-
-// C# 前端
-public record AlgorithmMatch {
-    public string FuncName { get; init; } = "";
-    // ...
+```rust
+pub struct AlgorithmMatch {
+    pub name: String,
+    pub func_name: String,
+    pub display_name: String,
+    pub suggestion: String,
 }
 ```
-
-每个模式检测器在匹配成功时设置 `match.funcName = func.name`，确保测试桩能调用正确的函数。
 
 ### 1.5 Level 3: 执行轨迹分析
 
@@ -693,53 +599,34 @@ void preorder(struct TreeNode* root) {
 💡 记忆口诀：递归函数第一行，先写终止条件！
 ```
 
-### 3.4 数据结构 Starter Code 模板库
+### 3.4 代码模板库（43 个内置模板）
 
-为学生提供可以直接使用的基础模板：
+**排序算法（8）**
+- 冒泡排序、选择排序、插入排序、快速排序、归并排序、堆排序、希尔排序、计数排序
 
-```c
-// ===== 链表节点 =====
-// 已内置，无需声明
-struct ListNode {
-    int val;
-    struct ListNode* next;
-};
+**查找算法（2）**
+- 线性查找、二分查找
 
-// ===== 树节点 =====
-// 已内置，无需声明
-struct TreeNode {
-    int val;
-    struct TreeNode* left;
-    struct TreeNode* right;
-};
+**图算法（2）**
+- BFS 广度优先搜索、DFS 深度优先搜索
 
-// ===== 图节点（Phase 3）=====
-// 已内置
-struct GraphNode {
-    int id;
-    int val;
-    struct GraphEdge* edges;
-};
+**动态规划（2）**
+- 斐波那契数列、01 背包
 
-struct GraphEdge {
-    int to;
-    int weight;
-    struct GraphEdge* next;
-};
+**数据结构（17）**
+- 顺序表、链表节点/头插/尾插/遍历/删除/双向链表/循环链表
+- 二叉树节点/先序/中序/后序/层序遍历、BST 插入与查找
+- 链栈、链队列、循环队列、哈希表（线性探测）、约瑟夫环
 
-// ===== 辅助函数（已内置）=====
-// 创建链表节点
-struct ListNode* newListNode(int val);
+**其他（7）**
+- 字符串反转、数组求和、数组最大值、指针交换两数
+- GCD 欧几里得、素数判断、阶乘、递归斐波那契、汉诺塔
 
-// 创建树节点
-struct TreeNode* newTreeNode(int val);
-
-// 打印数组
-void printArray(int arr[], int n);
-
-// 交换两个整数
-void swap(int* a, int* b);
-```
+每个模板均支持：
+- **参数化占位符**：`{{n:5}}`、`{{target:3}}` 等，加载时弹出 `TemplateParamDialog` 收集
+- **交互式教程**：`TemplateTutorialPanel` 逐步高亮代码行，关键行带 💡 `ExpansionTile` 可展开中文解释
+- **自动编译运行**：教程最后一步自动插入生成代码、编译并启动统一模式
+- **算法步骤语义标注**：运行时根据源码行特征和变量值推断当前阶段，生成中文教学描述
 
 ---
 
@@ -787,34 +674,39 @@ void swap(int* a, int* b);
 ## 5. 实施优先级
 
 ### Phase 1：核心子集 + 基础修复（✅ 已完成）
-- [x] C 子集编译器（int, 数组, 指针, struct, if/for/while, 函数, malloc/free）
+- [x] C 子集编译器（int, float, double, long long, 数组, 指针, struct, union, enum, typedef, if/for/while/do-while/switch, 函数, malloc/free/realloc）
 - [x] 基础修复（语法错误、数组越界、空指针、未初始化）
-- [x] 内存视图 + 指针视图
-- [x] 10 个最常见错误的中文消息
+- [x] 内存视图 + 指针视图 + 堆内存可视化
+- [x] 结构化诊断系统（错误码 + 知识卡片 + 自动修复建议）
 - [x] 基础算法模板（冒泡排序、二分查找）
 
 ### Phase 2：算法修复 + 数据结构基础（✅ 已完成）
-- [x] 算法模式识别系统（10 种算法模板：5 排序 + 1 搜索 + 4 链表）
+- [x] 算法模式识别系统（17+ 种算法/数据结构检测）
+- [x] 算法步骤语义标注（27 种算法/数据结构操作预定义步骤模板）
 - [x] 运行时验证（Property-based Testing）
-- [ ] 执行轨迹分析
-- [x] 解锁 break/continue
-- [x] 链表、栈、队列的 starter code + 可视化（GraphCanvas 已支持）
-- [ ] 数据结构专用诊断（断链检测、泄漏检测）
+- [x] 执行轨迹分析（TraceAnalyzer -> RootCauseHint）
+- [x] 代码模板参数化 + 交互式教程（43 个模板）
+- [x] 链表、栈、队列、二叉树可视化（CustomPainter）
+- [x] 数据结构专用诊断（断链检测、泄漏检测、Use-After-Free/Double-Free 运行时检测）
 
-### Phase 3：进阶扩展（🔄 进行中）
-- [x] 更多算法模板（快排、归并）
-- [x] 图可视化（GraphCanvas 已支持链表/树）
-- [ ] 多维数组
+### Phase 3：进阶扩展（✅ 已完成 / 🔄 进行中）
+- [x] 更多算法模板（快排、归并、堆排序、希尔排序、计数排序）
+- [x] 图算法模板（BFS、DFS）
+- [x] 多维数组
+- [x] 知识图谱系统（24 概念节点 + 30+ 关系边）
+- [x] 用户学习进度追踪（LearningProgress + SharedPreferences 持久化）
+- [x] 认知推理 P0~P3（根因分析 -> 教学推理 -> 知识图谱 -> 代码理解/意图推断）
+- [x] 语义智能补全 v2（5 种上下文感知补全）
+- [x] 模板 JIT 加速（Trace-based Loop Accelerator）
 - [ ] Dijkstra 算法模板
-- [ ] 知识图谱系统
-- [ ] 用户学习进度追踪
+- [ ] 社区贡献的算法模板
 
 ### Phase 4：完整生态（后续）
-- [ ] 字符串操作
-- [ ] 文件 I/O（沙盒内）
-- [ ] 更多标准库函数
-- [ ] 社区贡献的算法模板
+- [x] 字符串操作（strlen, strcpy, strcmp, strcat）
+- [x] 文件 I/O（fopen, fclose, fgets, fputs, fread, fwrite）
+- [x] 更多标准库函数（qsort, fprintf, atoi, putchar, srand/rand, memset）
 - [ ] OCR 照片导入
+- [ ] 在线判题（OJ）集成
 
 ---
 

@@ -98,7 +98,11 @@ int main() {
     // 全局区起始 0x1000，arr 应该在全局区（因为是局部变量但放在栈上……
     // 这个测试主要验证 memory 的 copy_from_slice 工作正常，
     // 具体地址取决于 bytecode gen，这里只比较整段内存
-    assert_eq!(vm.memory_ref(), snap.memory.as_slice());
+    let mem_full = match &snap.memory {
+        cide_native::vm::snapshot::MemoryImage::Full(v) => v.as_slice(),
+        _ => panic!("expected full snapshot"),
+    };
+    assert_eq!(vm.memory_ref(), mem_full);
 }
 
 #[test]
@@ -259,4 +263,197 @@ int main() {
         "f64_constants should be cleared after recompile, but still has {} entries",
         session.compile.f64_constants.len()
     );
+}
+
+
+#[test]
+fn test_incremental_snapshot_size() {
+    let source = r#"
+int main() {
+    int arr[100] = {0};
+    arr[0] = 1;
+    arr[50] = 2;
+    return 0;
+}
+"#;
+    let mut session = make_session(source);
+    let mut vm = setup_vm_for_session(&mut session);
+
+    // 执行到 main 内部，产生一些内存写入
+    for _ in 0..30 {
+        let _ = vm.step(&mut session);
+    }
+
+    // 全量快照
+    let full = vm.snapshot(&session);
+    let full_size = full.memory.byte_size();
+    assert_eq!(full_size, 1024 * 1024, "Full snapshot should be 1MB");
+
+    // 增量快照（假设 base_step=0）
+    let inc = vm.snapshot_incremental(&session, 0);
+    let inc_size = inc.memory.byte_size();
+
+    // 增量应该远小于 1MB（通常只写入了栈上的 arr 和少量局部变量）
+    assert!(
+        inc_size < 100 * 1024,
+        "Incremental snapshot should be much smaller than 1MB, got {} bytes",
+        inc_size
+    );
+
+    // 验证增量可以正确恢复
+    // 先继续执行改变内存
+    for _ in 0..10 {
+        let _ = vm.step(&mut session);
+    }
+    let mem_before_restore = vm.memory_ref().to_vec();
+
+    // 恢复增量快照（此时 vm.memory 应该被增量覆盖）
+    // 注意：增量快照假设当前 memory 已经是 base 状态，这里直接用全量做 base 测试
+    vm.restore(&full, &mut session); // 先恢复到全量基准
+    vm.restore(&inc, &mut session); // 再应用增量
+
+    let mem_after_restore = vm.memory_ref().to_vec();
+    assert_eq!(mem_before_restore, mem_after_restore, "Restore from incremental should match original state");
+}
+
+#[test]
+fn test_checkpoint_manager_incremental_chain() {
+    use cide_native::unified::checkpoint::CheckpointManager;
+
+    let source = r#"
+int main() {
+    int sum = 0;
+    for (int i = 0; i < 5; i++) {
+        sum += i;
+    }
+    return sum;
+}
+"#;
+    let mut session = make_session(source);
+    let mut vm = setup_vm_for_session(&mut session);
+
+    let mut cp = CheckpointManager::new(10);
+    cp.full_every = 3; // 每 3 个检查点一个全量，便于测试
+
+    // 模拟执行并保存检查点
+    for step in 0..35 {
+        if step % 5 == 0 {
+            cp.save(step, &mut vm, &session);
+        }
+        let _ = vm.step(&mut session);
+    }
+
+    // 应该保存了 7 个检查点（0,5,10,15,20,25,30）
+    assert!(cp.len() > 0);
+
+    // 验证 nearest 能正确重建增量快照
+    let (step, reconstructed) = cp.nearest(28).expect("should find nearest checkpoint");
+    assert_eq!(step, 25);
+
+    // 重建后的快照必须是 Full
+    match &reconstructed.memory {
+        cide_native::vm::snapshot::MemoryImage::Full(_) => {}
+        _ => panic!("reconstructed snapshot should be Full"),
+    }
+
+    // 验证恢复后 VM 能继续执行
+    vm.restore(&reconstructed, &mut session);
+    let mut steps_after = 0;
+    for _ in step..35 {
+        if matches!(vm.step(&mut session), cide_native::vm::vm::StepResult::Finished) {
+            break;
+        }
+        steps_after += 1;
+    }
+    assert!(steps_after > 0, "VM should be able to continue after restore from reconstructed checkpoint");
+}
+
+#[test]
+fn test_smart_checkpoint_triggers() {
+    use cide_native::unified::checkpoint::CheckpointManager;
+    use cide_native::unified::types::StepMeta;
+
+    let mut cp = CheckpointManager::new(20);
+    cp.smart_mode = true;
+
+    // 固定间隔保底
+    assert!(cp.should_checkpoint(0, &StepMeta::default()));
+    assert!(cp.should_checkpoint(20, &StepMeta::default()));
+    assert!(!cp.should_checkpoint(5, &StepMeta::default()));
+
+    // 模拟保存步 0 的检查点，使后续智能判断能感知到上一个检查点位置
+    cp.checkpoints.push((0, cide_native::vm::snapshot::VMSnapshot {
+        memory: cide_native::vm::snapshot::MemoryImage::Full(vec![0; 1024 * 1024]),
+        stack: Vec::new(),
+        call_stack: Vec::new(),
+        ip: 0,
+        mem_stack_top: 0,
+        step_count: 0,
+        current_line: 0,
+        finished: false,
+        exit_code: 0,
+        error: String::new(),
+        paused: false,
+        cancelled: false,
+        step_event_hit: false,
+        last_snapshot_step: 0,
+        snapshot_vars: std::collections::HashMap::new(),
+        qsort_depth: 0,
+        vis_event_queue: Vec::new(),
+        breakpoints: std::collections::HashSet::new(),
+        global_count: 0,
+        freed_logs: Vec::new(),
+        runtime: cide_native::vm::snapshot::RuntimeSnapshot {
+            output_lines: Vec::new(),
+            trace: Vec::new(),
+            current_line: 0,
+            input_index: 0,
+            input_char_offset: 0,
+            waiting_input: false,
+            rand_seed: 0,
+            vis_event_cache: Vec::new(),
+        },
+        memory_state: cide_native::vm::snapshot::MemorySnapshot {
+            regions: Vec::new(),
+            free_list: Vec::new(),
+            heap_offset: 0,
+            alloc_counter: 0,
+        },
+    }));
+
+    // 智能触发：函数调用
+    let meta_call = StepMeta {
+        semantic_label: "调用 printf".to_string(),
+        ..StepMeta::default()
+    };
+    assert!(cp.should_checkpoint(21, &meta_call));
+    cp.checkpoints.push((21, cp.checkpoints[0].1.clone()));
+
+    // 密集保护：距离上一个检查点太近时不触发
+    let meta_call2 = StepMeta {
+        semantic_label: "调用 scanf".to_string(),
+        ..StepMeta::default()
+    };
+    assert!(!cp.should_checkpoint(22, &meta_call2)); // 只离 21 差 1 步
+
+    // 智能触发：返回
+    let meta_ret = StepMeta {
+        semantic_label: "返回".to_string(),
+        ..StepMeta::default()
+    };
+    assert!(cp.should_checkpoint(30, &meta_ret));
+
+    // 智能触发：内存分配
+    let meta_malloc = StepMeta {
+        semantic_label: "内存分配".to_string(),
+        ..StepMeta::default()
+    };
+    assert!(cp.should_checkpoint(35, &meta_malloc));
+
+    // 智能触发：交换
+    let meta_swap = StepMeta {
+        semantic_label: "交换 arr[0]↔arr[1]".to_string(),
+        ..StepMeta::default()
+    };
+    assert!(cp.should_checkpoint(40, &meta_swap));
 }

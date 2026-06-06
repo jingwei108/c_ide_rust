@@ -125,6 +125,8 @@ pub struct CideVM {
     local_sym_map: HashMap<i32, String>,
     global_sym_map: HashMap<i32, String>,
     pub(crate) freed_logs: Vec<FreedRegionInfo>,
+    // --- 增量快照脏页追踪 ---
+    dirty_pages: [u64; 4], // 256 页 bitmap（4 × 64bit）
     // --- JIT ---
     ip_hits: HashMap<usize, u64>,
     trace_recorder: TraceRecorder,
@@ -172,6 +174,7 @@ impl CideVM {
             local_sym_map: HashMap::new(),
             global_sym_map: HashMap::new(),
             freed_logs: Vec::new(),
+            dirty_pages: [0; 4],
             ip_hits: HashMap::new(),
             trace_recorder: TraceRecorder::new(),
             jit_traces: HashMap::new(),
@@ -208,6 +211,7 @@ impl CideVM {
         self.local_sym_map.clear();
         self.global_sym_map.clear();
         self.freed_logs.clear();
+        self.dirty_pages = [0; 4];
         self.ip_hits.clear();
         self.trace_recorder.reset();
         self.jit_traces.clear();
@@ -307,7 +311,75 @@ impl CideVM {
     /// 调用者应确保 `session.compile` 中的编译产物与当前 VM 加载的程序一致。
     pub fn snapshot(&self, session: &Session) -> super::snapshot::VMSnapshot {
         super::snapshot::VMSnapshot {
-            memory: self.memory.clone(),
+            memory: super::snapshot::MemoryImage::Full(self.memory.clone()),
+            stack: self.stack.clone(),
+            call_stack: self.call_stack.clone(),
+            ip: self.ip,
+            mem_stack_top: self.mem_stack_top,
+            step_count: self.step_count,
+            current_line: self.current_line,
+            finished: self.finished,
+            exit_code: self.exit_code,
+            error: self.error.clone(),
+            paused: self.paused,
+            cancelled: self.cancelled,
+            step_event_hit: self.step_event_hit,
+            last_snapshot_step: self.last_snapshot_step,
+            snapshot_vars: self.snapshot_vars.clone(),
+            qsort_depth: self.qsort_depth,
+            vis_event_queue: self.vis_event_queue.clone(),
+            breakpoints: self.breakpoints.clone(),
+            global_count: self.global_count,
+            freed_logs: self.freed_logs.clone(),
+            runtime: super::snapshot::RuntimeSnapshot::from(&session.runtime),
+            memory_state: super::snapshot::MemorySnapshot::from(&session.memory),
+        }
+    }
+
+    /// 标记脏页（ addr 为起始地址，len 为字节数 ）。
+    fn mark_dirty_page(&mut self, addr: u32, len: u32) {
+        if len == 0 {
+            return;
+        }
+        let start_page = (addr as usize) / super::snapshot::PAGE_SIZE;
+        let end_page = ((addr as usize) + (len as usize) - 1) / super::snapshot::PAGE_SIZE;
+        for p in start_page..=end_page {
+            if p < super::snapshot::PAGE_COUNT {
+                let word = p / 64;
+                let bit = p % 64;
+                self.dirty_pages[word] |= 1u64 << bit;
+            }
+        }
+    }
+
+    /// 清空脏页记录。
+    pub fn clear_dirty_pages(&mut self) {
+        self.dirty_pages = [0; 4];
+    }
+
+    /// 基于脏页生成增量快照。
+    pub fn snapshot_incremental(
+        &self,
+        session: &Session,
+        base_step: i32,
+    ) -> super::snapshot::VMSnapshot {
+        let mut pages = Vec::new();
+        for word in 0..4 {
+            let mut bitmap = self.dirty_pages[word];
+            while bitmap != 0 {
+                let bit = bitmap.trailing_zeros() as usize;
+                bitmap &= !(1u64 << bit);
+                let page_idx = word * 64 + bit;
+                if page_idx >= super::snapshot::PAGE_COUNT {
+                    continue;
+                }
+                let offset = page_idx * super::snapshot::PAGE_SIZE;
+                let page_data = self.memory[offset..offset + super::snapshot::PAGE_SIZE].to_vec();
+                pages.push((page_idx as u16, page_data));
+            }
+        }
+        super::snapshot::VMSnapshot {
+            memory: super::snapshot::MemoryImage::Delta { base_step, pages },
             stack: self.stack.clone(),
             call_stack: self.call_stack.clone(),
             ip: self.ip,
@@ -338,8 +410,7 @@ impl CideVM {
     /// 恢复后的 VM 将无法继续执行。
     pub fn restore(&mut self, snap: &super::snapshot::VMSnapshot, session: &mut Session) {
         // VM 内存（1MB）
-        let len = snap.memory.len().min(self.memory.len());
-        self.memory[..len].copy_from_slice(&snap.memory[..len]);
+        snap.memory.apply_to(&mut self.memory);
 
         // VM 栈与调用帧
         self.stack = snap.stack.clone();
@@ -435,8 +506,13 @@ impl CideVM {
             self.store_i32(arg_addr as u32, arg, &SourceLoc::default());
         }
         let arg_bytes = meta.param_count as u32 * 4;
-        for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
-            self.memory[addr as usize] = 0;
+        let zero_start = locals_base + arg_bytes;
+        let zero_end = locals_base + meta.local_count as u32;
+        if zero_end > zero_start {
+            for addr in zero_start..zero_end {
+                self.memory[addr as usize] = 0;
+            }
+            self.mark_dirty_page(zero_start, zero_end - zero_start);
         }
         let func_name = if idx < self.func_names.len() {
             self.func_names[idx].clone()
@@ -570,6 +646,7 @@ impl CideVM {
         if a + bytes.len() < self.memory.len() {
             self.memory[a..a + bytes.len()].copy_from_slice(bytes);
             self.memory[a + bytes.len()] = 0;
+            self.mark_dirty_page(addr, (bytes.len() + 1) as u32);
         }
     }
 
@@ -600,6 +677,7 @@ impl CideVM {
             return false;
         }
         self.memory[addr as usize..end].copy_from_slice(data);
+        self.mark_dirty_page(addr, data.len() as u32);
         true
     }
 
@@ -627,6 +705,7 @@ impl CideVM {
         // 用临时 buffer 避免重叠问题
         let tmp = self.memory[src as usize..src_end].to_vec();
         self.memory[dst as usize..dst_end].copy_from_slice(&tmp);
+        self.mark_dirty_page(dst, len as u32);
         true
     }
 
@@ -732,6 +811,7 @@ impl CideVM {
         }
         let bytes = val.to_le_bytes();
         self.memory[addr as usize..addr as usize + 4].copy_from_slice(&bytes);
+        self.mark_dirty_page(addr, 4);
     }
 
     pub fn load_i64(&mut self, addr: u32, loc: &SourceLoc) -> u64 {
@@ -749,6 +829,7 @@ impl CideVM {
         }
         let bytes = val.to_le_bytes();
         self.memory[addr as usize..addr as usize + 8].copy_from_slice(&bytes);
+        self.mark_dirty_page(addr, 8);
     }
 
     pub fn load_i8(&mut self, addr: u32, loc: &SourceLoc) -> i32 {
@@ -763,6 +844,7 @@ impl CideVM {
             return;
         }
         self.memory[addr as usize] = val as u8;
+        self.mark_dirty_page(addr, 1);
     }
 
     // --- Error formatting ---

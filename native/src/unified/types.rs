@@ -95,7 +95,7 @@ pub struct ApiFrameInfo {
 
 /// 语义元数据（用于进度条标签和智能检查点）。
 #[frb]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct StepMeta {
     pub code_line: i32,
     pub func_name: String,

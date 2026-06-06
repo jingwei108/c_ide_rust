@@ -536,7 +536,7 @@ pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
     session.runtime.running = true;
 
     // 保存初始检查点（第 0 步）
-    engine.checkpoints.save(0, &vm, &session);
+    engine.checkpoints.save(0, &mut vm, &session);
 
     session.vm = Some(vm);
 

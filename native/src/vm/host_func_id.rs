@@ -29,6 +29,8 @@ pub const FREAD: u32 = 61;
 pub const FWRITE: u32 = 62;
 pub const FCLOSE: u32 = 63;
 pub const FEOF: u32 = 64;
+pub const FGETS: u32 = 65;
+pub const FPUTS: u32 = 66;
 
 /// 将用户代码中的函数名解析为 host function ID。
 /// 包含别名映射（如 `print_int` → `OUTPUT`, `printf` → `PRINTF_N`）。
@@ -59,6 +61,8 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "fwrite" => Some(FWRITE),
         "fclose" => Some(FCLOSE),
         "feof" => Some(FEOF),
+        "fgets" => Some(FGETS),
+        "fputs" => Some(FPUTS),
         _ => None,
     }
 }

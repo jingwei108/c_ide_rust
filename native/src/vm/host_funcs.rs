@@ -168,6 +168,8 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::FWRITE => host_fwrite(vm, session),
         host_func_id::FCLOSE => host_fclose(vm, session),
         host_func_id::FEOF => host_feof(vm, session),
+        host_func_id::FGETS => host_fgets(vm, session),
+        host_func_id::FPUTS => host_fputs(vm, session),
         _ => {}
     }
 }
@@ -956,6 +958,27 @@ fn host_feof(vm: &mut CideVM, session: &mut Session) {
     let stream = vm.pop() as u32;
     let fd = read_fd_from_stream(vm, stream);
     let ret = session.vfs.feof(fd);
+    vm.push(ret as u64);
+}
+
+fn host_fgets(vm: &mut CideVM, session: &mut Session) {
+    // 参数从右到左压栈：buf, n, stream → 栈顶是 buf
+    let buf = vm.pop() as u32;
+    let n = vm.pop() as usize;
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let ret = session.vfs.fgets(fd, buf, n, vm);
+    vm.push(ret as u64);
+}
+
+fn host_fputs(vm: &mut CideVM, session: &mut Session) {
+    // 参数从右到左压栈：s, stream → 栈顶是 s
+    let s_addr = vm.pop() as u32;
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.fputs(fd, s_addr, vm, &mut session.memory);
+    session.vfs = vfs;
     vm.push(ret as u64);
 }
 

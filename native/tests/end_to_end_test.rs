@@ -683,3 +683,21 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("0 1 2 100")), "Outputs: {:?}", outputs);
 }
+
+#[test]
+fn test_printf_one_arg_in_main() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int r = 10;
+    printf("%d", r);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("10")), "Outputs: {:?}", outputs);
+}
+

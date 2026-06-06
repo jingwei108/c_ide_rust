@@ -531,7 +531,7 @@ impl TypeChecker {
                 for s in stmts { self.dispatch_stmt(s); }
                 self.exit_scope();
             }
-            Stmt::VarDecl { var_type, name, init, extra_vars, loc } => {
+            Stmt::VarDecl { var_type, name, init, extra_vars, loc, .. } => {
                 if var_type.is_unsigned() {
                     self.report_warning("unsigned 类型被映射为 int，暂不支持无符号语义", loc, ErrorCode::W3056_UnsignedToInt);
                 }
@@ -700,6 +700,8 @@ impl TypeChecker {
             "fwrite" => self.check_builtin_fwrite(args, loc),
             "fclose" => self.check_builtin_fclose(args, loc),
             "feof" => self.check_builtin_feof(args, loc),
+            "fgets" => self.check_builtin_fgets(args, loc),
+            "fputs" => self.check_builtin_fputs(args, loc),
             "fprintf" => self.check_builtin_fprintf(args, loc),
             "realloc" => self.check_builtin_realloc(args, loc),
             "qsort" => self.check_builtin_qsort(args, loc),
@@ -1299,6 +1301,40 @@ impl TypeChecker {
             let stream_type = self.resolve_expr_type(&mut args[0]);
             if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
                 self.report_error("feof 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_fgets(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 3, "fgets", loc) {
+            let buf_type = self.resolve_expr_type(&mut args[0]);
+            if !buf_type.is_pointer() && !buf_type.is_array() {
+                self.report_error("fgets 第一个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            let n_type = self.resolve_expr_type(&mut args[1]);
+            if !self.check_assignable(&Type::int(), &n_type, loc) {
+                self.report_error("fgets 第二个参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[1], &Type::int());
+            }
+            let stream_type = self.resolve_expr_type(&mut args[2]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("fgets 第三个参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::pointer_to(Type::char())
+    }
+
+    fn check_builtin_fputs(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 2, "fputs", loc) {
+            let s_type = self.resolve_expr_type(&mut args[0]);
+            if !s_type.is_pointer() && !s_type.is_array() {
+                self.report_error("fputs 第一个参数必须是字符串", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            let stream_type = self.resolve_expr_type(&mut args[1]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("fputs 第二个参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
             }
         }
         Type::int()

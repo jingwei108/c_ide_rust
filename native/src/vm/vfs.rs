@@ -263,6 +263,92 @@ impl VirtualFileSystem {
         }
     }
 
+    /// fgets：从文件读取一行（最多 n-1 字符），写入 buf 并追加 \0
+    /// 返回 buf 地址（成功）或 0（失败/EOF）
+    pub fn fgets(&mut self, fd: u32, buf: u32, n: usize, vm: &mut CideVM) -> u32 {
+        let desc = match self.descriptors.get_mut(&fd) {
+            Some(d) => d,
+            None => return 0,
+        };
+        let meta = match self.files.get(&desc.file_name) {
+            Some(m) => m,
+            None => return 0,
+        };
+        if n == 0 {
+            return 0;
+        }
+        let mut read_count = 0usize;
+        let mut tmp = Vec::new();
+        while read_count < n - 1 && desc.cursor < meta.size {
+            let byte_addr = meta.heap_addr + desc.cursor as u32;
+            let mut b = [0u8; 1];
+            if !vm.read_memory_to(byte_addr, &mut b) {
+                break;
+            }
+            tmp.push(b[0]);
+            desc.cursor += 1;
+            read_count += 1;
+            if b[0] == b'\n' {
+                break;
+            }
+        }
+        if read_count == 0 {
+            desc.eof = true;
+            return 0;
+        }
+        tmp.push(0);
+        if !vm.write_memory(buf, &tmp) {
+            return 0;
+        }
+        if desc.cursor >= meta.size {
+            desc.eof = true;
+        }
+        buf
+    }
+
+    /// fputs：将字符串 s 写入文件
+    /// 返回非负数（成功）或 EOF（-1，失败）
+    pub fn fputs(&mut self, fd: u32, s_addr: u32, vm: &mut CideVM, memory: &mut MemoryState) -> i32 {
+        let desc = match self.descriptors.get_mut(&fd) {
+            Some(d) => d,
+            None => return -1,
+        };
+        if desc.mode == VfsMode::Read {
+            return -1;
+        }
+        let meta = match self.files.get_mut(&desc.file_name) {
+            Some(m) => m,
+            None => return -1,
+        };
+        // 读取 C 字符串长度
+        let mut len = 0usize;
+        loop {
+            let mut b = [0u8; 1];
+            if !vm.read_memory_to(s_addr + len as u32, &mut b) || b[0] == 0 {
+                break;
+            }
+            len += 1;
+        }
+        let to_write = len;
+        let new_size = desc.cursor + to_write;
+        if new_size > meta.capacity {
+            let new_cap = align4(new_size.max(meta.capacity * 2));
+            if !realloc_vfs_file(memory, vm, meta, new_cap) {
+                return -1;
+            }
+        }
+        let dst_addr = meta.heap_addr + desc.cursor as u32;
+        let mut tmp = vec![0u8; to_write];
+        if !vm.read_memory_to(s_addr, &mut tmp) || !vm.write_memory(dst_addr, &tmp) {
+            return -1;
+        }
+        desc.cursor += to_write;
+        if desc.cursor > meta.size {
+            meta.size = desc.cursor;
+        }
+        0
+    }
+
     /// 获取文件描述符对应的文件名（用于调试）
     pub fn get_file_name(&self, fd: u32) -> Option<&str> {
         self.descriptors.get(&fd).map(|d| d.file_name.as_str())

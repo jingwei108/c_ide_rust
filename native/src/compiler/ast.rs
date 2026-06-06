@@ -395,7 +395,7 @@ impl Expr {
 #[derive(Debug, Clone)]
 pub enum Stmt {
     Block { stmts: Vec<Stmt>, loc: SourceLoc },
-    VarDecl { var_type: Type, name: String, init: Option<Expr>, extra_vars: Vec<(Type, String, Option<Expr>)>, loc: SourceLoc },
+    VarDecl { var_type: Type, name: String, init: Option<Expr>, extra_vars: Vec<(Type, String, Option<Expr>)>, is_static: bool, loc: SourceLoc },
     Expr { expr: Expr, loc: SourceLoc },
     If { cond: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>>, loc: SourceLoc },
     While { cond: Expr, body: Box<Stmt>, loc: SourceLoc },
