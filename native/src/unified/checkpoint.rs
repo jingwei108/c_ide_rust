@@ -76,7 +76,7 @@ impl CheckpointManager {
     /// 调用者负责在保存前通过 `should_checkpoint` 判断是否需要保存。
     pub fn save(&mut self, step: i32, vm: &mut CideVM, session: &Session) {
         let is_full = self.checkpoints.is_empty()
-            || self.checkpoints.len() % self.full_every == 0;
+            || self.checkpoints.len().is_multiple_of(self.full_every);
 
         let snap = if is_full {
             vm.clear_dirty_pages();

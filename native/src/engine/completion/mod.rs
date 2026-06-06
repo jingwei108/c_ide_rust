@@ -115,7 +115,7 @@ struct LocalSymbol {
 
 /// 表达式上下文提示
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ExprHint {
+pub enum ExprHint {
     General,
     IfCondition,
     AssignRhs,
@@ -125,7 +125,7 @@ enum ExprHint {
 
 /// 补全上下文
 #[derive(Debug, Clone)]
-enum CompletionContext {
+pub enum CompletionContext {
     /// `expr.` 或 `expr->`（expr 可能为链式如 `a.b.c`）
     MemberAccess { expr: String, is_pointer: bool },
     /// 类型位置（如 `int |`, `struct |`）

@@ -12,7 +12,7 @@ pub struct ParseError {
 }
 
 #[derive(Debug, Clone)]
-enum DeclaratorNode {
+pub(crate) enum DeclaratorNode {
     Base,
     Pointer(Box<DeclaratorNode>),
     Array(Box<DeclaratorNode>, Option<Box<Expr>>),
@@ -26,7 +26,7 @@ enum DeclaratorSuffix {
 }
 
 #[derive(Debug, Clone, Default)]
-struct DeclaratorGuard {
+pub(crate) struct DeclaratorGuard {
     paren_depth: i32,
     ptr_count: i32,
     suffix_count: i32,

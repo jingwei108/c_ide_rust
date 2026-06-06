@@ -418,11 +418,11 @@ impl CideVM {
                         OpCode::UDiv => {
                             let b = self.pop() as u32;
                             let a = self.pop() as u32;
-                            if b == 0 {
+                            if let Some(res) = a.checked_div(b) {
+                                self.push(res as u64);
+                            } else {
                                 let msg = self.format_div_zero_error(a as i32, b as i32);
                                 self.trap(&msg, loc);
-                            } else {
-                                self.push((a / b) as u64);
                             }
                         }
                         OpCode::Mod => {

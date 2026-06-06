@@ -119,28 +119,28 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                         }
                         'u' => {
                             if is_ll {
-                                out.push_str(&(arg as u64).to_string());
+                                out.push_str(&arg.to_string());
                             } else {
                                 out.push_str(&(arg as u32).to_string());
                             }
                         }
                         'x' => {
                             if is_ll {
-                                out.push_str(&format!("{:x}", arg as u64));
+                                out.push_str(&format!("{:x}", arg));
                             } else {
                                 out.push_str(&format!("{:x}", arg as u32));
                             }
                         }
                         'X' => {
                             if is_ll {
-                                out.push_str(&format!("{:X}", arg as u64));
+                                out.push_str(&format!("{:X}", arg));
                             } else {
                                 out.push_str(&format!("{:X}", arg as u32));
                             }
                         }
                         'o' => {
                             if is_ll {
-                                out.push_str(&format!("{:o}", arg as u64));
+                                out.push_str(&format!("{:o}", arg));
                             } else {
                                 out.push_str(&format!("{:o}", arg as u32));
                             }

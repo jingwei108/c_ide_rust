@@ -11,7 +11,7 @@ pub struct TypeError {
 }
 
 #[derive(Debug, Clone)]
-struct VarSymbol {
+pub(crate) struct VarSymbol {
     ty: Type,
     #[allow(dead_code)]
     is_global: bool,

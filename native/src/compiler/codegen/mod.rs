@@ -630,7 +630,7 @@ impl BytecodeGen {
                                                 } else if let Expr::LongLiteral { value, .. } = elem {
                                                     self.globals_init_64.push((addr, *value as u64));
                                                 } else {
-                                                    let val = flatten_init_list(&vec![elem.clone()], &mut self.errors).get(0).copied().unwrap_or(0);
+                                                    let val = flatten_init_list(std::slice::from_ref(elem), &mut self.errors).first().copied().unwrap_or(0);
                                                     self.globals_init_32.push((addr, val));
                                                 }
                                             }
@@ -2036,8 +2036,8 @@ impl BytecodeGen {
             }
             Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
                 match operand.as_ref() {
-                    Expr::FloatLiteral { value, ty, .. } => {
-                        let val64 = if ty.kind() == TypeKind::Double { (-*value).to_bits() } else { (-*value).to_bits() };
+                    Expr::FloatLiteral { value, .. } => {
+                        let val64 = (-*value).to_bits();
                         self.globals_init_64.push((base_offset, val64));
                     }
                     Expr::LongLiteral { value, .. } => {
@@ -2151,17 +2151,17 @@ impl BytecodeGen {
     fn gen_vla_stride(&mut self, arr_type: &Type, loc: &SourceLoc) {
         if let Type::Array { dims, vla_dims, .. } = arr_type {
             let mut vla_idx = 0;
-            for i in 0..1.min(dims.len()) {
-                if dims[i] == 0 { vla_idx += 1; }
+            for dim in dims.iter().take(1.min(dims.len())) {
+                if *dim == 0 { vla_idx += 1; }
             }
             let mut vla_dims_clone = vla_dims.clone();
             let mut first = true;
-            for i in 1..dims.len() {
+            for dim in dims.iter().skip(1) {
                 if !first {
                     self.emit(OpCode::Mul, 0, loc);
                 }
-                if dims[i] > 0 {
-                    self.emit(OpCode::PushConst, dims[i], loc);
+                if *dim > 0 {
+                    self.emit(OpCode::PushConst, *dim, loc);
                 } else if let Some(dim_expr) = vla_dims_clone.get_mut(vla_idx) {
                     self.gen_expr(dim_expr);
                     vla_idx += 1;
@@ -2216,7 +2216,6 @@ impl BytecodeGen {
                     self.report_error("未声明的变量", loc);
                     // 错误已被记录，提前返回以避免生成无意义指令。
                     // 编译管线末端的 has_errors() 守卫会拦截并丢弃错误字节码。
-                    return;
                 }
             }
             Expr::Index { array, index, ty, .. } => {
@@ -2228,18 +2227,12 @@ impl BytecodeGen {
             Expr::Unary { op: UnaryOp::Deref, operand, .. } => {
                 self.gen_expr(operand);
             }
-            Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } => {
-                if ty.is_struct() {
-                    // 函数按值返回结构体，gen_expr 已在栈顶留下临时缓冲区地址
-                    self.gen_expr(expr);
-                } else {
-                    self.report_error("不支持的地址生成", loc);
-                    return;
-                }
+            Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } if ty.is_struct() => {
+                // 函数按值返回结构体，gen_expr 已在栈顶留下临时缓冲区地址
+                self.gen_expr(expr);
             }
             _ => {
                 self.report_error("不支持的地址生成", loc);
-                return;
             }
         }
     }
