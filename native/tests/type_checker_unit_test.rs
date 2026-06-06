@@ -1,8 +1,8 @@
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
-use cide_native::compiler::type_checker::TypeChecker;
+use cide_native::compiler::typeck::TypeChecker;
 
-fn type_check(src: &str) -> (Vec<cide_native::compiler::type_checker::TypeError>, Vec<cide_native::compiler::type_checker::TypeError>, Vec<cide_native::compiler::type_checker::TypeError>) {
+fn type_check(src: &str) -> (Vec<cide_native::compiler::typeck::TypeError>, Vec<cide_native::compiler::typeck::TypeError>, Vec<cide_native::compiler::typeck::TypeError>) {
     let (tokens, _) = Lexer::new(src).tokenize();
     let (maybe_program, parse_errors) = Parser::new(tokens).parse();
     assert!(parse_errors.is_empty(), "Parse errors: {:?}", parse_errors);

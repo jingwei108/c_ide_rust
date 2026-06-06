@@ -1637,7 +1637,9 @@ impl BytecodeGen {
                     self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, loc);
                 } else {
                     self.report_error("未声明的变量", loc);
-                    self.emit(OpCode::PushConst, 0, loc);
+                    // 错误已被记录，提前返回以避免生成无意义指令。
+                    // 编译管线末端的 has_errors() 守卫会拦截并丢弃错误字节码。
+                    return;
                 }
             }
             Expr::Index { array, index, ty, .. } => {
@@ -1651,7 +1653,7 @@ impl BytecodeGen {
             }
             _ => {
                 self.report_error("不支持的地址生成", loc);
-                self.emit(OpCode::PushConst, 0, loc);
+                return;
             }
         }
     }

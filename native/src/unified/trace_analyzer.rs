@@ -672,7 +672,7 @@ fn format_history_vals(vals: &[i32]) -> String {
             .collect::<Vec<_>>()
             .join(" → ")
     } else {
-        format!("{} → ... → {}", vals.first().unwrap(), vals.last().unwrap())
+        format!("{} → ... → {}", vals.first().copied().unwrap_or(0), vals.last().copied().unwrap_or(0))
     }
 }
 

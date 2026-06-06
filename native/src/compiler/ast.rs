@@ -257,46 +257,42 @@ impl Type {
             TypeKind::Function => Type::Function { return_type: Box::new(Type::int()), param_types: vec![], is_const: false },
         }
     }
-
-    fn format_string(&self) -> String {
-        match self {
-            Type::Void { .. } => "void".to_string(),
-            Type::Int { .. } => "int".to_string(),
-            Type::Char { .. } => "char".to_string(),
-            Type::Float { .. } => "float".to_string(),
-            Type::Double { .. } => "double".to_string(),
-            Type::LongLong { .. } => "long long".to_string(),
-            Type::Struct { name, .. } => format!("struct {}", name),
-            Type::Union { name, .. } => format!("union {}", name),
-            Type::Pointer { pointee, .. } => format!("{}*", pointee.format_string()),
-            Type::Array { element, dims, array_size, .. } => {
-                let mut base = element.format_string();
-                if !dims.is_empty() {
-                    for d in dims {
-                        base.push_str(&format!("[{}]", d));
-                    }
-                    base
-                } else if *array_size > 0 {
-                    format!("{}[{}]", base, array_size)
-                } else {
-                    format!("{}[]", base)
-                }
-            }
-            Type::Function { return_type, param_types, .. } => {
-                let mut params = String::new();
-                for (i, p) in param_types.iter().enumerate() {
-                    if i > 0 { params.push_str(", "); }
-                    params.push_str(&p.format_string());
-                }
-                format!("{} (*)({})", return_type.format_string(), params)
-            }
-        }
-    }
 }
 
 impl std::fmt::Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.format_string())
+        match self {
+            Type::Void { .. } => write!(f, "void"),
+            Type::Int { .. } => write!(f, "int"),
+            Type::Char { .. } => write!(f, "char"),
+            Type::Float { .. } => write!(f, "float"),
+            Type::Double { .. } => write!(f, "double"),
+            Type::LongLong { .. } => write!(f, "long long"),
+            Type::Struct { name, .. } => write!(f, "struct {}", name),
+            Type::Union { name, .. } => write!(f, "union {}", name),
+            Type::Pointer { pointee, .. } => write!(f, "{}*", pointee),
+            Type::Array { element, dims, array_size, .. } => {
+                write!(f, "{}", element)?;
+                if !dims.is_empty() {
+                    for d in dims {
+                        write!(f, "[{}]", d)?;
+                    }
+                    Ok(())
+                } else if *array_size > 0 {
+                    write!(f, "[{}]", array_size)
+                } else {
+                    write!(f, "[]")
+                }
+            }
+            Type::Function { return_type, param_types, .. } => {
+                write!(f, "{} (*)(", return_type)?;
+                for (i, p) in param_types.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", p)?;
+                }
+                write!(f, ")")
+            }
+        }
     }
 }
 

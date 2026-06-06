@@ -2,10 +2,10 @@
 
 pub mod algorithm_detector;
 pub mod ast;
-pub mod bytecode_gen;
+pub mod codegen;
 pub mod cfg;
 pub mod data_flow;
 pub mod intent;
 pub mod lexer;
 pub mod parser;
-pub mod type_checker;
+pub mod typeck;

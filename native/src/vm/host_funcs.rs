@@ -147,9 +147,6 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::STEP => host_step(vm, session),
         host_func_id::MALLOC => host_malloc(vm, session),
         host_func_id::FREE => host_free(vm, session),
-        host_func_id::PRINTF_0 => host_printf_0(vm, session),
-        host_func_id::PRINTF_1 => host_printf_1(vm, session),
-        host_func_id::PRINTF_2 => host_printf_2(vm, session),
         host_func_id::PRINTF_N => host_printf_n(vm, session),
         host_func_id::SCANF_N => host_scanf_n(vm, session),
         host_func_id::STRLEN => host_strlen(vm, session),
@@ -280,29 +277,6 @@ fn host_free(vm: &mut CideVM, session: &mut Session) {
             break;
         }
     }
-}
-
-fn host_printf_0(vm: &mut CideVM, session: &mut Session) {
-    let fmt_addr = vm.pop() as u32;
-    let out = read_cstring(vm, fmt_addr);
-    session.runtime.output_lines.push(out);
-}
-
-fn host_printf_1(vm: &mut CideVM, session: &mut Session) {
-    let fmt_addr = vm.pop() as u32;
-    let arg = vm.pop();
-    let fmt = read_cstring(vm, fmt_addr);
-    let out = format_printf_string(vm, &fmt, &[arg]);
-    session.runtime.output_lines.push(out);
-}
-
-fn host_printf_2(vm: &mut CideVM, session: &mut Session) {
-    let fmt_addr = vm.pop() as u32;
-    let arg1 = vm.pop();
-    let arg2 = vm.pop();
-    let fmt = read_cstring(vm, fmt_addr);
-    let out = format_printf_string(vm, &fmt, &[arg1, arg2]);
-    session.runtime.output_lines.push(out);
 }
 
 fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
@@ -700,12 +674,10 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
         }
     }
 
-    if old_region.is_none() {
+    let Some((old_addr, old_size)) = old_region else {
         vm.push(0);
         return;
-    }
-
-    let (old_addr, old_size) = old_region.unwrap();
+    };
     let aligned_new_size = ((new_size as u32) + 3) & !3;
     let aligned_old_size = ((old_size as u32) + 3) & !3;
 

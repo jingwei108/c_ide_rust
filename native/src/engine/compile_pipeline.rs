@@ -4,10 +4,10 @@
 //! 消除两端的代码重复。
 
 use crate::compiler::ast::{self, SourceLoc as AstSourceLoc};
-use crate::compiler::bytecode_gen::BytecodeGen;
+use crate::compiler::codegen::BytecodeGen;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
-use crate::compiler::type_checker::TypeChecker;
+use crate::compiler::typeck::TypeChecker;
 use crate::engine::completion::update_completion_snapshot;
 use crate::session::*;
 use crate::vm::vm::CideVM;
@@ -39,7 +39,7 @@ impl CompileError for crate::compiler::parser::ParseError {
     fn message(&self) -> &str { &self.message }
 }
 
-impl CompileError for crate::compiler::type_checker::TypeError {
+impl CompileError for crate::compiler::typeck::TypeError {
     fn line(&self) -> i32 { self.line }
     fn column(&self) -> i32 { self.column }
     fn code(&self) -> i32 { self.code }

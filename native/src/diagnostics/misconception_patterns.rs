@@ -149,7 +149,7 @@ pub fn detect_misconceptions(history: Vec<CompileRecord>) -> Vec<DetectedMisconc
     }
 
     // Sort by confidence descending.
-    results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
+    results.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap_or(std::cmp::Ordering::Equal));
     results
 }
 

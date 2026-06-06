@@ -1,9 +1,9 @@
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
-use cide_native::compiler::type_checker::TypeChecker;
-use cide_native::compiler::bytecode_gen::BytecodeGen;
+use cide_native::compiler::typeck::TypeChecker;
+use cide_native::compiler::codegen::BytecodeGen;
 
-fn compile_source(source: &str) -> Result<cide_native::compiler::bytecode_gen::CompileOutput, String> {
+fn compile_source(source: &str) -> Result<cide_native::compiler::codegen::CompileOutput, String> {
     let (tokens, lex_errors) = Lexer::new(source).tokenize();
     if !lex_errors.is_empty() {
         return Err(format!("Lexer errors: {:?}", lex_errors));

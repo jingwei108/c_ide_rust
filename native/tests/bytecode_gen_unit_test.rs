@@ -1,10 +1,10 @@
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
-use cide_native::compiler::type_checker::TypeChecker;
-use cide_native::compiler::bytecode_gen::BytecodeGen;
+use cide_native::compiler::typeck::TypeChecker;
+use cide_native::compiler::codegen::BytecodeGen;
 use cide_native::vm::opcode::OpCode;
 
-fn generate(src: &str) -> cide_native::compiler::bytecode_gen::CompileOutput {
+fn generate(src: &str) -> cide_native::compiler::codegen::CompileOutput {
     let (tokens, _) = Lexer::new(src).tokenize();
     let (maybe_program, parse_errors) = Parser::new(tokens).parse();
     assert!(parse_errors.is_empty(), "Parse errors: {:?}", parse_errors);
