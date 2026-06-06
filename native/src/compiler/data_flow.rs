@@ -107,7 +107,7 @@ fn used_vars(stmt: &Stmt) -> Vec<String> {
             if let Some(e) = cond {
                 collect_expr_vars(e, &mut vars, true);
             }
-            if let Some(e) = step {
+            for e in step {
                 collect_expr_vars(e, &mut vars, true);
             }
         }

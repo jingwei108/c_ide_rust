@@ -393,6 +393,11 @@ impl CideVM {
                                 self.push(r as u64);
                             }
                         }
+                        OpCode::USub => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            self.push(a.wrapping_sub(b) as u64);
+                        }
                         OpCode::Mul => {
                             let b = self.pop() as i32;
                             let a = self.pop() as i32;
@@ -548,10 +553,10 @@ impl CideVM {
                         }
                         OpCode::EqF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if (a - b).abs() < EPS_F32 { 1 } else { 0 }); }
                         OpCode::NeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if (a - b).abs() >= EPS_F32 { 1 } else { 0 }); }
-                        OpCode::LtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a + EPS_F32 < b { 1 } else { 0 }); }
-                        OpCode::LeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a < b + EPS_F32 { 1 } else { 0 }); }
-                        OpCode::GtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a > b + EPS_F32 { 1 } else { 0 }); }
-                        OpCode::GeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a + EPS_F32 > b { 1 } else { 0 }); }
+                        OpCode::LtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a < b && (a - b).abs() >= EPS_F32 { 1 } else { 0 }); }
+                        OpCode::LeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a <= b || (a - b).abs() < EPS_F32 { 1 } else { 0 }); }
+                        OpCode::GtF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a > b && (a - b).abs() >= EPS_F32 { 1 } else { 0 }); }
+                        OpCode::GeF => { let b = f32::from_bits(self.pop() as u32); let a = f32::from_bits(self.pop() as u32); self.push(if a >= b || (a - b).abs() < EPS_F32 { 1 } else { 0 }); }
                         OpCode::CastI2F => {
                             let a = self.pop() as i32;
                             self.push((a as f32).to_bits() as u64);
@@ -622,10 +627,10 @@ impl CideVM {
                         }
                         OpCode::EqD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if (a - b).abs() < EPS_F64 { 1 } else { 0 }); }
                         OpCode::NeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if (a - b).abs() >= EPS_F64 { 1 } else { 0 }); }
-                        OpCode::LtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a + EPS_F64 < b { 1 } else { 0 }); }
-                        OpCode::LeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a < b + EPS_F64 { 1 } else { 0 }); }
-                        OpCode::GtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a > b + EPS_F64 { 1 } else { 0 }); }
-                        OpCode::GeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a + EPS_F64 > b { 1 } else { 0 }); }
+                        OpCode::LtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a < b && (a - b).abs() >= EPS_F64 { 1 } else { 0 }); }
+                        OpCode::LeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a <= b || (a - b).abs() < EPS_F64 { 1 } else { 0 }); }
+                        OpCode::GtD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a > b && (a - b).abs() >= EPS_F64 { 1 } else { 0 }); }
+                        OpCode::GeD => { let b = f64::from_bits(self.pop()); let a = f64::from_bits(self.pop()); self.push(if a >= b || (a - b).abs() < EPS_F64 { 1 } else { 0 }); }
             _ => {}
         }
     }
@@ -955,7 +960,7 @@ impl CideVM {
             }
 
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg |
-            OpCode::UDiv | OpCode::UMod => {
+            OpCode::UDiv | OpCode::UMod | OpCode::USub => {
                 self.execute_arithmetic(op, operand, loc);
             }
 

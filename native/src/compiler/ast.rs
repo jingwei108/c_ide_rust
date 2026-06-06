@@ -364,6 +364,7 @@ pub enum UnaryOp {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AssignOp {
     Assign, AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
+    AndAssign, OrAssign, XorAssign, ShlAssign, ShrAssign,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -439,7 +440,7 @@ pub enum Stmt {
     If { cond: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>>, loc: SourceLoc },
     While { cond: Expr, body: Box<Stmt>, loc: SourceLoc },
     DoWhile { body: Box<Stmt>, cond: Expr, loc: SourceLoc },
-    For { init: Option<Box<Stmt>>, cond: Option<Expr>, step: Option<Expr>, body: Box<Stmt>, loc: SourceLoc },
+    For { init: Option<Box<Stmt>>, cond: Option<Expr>, step: Vec<Expr>, body: Box<Stmt>, loc: SourceLoc },
     Return { value: Option<Expr>, loc: SourceLoc },
     Break { loc: SourceLoc },
     Continue { loc: SourceLoc },

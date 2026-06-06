@@ -141,6 +141,13 @@ impl ExecutionHeatmap {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub enum InputMode {
+    #[default]
+    Interactive,
+    Batch,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeState {
     pub error: String,
@@ -159,6 +166,7 @@ pub struct RuntimeState {
     pub input_char_offset: usize,
     pub waiting_input: bool,
     pub heatmap: ExecutionHeatmap,
+    pub input_mode: InputMode,
 }
 
 impl RuntimeState {

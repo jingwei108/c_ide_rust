@@ -625,7 +625,7 @@ fn walk_stmt(stmt: &Stmt, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
             if let Some(c) = cond {
                 check_compare_expr(c, f, loop_depth);
             }
-            if let Some(ref s) = step {
+            for s in step {
                 walk_expr(s, f, loop_depth, func_name, depth + 1);
             }
             walk_stmt(body, f, new_depth, func_name, depth + 1);
@@ -976,6 +976,11 @@ fn expr_to_string(expr: &Expr) -> String {
                 AssignOp::MulAssign => "*=",
                 AssignOp::DivAssign => "/=",
                 AssignOp::ModAssign => "%=",
+                AssignOp::AndAssign => "&=",
+                AssignOp::OrAssign => "|=",
+                AssignOp::XorAssign => "^=",
+                AssignOp::ShlAssign => "<<=",
+                AssignOp::ShrAssign => ">>=",
             };
             format!("{} {} {}", expr_to_string(left), op_str, expr_to_string(right))
         }

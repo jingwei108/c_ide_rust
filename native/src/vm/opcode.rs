@@ -135,4 +135,5 @@ define_opcode! {
     UMod = 117,
     LShr = 118,
     StackAlloc = 119,
+    USub = 120,
 }

@@ -20,22 +20,36 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
 /// 例如 "%6d" 返回 ['d']，"%.2f" 返回 ['f']，"%%" 不返回任何内容。
 /// 解析一个 printf/scanf 格式说明符（% 之后的内容）。
 /// 返回 (格式字母, 是否 ll, 精度)。
-fn parse_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<(char, bool, Option<usize>)> {
-    // 跳过 flags
+#[allow(clippy::type_complexity)]
+fn parse_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<(char, bool, Option<usize>, Option<usize>, String)> {
+    // 收集 flags
+    let mut flags = String::new();
     while let Some(&c) = chars.peek() {
         if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
+            if !flags.contains(c) {
+                flags.push(c);
+            }
             chars.next();
         } else {
             break;
         }
     }
-    // 跳过 width
+    // 解析 width
+    let mut width: Option<usize> = None;
+    let mut width_str = String::new();
     while let Some(&c) = chars.peek() {
-        if c.is_ascii_digit() || c == '*' {
+        if c.is_ascii_digit() {
+            width_str.push(c);
             chars.next();
+        } else if c == '*' {
+            chars.next();
+            break;
         } else {
             break;
         }
+    }
+    if !width_str.is_empty() {
+        width = width_str.parse().ok();
     }
     // 解析 precision
     let mut precision: Option<usize> = None;
@@ -75,7 +89,7 @@ fn parse_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Op
     // 格式字母
     chars.peek().copied().map(|spec| {
         chars.next();
-        (spec, is_ll, precision)
+        (spec, is_ll, precision, width, flags)
     })
 }
 
@@ -87,13 +101,32 @@ fn parse_format_specs(fmt: &str) -> Vec<char> {
             if let Some(&next) = chars.peek() {
                 if next == '%' {
                     chars.next(); // 跳过 %%
-                } else if let Some((spec, _, _)) = parse_format_spec(&mut chars) {
+                } else if let Some((spec, _, _, _, _)) = parse_format_spec(&mut chars) {
                     specs.push(spec);
                 }
             }
         }
     }
     specs
+}
+
+fn apply_width(s: &str, width: Option<usize>, flags: &str) -> String {
+    let w = match width {
+        Some(w) => w,
+        None => return s.to_string(),
+    };
+    if s.len() >= w {
+        return s.to_string();
+    }
+    let pad_len = w - s.len();
+    let left_align = flags.contains('-');
+    let zero_pad = flags.contains('0') && !left_align;
+    let pad_char = if zero_pad { '0' } else { ' ' };
+    if left_align {
+        format!("{}{}", s, pad_char.to_string().repeat(pad_len))
+    } else {
+        format!("{}{}", pad_char.to_string().repeat(pad_len), s)
+    }
 }
 
 /// 根据格式字符串和参数列表生成 printf 输出。
@@ -107,59 +140,51 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                 if next == '%' {
                     out.push('%');
                     chars.next();
-                } else if let Some((spec, is_ll, precision)) = parse_format_spec(&mut chars) {
+                } else if let Some((spec, is_ll, precision, width, flags)) = parse_format_spec(&mut chars) {
                     let arg = args[used];
+                    let mut piece = String::new();
                     match spec {
                         'd' | 'i' => {
-                            if is_ll {
-                                out.push_str(&(arg as i64).to_string());
-                            } else {
-                                out.push_str(&(arg as i32).to_string());
-                            }
+                            let val = if is_ll { (arg as i64).to_string() } else { (arg as i32).to_string() };
+                            piece = apply_width(&val, width, &flags);
                         }
                         'u' => {
-                            if is_ll {
-                                out.push_str(&arg.to_string());
-                            } else {
-                                out.push_str(&(arg as u32).to_string());
-                            }
+                            let val = if is_ll { arg.to_string() } else { (arg as u32).to_string() };
+                            piece = apply_width(&val, width, &flags);
                         }
                         'x' => {
-                            if is_ll {
-                                out.push_str(&format!("{:x}", arg));
-                            } else {
-                                out.push_str(&format!("{:x}", arg as u32));
-                            }
+                            let val = if is_ll { format!("{:x}", arg) } else { format!("{:x}", arg as u32) };
+                            piece = apply_width(&val, width, &flags);
                         }
                         'X' => {
-                            if is_ll {
-                                out.push_str(&format!("{:X}", arg));
-                            } else {
-                                out.push_str(&format!("{:X}", arg as u32));
-                            }
+                            let val = if is_ll { format!("{:X}", arg) } else { format!("{:X}", arg as u32) };
+                            piece = apply_width(&val, width, &flags);
                         }
                         'o' => {
-                            if is_ll {
-                                out.push_str(&format!("{:o}", arg));
-                            } else {
-                                out.push_str(&format!("{:o}", arg as u32));
-                            }
+                            let val = if is_ll { format!("{:o}", arg) } else { format!("{:o}", arg as u32) };
+                            piece = apply_width(&val, width, &flags);
                         }
                         'p' => {
-                            out.push_str(&format!("{:p}", arg as u32 as *const ()));
+                            let val = format!("{:p}", arg as u32 as *const ());
+                            piece = apply_width(&val, width, &flags);
                         }
                         'f' => {
                             let f = f64::from_bits(arg);
                             let prec = precision.unwrap_or(6);
-                            out.push_str(&format!("{:.*}", prec, f));
+                            let val = format!("{:.*}", prec, f);
+                            piece = apply_width(&val, width, &flags);
                         }
                         's' => {
-                            let s = read_cstring(vm, arg as u32);
-                            out.push_str(&s);
+                            let val = read_cstring(vm, arg as u32);
+                            piece = apply_width(&val, width, &flags);
                         }
-                        'c' => out.push(arg as u8 as char),
-                        _ => { out.push(ch); out.push(spec); }
+                        'c' => {
+                            let val = (arg as u8 as char).to_string();
+                            piece = apply_width(&val, width, &flags);
+                        }
+                        _ => { piece.push(ch); piece.push(spec); }
                     }
+                    out.push_str(&piece);
                     used += 1;
                 }
             } else {
@@ -581,7 +606,12 @@ fn host_getchar(vm: &mut CideVM, session: &mut Session) {
         found
     };
     if !has_input {
-        session.runtime.waiting_input = true;
+        if session.runtime.input_mode == crate::session::InputMode::Batch {
+            // Batch 模式：输入耗尽后返回 EOF (-1)
+            vm.push((-1i32) as u64);
+        } else {
+            session.runtime.waiting_input = true;
+        }
         return;
     }
     let mut result = -1i32;

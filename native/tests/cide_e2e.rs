@@ -1,11 +1,25 @@
 use std::ffi::{c_char, CString};
 use std::path::Path;
 
-fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
+use cide_native::session::InputMode;
+
+fn compile_and_run(source: &str, input: Option<&str>, input_mode: InputMode) -> Result<(i32, Vec<String>), String> {
     unsafe {
         let session = cide_native::capi::cide_session_create();
         if session.is_null() {
             return Err("Failed to create session".to_string());
+        }
+
+        (*session).runtime.input_mode = input_mode;
+
+        // 设置输入数据（如果提供）
+        if let Some(input_str) = input {
+            // 保留换行符以模拟真实 stdin 字节流（getchar 需要读到 \n）
+            let normalized = input_str.replace("\r\n", "\n");
+            (*session).runtime.input_lines = normalized
+                .split_inclusive('\n')
+                .map(|l| l.to_string())
+                .collect();
         }
 
         let src = CString::new(source).map_err(|e| e.to_string())?;
@@ -85,7 +99,7 @@ fn filter_cide_diagnostics(lines: &[String]) -> Vec<String> {
     result
 }
 
-fn load_cases(dir: &Path) -> Vec<(String, String)> {
+fn load_cases(dir: &Path) -> Vec<(String, String, Option<String>)> {
     let mut cases = Vec::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
@@ -93,7 +107,13 @@ fn load_cases(dir: &Path) -> Vec<(String, String)> {
             if path.extension().and_then(|s| s.to_str()) == Some("c") {
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
                 let source = std::fs::read_to_string(&path).unwrap_or_default();
-                cases.push((name, source));
+                let input_path = path.with_extension("in");
+                let input = if input_path.exists() {
+                    Some(std::fs::read_to_string(&input_path).unwrap_or_default())
+                } else {
+                    None
+                };
+                cases.push((name, source, input));
             }
         }
     }
@@ -114,8 +134,8 @@ fn load_golden(case_name: &str, subdir: &str) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn run_case(name: &str, source: &str, golden_subdir: &str) -> Result<(), String> {
-    let result = compile_and_run(source);
+fn run_case(name: &str, source: &str, input: Option<&str>, golden_subdir: &str, input_mode: InputMode) -> Result<(), String> {
+    let result = compile_and_run(source, input, input_mode);
     match result {
         Ok((ret, outputs)) => {
             if ret != 0 {
@@ -143,8 +163,8 @@ fn run_case(name: &str, source: &str, golden_subdir: &str) -> Result<(), String>
 fn test_cide_e2e_baseline() {
     let cases = load_cases(Path::new("tests/cases/baseline"));
     let mut failures = Vec::new();
-    for (name, source) in &cases {
-        if let Err(e) = run_case(name, source, "baseline") {
+    for (name, source, input) in &cases {
+        if let Err(e) = run_case(name, source, input.as_deref(), "baseline", InputMode::Interactive) {
             failures.push(format!("{}: {}", name, e));
         }
     }
@@ -172,6 +192,19 @@ const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
     "threadedBinaryTree_default",
 ];
 
+/// Known K&R failures documented in KR_FAILURES.md.
+/// Monitored by `test_cide_e2e_knr_known_failures` below.
+const KNOWN_KR_FAILURES: &[&str] = &[
+    // 2026-06-06: K&R 第 1 章所有 getchar EOF 相关失败已通过 InputMode::Batch 修复。
+    // 若未来新增 K&R 失败，请在此记录并同步更新 KR_FAILURES.md。
+];
+
+/// Known LeetCode failures documented in LEETCODE_FAILURES.md.
+/// Monitored by `test_cide_e2e_leetcode_known_failures` below.
+const KNOWN_LEETCODE_FAILURES: &[&str] = &[
+    // 阶段 4~5 逐步填充
+];
+
 #[test]
 fn test_cide_e2e_template_generated() {
     let cases = load_cases(Path::new("tests/cases_template_generated"));
@@ -179,11 +212,11 @@ fn test_cide_e2e_template_generated() {
         KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
 
     let mut failures = Vec::new();
-    for (name, source) in &cases {
+    for (name, source, input) in &cases {
         if known.contains(name.as_str()) {
             continue;
         }
-        if let Err(e) = run_case(name, source, "") {
+        if let Err(e) = run_case(name, source, input.as_deref(), "", InputMode::Interactive) {
             failures.push(format!("{}: {}", name, e));
         }
     }
@@ -199,6 +232,66 @@ fn test_cide_e2e_template_generated() {
     }
 }
 
+#[test]
+fn test_cide_e2e_knr() {
+    let cases = load_cases(Path::new("tests/cases/knr"));
+    let known: std::collections::HashSet<&str> =
+        KNOWN_KR_FAILURES.iter().copied().collect();
+
+    let mut failures = Vec::new();
+    for (name, source, input) in &cases {
+        if known.contains(name.as_str()) {
+            continue;
+        }
+        // K&R getchar 用例在 Batch 模式下运行（输入耗尽返回 EOF）
+        let mode = if source.contains("getchar()") {
+            InputMode::Batch
+        } else {
+            InputMode::Interactive
+        };
+        if let Err(e) = run_case(name, source, input.as_deref(), "knr", mode) {
+            failures.push(format!("{}: {}", name, e));
+        }
+    }
+    if !failures.is_empty() {
+        panic!(
+            "K&R e2e failures ({} of {} non-known):\n{}\n\n\
+             These are NEW failures not yet in KNOWN_KR_FAILURES. \
+             Please investigate, record in KR_FAILURES.md, and update the list.",
+            failures.len(),
+            cases.len() - known.len(),
+            failures.join("\n")
+        );
+    }
+}
+
+#[test]
+fn test_cide_e2e_leetcode() {
+    let cases = load_cases(Path::new("tests/cases/leetcode"));
+    let known: std::collections::HashSet<&str> =
+        KNOWN_LEETCODE_FAILURES.iter().copied().collect();
+
+    let mut failures = Vec::new();
+    for (name, source, input) in &cases {
+        if known.contains(name.as_str()) {
+            continue;
+        }
+        if let Err(e) = run_case(name, source, input.as_deref(), "leetcode", InputMode::Interactive) {
+            failures.push(format!("{}: {}", name, e));
+        }
+    }
+    if !failures.is_empty() {
+        panic!(
+            "LeetCode e2e failures ({} of {} non-known):\n{}\n\n\
+             These are NEW failures not yet in KNOWN_LEETCODE_FAILURES. \
+             Please investigate, record in LEETCODE_FAILURES.md, and update the list.",
+            failures.len(),
+            cases.len() - known.len(),
+            failures.join("\n")
+        );
+    }
+}
+
 /// Monitor known failures: if any of them starts passing, this test fails
 /// to remind us to update the documentation and remove it from the list.
 #[test]
@@ -207,7 +300,9 @@ fn test_cide_e2e_template_known_failures() {
     for name in KNOWN_TEMPLATE_FAILURES {
         let path = Path::new("tests/cases_template_generated").join(format!("{}.c", name));
         let source = std::fs::read_to_string(&path).unwrap_or_default();
-        if run_case(name, &source, "").is_ok() {
+        let input_path = path.with_extension("in");
+        let input = if input_path.exists() { Some(std::fs::read_to_string(&input_path).unwrap_or_default()) } else { None };
+        if run_case(name, &source, input.as_deref(), "", InputMode::Interactive).is_ok() {
             passed_unexpectedly.push(name.to_string());
         }
     }
@@ -222,12 +317,67 @@ fn test_cide_e2e_template_known_failures() {
 }
 
 #[test]
+fn test_cide_e2e_knr_known_failures() {
+    let mut passed_unexpectedly = Vec::new();
+    for name in KNOWN_KR_FAILURES {
+        let path = Path::new("tests/cases/knr").join(format!("{}.c", name));
+        let source = std::fs::read_to_string(&path).unwrap_or_default();
+        let input_path = path.with_extension("in");
+        let input = if input_path.exists() { Some(std::fs::read_to_string(&input_path).unwrap_or_default()) } else { None };
+        let mode = if source.contains("getchar()") {
+            InputMode::Batch
+        } else {
+            InputMode::Interactive
+        };
+        if run_case(name, &source, input.as_deref(), "knr", mode).is_ok() {
+            passed_unexpectedly.push(name.to_string());
+        }
+    }
+    if !passed_unexpectedly.is_empty() {
+        panic!(
+            "Known K&R failures unexpectedly PASSED ({}). \
+             Please update KR_FAILURES.md and KNOWN_KR_FAILURES in cide_e2e.rs:\n{}",
+            passed_unexpectedly.len(),
+            passed_unexpectedly.join("\n")
+        );
+    }
+}
+
+#[test]
+fn test_cide_e2e_leetcode_known_failures() {
+    let mut passed_unexpectedly = Vec::new();
+    for name in KNOWN_LEETCODE_FAILURES {
+        let path = Path::new("tests/cases/leetcode").join(format!("{}.c", name));
+        let source = std::fs::read_to_string(&path).unwrap_or_default();
+        let input_path = path.with_extension("in");
+        let input = if input_path.exists() { Some(std::fs::read_to_string(&input_path).unwrap_or_default()) } else { None };
+        if run_case(name, &source, input.as_deref(), "leetcode", InputMode::Interactive).is_ok() {
+            passed_unexpectedly.push(name.to_string());
+        }
+    }
+    if !passed_unexpectedly.is_empty() {
+        panic!(
+            "Known LeetCode failures unexpectedly PASSED ({}). \
+             Please update LEETCODE_FAILURES.md and KNOWN_LEETCODE_FAILURES in cide_e2e.rs:\n{}",
+            passed_unexpectedly.len(),
+            passed_unexpectedly.join("\n")
+        );
+    }
+}
+
+#[test]
 fn test_cide_e2e_generate_report() {
     let baseline_cases = load_cases(Path::new("tests/cases/baseline"));
     let template_cases = load_cases(Path::new("tests/cases_template_generated"));
+    let knr_cases = load_cases(Path::new("tests/cases/knr"));
+    let leetcode_cases = load_cases(Path::new("tests/cases/leetcode"));
 
-    let known: std::collections::HashSet<&str> =
+    let known_template: std::collections::HashSet<&str> =
         KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
+    let known_kr: std::collections::HashSet<&str> =
+        KNOWN_KR_FAILURES.iter().copied().collect();
+    let known_leetcode: std::collections::HashSet<&str> =
+        KNOWN_LEETCODE_FAILURES.iter().copied().collect();
 
     let mut report = String::new();
     report.push_str("# Cide E2E 测试报告\n\n");
@@ -247,18 +397,52 @@ fn test_cide_e2e_generate_report() {
     report.push_str(&format!(
         "| Template Generated | {} | {} | {} |\n",
         template_cases.len(),
-        template_cases.len() - known.len(),
-        known.len()
+        template_cases.len() - known_template.len(),
+        known_template.len()
+    ));
+    report.push_str(&format!(
+        "| K&R | {} | {} | {} |\n",
+        knr_cases.len(),
+        knr_cases.len().saturating_sub(known_kr.len()),
+        known_kr.len()
+    ));
+    report.push_str(&format!(
+        "| LeetCode | {} | {} | {} |\n",
+        leetcode_cases.len(),
+        leetcode_cases.len().saturating_sub(known_leetcode.len()),
+        known_leetcode.len()
     ));
     report.push_str("\n");
 
-    report.push_str("## 已知失败详情（Template Generated）\n\n");
-    report.push_str("| 用例 | 根因文件 |\n");
-    report.push_str("|------|----------|\n");
-    for name in KNOWN_TEMPLATE_FAILURES {
-        report.push_str(&format!("| {} | E2E_FAILURES.md |\n", name));
+    if !KNOWN_TEMPLATE_FAILURES.is_empty() {
+        report.push_str("## 已知失败详情（Template Generated）\n\n");
+        report.push_str("| 用例 | 根因文件 |\n");
+        report.push_str("|------|----------|\n");
+        for name in KNOWN_TEMPLATE_FAILURES {
+            report.push_str(&format!("| {} | E2E_FAILURES.md |\n", name));
+        }
+        report.push_str("\n");
     }
-    report.push_str("\n");
+
+    if !KNOWN_KR_FAILURES.is_empty() {
+        report.push_str("## 已知失败详情（K&R）\n\n");
+        report.push_str("| 用例 | 根因文件 |\n");
+        report.push_str("|------|----------|\n");
+        for name in KNOWN_KR_FAILURES {
+            report.push_str(&format!("| {} | KR_FAILURES.md |\n", name));
+        }
+        report.push_str("\n");
+    }
+
+    if !KNOWN_LEETCODE_FAILURES.is_empty() {
+        report.push_str("## 已知失败详情（LeetCode）\n\n");
+        report.push_str("| 用例 | 根因文件 |\n");
+        report.push_str("|------|----------|\n");
+        for name in KNOWN_LEETCODE_FAILURES {
+            report.push_str(&format!("| {} | LEETCODE_FAILURES.md |\n", name));
+        }
+        report.push_str("\n");
+    }
 
     report.push_str("## Golden 生成失败\n\n");
     report.push_str("详见 `tests/cases_golden/GOLDEN_FAILURES.md`\n\n");

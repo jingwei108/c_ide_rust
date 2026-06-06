@@ -11,6 +11,7 @@ pub enum TokenType {
     Eq, Ne, Lt, Le, Gt, Ge,
     AndAnd, OrOr, Not,
     Assign, PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign,
+    AndAssign, OrAssign, XorAssign, ShlAssign, ShrAssign,
     Ampersand, BitOr, BitXor, BitNot, Shl, Shr,
     Increment, Decrement,
     Semicolon, Comma,
@@ -184,15 +185,18 @@ impl Lexer {
 
             '&' => {
                 if self.match_char('&') { return self.make_token(TokenType::AndAnd, "&&"); }
+                if self.match_char('=') { return self.make_token(TokenType::AndAssign, "&="); }
                 self.advance();
                 self.make_token(TokenType::Ampersand, "&")
             }
             '|' => {
                 if self.match_char('|') { return self.make_token(TokenType::OrOr, "||"); }
+                if self.match_char('=') { return self.make_token(TokenType::OrAssign, "|="); }
                 self.advance();
                 self.make_token(TokenType::BitOr, "|")
             }
             '^' => {
+                if self.match_char('=') { return self.make_token(TokenType::XorAssign, "^="); }
                 self.advance();
                 self.make_token(TokenType::BitXor, "^")
             }
@@ -201,13 +205,25 @@ impl Lexer {
                 self.make_token(TokenType::BitNot, "~")
             }
             '<' => {
-                if self.match_char('<') { return self.make_token(TokenType::Shl, "<<"); }
+                if self.match_char('<') {
+                    if self.peek(0) == '=' {
+                        self.advance();
+                        return self.make_token(TokenType::ShlAssign, "<<=");
+                    }
+                    return self.make_token(TokenType::Shl, "<<");
+                }
                 if self.match_char('=') { return self.make_token(TokenType::Le, "<="); }
                 self.advance();
                 self.make_token(TokenType::Lt, "<")
             }
             '>' => {
-                if self.match_char('>') { return self.make_token(TokenType::Shr, ">>"); }
+                if self.match_char('>') {
+                    if self.peek(0) == '=' {
+                        self.advance();
+                        return self.make_token(TokenType::ShrAssign, ">>=");
+                    }
+                    return self.make_token(TokenType::Shr, ">>");
+                }
                 if self.match_char('=') { return self.make_token(TokenType::Ge, ">="); }
                 self.advance();
                 self.make_token(TokenType::Gt, ">")

@@ -846,6 +846,11 @@ impl Parser {
 
     fn parse_statement(&mut self) -> Stmt {
         match self.current().ty {
+            TokenType::Semicolon => {
+                let loc = SourceLoc { line: self.current().line, column: self.current().column };
+                self.advance();
+                Stmt::Block { stmts: Vec::new(), loc }
+            }
             TokenType::LBrace => self.parse_block(),
             TokenType::If => self.parse_if_stmt(),
             TokenType::While => self.parse_while_stmt(),
@@ -1012,8 +1017,16 @@ impl Parser {
             }))
         } else if !self.check(TokenType::Semicolon) {
             let es_loc = self.current().clone();
-            let expr = self.parse_expression();
-            Some(Box::new(Stmt::Expr { expr, loc: SourceLoc { line: es_loc.line, column: es_loc.column } }))
+            let mut exprs = vec![self.parse_expression()];
+            while self.match_token(TokenType::Comma) {
+                exprs.push(self.parse_expression());
+            }
+            let stmt = if exprs.len() == 1 {
+                Stmt::Expr { expr: exprs.remove(0), loc: SourceLoc { line: es_loc.line, column: es_loc.column } }
+            } else {
+                Stmt::Block { stmts: exprs.into_iter().map(|e| Stmt::Expr { expr: e, loc: SourceLoc { line: es_loc.line, column: es_loc.column } }).collect(), loc: SourceLoc { line: es_loc.line, column: es_loc.column } }
+            };
+            Some(Box::new(stmt))
         } else {
             None
         };
@@ -1024,9 +1037,13 @@ impl Parser {
         } else { None };
         self.consume(TokenType::Semicolon, "预期 ';'");
 
-        let step = if !self.check(TokenType::RParen) {
-            Some(self.parse_expression())
-        } else { None };
+        let mut step = Vec::new();
+        if !self.check(TokenType::RParen) {
+            step.push(self.parse_expression());
+            while self.match_token(TokenType::Comma) {
+                step.push(self.parse_expression());
+            }
+        }
         self.consume(TokenType::RParen, "预期 ')'");
 
         let body = Box::new(self.parse_statement());

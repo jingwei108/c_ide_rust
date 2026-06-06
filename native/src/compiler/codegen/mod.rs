@@ -1003,7 +1003,7 @@ impl BytecodeGen {
                 let continue_base = self.continue_patches.len();
                 self.gen_stmt(body);
                 let continue_ip = self.current_ip();
-                if let Some(ref mut s) = step {
+                for s in step {
                     self.gen_expr(s);
                     self.emit(OpCode::Pop, 0, loc);
                 }
@@ -1382,6 +1382,8 @@ impl BytecodeGen {
                             self.emit(OpCode::SubF, 0, &loc);
                         } else if result_is_long_long {
                             self.emit(OpCode::SubQ, 0, &loc);
+                        } else if is_unsigned {
+                            self.emit(OpCode::USub, 0, &loc);
                         } else {
                             self.emit(OpCode::Sub, 0, &loc);
                         }
@@ -2316,6 +2318,11 @@ impl BytecodeGen {
                     if left_is_long_long { this.emit(OpCode::ModQ, 0, loc); }
                     else { this.emit(OpCode::Mod, 0, loc); }
                 }
+                AssignOp::AndAssign => { this.emit(OpCode::BitAnd, 0, loc); }
+                AssignOp::OrAssign => { this.emit(OpCode::BitOr, 0, loc); }
+                AssignOp::XorAssign => { this.emit(OpCode::BitXor, 0, loc); }
+                AssignOp::ShlAssign => { this.emit(OpCode::Shl, 0, loc); }
+                AssignOp::ShrAssign => { this.emit(OpCode::Shr, 0, loc); }
                 _ => {}
             }
         };

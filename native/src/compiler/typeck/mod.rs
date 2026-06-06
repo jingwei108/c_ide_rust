@@ -643,7 +643,7 @@ impl TypeChecker {
                         }
                     }
                 }
-                if let Some(ref mut s) = step { self.resolve_expr_type(s); }
+                for s in step { self.resolve_expr_type(s); }
                 self.loop_depth += 1;
                 self.dispatch_stmt(body);
                 self.loop_depth -= 1;

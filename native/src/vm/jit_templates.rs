@@ -470,6 +470,7 @@ fn opcode_to_jit_fn(op: OpCode) -> JitFn {
         OpCode::StoreMemByte => tpl_store_mem_byte,
         OpCode::Add => tpl_add,
         OpCode::Sub => tpl_sub,
+        OpCode::USub => tpl_sub,
         OpCode::Mul => tpl_mul,
         OpCode::Div => tpl_div,
         OpCode::Mod => tpl_mod,

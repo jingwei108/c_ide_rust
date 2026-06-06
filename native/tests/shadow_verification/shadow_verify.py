@@ -343,6 +343,8 @@ def load_case_files() -> List[ShadowCase]:
         Path("tests/cases/baseline"),
         Path("tests/cases/gap"),
         Path("tests/cases_template_generated"),
+        Path("tests/cases/knr"),
+        Path("tests/cases/leetcode"),
     ]:
         root_path = NATIVE_DIR / root
         if not root_path.exists():

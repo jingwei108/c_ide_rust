@@ -33,6 +33,26 @@ impl Parser {
             let right = self.parse_assign();
             return Expr::Assign { op: AssignOp::ModAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
         }
+        if self.match_token(TokenType::AndAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::AndAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::OrAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::OrAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::XorAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::XorAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::ShlAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::ShlAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        if self.match_token(TokenType::ShrAssign) {
+            let right = self.parse_assign();
+            return Expr::Assign { op: AssignOp::ShrAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
 
         left
     }
