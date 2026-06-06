@@ -88,6 +88,7 @@ node_modules/
 /CideFlutter/lib/src/rust/frb_generated*.dart
 /CideFlutter/lib/src/rust/api/*.dart
 !/CideFlutter/lib/src/rust/api/.gitkeep
+!/CideFlutter/lib/src/rust/api/types.dart
 
 # iOS / macOS / Linux / Windows build artifacts
 /CideFlutter/ios/Flutter/Generated.xcconfig
