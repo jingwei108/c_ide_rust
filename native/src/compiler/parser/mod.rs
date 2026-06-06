@@ -15,13 +15,13 @@ pub struct ParseError {
 enum DeclaratorNode {
     Base,
     Pointer(Box<DeclaratorNode>),
-    Array(Box<DeclaratorNode>, i32),
+    Array(Box<DeclaratorNode>, Option<Box<Expr>>),
     Function(Box<DeclaratorNode>, Vec<Param>),
 }
 
 #[derive(Debug, Clone)]
 enum DeclaratorSuffix {
-    Array(i32),
+    Array(Option<Box<Expr>>),
     Function(Vec<Param>),
 }
 
@@ -242,7 +242,7 @@ impl Parser {
                 if is_enum_decl {
                     self.parse_enum_decl(&mut program);
                 } else {
-                    self.parse_global_var_or_func(&mut program, false);
+                    self.parse_global_var_or_func(&mut program, false, false);
                 }
             } else if self.check(TokenType::Struct) {
                 let checkpoint = self.pos;
@@ -273,23 +273,26 @@ impl Parser {
                     self.pos = checkpoint;
                     self.errors.truncate(errors_checkpoint);
                     if is_var_decl && !is_pure_decl {
-                        self.parse_global_var_or_func(&mut program, false);
+                        self.parse_global_var_or_func(&mut program, false, false);
                     } else {
                         program.structs.push(self.parse_struct_decl());
                     }
                 } else {
                     self.pos = checkpoint;
                     self.errors.truncate(errors_checkpoint);
-                    self.parse_global_var_or_func(&mut program, false);
+                    self.parse_global_var_or_func(&mut program, false, false);
                 }
             } else if self.check(TokenType::Union) {
                 program.unions.push(self.parse_union_decl());
+            } else if self.check(TokenType::Extern) {
+                self.advance(); // consume 'extern'
+                self.parse_global_var_or_func(&mut program, false, true);
             } else if self.is_type_token() || self.is_static_token() {
                 let is_static = self.is_static_token();
                 if is_static {
                     self.advance(); // consume 'static'
                 }
-                self.parse_global_var_or_func(&mut program, is_static);
+                self.parse_global_var_or_func(&mut program, is_static, false);
             } else {
                 self.errors.push(ParseError {
                     message: format!("预期 struct、函数或全局变量声明，找到: {}", self.current().text),
@@ -313,7 +316,7 @@ impl Parser {
         lookahead
     }
 
-    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode, is_static: bool) {
+    fn parse_global_var_or_func(&mut self, program: &mut ProgramNode, is_static: bool, is_extern: bool) {
         let checkpoint = self.pos;
         let base_type = self.parse_base_type();
         // 前瞻：跳过前导 *，检查是否是 identifier (
@@ -324,10 +327,10 @@ impl Parser {
             && self.tokens[lookahead + 1].ty == TokenType::LParen;
         if is_func_decl {
             self.pos = checkpoint;
-            program.funcs.push(self.parse_func_decl(is_static));
+            program.funcs.push(self.parse_func_decl(is_static, is_extern));
         } else {
             let (ty, name) = self.parse_declarator(&base_type);
-            let init = if self.match_token(TokenType::Assign) {
+            let init = if is_extern { None } else if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
                 } else {
@@ -338,11 +341,12 @@ impl Parser {
                 loc: SourceLoc { line: self.previous().line, column: self.previous().column },
                 ty: ty.clone(), name, init,
                 is_static,
+                is_extern,
                 source_file: String::new(),
             });
             while self.match_token(TokenType::Comma) {
                 let (extra_ty, extra_name) = self.parse_declarator(&base_type);
-                let extra_init = if self.match_token(TokenType::Assign) {
+                let extra_init = if is_extern { None } else if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
                     } else {
@@ -353,6 +357,7 @@ impl Parser {
                     loc: SourceLoc { line: self.previous().line, column: self.previous().column },
                     ty: extra_ty, name: extra_name, init: extra_init,
                     is_static,
+                    is_extern,
                     source_file: String::new(),
                 });
             }
@@ -428,7 +433,7 @@ impl Parser {
         self.typedef_names.insert(alias_tok.text, Type::struct_type(name));
     }
 
-    fn parse_func_decl(&mut self, is_static: bool) -> FuncDecl {
+    fn parse_func_decl(&mut self, is_static: bool, is_extern: bool) -> FuncDecl {
         let base_type = self.parse_base_type();
 
         let mut ret_type = base_type.clone();
@@ -441,7 +446,7 @@ impl Parser {
 
         let params = self.parse_param_list();
         self.consume(TokenType::RParen, "预期 ')'");
-        let body = if self.check(TokenType::LBrace) {
+        let body = if is_extern { None } else if self.check(TokenType::LBrace) {
             Some(self.parse_block())
         } else {
             self.consume(TokenType::Semicolon, "函数声明后预期 ';' 或 '{'");
@@ -455,6 +460,7 @@ impl Parser {
             params,
             body,
             is_static,
+            is_extern,
             source_file: String::new(),
         }
     }
@@ -619,33 +625,14 @@ impl Parser {
                 if !is_abstract {
                     guard.suffix_count += 1;
                 }
-                let size = if self.check(TokenType::Number) {
-                    let size_tok = self.advance().clone();
-                    match size_tok.text.parse::<i32>() {
-                        Ok(s) => s,
-                        Err(_) => {
-                            self.errors.push(ParseError {
-                                message: format!("数组维度 '{}' 不是有效的编译期常量整数", size_tok.text),
-                                line: size_tok.line,
-                                column: size_tok.column,
-                                code: ErrorCode::E2002_ExpectedArraySize as i32,
-                            });
-                            0
-                        }
-                    }
-                } else if self.check(TokenType::RBracket) {
-                    -1
+                let size_expr = if self.check(TokenType::RBracket) {
+                    None
                 } else {
-                    self.errors.push(ParseError {
-                        message: "预期数组大小或 ']'".to_string(),
-                        line: self.current().line,
-                        column: self.current().column,
-                        code: ErrorCode::E2002_ExpectedArraySize as i32,
-                    });
-                    0
+                    let expr = self.parse_expression();
+                    Some(Box::new(expr))
                 };
                 self.consume(TokenType::RBracket, "预期 ']'");
-                suffixes.push(DeclaratorSuffix::Array(size));
+                suffixes.push(DeclaratorSuffix::Array(size_expr));
             } else if self.match_token(TokenType::LParen) {
                 if !is_abstract {
                     guard.suffix_count += 1;
@@ -661,8 +648,8 @@ impl Parser {
         // 先应用后缀（它们绑定到标识符更紧）
         for suffix in suffixes {
             match suffix {
-                DeclaratorSuffix::Array(size) => {
-                    node = DeclaratorNode::Array(Box::new(node), size);
+                DeclaratorSuffix::Array(size_expr) => {
+                    node = DeclaratorNode::Array(Box::new(node), size_expr);
                 }
                 DeclaratorSuffix::Function(params) => {
                     node = DeclaratorNode::Function(Box::new(node), params);
@@ -691,52 +678,77 @@ impl Parser {
         (node, name)
     }
 
+    fn array_dim_info(size_expr: &Option<Box<Expr>>) -> (i32, bool, Option<Box<Expr>>) {
+        match size_expr {
+            None => (-1, false, None),
+            Some(expr) => {
+                if let Expr::Literal { value, .. } = expr.as_ref() {
+                    (*value, false, None)
+                } else {
+                    (0, true, Some(expr.clone()))
+                }
+            }
+        }
+    }
+
     fn interpret_declarator_node(node: &DeclaratorNode, base_type: &Type) -> Type {
         match node {
             DeclaratorNode::Base => base_type.clone(),
             DeclaratorNode::Pointer(inner) => {
                 let inner_ty = Self::interpret_declarator_node(inner, base_type);
                 match inner.as_ref() {
-                    DeclaratorNode::Array(array_inner, size) => {
+                    DeclaratorNode::Array(array_inner, size_expr) => {
                         let elem_ty = Self::interpret_declarator_node(array_inner, base_type);
+                        let (size, is_vla, vla_dim) = Self::array_dim_info(size_expr);
                         Type::Array {
                             element: Box::new(Type::pointer_to(elem_ty)),
-                            array_size: *size,
-                            dims: vec![*size],
+                            array_size: size,
+                            dims: vec![size],
                             is_const: false,
+                            is_vla,
+                            vla_dims: if let Some(e) = vla_dim { vec![e] } else { vec![] },
                         }
                     }
                     _ => Type::pointer_to(inner_ty),
                 }
             }
-            DeclaratorNode::Array(inner, size) => {
+            DeclaratorNode::Array(inner, size_expr) => {
                 let inner_ty = Self::interpret_declarator_node(inner, base_type);
+                let (size, is_vla, vla_dim) = Self::array_dim_info(size_expr);
                 match inner.as_ref() {
                     DeclaratorNode::Pointer(ptr_inner) => {
                         let elem_ty = Self::interpret_declarator_node(ptr_inner, base_type);
                         Type::Pointer {
                             pointee: Box::new(Type::Array {
                                 element: Box::new(elem_ty),
-                                array_size: *size,
-                                dims: vec![*size],
+                                array_size: size,
+                                dims: vec![size],
                                 is_const: false,
+                                is_vla,
+                                vla_dims: if let Some(e) = vla_dim { vec![e] } else { vec![] },
                             }),
                             is_const: false,
                         }
                     }
                     _ => {
-                        let (element, mut inner_dims, inner_array_size) = if let Type::Array { element, dims, array_size, .. } = &inner_ty {
-                            (element.clone(), dims.clone(), *array_size)
+                        let (element, mut inner_dims, inner_array_size, mut inner_is_vla, mut inner_vla_dims) = if let Type::Array { element, dims, array_size, is_vla, vla_dims, .. } = &inner_ty {
+                            (element.clone(), dims.clone(), *array_size, *is_vla, vla_dims.clone())
                         } else {
-                            (Box::new(inner_ty.clone()), Vec::new(), 1)
+                            (Box::new(inner_ty.clone()), Vec::new(), 1, false, vec![])
                         };
-                        inner_dims.push(*size);
-                        let array_size = if *size > 0 { *size * inner_array_size } else { *size };
+                        inner_dims.push(size);
+                        if is_vla {
+                            inner_is_vla = true;
+                            if let Some(e) = vla_dim { inner_vla_dims.push(e); }
+                        }
+                        let array_size = if size > 0 { size * inner_array_size } else { size };
                         Type::Array {
                             element,
                             array_size,
                             dims: inner_dims,
                             is_const: false,
+                            is_vla: inner_is_vla,
+                            vla_dims: inner_vla_dims,
                         }
                     }
                 }
@@ -745,9 +757,10 @@ impl Parser {
                 match inner.as_ref() {
                     DeclaratorNode::Pointer(ptr_inner) => {
                         match ptr_inner.as_ref() {
-                            DeclaratorNode::Array(array_inner, size) => {
+                            DeclaratorNode::Array(array_inner, size_expr) => {
                                 // (*fp[N])(params) → function pointer array
                                 let elem_ty = Self::interpret_declarator_node(array_inner, base_type);
+                                let (size, is_vla, vla_dim) = Self::array_dim_info(size_expr);
                                 Type::Array {
                                     element: Box::new(Type::Pointer {
                                         pointee: Box::new(Type::Function {
@@ -757,9 +770,11 @@ impl Parser {
                                         }),
                                         is_const: false,
                                     }),
-                                    array_size: *size,
-                                    dims: vec![*size],
+                                    array_size: size,
+                                    dims: vec![size],
                                     is_const: false,
+                                    is_vla,
+                                    vla_dims: if let Some(e) = vla_dim { vec![e] } else { vec![] },
                                 }
                             }
                             _ => {
@@ -810,6 +825,14 @@ impl Parser {
                 (base_type, String::new())
             } else {
                 self.parse_declarator(&base_type)
+            };
+            // In C, array parameters in function declarations decay to pointers.
+            // For int a[5] -> int*; for int a[3][3] -> int (*a)[3].
+            let pty = if pty.is_array() {
+                let is_const = pty.is_const();
+                Type::Pointer { pointee: Box::new(pty.subscript_type()), is_const }
+            } else {
+                pty
             };
             params.push(Param { ty: pty, name: pname, loc: SourceLoc { line: self.current().line, column: self.current().column } });
             if !self.match_token(TokenType::Comma) { break; }
@@ -1118,6 +1141,7 @@ impl Parser {
                 name: member_tok.text,
                 init: Some(Expr::Literal { value: next_value, loc: SourceLoc { line: member_tok.line, column: member_tok.column }, ty: Type::int() }),
                 is_static: false,
+                is_extern: false,
                 source_file: String::new(),
             });
             next_value += 1;

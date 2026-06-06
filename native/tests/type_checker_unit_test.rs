@@ -142,3 +142,31 @@ fn test_type_checker_printf_arg_count_mismatch() {
     assert!(!errors.is_empty(), "Expected error for printf arg count mismatch");
     assert!(errors.iter().any(|e| e.message.contains("不匹配")), "Expected count mismatch message, got: {:?}", errors);
 }
+
+
+#[test]
+fn test_type_checker_struct_return_by_value_allowed() {
+    let src = r#"
+        struct S { int a; int b; };
+        struct S foo() {
+            struct S s;
+            return s;
+        }
+        int main() { return 0; }
+    "#;
+    let (errors, _, _) = type_check(src);
+    assert!(errors.is_empty(), "Struct return by value should be allowed: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_struct_pointer_return_allowed() {
+    let src = r#"
+        struct S { int a; };
+        struct S* foo() {
+            return 0;
+        }
+        int main() { return 0; }
+    "#;
+    let (errors, _, _) = type_check(src);
+    assert!(errors.is_empty(), "Struct pointer return should be allowed: {:?}", errors);
+}

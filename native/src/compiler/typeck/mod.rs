@@ -1,6 +1,6 @@
 use crate::compiler::ast::*;
 use crate::diagnostics::error_codes::ErrorCode;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone)]
 pub struct TypeError {
@@ -15,6 +15,7 @@ struct VarSymbol {
     ty: Type,
     #[allow(dead_code)]
     is_global: bool,
+    is_extern: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -43,6 +44,7 @@ pub struct TypeChecker {
     current_file: String,
     loop_depth: i32,
     switch_depth: i32,
+    current_func_params: HashSet<String>,
 }
 
 /// 根据 (from, to) 类型对判断是否允许隐式转换，并返回转换后的目标类型。
@@ -133,7 +135,7 @@ impl TypeChecker {
         // Pass 2.5: Register globals and check initializers
         self.enter_scope();
         for g in &mut program.globals {
-            self.declare_var(&g.name, &g.ty, true);
+            self.declare_var(&g.name, &g.ty, true, g.is_extern);
         }
         for g in &mut program.globals {
             if let Some(ref mut init) = g.init {
@@ -173,16 +175,29 @@ impl TypeChecker {
         self.scopes.pop();
     }
 
-    fn declare_var(&mut self, name: &str, ty: &Type, is_global: bool) {
+    fn declare_var(&mut self, name: &str, ty: &Type, is_global: bool, is_extern: bool) {
         if self.scopes.is_empty() {
             self.scopes.push(HashMap::new());
         }
         let scope = self.scopes.last_mut().expect("scopes 在上一步已确保非空");
-        if scope.contains_key(name) {
-            self.report_error(&format!("变量 '{}' 已在此作用域中声明", name), &SourceLoc { line: 0, column: 0 }, ErrorCode::E3001_VarRedeclared);
+        if let Some(existing) = scope.get(name) {
+            if is_extern {
+                // extern declaration of an existing symbol is allowed
+                return;
+            }
+            // Non-extern definition can replace an extern declaration
+            if existing.is_extern {
+                scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern });
+                return;
+            }
+            self.report_error(
+                &format!("变量 '{}' 已在此作用域中声明", name),
+                &SourceLoc { line: 0, column: 0 },
+                ErrorCode::E3001_VarRedeclared,
+            );
             return;
         }
-        scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global });
+        scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern });
     }
 
     pub(crate) fn lookup_var(&self, name: &str) -> Option<VarSymbol> {
@@ -231,6 +246,11 @@ impl TypeChecker {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Array) {
             if let (Type::Pointer { pointee: t_pointee, .. }, Type::Array { element: v_element, .. }) = (target, value) {
                 if t_pointee.as_ref() == v_element.as_ref() {
+                    self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+                    return true;
+                }
+                // Multidimensional array decay: int arr[3][3] -> int (*)[3]
+                if t_pointee.as_ref() == &value.subscript_type() {
                     self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
                     return true;
                 }
@@ -329,9 +349,12 @@ impl TypeChecker {
             return true;
         }
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Pointer) {
-            if let Type::Pointer { pointee: v_pointee, .. } = value {
+            if let (Type::Pointer { is_const: t_const, .. }, Type::Pointer { pointee: v_pointee, is_const: v_const }) = (target, value) {
                 if matches!(v_pointee.as_ref(), Type::Void { .. }) {
                     self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
+                }
+                if *v_const && !*t_const {
+                    self.report_warning("将 const 指针赋值给非 const 指针，可能通过后者修改 const 数据。", loc, ErrorCode::W3053_ImplicitScalarConversion);
                 }
             }
             return true;
@@ -413,15 +436,31 @@ impl TypeChecker {
         }
         for (i, elem) in elements.iter_mut().enumerate() {
             if i >= fields.len() { break; }
-            let e_type = self.resolve_expr_type(elem);
-            if !self.check_assignable(&fields[i].0, &e_type, loc) {
-                self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", fields[i].1, fields[i].0, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+            if fields[i].0.is_struct() && matches!(elem, Expr::InitList { .. }) {
+                self.check_struct_initializer(&fields[i].0, elem, loc);
+            } else if fields[i].0.is_array() && matches!(elem, Expr::InitList { .. }) {
+                let mut sub_ty = fields[i].0.clone();
+                self.check_array_initializer(&mut sub_ty, elem, loc);
+            } else {
+                let e_type = self.resolve_expr_type(elem);
+                if !self.check_assignable(&fields[i].0, &e_type, loc) {
+                    self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", fields[i].1, fields[i].0, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                }
             }
         }
     }
 
     fn validate_nested_init_list(&mut self, dims: &[i32], init: &mut Expr, loc: &SourceLoc, element_type: &Type) -> bool {
         if dims.is_empty() {
+            if element_type.is_struct() && matches!(init, Expr::InitList { .. }) {
+                self.check_struct_initializer(element_type, init, loc);
+                return true;
+            }
+            if element_type.is_array() && matches!(init, Expr::InitList { .. }) {
+                let mut sub_ty = element_type.clone();
+                self.check_array_initializer(&mut sub_ty, init, loc);
+                return true;
+            }
             let e_type = self.resolve_expr_type(init);
             if !self.check_assignable(element_type, &e_type, loc) {
                 self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", element_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
@@ -483,11 +522,18 @@ impl TypeChecker {
                 self.report_error("初始化列表元素数量超过数组大小", loc, ErrorCode::E3005_ArrayInitTooMany);
             }
             for elem in elements.iter_mut() {
-                let e_type = self.resolve_expr_type(elem);
-                if !self.check_assignable(&elem_type, &e_type, loc) {
-                    self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                if elem_type.is_struct() && matches!(elem, Expr::InitList { .. }) {
+                    self.check_struct_initializer(&elem_type, elem, loc);
+                } else if elem_type.is_array() && matches!(elem, Expr::InitList { .. }) {
+                    let mut sub_ty = elem_type.clone();
+                    self.check_array_initializer(&mut sub_ty, elem, loc);
                 } else {
-                    insert_implicit_cast(elem, &elem_type);
+                    let e_type = self.resolve_expr_type(elem);
+                    if !self.check_assignable(&elem_type, &e_type, loc) {
+                        self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                    } else {
+                        insert_implicit_cast(elem, &elem_type);
+                    }
                 }
             }
         } else if let Expr::StringLiteral { value, .. } = init {
@@ -514,14 +560,17 @@ impl TypeChecker {
     fn visit_func_decl(&mut self, node: &mut FuncDecl) {
         self.current_file = node.source_file.clone();
         self.current_func_return = node.return_type.clone();
+        self.current_func_params.clear();
         self.enter_scope();
         for p in &node.params {
-            self.declare_var(&p.name, &p.ty, false);
+            self.current_func_params.insert(p.name.clone());
+            self.declare_var(&p.name, &p.ty, false, false);
         }
         if let Some(ref mut body) = node.body {
             self.dispatch_stmt(body);
         }
         self.exit_scope();
+        self.current_func_params.clear();
     }
 
     fn dispatch_stmt(&mut self, stmt: &mut Stmt) {
@@ -532,9 +581,6 @@ impl TypeChecker {
                 self.exit_scope();
             }
             Stmt::VarDecl { var_type, name, init, extra_vars, loc, .. } => {
-                if var_type.is_unsigned() {
-                    self.report_warning("unsigned 类型被映射为 int，暂不支持无符号语义", loc, ErrorCode::W3056_UnsignedToInt);
-                }
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         self.check_array_initializer(var_type, init_expr, loc);
@@ -549,7 +595,7 @@ impl TypeChecker {
                         }
                     }
                 }
-                self.declare_var(name, var_type, false);
+                self.declare_var(name, var_type, false, false);
                 for (ety, ename, einit) in extra_vars.iter_mut() {
                     if let Some(ref mut init_expr) = einit {
                         if ety.is_array() {
@@ -565,7 +611,7 @@ impl TypeChecker {
                             }
                         }
                     }
-                    self.declare_var(ename, ety, false);
+                    self.declare_var(ename, ety, false, false);
                 }
             }
             Stmt::Expr { expr, .. } => { self.resolve_expr_type(expr); }

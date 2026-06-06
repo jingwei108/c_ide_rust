@@ -701,3 +701,180 @@ int main() {
     assert!(outputs.iter().any(|l| l.contains("10")), "Outputs: {:?}", outputs);
 }
 
+// A1: Array parameter decay — sizeof(arr_param) should return pointer size (4)
+#[test]
+fn test_e2e_array_param_decay() {
+    let src = r#"
+#include <stdio.h>
+void f(int a[5]) {
+    printf("%d", sizeof(a));
+}
+int main() {
+    int arr[5];
+    f(arr);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("4")), "Outputs: {:?}", outputs);
+}
+
+// A1: Multidimensional array parameter decay — int a[3][3] decays to int (*a)[3]
+#[test]
+fn test_e2e_md_array_param_decay() {
+    let src = r#"
+#include <stdio.h>
+void f(int a[3][3]) {
+    printf("%d %d", sizeof(a), sizeof(a[0]));
+}
+int main() {
+    int arr[3][3];
+    f(arr);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    // sizeof(a) == sizeof(int*) == 4; sizeof(a[0]) == sizeof(int[3]) == 12
+    assert!(outputs.iter().any(|l| l.contains("4 12")), "Outputs: {:?}", outputs);
+}
+
+// A3: Struct array nested initialization (local)
+#[test]
+fn test_e2e_struct_array_nested_init_local() {
+    let src = r#"
+#include <stdio.h>
+struct S { int x; int y; };
+int main() {
+    struct S arr[] = {{1, 2}, {3, 4}};
+    printf("%d %d %d %d", arr[0].x, arr[0].y, arr[1].x, arr[1].y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1 2 3 4")), "Outputs: {:?}", outputs);
+}
+
+// A3: Struct array nested initialization (global)
+#[test]
+fn test_e2e_struct_array_nested_init_global() {
+    let src = r#"
+#include <stdio.h>
+struct S { int x; int y; };
+struct S arr[] = {{5, 6}, {7, 8}};
+int main() {
+    printf("%d %d %d %d", arr[0].x, arr[0].y, arr[1].x, arr[1].y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("5 6 7 8")), "Outputs: {:?}", outputs);
+}
+
+// A3: Nested struct initialization
+#[test]
+fn test_e2e_nested_struct_init() {
+    let src = r#"
+#include <stdio.h>
+struct Inner { int a; int b; };
+struct Outer { struct Inner i; int c; };
+int main() {
+    struct Outer o = {{9, 10}, 11};
+    printf("%d %d %d", o.i.a, o.i.b, o.c);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("9 10 11")), "Outputs: {:?}", outputs);
+}
+
+// A2: unsigned comparison wrap-around
+#[test]
+fn test_e2e_unsigned_comparison() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    unsigned int a = 0;
+    a -= 1;
+    if (a > 1) printf("yes");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("yes")), "Outputs: {:?}", outputs);
+}
+
+// A2: unsigned logical right shift
+#[test]
+fn test_e2e_unsigned_lshr() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    unsigned int x = -1;
+    x = x >> 1;
+    printf("%u", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("2147483647")), "Outputs: {:?}", outputs);
+}
+
+// A2: unsigned division and modulo
+#[test]
+fn test_e2e_unsigned_div_mod() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    unsigned int a = 7;
+    unsigned int b = 3;
+    printf("%u %u", a / b, a % b);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("2 1")), "Outputs: {:?}", outputs);
+}
+
+// B3: extern declaration support
+#[test]
+fn test_e2e_extern_decl() {
+    let src = r#"
+#include <stdio.h>
+extern int global_var;
+int global_var = 42;
+int main() {
+    printf("%d", global_var);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
+}
+

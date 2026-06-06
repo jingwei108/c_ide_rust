@@ -337,6 +337,67 @@ fn tpl_shr(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Se
     None
 }
 
+fn tpl_ult(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as u32;
+    let a = vm.pop() as u32;
+    vm.push(if a < b { 1 } else { 0 });
+    None
+}
+
+fn tpl_ule(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as u32;
+    let a = vm.pop() as u32;
+    vm.push(if a <= b { 1 } else { 0 });
+    None
+}
+
+fn tpl_ugt(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as u32;
+    let a = vm.pop() as u32;
+    vm.push(if a > b { 1 } else { 0 });
+    None
+}
+
+fn tpl_uge(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as u32;
+    let a = vm.pop() as u32;
+    vm.push(if a >= b { 1 } else { 0 });
+    None
+}
+
+fn tpl_udiv(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as u32;
+    let a = vm.pop() as u32;
+    if b == 0 {
+        vm.trap("除零错误：整数除法的除数不能为 0。", loc);
+        return Some(StepResult::Trap);
+    }
+    vm.push((a / b) as u64);
+    None
+}
+
+fn tpl_umod(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as u32;
+    let a = vm.pop() as u32;
+    if b == 0 {
+        vm.trap("取模错误：取模运算的除数不能为 0。", loc);
+        return Some(StepResult::Trap);
+    }
+    vm.push((a % b) as u64);
+    None
+}
+
+fn tpl_lshr(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let b = vm.pop() as i32;
+    let a = vm.pop() as u32;
+    if !(0..32).contains(&b) {
+        vm.trap("移位操作越界：右移位数必须在 0~31 之间。", loc);
+        return Some(StepResult::Trap);
+    }
+    vm.push((a.wrapping_shr(b as u32)) as u64);
+    None
+}
+
 // --- Control Flow ---
 
 fn tpl_jump(vm: &mut CideVM, target: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
@@ -428,6 +489,13 @@ fn opcode_to_jit_fn(op: OpCode) -> JitFn {
         OpCode::BitNot => tpl_bit_not,
         OpCode::Shl => tpl_shl,
         OpCode::Shr => tpl_shr,
+        OpCode::ULt => tpl_ult,
+        OpCode::ULe => tpl_ule,
+        OpCode::UGt => tpl_ugt,
+        OpCode::UGe => tpl_uge,
+        OpCode::UDiv => tpl_udiv,
+        OpCode::UMod => tpl_umod,
+        OpCode::LShr => tpl_lshr,
         OpCode::Jump => tpl_jump,
         OpCode::JumpIfZero => tpl_jump_if_zero,
         OpCode::JumpIfNotZero => tpl_jump_if_not_zero,

@@ -1,5 +1,30 @@
 use super::*;
 
+/// C usual arithmetic conversions: promote two scalar types to a common type.
+fn promote_type(a: &Type, b: &Type) -> Type {
+    use TypeKind::*;
+    let rank = |t: &Type| match t.kind() {
+        Double => 4,
+        Float => 3,
+        LongLong => 2,
+        Int => 1,
+        Char => 0,
+        _ => -1,
+    };
+    let ra = rank(a);
+    let rb = rank(b);
+    let (higher, lower) = if ra >= rb { (a, b) } else { (b, a) };
+    let is_unsigned = higher.is_unsigned() || lower.is_unsigned();
+    match higher.kind() {
+        Double => Type::double(),
+        Float => Type::float(),
+        LongLong => Type::LongLong { is_unsigned, is_const: false },
+        Int => Type::Int { is_unsigned, is_const: false },
+        Char => Type::Int { is_unsigned, is_const: false },
+        _ => Type::int(),
+    }
+}
+
 impl TypeChecker {
     pub fn resolve_expr_type(&mut self, expr: &mut Expr) -> Type {
         match expr {
@@ -9,10 +34,7 @@ impl TypeChecker {
                 *ty = match op {
                     BinaryOp::Add | BinaryOp::Sub => {
                         if self.is_scalar(&left_type) && self.is_scalar(&right_type) {
-                            if left_type.kind() == TypeKind::Double || right_type.kind() == TypeKind::Double { Type::double() }
-                            else if left_type.kind() == TypeKind::Float || right_type.kind() == TypeKind::Float { Type::float() }
-                            else if left_type.kind() == TypeKind::LongLong || right_type.kind() == TypeKind::LongLong { Type::long_long() }
-                            else { Type::int() }
+                            promote_type(&left_type, &right_type)
                         } else if left_type.is_pointer() && self.is_int(&right_type) {
                             left_type.clone()
                         } else if self.is_int(&left_type) && right_type.is_pointer() && matches!(op, BinaryOp::Add) {
@@ -28,16 +50,13 @@ impl TypeChecker {
                         if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
                             self.report_error("乘除运算要求两边都是 int 或 float 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
                         }
-                        if left_type.kind() == TypeKind::Double || right_type.kind() == TypeKind::Double { Type::double() }
-                        else if left_type.kind() == TypeKind::Float || right_type.kind() == TypeKind::Float { Type::float() }
-                        else if left_type.kind() == TypeKind::LongLong || right_type.kind() == TypeKind::LongLong { Type::long_long() }
-                        else { Type::int() }
+                        promote_type(&left_type, &right_type)
                     }
                     BinaryOp::Mod => {
                         if !self.is_int(&left_type) && !matches!(left_type.kind(), TypeKind::LongLong) || !self.is_int(&right_type) && !matches!(right_type.kind(), TypeKind::LongLong) {
                             self.report_error("取模运算要求两边都是 int 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
                         }
-                        Type::int()
+                        promote_type(&left_type, &right_type)
                     }
                     BinaryOp::Eq | BinaryOp::Ne => {
                         if !self.is_comparable(&left_type, &right_type) {
@@ -59,11 +78,22 @@ impl TypeChecker {
                         }
                         Type::int()
                     }
-                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor | BinaryOp::Shl | BinaryOp::Shr => {
+                    BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => {
                         if !self.is_int(&left_type) || !self.is_int(&right_type) {
                             self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3048_BitOpTypeError);
                         }
-                        Type::int()
+                        promote_type(&left_type, &right_type)
+                    }
+                    BinaryOp::Shl | BinaryOp::Shr => {
+                        if !self.is_int(&left_type) || !self.is_int(&right_type) {
+                            self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3048_BitOpTypeError);
+                        }
+                        // Result type is the promoted left operand type (C semantics)
+                        if left_type.kind() == TypeKind::Char {
+                            Type::Int { is_unsigned: left_type.is_unsigned(), is_const: false }
+                        } else {
+                            left_type.clone()
+                        }
                     }
                 };
                 ty.clone()
@@ -143,7 +173,7 @@ impl TypeChecker {
             Expr::LongLiteral { .. } => Type::long_long(),
             Expr::StringLiteral { value, .. } => {
                 let array_size = value.len() as i32 + 1;
-                Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false }
+                Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false, is_vla: false, vla_dims: vec![] }
             }
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
@@ -267,6 +297,13 @@ impl TypeChecker {
                         }
                     }
                 }
+                if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left.as_ref() {
+                    if let Type::Pointer { pointee, .. } = operand.ty() {
+                        if pointee.is_const() {
+                            self.report_error("不能通过非 const 指针修改 const 数据", loc, ErrorCode::E3057_ConstViolation);
+                        }
+                    }
+                }
                 if !self.check_assignable(&left_type, &right_type, loc) {
                     self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
                 } else {
@@ -278,9 +315,18 @@ impl TypeChecker {
                 *ty = left_type.clone();
                 ty.clone()
             }
-            Expr::Sizeof { operand, ty, .. } => {
+            Expr::Sizeof { operand, ty, loc, .. } => {
                 if let Some(ref mut op) = operand {
                     self.resolve_expr_type(op);
+                    if let Expr::Identifier { name, .. } = &**op {
+                        if self.current_func_params.contains(name) {
+                            if let Some(sym) = self.lookup_var(name) {
+                                if sym.ty.is_pointer() {
+                                    self.report_warning("数组参数已退化为指针，sizeof 结果为指针大小，而非数组总大小。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+                                }
+                            }
+                        }
+                    }
                 }
                 *ty = Type::int();
                 ty.clone()

@@ -4275,3 +4275,360 @@ int main() {
     assert!(out.iter().any(|l| l.contains("hello")), "fgets should read first line: {:?}", out);
     assert!(out.iter().any(|l| l.contains("world")), "fgets should read second line: {:?}", out);
 }
+
+#[test]
+fn test_e2e_double_pointer_basic() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 42;
+    int *p = &x;
+    int **pp = &p;
+    printf("%d\n", **pp);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "42", "Double pointer dereference should print 42");
+}
+
+#[test]
+fn test_e2e_double_pointer_struct() {
+    let src = r#"
+#include <stdio.h>
+struct Node { int val; struct Node *next; };
+void push_front(struct Node **head, int val) {
+    struct Node *n = (struct Node*)malloc(sizeof(struct Node));
+    n->val = val;
+    n->next = *head;
+    *head = n;
+}
+int main() {
+    struct Node *head = 0;
+    push_front(&head, 10);
+    push_front(&head, 20);
+    printf("%d\n", head->val);
+    printf("%d\n", head->next->val);
+    while (head) {
+        struct Node *tmp = head;
+        head = head->next;
+        free(tmp);
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "2010", "struct Node** linked-list pattern should work");
+}
+
+#[test]
+fn test_e2e_double_pointer_cast_and_index() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 1, b = 2;
+    int *arr[2];
+    arr[0] = &a;
+    arr[1] = &b;
+    int **pp = (int**)arr;
+    printf("%d\n", *pp[0]);
+    printf("%d\n", *pp[1]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "12", "Double pointer cast and index should work");
+}
+
+#[test]
+fn test_e2e_double_pointer_arithmetic() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 10, y = 20;
+    int *arr[2];
+    arr[0] = &x;
+    arr[1] = &y;
+    int **pp = arr;
+    printf("%d\n", **pp);
+    pp = pp + 1;
+    printf("%d\n", **pp);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "1020", "Double pointer arithmetic should step by 4 bytes");
+}
+
+
+#[test]
+fn test_e2e_struct_return_by_value_basic() {
+    let src = r#"
+#include <stdio.h>
+struct Point { int x; int y; };
+struct Point make_point(int x, int y) {
+    struct Point p;
+    p.x = x;
+    p.y = y;
+    return p;
+}
+int main() {
+    struct Point p = make_point(3, 4);
+    printf("%d %d\n", p.x, p.y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "3 4", "Struct return by value should copy fields correctly");
+}
+
+#[test]
+fn test_e2e_struct_return_by_value_member_access() {
+    let src = r#"
+#include <stdio.h>
+struct Rect { int w; int h; };
+struct Rect make_rect(int w, int h) {
+    struct Rect r;
+    r.w = w;
+    r.h = h;
+    return r;
+}
+int main() {
+    printf("%d\n", make_rect(5, 6).w);
+    printf("%d\n", make_rect(5, 6).h);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "56", "Direct member access on struct return should work");
+}
+
+#[test]
+fn test_e2e_struct_return_by_value_as_arg() {
+    let src = r#"
+#include <stdio.h>
+struct Vec { int x; int y; };
+struct Vec make_vec(int x, int y) {
+    struct Vec v;
+    v.x = x;
+    v.y = y;
+    return v;
+}
+int area(struct Vec v) {
+    return v.x * v.y;
+}
+int main() {
+    printf("%d\n", area(make_vec(3, 4)));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "12", "Struct return used as function argument should work");
+}
+
+
+#[test]
+fn test_e2e_vla_basic() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 5;
+    int a[n];
+    a[0] = 10;
+    a[1] = 20;
+    a[4] = 50;
+    printf("%d %d %d\n", a[0], a[1], a[4]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "10 20 50", "VLA basic access should work");
+}
+
+#[test]
+fn test_e2e_vla_sizeof() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 5;
+    int a[n];
+    printf("%d\n", sizeof(a));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "20", "sizeof(VLA) should be n * sizeof(int) = 20");
+}
+
+#[test]
+fn test_e2e_vla_in_loop() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 4;
+    int a[n];
+    for (int i = 0; i < n; i++) {
+        a[i] = i * 10;
+    }
+    for (int i = 0; i < n; i++) {
+        printf("%d ", a[i]);
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "0 10 20 30 ", "VLA in loop should work");
+}
+
+#[test]
+fn test_e2e_vla_pass_to_function() {
+    let src = r#"
+#include <stdio.h>
+int sum(int a[], int n) {
+    int s = 0;
+    for (int i = 0; i < n; i++) {
+        s += a[i];
+    }
+    return s;
+}
+int main() {
+    int n = 5;
+    int a[n];
+    for (int i = 0; i < n; i++) {
+        a[i] = i + 1;
+    }
+    printf("%d\n", sum(a, n));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "15", "VLA passed to function should decay to pointer");
+}
+
+#[test]
+fn test_e2e_vla_multidim_first_vla() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 3;
+    int a[n][3];
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < 3; j++) {
+            a[i][j] = i * 10 + j;
+        }
+    }
+    printf("%d %d %d\n", a[0][0], a[1][2], a[2][1]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "0 12 21", "Multidim VLA with constant second dim should work");
+}
+
+#[test]
+fn test_e2e_vla_subarray_sizeof() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 3;
+    int a[n][3];
+    printf("%d\n", sizeof(a[0]));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    println!("DEBUG subarray sizeof: {:?}", result);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "12", "sizeof(a[0]) for VLA subarray should be 12");
+}
+
+#[test]
+fn test_e2e_vla_func_param() {
+    let src = r#"
+#include <stdio.h>
+void fill(int n, int a[n]) {
+    for (int i = 0; i < n; i++) {
+        a[i] = i * 10;
+    }
+}
+int main() {
+    int n = 4;
+    int a[n];
+    fill(n, a);
+    for (int i = 0; i < n; i++) {
+        printf("%d ", a[i]);
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "0 10 20 30 ", "VLA as function parameter should work");
+}
+
+#[test]
+fn test_e2e_vla_multidim_all_vla() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 2;
+    int m = 3;
+    int a[n][m];
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < m; j++) {
+            a[i][j] = i * 10 + j;
+        }
+    }
+    printf("%d %d %d %d\n", a[0][0], a[0][2], a[1][0], a[1][2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    println!("DEBUG all vla: {:?}", result);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "0 2 10 12", "All-dim VLA should work");
+}

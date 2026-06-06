@@ -287,9 +287,9 @@ impl Parser {
     }
 
     pub(crate) fn parse_type_only(&mut self) -> Type {
-        let base = self.parse_base_type();
-        if self.match_token(TokenType::Star) {
-            return Type::pointer_to(base.clone());
+        let mut base = self.parse_base_type();
+        while self.match_token(TokenType::Star) {
+            base = Type::pointer_to(base);
         }
         base
     }
@@ -404,7 +404,7 @@ impl Parser {
             let value = self.previous().text.clone();
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
             let array_size = value.len() as i32 + 1; // including null terminator
-            return Expr::StringLiteral { value, loc, ty: Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false } };
+            return Expr::StringLiteral { value, loc, ty: Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false, is_vla: false, vla_dims: vec![] } };
         }
         if self.match_token(TokenType::Null) {
             let loc = SourceLoc { line: self.previous().line, column: self.previous().column };

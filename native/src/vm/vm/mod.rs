@@ -60,6 +60,7 @@ pub struct CallFrame {
     pub locals_base: u32,
     pub local_count: i32,
     pub func_name: String,
+    pub original_stack_top: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -489,6 +490,7 @@ impl CideVM {
         let start_step = self.step_count;
 
         // Setup call frame
+        let original_stack_top = self.mem_stack_top;
         self.mem_stack_top -= frame_size_u32;
         let locals_base = self.mem_stack_top;
         // Arguments: args[0] is first param, args[n-1] is last param.
@@ -525,6 +527,7 @@ impl CideVM {
             locals_base,
             local_count: meta.local_count,
             func_name,
+            original_stack_top,
         });
         self.rebuild_local_sym_map();
         self.ip = meta.ip;

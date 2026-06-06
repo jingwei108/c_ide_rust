@@ -127,4 +127,12 @@ define_opcode! {
     StoreMemQ = 109,
     SplitQ = 110,
     CallPtr = 111,
+    ULt = 112,
+    ULe = 113,
+    UGt = 114,
+    UGe = 115,
+    UDiv = 116,
+    UMod = 117,
+    LShr = 118,
+    StackAlloc = 119,
 }

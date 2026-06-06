@@ -28,6 +28,8 @@
 | 文档 | 说明 |
 |------|------|
 | [`current/ALGORITHM_DATASTRUCTURE_DESIGN.md`](current/ALGORITHM_DATASTRUCTURE_DESIGN.md) | 算法与数据结构支持设计（模式识别 / 运行时验证 / 轨迹分析） |
+| [`current/DATASTRUCTURE_TEMPLATE_ROADMAP.md`](current/DATASTRUCTURE_TEMPLATE_ROADMAP.md) | 数据结构教材算法模板拓展路线图（P0/P1/P2 全景清单） |
+| [`current/DATASTRUCTURE_SYNTAX_ROADMAP.md`](current/DATASTRUCTURE_SYNTAX_ROADMAP.md) | 数据结构教材语法支持路线图（编译器 C 子集补齐计划） |
 | [`current/ZERO_INTRUSIVE_VISUALIZATION.md`](current/ZERO_INTRUSIVE_VISUALIZATION.md) | 零侵入可视化计划（数组排序 / 链表 / 二叉树） |
 | [`current/SHADOW_VERIFICATION_FRAMEWORK.md`](current/SHADOW_VERIFICATION_FRAMEWORK.md) | Clang 影子验证框架 |
 | [`current/SHADOW_VS_CI.md`](current/SHADOW_VS_CI.md) | 影子验证 vs CI 对比分析 |

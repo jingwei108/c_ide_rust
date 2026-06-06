@@ -117,6 +117,37 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                                 out.push_str(&(arg as i32).to_string());
                             }
                         }
+                        'u' => {
+                            if is_ll {
+                                out.push_str(&(arg as u64).to_string());
+                            } else {
+                                out.push_str(&(arg as u32).to_string());
+                            }
+                        }
+                        'x' => {
+                            if is_ll {
+                                out.push_str(&format!("{:x}", arg as u64));
+                            } else {
+                                out.push_str(&format!("{:x}", arg as u32));
+                            }
+                        }
+                        'X' => {
+                            if is_ll {
+                                out.push_str(&format!("{:X}", arg as u64));
+                            } else {
+                                out.push_str(&format!("{:X}", arg as u32));
+                            }
+                        }
+                        'o' => {
+                            if is_ll {
+                                out.push_str(&format!("{:o}", arg as u64));
+                            } else {
+                                out.push_str(&format!("{:o}", arg as u32));
+                            }
+                        }
+                        'p' => {
+                            out.push_str(&format!("{:p}", arg as u32 as *const ()));
+                        }
                         'f' => {
                             let f = f64::from_bits(arg);
                             let prec = precision.unwrap_or(6);
@@ -429,6 +460,27 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
                 } else {
                     let value: i32 = token.parse().unwrap_or(0);
                     vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
+                }
+            }
+            'u' => {
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' {
+                    pos += 1;
+                }
+                while pos < chars.len() && chars[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                if *len_mod >= 2 {
+                    let value: u64 = token.parse().unwrap_or(0);
+                    vm.store_i64(ptr, value, &super::instruction::SourceLoc::default());
+                } else {
+                    let value: u32 = token.parse().unwrap_or(0);
+                    vm.store_i32(ptr, value as i32, &super::instruction::SourceLoc::default());
                 }
             }
             'f' => {

@@ -350,6 +350,24 @@ impl CideVM {
                             self.push(low as u64);
                             self.push(high as u64);
                         }
+                        OpCode::StackAlloc => {
+                            let size = self.pop() as i32;
+                            if size < 0 {
+                                self.trap("StackAlloc: 分配的栈空间大小为负数", loc);
+                                return;
+                            }
+                            let aligned_size = ((size + 3) & !3) as u32;
+                            if aligned_size > self.mem_stack_top {
+                                self.trap("StackAlloc: 栈溢出", loc);
+                                return;
+                            }
+                            if self.mem_stack_top - aligned_size < NULL_TRAP_SIZE {
+                                self.trap("StackAlloc: 栈溢出（触及保留区）", loc);
+                                return;
+                            }
+                            self.mem_stack_top -= aligned_size;
+                            self.push(self.mem_stack_top as u64);
+                        }
             _ => {}
         }
     }
@@ -397,11 +415,31 @@ impl CideVM {
                                 self.push((a / b) as u64);
                             }
                         }
+                        OpCode::UDiv => {
+                            let b = self.pop() as u32;
+                            let a = self.pop() as u32;
+                            if b == 0 {
+                                let msg = self.format_div_zero_error(a as i32, b as i32);
+                                self.trap(&msg, loc);
+                            } else {
+                                self.push((a / b) as u64);
+                            }
+                        }
                         OpCode::Mod => {
                             let b = self.pop() as i32;
                             let a = self.pop() as i32;
                             if b == 0 {
                                 let msg = self.format_div_zero_error(a, b);
+                                self.trap(&msg, loc);
+                            } else {
+                                self.push((a % b) as u64);
+                            }
+                        }
+                        OpCode::UMod => {
+                            let b = self.pop() as u32;
+                            let a = self.pop() as u32;
+                            if b == 0 {
+                                let msg = self.format_div_zero_error(a as i32, b as i32);
                                 self.trap(&msg, loc);
                             } else {
                                 self.push((a % b) as u64);
@@ -426,6 +464,10 @@ impl CideVM {
                         OpCode::Le => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a <= b { 1 } else { 0 }); }
                         OpCode::Gt => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a > b { 1 } else { 0 }); }
                         OpCode::Ge => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a >= b { 1 } else { 0 }); }
+                        OpCode::ULt => { let b = self.pop() as u32; let a = self.pop() as u32; self.push(if a < b { 1 } else { 0 }); }
+                        OpCode::ULe => { let b = self.pop() as u32; let a = self.pop() as u32; self.push(if a <= b { 1 } else { 0 }); }
+                        OpCode::UGt => { let b = self.pop() as u32; let a = self.pop() as u32; self.push(if a > b { 1 } else { 0 }); }
+                        OpCode::UGe => { let b = self.pop() as u32; let a = self.pop() as u32; self.push(if a >= b { 1 } else { 0 }); }
                         OpCode::And => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 && b != 0 { 1 } else { 0 }); }
                         OpCode::Or  => { let b = self.pop() as i32; let a = self.pop() as i32; self.push(if a != 0 || b != 0 { 1 } else { 0 }); }
                         OpCode::Not => { let a = self.pop() as i32; self.push(if a != 0 { 0 } else { 1 }); }
@@ -452,6 +494,15 @@ impl CideVM {
                             let a = self.pop() as i32;
                             if !(0..32).contains(&b) {
                                 self.trap(&format!("Shr 移位量越界：{}（必须是 0~31）", b), loc);
+                            } else {
+                                self.push((a >> b) as u64);
+                            }
+                        }
+                        OpCode::LShr => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as u32;
+                            if !(0..32).contains(&b) {
+                                self.trap(&format!("LShr 移位量越界：{}（必须是 0~31）", b), loc);
                             } else {
                                 self.push((a >> b) as u64);
                             }
@@ -675,6 +726,7 @@ impl CideVM {
             self.trap(&format!("{}: 栈溢出（栈与堆发生碰撞）。请减少递归深度或动态内存分配。", op_name), loc);
             return;
         }
+        let original_stack_top = self.mem_stack_top;
         self.mem_stack_top -= frame_size_u32;
         let locals_base = self.mem_stack_top;
 
@@ -702,6 +754,7 @@ impl CideVM {
             locals_base,
             local_count: meta.local_count,
             func_name,
+            original_stack_top,
         });
         self.rebuild_local_sym_map();
         self.ip = meta.ip;
@@ -775,13 +828,13 @@ impl CideVM {
                             let frame = self.call_stack.pop().unwrap();
                             const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                             if frame.return_ip == HOST_CALLBACK_SENTINEL {
-                                self.mem_stack_top = frame.locals_base;
+                                self.mem_stack_top = frame.original_stack_top;
                                 self.push(ret_val);
                                 self.local_sym_map.clear();
                                 return Some(StepResult::Finished);
                             }
                             self.ip = frame.return_ip;
-                            self.mem_stack_top = frame.locals_base;
+                            self.mem_stack_top = frame.original_stack_top;
                             self.push(ret_val);
                             self.rebuild_local_sym_map();
                             None
@@ -793,12 +846,12 @@ impl CideVM {
                             let frame = self.call_stack.pop().unwrap();
                             const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                             if frame.return_ip == HOST_CALLBACK_SENTINEL {
-                                self.mem_stack_top = frame.locals_base;
+                                self.mem_stack_top = frame.original_stack_top;
                                 self.local_sym_map.clear();
                                 return Some(StepResult::Finished);
                             }
                             self.ip = frame.return_ip;
-                            self.mem_stack_top = frame.locals_base;
+                            self.mem_stack_top = frame.original_stack_top;
                             self.rebuild_local_sym_map();
                             None
                         }
@@ -897,21 +950,23 @@ impl CideVM {
 
             OpCode::LoadMem | OpCode::StoreMem | OpCode::LoadMemD | OpCode::StoreMemD |
             OpCode::LoadMemByte | OpCode::StoreMemByte | OpCode::LoadMemQ | OpCode::StoreMemQ |
-            OpCode::SplitD | OpCode::SplitQ => {
+            OpCode::SplitD | OpCode::SplitQ | OpCode::StackAlloc => {
                 self.execute_memory(op, operand, loc);
             }
 
-            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg => {
+            OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg |
+            OpCode::UDiv | OpCode::UMod => {
                 self.execute_arithmetic(op, operand, loc);
             }
 
             OpCode::Eq | OpCode::Ne | OpCode::Lt | OpCode::Le | OpCode::Gt | OpCode::Ge |
-            OpCode::And | OpCode::Or | OpCode::Not => {
+            OpCode::And | OpCode::Or | OpCode::Not |
+            OpCode::ULt | OpCode::ULe | OpCode::UGt | OpCode::UGe => {
                 self.execute_comparison(op, operand, loc);
             }
 
             OpCode::BitAnd | OpCode::BitOr | OpCode::BitXor | OpCode::BitNot |
-            OpCode::Shl | OpCode::Shr => {
+            OpCode::Shl | OpCode::Shr | OpCode::LShr => {
                 self.execute_bitwise(op, operand, loc);
             }
 

@@ -69,6 +69,7 @@ docs/                   设计文档、事故报告
 | Phase 24 | **语义智能补全 v2**：`CompletionEngine` 轻量级补全引擎（`native/src/engine/completion.rs`），基于编译快照 + 增量 Token 扫描；支持成员访问（`expr.` / `expr->`）、类型上下文、表达式上下文、格式字符串（`printf`/`scanf`）、预处理指令五种上下文感知补全；编译时从 AST 提取函数/变量/结构体/联合体/typedef 快照持久化到 `Session.compile.completion_snapshot`；增量扫描提取光标所在作用域局部变量；FRB 导出 `get_completion_candidates(source, line, column, prefix)`；Flutter `AutocompleteController` 增强为静态关键词 + 语义候选混合模式，150ms 防抖异步获取；`AutocompleteOverlay` 增强类型图标（Variable/Function/Struct/Union/Enum/Field/Format 等）与签名详情；函数补全自动插入括号并将光标定位到括号内 | ✅ 完成 |
 | Phase 25 | **模板 JIT（Trace-based Loop Accelerator）**：在 free-run 模式（`CideVM::run()`）中检测热点循环 trace（backward jump 目标命中超 100 次触发录制），将 trace 编译为预优化的函数指针序列（`jit_templates.rs`），跳过两层 match 分支；`StepEvent` 作为透明指令跳过录制；支持 side-exit（`JumpIfZero`/`JumpIfNotZero` 跳转被 taken 时退出 trace）；批量执行期间通过 `bulk_step_check` 保持 `step_count` 和 `max_steps` 的无限循环检测；运行完成后输出 `[JIT] 已编译 X 条 trace，加速执行 Y 步` 统计信息；统一模式保持逐指令执行不变 | ✅ 完成 |
 | Phase 26 | **Flutter Bridge 通信优化**：FRB `Stream` 模式替代 Timer 轮询（`run_auto_steps_stream`），Rust 后台线程批量执行 100 步后主动推送；差分编码（`StepPayloadDelta`）仅传输变化的变量值；符号表 dedup（`StepStreamBatch.symbol_table`）全局去重变量名/类型名/函数名等字符串；前端 `UnifiedNotifier` 订阅 Stream 并实时解码恢复完整 `StepPayload` | ✅ 完成 |
+| Phase 27 | **数据结构教材语法拓展 P0+P1**：函数参数数组退化语义修复（`sizeof(arr_param)=4`）+ `unsigned` 全链路语义支持（无符号比较/除法/取模/逻辑右移）+ 结构体数组嵌套初始化（`struct S arr[] = {{1,2},{3,4}}`）+ `const` 语义检查 + `%u`/`%lu`/`%x`/`%X`/`%o`/`%p` 格式说明符 + `extern` 声明 + sizeof 数组退化教学警告 + **VLA（变长数组）**全管线支持 | ✅ 完成 |
 
 ## 编码约定
 
@@ -86,7 +87,31 @@ docs/                   设计文档、事故报告
 - UI 线程：`Future.delayed` / `async-await`，无需显式主线程切换
 - 自定义组件：算法验证、内存映射、链表可视化、教程引导等均为 CustomPainter / Widget 实现
 
+## C 教学子集支持概览
 
+本项目支持的 C 语言教学子集覆盖 **Phase 1 ~ Phase 4** 完整能力，详细规范见 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。核心支持包括：
+
+**数据类型**：`int`、`char`、`float`、`double`、`unsigned`、`int*`、`char*`、`float*`、`double*`、`int[]`、`char[]`、`double[]`、`struct`（含按值返回）、`union`、`enum`、`typedef`
+
+**数组**：固定大小数组（一维/多维）、**VLA 变长数组**（`int a[n]` / `int a[n][3]`，局部作用域，运行时栈分配）、数组/字符串初始化列表、数组参数退化语义
+
+**指针**：取地址 `&`、解引用 `*`、指针算术（步长自动缩放）、**多级指针**（`int**`、`struct Node**`）、显式类型转换 `(int*)p`、函数指针（含间接调用、结构体成员、typedef）
+
+**语句**：变量声明（含多变量、块作用域）、`if/else`、`while`、`do...while`、`for`（C99 风格变量声明）、`switch/case/default`、`break`、`continue`、`return`
+
+**表达式**：算术、比较、逻辑（短路求值）、位运算 `& | ^ ~ << >>`、赋值（含复合赋值）、三目运算符 `?:`、数组索引、函数调用、`&`、`*`、结构体访问 `.` / `->`、`++` / `--`、`sizeof`
+
+**函数**：定义/调用/递归/前向声明、**函数按值返回结构体**（Hidden Return Pointer ABI）
+
+**内存**：`malloc`/`free`/`realloc`
+
+**I/O**：`printf`/`scanf`/`fprintf`/`fgets`/`fputs`、`getchar`/`putchar`
+
+**字符串**：`strlen`、`strcpy`、`strcmp`、`strcat`、`atoi`
+
+**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`#define` 宏（对象宏/参数化宏/嵌套调用）
+
+**明确不支持**：`goto`、bitfield、文件 I/O（沙盒中不支持）、`volatile` / `restrict`、全局 `static`、完整预处理器（仅 `#define` 常量宏）
 
 ## 已知限制
 
@@ -94,6 +119,8 @@ docs/                   设计文档、事故报告
 - **`double`** — ✅ **已完整支持**（64 位 f64，字节偏移架构，含 `sizeof(double)=8`、`printf("%f")` 读取 f64）
 - **~~函数调用参数的隐式转换提示~~** — ✅ **已解决（2026-06-05）**：`printf`/`scanf`/`fprintf` 格式字符串与参数类型静态匹配检查已落地。传入 int 给 `%f`、传入 float* 给 `%d` 等不匹配场景会在编译期报错（E3062/E3063）
 - **参数化宏调用后带分号** — 形如 `SWAP(int,x,y);` 的参数化宏调用，若宏体本身已包含大括号 `{ ... }`，展开后形成 `{ ... };`（复合语句 + 空语句），当前 Parser 无法正确解析。 workaround：宏调用后不加额外分号（如 `SWAP(int,x,y)`），或使用 `do { ... } while(0)` 模式
+- **VLA 边界检查** — VLA 数组索引暂不支持编译期/运行时的 `TrapBounds` 边界检查（`bound_size` 为 0，检查被跳过）
+- **`sizeof(VLA类型)`** — `sizeof(int[n])` 暂不支持，需使用 `sizeof(VLA变量)`（如 `sizeof(a)`）
 
 ### 已支持的关键特性
 - **逗号分隔的多变量声明** — `int a = 1, b = 2;`
@@ -102,7 +129,7 @@ docs/                   设计文档、事故报告
 - **参数化宏** — `#define MAX(a,b) ((a)>(b)?(a):(b))`，支持多参数、嵌套括号实参、嵌套宏调用（如 `MAX(1, MIN(2,3))`）
 - **for 循环变量作用域隔离** — `for (int i = 0; i < 3; i++)` 中的 `i` 只在循环体内可见，不覆盖外部同名变量；Block 语句块同样支持作用域隔离
 - **printf 可变参数** — 支持任意数量参数（如 `printf("%d %d %d", a, b, c)`）
-- **`printf`/`scanf` 格式字符串参数类型检查** — `printf("%f", 5)` 编译期报错（int 不匹配 `%f`）；`scanf("%d", &f)` 编译期报错（float* 不匹配 `%d`）。支持 `%d/%f/%s/%p/%c/%ld/%lf/%x/%o` 等常见格式说明符与参数类型的静态匹配
+- **`printf`/`scanf` 格式字符串参数类型检查** — `printf("%f", 5)` 编译期报错（int 不匹配 `%f`）；`scanf("%d", &f)` 编译期报错（float* 不匹配 `%d`）。支持 `%d/%f/%s/%p/%c/%ld/%lf/%x/%o/%u/%lu/%X` 等常见格式说明符与参数类型的静态匹配
 - **局部 `char` 数组字符串初始化** — `char s[6] = "hello"; printf("%s", s);`
 - **全局 `char` 数组字符串初始化** — `char s[6] = "hello";`（全局作用域字符串初始化，正确写入连续字节）
 - **`sizeof(字符串字面量)`** — `sizeof("hello")` 返回 6（含 `\0`），类型识别为 `char[N]` 数组而非 `char*` 指针
@@ -110,10 +137,16 @@ docs/                   设计文档、事故报告
 - **`typedef`** — `typedef int Integer; Integer a = 42;`
 - **匿名结构体变量声明** — `struct { int x; } v;`（直接以匿名 struct 类型声明变量，局部/全局均支持，含初始化列表）
 - **`typedef struct`** — `typedef struct { int x; } Point; Point p;`（匿名结构体 + typedef 别名）以及 `typedef struct Vec { int x; } VecAlias;`（命名结构体 + typedef 别名）
-- **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(union U)`、`sizeof(arr)`、`sizeof(ptr)`
+- **`sizeof` 运算符** — `sizeof(int)`、`sizeof(char)`、`sizeof(struct S)`、`sizeof(union U)`、`sizeof(arr)`、`sizeof(ptr)`；函数参数中使用 `sizeof(arr)` 时若 `arr` 为数组参数，发教学友好型警告提示其已退化为指针
 - **`scanf` 多参数** — `scanf("%d %d %d", &a, &b, &c)`
 - **指针算术** — `p++` / `p--` / `p + i` / `p - i` / `p - q`，自动按 pointee 类型大小缩放（`int*` 步长 4，`char*` 步长 1，`struct*` 步长为结构体大小）
 - **函数前向声明** — `int foo(int);` 原型声明，函数定义可放在调用者之后
+- **`extern` 声明** — `extern int global_var;` / `extern int foo(int);`；外部符号不分配存储空间，允许与后续定义共存（`extern int x; int x = 5;`）
+- **`const` 语义检查** — 禁止对 `const` 变量直接赋值；禁止通过非 `const` 指针修改 `const` 数据（`*p = 1` 其中 `p` 为 `const int*`）；`const int* → int*` 隐式转换时发警告（W3053）
+- **`unsigned` 全链路语义支持** — `unsigned int a = 0; a -= 1;` 正确回绕；无符号比较（`0xFFFFFFFFU > 0` 为真）；无符号除法/取模（`UDiv`/`UMod`）；逻辑右移 `LShr`（`0xFFFFFFFFU >> 1 = 0x7FFFFFFF`）；`printf("%u", x)` / `scanf("%u", &x)` 正确按 `u32` 解释
+- **结构体数组嵌套初始化** — `struct S { int x, y; }; struct S arr[] = {{1, 2}, {3, 4}};` 局部/全局均支持；嵌套结构体初始化 `struct Outer { struct Inner i; int c; } o = {{1, 2}, 3};`
+- **函数参数数组退化语义** — `void f(int a[5])` 中 `a` 在符号表中类型为 `int*`（而非 `Array`）；`sizeof(a)` 返回 4；多维数组参数 `void f(int a[3][3])` 正确退化为 `int (*a)[3]`
+- **VLA（变长数组）** — `int a[n];`、`int a[n][3];`、`int a[n][m];` 局部声明；运行时通过 `StackAlloc` 指令从栈动态分配；多维 VLA 支持运行时 stride 计算；`sizeof(a)` / `sizeof(a[0])` 运行时求值；函数参数中 VLA 自动退化为指针（`void f(int n, int a[n])`）；全局/静态 VLA 编译期明确拒绝
 - **字符串库函数** — `strlen(s)`、`strcpy(dest, src)`、`strcmp(a, b)`（宿主导入函数）
 - **显式类型转换（Cast）** — `(int*)p`、`(char*)arr`、`(float)a`、`(int)b` 等标量/指针间转换
 - **`fprintf`** — `fprintf(stdout, "format", ...)` / `fprintf(stderr, "format", ...)`，stream 参数被忽略，输出行为与 `printf` 相同
@@ -121,6 +154,8 @@ docs/                   设计文档、事故报告
 - **`realloc`** — `realloc(ptr, new_size)`，支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
 - **`qsort`** — `qsort(base, nmemb, size, compar)`，支持用户自定义比较函数（通过 VM 调用用户函数）
 - **`union` 类型** — `union U { int i; double d; }; union U u; u.i = 1; u.d = 3.14; printf("%.2f", u.d);`，内存布局为所有字段 offset=0、size=max(fields)，支持成员访问、指针访问（`p->i`）、`sizeof(union U)`
+- **函数按值返回结构体** — `struct S make() { struct S s; return s; }`，采用隐藏返回指针 ABI：Caller 分配临时缓冲区作为隐藏首参，Callee 将返回值复制到该缓冲区；支持赋值给变量（`struct S s = make()`）、直接成员访问（`make().x`）、作为函数参数传递（`area(make_vec(3,4))`）
+- **多级指针（`int**` / `struct Node**`）** — 声明、解引用（`**pp`）、取地址（`&p`）、数组索引（`pp[0]`）、指针算术（`pp + 1`步长 4）、显式 cast（`(int**)p`、`(struct Node**)p`）
 - **`static` 局部变量** — `static int count = 0;` 分配在全局内存区，跨函数调用持久化；支持读写、自增自减、取地址、数组状态保持；初始化只在首次进入函数时执行一次
 - **统一模式 / 时间旅行** — 点击"运行"后自动逐语句执行并收集每步状态快照；可随时暂停、单步前进、拖动进度条回退到任意历史步；系统从最近检查点（每 20 步）恢复 VM 状态并正向重放；运行时异常自动回退到上一步并弹出知识卡片诊断
   - `VMSnapshot` 全量快照（`vm/snapshot.rs`）：1MB 内存 + 运行时状态 + 内存管理状态

@@ -14,7 +14,7 @@ pub enum TypeKind {
     Function,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Type {
     Void { is_const: bool },
     Int { is_unsigned: bool, is_const: bool },
@@ -31,6 +31,8 @@ pub enum Type {
         array_size: i32,
         dims: Vec<i32>,
         is_const: bool,
+        is_vla: bool,
+        vla_dims: Vec<Box<Expr>>,
     },
     Function {
         return_type: Box<Type>,
@@ -40,6 +42,32 @@ pub enum Type {
     Struct { name: String, is_const: bool },
     Union { name: String, is_const: bool },
 }
+
+impl PartialEq for Type {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Type::Void { is_const: a }, Type::Void { is_const: b }) => a == b,
+            (Type::Int { is_unsigned: a1, is_const: a2 }, Type::Int { is_unsigned: b1, is_const: b2 }) => a1 == b1 && a2 == b2,
+            (Type::Char { is_unsigned: a1, is_const: a2 }, Type::Char { is_unsigned: b1, is_const: b2 }) => a1 == b1 && a2 == b2,
+            (Type::Float { is_const: a }, Type::Float { is_const: b }) => a == b,
+            (Type::Double { is_const: a }, Type::Double { is_const: b }) => a == b,
+            (Type::LongLong { is_unsigned: a1, is_const: a2 }, Type::LongLong { is_unsigned: b1, is_const: b2 }) => a1 == b1 && a2 == b2,
+            (Type::Pointer { pointee: a, is_const: a2 }, Type::Pointer { pointee: b, is_const: b2 }) => a == b && a2 == b2,
+            (
+                Type::Array { element: a, array_size: a2, dims: a3, is_const: a4, is_vla: a5, .. },
+                Type::Array { element: b, array_size: b2, dims: b3, is_const: b4, is_vla: b5, .. },
+            ) => a == b && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5,
+            (Type::Function { return_type: a, param_types: a2, is_const: a3 }, Type::Function { return_type: b, param_types: b2, is_const: b3 }) => {
+                a == b && a2 == b2 && a3 == b3
+            }
+            (Type::Struct { name: a, is_const: a2 }, Type::Struct { name: b, is_const: b2 }) => a == b && a2 == b2,
+            (Type::Union { name: a, is_const: a2 }, Type::Union { name: b, is_const: b2 }) => a == b && a2 == b2,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for Type {}
 
 impl Default for Type {
     fn default() -> Self {
@@ -74,7 +102,7 @@ impl Type {
     }
     pub fn array_of(element: Type, dims: Vec<i32>) -> Self {
         let array_size = if dims.is_empty() { 0 } else { dims.iter().map(|&d| if d > 0 { d } else { 1 }).product() };
-        Type::Array { element: Box::new(element), array_size, dims, is_const: false }
+        Type::Array { element: Box::new(element), array_size, dims, is_const: false, is_vla: false, vla_dims: vec![] }
     }
     pub fn struct_type(name: impl Into<String>) -> Self {
         Type::Struct { name: name.into(), is_const: false }
@@ -129,6 +157,10 @@ impl Type {
 
     pub fn dims(&self) -> &[i32] {
         match self { Type::Array { dims, .. } => dims.as_slice(), _ => &[] }
+    }
+
+    pub fn is_vla(&self) -> bool {
+        match self { Type::Array { is_vla, .. } => *is_vla, _ => false }
     }
 
     pub fn is_unsigned(&self) -> bool {
@@ -219,14 +251,16 @@ impl Type {
     pub fn subscript_type(&self) -> Self {
         if !self.is_array() { return self.clone(); }
         match self {
-            Type::Array { element, dims, is_const, .. } => {
+            Type::Array { element, dims, is_const, is_vla, vla_dims, .. } => {
                 if dims.len() <= 1 {
                     *element.clone()
                 } else {
                     let mut new_dims = dims.clone();
                     new_dims.remove(0);
                     let new_array_size = new_dims.iter().map(|&d| if d > 0 { d } else { 1 }).product();
-                    Type::Array { element: element.clone(), array_size: new_array_size, dims: new_dims, is_const: *is_const }
+                    let mut new_vla_dims = vla_dims.clone();
+                    if !new_vla_dims.is_empty() { new_vla_dims.remove(0); }
+                    Type::Array { element: element.clone(), array_size: new_array_size, dims: new_dims, is_const: *is_const, is_vla: *is_vla, vla_dims: new_vla_dims }
                 }
             }
             _ => self.clone(),
@@ -253,7 +287,7 @@ impl Type {
                 };
                 Type::Pointer { pointee: Box::new(inferred_base), is_const: false }
             }
-            TypeKind::Array => Type::Array { element: Box::new(Type::Void { is_const: false }), array_size: 0, dims: vec![], is_const: false },
+            TypeKind::Array => Type::Array { element: Box::new(Type::Void { is_const: false }), array_size: 0, dims: vec![], is_const: false, is_vla: false, vla_dims: vec![] },
             TypeKind::Function => Type::Function { return_type: Box::new(Type::int()), param_types: vec![], is_const: false },
         }
     }
@@ -271,9 +305,14 @@ impl std::fmt::Display for Type {
             Type::Struct { name, .. } => write!(f, "struct {}", name),
             Type::Union { name, .. } => write!(f, "union {}", name),
             Type::Pointer { pointee, .. } => write!(f, "{}*", pointee),
-            Type::Array { element, dims, array_size, .. } => {
+            Type::Array { element, dims, array_size, is_vla, .. } => {
                 write!(f, "{}", element)?;
-                if !dims.is_empty() {
+                if *is_vla {
+                    for _ in dims {
+                        write!(f, "[*]")?;
+                    }
+                    Ok(())
+                } else if !dims.is_empty() {
                     for d in dims {
                         write!(f, "[{}]", d)?;
                     }
@@ -309,7 +348,7 @@ pub struct SourceLoc {
 // Expression Nodes
 // ============================================================================
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BinaryOp {
     Add, Sub, Mul, Div, Mod,
     Eq, Ne, Lt, Le, Gt, Ge,
@@ -317,17 +356,17 @@ pub enum BinaryOp {
     BitAnd, BitOr, BitXor, Shl, Shr,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UnaryOp {
     Neg, Not, BitNot, Addr, Deref, PreInc, PreDec, PostInc, PostDec,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AssignOp {
     Assign, AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Expr {
     Binary { op: BinaryOp, left: Box<Expr>, right: Box<Expr>, loc: SourceLoc, ty: Type },
     Unary { op: UnaryOp, operand: Box<Expr>, loc: SourceLoc, ty: Type },
@@ -427,6 +466,7 @@ pub struct FuncDecl {
     pub params: Vec<Param>,
     pub body: Option<Stmt>,
     pub is_static: bool,
+    pub is_extern: bool,
     pub source_file: String,
 }
 
@@ -450,6 +490,7 @@ pub struct GlobalDecl {
     pub name: String,
     pub init: Option<Expr>,
     pub is_static: bool,
+    pub is_extern: bool,
     pub source_file: String,
 }
 
@@ -490,6 +531,10 @@ pub fn compute_type_size(
         TypeKind::Double | TypeKind::LongLong => 8,
         TypeKind::Pointer | TypeKind::Function => 4,
         TypeKind::Array => {
+            if ty.is_vla() {
+                // VLA variable itself is stored as a pointer on stack
+                return 4;
+            }
             let elem_count = ty.total_elements();
             let base_elem = base_element_type(ty);
             let elem_size = compute_type_size(base_elem, struct_defs, union_defs);

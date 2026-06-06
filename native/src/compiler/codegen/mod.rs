@@ -125,7 +125,13 @@ impl BytecodeGen {
         }
 
         // Pass 1: Register globals (byte offsets)
+        // First: non-extern definitions
         for g in &program.globals {
+            if g.is_extern { continue; }
+            if g.ty.is_vla() {
+                self.errors.push(format!("全局作用域不支持变长数组(VLA) '{}'", g.name));
+                continue;
+            }
             let sz = self.type_size(&g.ty);
             let offset = self.next_global_offset;
             self.global_indices.insert(g.name.clone(), offset);
@@ -138,6 +144,9 @@ impl BytecodeGen {
                             for i in 0..sz as usize {
                                 self.globals_init_32.push((offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
                             }
+                        } else if g.ty.is_struct() || (g.ty.is_array() && elements.iter().any(|e| matches!(e, Expr::InitList { .. }))) {
+                            // Struct or nested array init: use recursive expansion
+                            self.flatten_global_init(&g.ty, init, offset as u32);
                         } else {
                             // Non-char array: handle element-by-element
                             let elem_size = self.elem_type_size(&g.ty);
@@ -224,14 +233,33 @@ impl BytecodeGen {
             self.next_global_offset += sz;
         }
 
+        // Second: allocate placeholder for extern globals without a definition
+        for g in &program.globals {
+            if !g.is_extern || self.global_indices.contains_key(&g.name) {
+                continue;
+            }
+            let sz = self.type_size(&g.ty).max(4);
+            let offset = self.next_global_offset;
+            self.global_indices.insert(g.name.clone(), offset);
+            self.global_types.insert(g.name.clone(), g.ty.clone());
+            self.sym_index.insert(g.name.clone(), self.symbols.len() as i32);
+            self.symbols.push(VMSymbol {
+                name: g.name.clone(),
+                addr: offset as u32,
+                is_local: false,
+                ty: g.ty.clone(),
+                scope_depth: 0,
+                func_name: String::new(),
+            });
+            self.next_global_offset += sz;
+        }
+
         self.string_mem_offset = 0x1000 + self.next_global_offset as u32;
 
         // Pass 2: Register function metadata (func_index already filled above)
         for f in &program.funcs {
             if f.body.is_none() { continue; }
-            let param_sizes: Vec<i32> = f.params.iter().map(|p| {
-                if p.ty.is_array() { 4 } else { self.type_size(&p.ty) }
-            }).collect();
+            let param_sizes: Vec<i32> = f.params.iter().map(|p| self.type_size(&p.ty)).collect();
             self.func_table.insert(f.name.clone(), FuncMeta {
                 ip: 0,
                 arg_count: f.params.len() as i32,
@@ -320,8 +348,17 @@ impl BytecodeGen {
         self.next_local_offset = 0;
         let mut offset = 0;
         let mut param_sizes = Vec::new();
+        let returns_struct = self.func_table.get(name)
+            .map(|m| m.return_type.is_struct())
+            .unwrap_or(false);
+        if returns_struct {
+            param_sizes.push(1);
+            self.local_indices.insert("__ret_ptr".to_string(), offset);
+            self.local_types.insert("__ret_ptr".to_string(), Type::pointer_to(Type::int()));
+            offset += 4;
+        }
         for p in params.iter() {
-            let sz = if p.ty.is_array() { 4 } else { self.type_size(&p.ty) };
+            let sz = self.type_size(&p.ty);
             let aligned_sz = (sz + 3) & !3;
             let words = (sz + 3) / 4;
             param_sizes.push(words);
@@ -341,6 +378,9 @@ impl BytecodeGen {
         self.next_local_offset = offset;
         self.current_func_arg_bytes = offset;
         self.current_func_arg_count = params.len() as i32;
+        if returns_struct {
+            self.current_func_arg_count += 1;
+        }
         self.temp_slot0 = -1;
         self.temp_slot1 = -1;
         self.temp_slot2 = -1;
@@ -549,6 +589,10 @@ impl BytecodeGen {
             Stmt::VarDecl { var_type, name, init, extra_vars, is_static, loc } => {
                 let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc, is_static: bool| {
                     if is_static {
+                        if vty.is_vla() {
+                            self.report_error("static 变量不支持变长数组(VLA)", loc);
+                            return;
+                        }
                         if self.static_local_indices.contains_key(n) {
                             return;
                         }
@@ -653,7 +697,42 @@ impl BytecodeGen {
                         scope_depth: 1,
                         func_name: self.current_func.clone(),
                     });
-                    if let Some(ref mut e) = init {
+                    if vty.is_vla() {
+                        if let Type::Array { dims, vla_dims, .. } = vty {
+                            let mut vla_idx = 0;
+                            let mut vla_dims_clone = vla_dims.clone();
+                            let elem_size = self.elem_type_size(vty);
+                            if dims.is_empty() {
+                                self.emit(OpCode::PushConst, 0, loc);
+                            } else {
+                                for &dim in dims.iter() {
+                                    if dim > 0 {
+                                        self.emit(OpCode::PushConst, dim, loc);
+                                    } else if let Some(dim_expr) = vla_dims_clone.get_mut(vla_idx) {
+                                        self.gen_expr(dim_expr);
+                                        vla_idx += 1;
+                                    } else {
+                                        self.emit(OpCode::PushConst, 0, loc);
+                                    }
+                                }
+                                for _ in 1..dims.len() {
+                                    self.emit(OpCode::Mul, 0, loc);
+                                }
+                                if elem_size > 1 {
+                                    self.emit(OpCode::PushConst, elem_size, loc);
+                                    self.emit(OpCode::Mul, 0, loc);
+                                }
+                            }
+                            self.emit(OpCode::StackAlloc, 0, loc);
+                            self.emit(OpCode::StoreLocal, local_offset, loc);
+                        }
+                        if let Some(ref mut e) = init {
+                            if matches!(e, Expr::InitList { .. }) {
+                                self.report_error("变长数组(VLA)不支持初始化列表", loc);
+                            }
+                            // Ignore other initializers for VLA for now
+                        }
+                    } else if let Some(ref mut e) = init {
                         if vty.is_array() && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let values = flatten_init_list(elements, &mut self.errors);
@@ -678,37 +757,71 @@ impl BytecodeGen {
                                     self.emit(OpCode::PushConst, local_offset, loc);
                                     self.emit(OpCode::Add, 0, loc);
                                     self.emit(OpCode::StoreLocal, base_temp, loc);
-                                    let elem_size = self.elem_type_size(vty);
-                                    let count = vty.total_elements();
-                                    for i in 0..count as usize {
-                                        let addr_offset = (i as i32) * elem_size;
-                                        self.emit(OpCode::LoadLocal, base_temp, loc);
-                                        if addr_offset > 0 {
-                                            self.emit(OpCode::PushConst, addr_offset, loc);
-                                            self.emit(OpCode::Add, 0, loc);
+                                    let inner_ty = vty.subscript_type();
+                                    let has_nested_init = elements.iter().any(|e| matches!(e, Expr::InitList { .. }));
+                                    if has_nested_init && (inner_ty.is_struct() || inner_ty.is_array()) {
+                                        // Nested struct/array init: each element is an inner_ty value
+                                        let elem_stride = self.type_size(&inner_ty);
+                                        for (i, elem) in elements.iter_mut().enumerate() {
+                                            let addr_offset = (i as i32) * elem_stride;
+                                            self.gen_nested_init(base_temp, addr_offset, &inner_ty, elem, loc);
                                         }
-                                        if let Some(elem) = elements.get_mut(i) {
-                                            if elem_size == 8 {
-                                                self.gen_expr(elem);
+                                        // Zero-fill remaining elements
+                                        let expected_count = if !vty.dims().is_empty() && vty.dims()[0] > 0 {
+                                            vty.dims()[0] as usize
+                                        } else {
+                                            elements.len()
+                                        };
+                                        for i in elements.len()..expected_count {
+                                            let addr_offset = (i as i32) * elem_stride;
+                                            self.emit(OpCode::LoadLocal, base_temp, loc);
+                                            if addr_offset > 0 {
+                                                self.emit(OpCode::PushConst, addr_offset, loc);
+                                                self.emit(OpCode::Add, 0, loc);
+                                            }
+                                            self.emit(OpCode::PushConst, 0, loc);
+                                            if inner_ty.kind() == TypeKind::Double {
                                                 self.emit(OpCode::StoreMemD, 0, loc);
-                                            } else if matches!(elem, Expr::Identifier { .. }) {
-                                                // 函数名等复杂表达式需要 gen_expr
-                                                self.gen_expr(elem);
-                                                self.emit(OpCode::StoreMem, 0, loc);
+                                            } else if inner_ty.kind() == TypeKind::LongLong {
+                                                self.emit(OpCode::StoreMemQ, 0, loc);
                                             } else {
-                                                let val = values.get(i).copied().unwrap_or(0);
-                                                self.emit(OpCode::PushConst, val, loc);
                                                 self.emit(OpCode::StoreMem, 0, loc);
                                             }
-                                        } else {
-                                            if elem_size == 8 {
-                                                self.emit(OpCode::PushConst, 0, loc);
-                                                self.emit(OpCode::CastI2D, 0, loc);
-                                                self.emit(OpCode::StoreMemD, 0, loc);
+                                        }
+                                    } else {
+                                        // Flat scalar init: existing logic
+                                        let elem_size = self.elem_type_size(vty);
+                                        let count = vty.total_elements();
+                                        let values = flatten_init_list(elements, &mut self.errors);
+                                        for i in 0..count as usize {
+                                            let addr_offset = (i as i32) * elem_size;
+                                            self.emit(OpCode::LoadLocal, base_temp, loc);
+                                            if addr_offset > 0 {
+                                                self.emit(OpCode::PushConst, addr_offset, loc);
+                                                self.emit(OpCode::Add, 0, loc);
+                                            }
+                                            if let Some(elem) = elements.get_mut(i) {
+                                                if elem_size == 8 {
+                                                    self.gen_expr(elem);
+                                                    self.emit(OpCode::StoreMemD, 0, loc);
+                                                } else if matches!(elem, Expr::Identifier { .. }) {
+                                                    self.gen_expr(elem);
+                                                    self.emit(OpCode::StoreMem, 0, loc);
+                                                } else {
+                                                    let val = values.get(i).copied().unwrap_or(0);
+                                                    self.emit(OpCode::PushConst, val, loc);
+                                                    self.emit(OpCode::StoreMem, 0, loc);
+                                                }
                                             } else {
-                                                let val = values.get(i).copied().unwrap_or(0);
-                                                self.emit(OpCode::PushConst, val, loc);
-                                                self.emit(OpCode::StoreMem, 0, loc);
+                                                if elem_size == 8 {
+                                                    self.emit(OpCode::PushConst, 0, loc);
+                                                    self.emit(OpCode::CastI2D, 0, loc);
+                                                    self.emit(OpCode::StoreMemD, 0, loc);
+                                                } else {
+                                                    let val = values.get(i).copied().unwrap_or(0);
+                                                    self.emit(OpCode::PushConst, val, loc);
+                                                    self.emit(OpCode::StoreMem, 0, loc);
+                                                }
                                             }
                                         }
                                     }
@@ -725,18 +838,22 @@ impl BytecodeGen {
                                 for (i, elem) in elements.iter_mut().enumerate() {
                                     if i >= fields.len() { break; }
                                     let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
-                                    self.emit(OpCode::LoadLocal, base_temp, loc);
-                                    if offset > 0 {
-                                        self.emit(OpCode::PushConst, offset, loc);
-                                        self.emit(OpCode::Add, 0, loc);
-                                    }
-                                    self.gen_expr(elem);
-                                    if fields[i].ty.kind() == TypeKind::Double {
-                                        self.emit(OpCode::StoreMemD, 0, loc);
-                                    } else if fields[i].ty.kind() == TypeKind::LongLong {
-                                        self.emit(OpCode::StoreMemQ, 0, loc);
+                                    if matches!(elem, Expr::InitList { .. }) && (fields[i].ty.is_struct() || fields[i].ty.is_array()) {
+                                        self.gen_nested_init(base_temp, offset, &fields[i].ty, elem, loc);
                                     } else {
-                                        self.emit(OpCode::StoreMem, 0, loc);
+                                        self.emit(OpCode::LoadLocal, base_temp, loc);
+                                        if offset > 0 {
+                                            self.emit(OpCode::PushConst, offset, loc);
+                                            self.emit(OpCode::Add, 0, loc);
+                                        }
+                                        self.gen_expr(elem);
+                                        if fields[i].ty.kind() == TypeKind::Double {
+                                            self.emit(OpCode::StoreMemD, 0, loc);
+                                        } else if fields[i].ty.kind() == TypeKind::LongLong {
+                                            self.emit(OpCode::StoreMemQ, 0, loc);
+                                        } else {
+                                            self.emit(OpCode::StoreMem, 0, loc);
+                                        }
                                     }
                                 }
                             }
@@ -908,14 +1025,40 @@ impl BytecodeGen {
             }
             Stmt::Return { value, loc } => {
                 if let Some(ref mut v) = value {
-                    self.gen_expr(v);
-                    let ret_is_float = self.func_table.get(&self.current_func).map(|m| m.return_type.kind() == TypeKind::Float || m.return_type.kind() == TypeKind::Double).unwrap_or(false);
-                    if ret_is_float && v.ty().kind() != TypeKind::Float && v.ty().kind() != TypeKind::Double {
-                        self.emit(OpCode::CastI2F, 0, loc);
-                    } else if !ret_is_float && (v.ty().kind() == TypeKind::Float || v.ty().kind() == TypeKind::Double) {
-                        self.emit(OpCode::CastF2I, 0, loc);
+                    let ret_is_struct = self.func_table.get(&self.current_func).map(|m| m.return_type.is_struct()).unwrap_or(false);
+                    if ret_is_struct {
+                        let ret_ptr_offset = self.resolve_local("__ret_ptr");
+                        let size = self.type_size(v.ty());
+                        if size > 0 {
+                            let src_temp = self.get_temp_slot(0);
+                            self.gen_addr(v, loc);
+                            self.emit(OpCode::StoreLocal, src_temp, loc);
+                            for i in 0..size / 4 {
+                                self.emit(OpCode::LoadLocal, ret_ptr_offset, loc);
+                                if i > 0 {
+                                    self.emit(OpCode::PushConst, i * 4, loc);
+                                    self.emit(OpCode::Add, 0, loc);
+                                }
+                                self.emit(OpCode::LoadLocal, src_temp, loc);
+                                if i > 0 {
+                                    self.emit(OpCode::PushConst, i * 4, loc);
+                                    self.emit(OpCode::Add, 0, loc);
+                                }
+                                self.emit(OpCode::LoadMem, 0, loc);
+                                self.emit(OpCode::StoreMem, 0, loc);
+                            }
+                        }
+                        self.emit(OpCode::RetVoid, 0, loc);
+                    } else {
+                        self.gen_expr(v);
+                        let ret_is_float = self.func_table.get(&self.current_func).map(|m| m.return_type.kind() == TypeKind::Float || m.return_type.kind() == TypeKind::Double).unwrap_or(false);
+                        if ret_is_float && v.ty().kind() != TypeKind::Float && v.ty().kind() != TypeKind::Double {
+                            self.emit(OpCode::CastI2F, 0, loc);
+                        } else if !ret_is_float && (v.ty().kind() == TypeKind::Float || v.ty().kind() == TypeKind::Double) {
+                            self.emit(OpCode::CastF2I, 0, loc);
+                        }
+                        self.emit(OpCode::Ret, 0, loc);
                     }
-                    self.emit(OpCode::Ret, 0, loc);
                 } else {
                     self.emit(OpCode::RetVoid, 0, loc);
                 }
@@ -1066,7 +1209,10 @@ impl BytecodeGen {
                 if local_offset >= 0 {
                     if let Some(ty) = self.local_types.get(name) {
                         if ty.is_array() {
-                            if local_offset < self.current_func_arg_bytes {
+                            if ty.is_vla() {
+                                // VLA is stored as a pointer on stack
+                                self.emit(OpCode::LoadLocal, local_offset, &loc);
+                            } else if local_offset < self.current_func_arg_bytes {
                                 // Array parameter decayed to pointer
                                 self.emit(OpCode::LoadLocal, local_offset, &loc);
                             } else {
@@ -1133,6 +1279,12 @@ impl BytecodeGen {
                     result_is_long_long
                 };
                 let any_op_fp = op_is_double || op_is_float;
+                let is_unsigned = if is_comparison {
+                    (matches!(left.ty().kind(), TypeKind::Int | TypeKind::Char) && left.ty().is_unsigned())
+                    || (matches!(right.ty().kind(), TypeKind::Int | TypeKind::Char) && right.ty().is_unsigned())
+                } else {
+                    matches!(ty.kind(), TypeKind::Int | TypeKind::Char) && ty.is_unsigned()
+                };
 
                 // Short-circuit evaluation for && and ||
                 if *op == BinaryOp::And || *op == BinaryOp::Or {
@@ -1244,10 +1396,12 @@ impl BytecodeGen {
                         if result_is_double { self.emit(OpCode::DivD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::DivF, 0, &loc); }
                         else if result_is_long_long { self.emit(OpCode::DivQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::UDiv, 0, &loc); }
                         else { self.emit(OpCode::Div, 0, &loc); }
                     }
                     BinaryOp::Mod => {
                         if result_is_long_long { self.emit(OpCode::ModQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::UMod, 0, &loc); }
                         else { self.emit(OpCode::Mod, 0, &loc); }
                     }
                     BinaryOp::Eq => {
@@ -1266,31 +1420,38 @@ impl BytecodeGen {
                         if op_is_double { self.emit(OpCode::LtD, 0, &loc); }
                         else if op_is_float { self.emit(OpCode::LtF, 0, &loc); }
                         else if op_is_long_long { self.emit(OpCode::LtQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::ULt, 0, &loc); }
                         else { self.emit(OpCode::Lt, 0, &loc); }
                     }
                     BinaryOp::Le => {
                         if op_is_double { self.emit(OpCode::LeD, 0, &loc); }
                         else if op_is_float { self.emit(OpCode::LeF, 0, &loc); }
                         else if op_is_long_long { self.emit(OpCode::LeQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::ULe, 0, &loc); }
                         else { self.emit(OpCode::Le, 0, &loc); }
                     }
                     BinaryOp::Gt => {
                         if op_is_double { self.emit(OpCode::GtD, 0, &loc); }
                         else if op_is_float { self.emit(OpCode::GtF, 0, &loc); }
                         else if op_is_long_long { self.emit(OpCode::GtQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::UGt, 0, &loc); }
                         else { self.emit(OpCode::Gt, 0, &loc); }
                     }
                     BinaryOp::Ge => {
                         if op_is_double { self.emit(OpCode::GeD, 0, &loc); }
                         else if op_is_float { self.emit(OpCode::GeF, 0, &loc); }
                         else if op_is_long_long { self.emit(OpCode::GeQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::UGe, 0, &loc); }
                         else { self.emit(OpCode::Ge, 0, &loc); }
                     }
                     BinaryOp::BitAnd => self.emit(OpCode::BitAnd, 0, &loc),
                     BinaryOp::BitOr => self.emit(OpCode::BitOr, 0, &loc),
                     BinaryOp::BitXor => self.emit(OpCode::BitXor, 0, &loc),
                     BinaryOp::Shl => self.emit(OpCode::Shl, 0, &loc),
-                    BinaryOp::Shr => self.emit(OpCode::Shr, 0, &loc),
+                    BinaryOp::Shr => {
+                        if is_unsigned { self.emit(OpCode::LShr, 0, &loc); }
+                        else { self.emit(OpCode::Shr, 0, &loc); }
+                    }
                     BinaryOp::And | BinaryOp::Or => {}, // handled above
                 }
             }
@@ -1453,7 +1614,16 @@ impl BytecodeGen {
                     }
                 }
             }
-            Expr::Call { name, args, .. } => {
+            Expr::Call { name, args, ty, .. } => {
+                let is_struct_ret = ty.is_struct();
+                let ret_temp_offset = if is_struct_ret {
+                    let sz = (self.type_size(ty) + 3) & !3;
+                    let offset = self.next_local_offset;
+                    self.next_local_offset += sz;
+                    Some(offset)
+                } else {
+                    None
+                };
                 for arg in args.iter_mut().rev() {
                     let arg_ty_kind = arg.ty().kind();
                     let arg_ty = arg.ty();
@@ -1473,11 +1643,35 @@ impl BytecodeGen {
                                 for i in (0..words).rev() {
                                     self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
                                 }
+                            } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                                self.gen_expr(arg);
+                                let addr_temp = self.get_temp_slot(0);
+                                self.emit(OpCode::StoreLocal, addr_temp, &loc);
+                                for i in (0..words).rev() {
+                                    self.emit(OpCode::LoadLocal, addr_temp, &loc);
+                                    if i > 0 {
+                                        self.emit(OpCode::PushConst, i * 4, &loc);
+                                        self.emit(OpCode::Add, 0, &loc);
+                                    }
+                                    self.emit(OpCode::LoadMem, 0, &loc);
+                                }
                             } else {
                                 self.gen_expr(arg);
                                 for _ in 1..words {
                                     self.emit(OpCode::PushConst, 0, &loc);
                                 }
+                            }
+                        } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                            self.gen_expr(arg);
+                            let addr_temp = self.get_temp_slot(0);
+                            self.emit(OpCode::StoreLocal, addr_temp, &loc);
+                            for i in (0..words).rev() {
+                                self.emit(OpCode::LoadLocal, addr_temp, &loc);
+                                if i > 0 {
+                                    self.emit(OpCode::PushConst, i * 4, &loc);
+                                    self.emit(OpCode::Add, 0, &loc);
+                                }
+                                self.emit(OpCode::LoadMem, 0, &loc);
                             }
                         } else {
                             self.gen_expr(arg);
@@ -1502,6 +1696,11 @@ impl BytecodeGen {
                         }
                     }
                 }
+                if let Some(offset) = ret_temp_offset {
+                    self.emit(OpCode::GetFrameBase, 0, &loc);
+                    self.emit(OpCode::PushConst, offset, &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                }
                 if let Some(&idx) = self.func_index.get(name) {
                     self.emit(OpCode::Call, idx, &loc);
                 } else {
@@ -1512,14 +1711,28 @@ impl BytecodeGen {
                         self.emit(OpCode::PushConst, 0, &loc);
                     }
                 }
+                if let Some(offset) = ret_temp_offset {
+                    self.emit(OpCode::GetFrameBase, 0, &loc);
+                    self.emit(OpCode::PushConst, offset, &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                }
             }
-            Expr::CallPtr { callee, args, .. } => {
+            Expr::CallPtr { callee, args, ty, .. } => {
                 // Determine if this CallPtr will resolve to a user function call (needs SplitD/SplitQ)
                 // or a host/built-in call (passes 64-bit values directly).
                 let is_user_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
                     self.func_index.contains_key(name) || self.resolve_host_func_id(name) < 0
                 } else {
                     true // indirect calls are always user calls
+                };
+                let is_struct_ret = ty.is_struct();
+                let ret_temp_offset = if is_struct_ret {
+                    let sz = (self.type_size(ty) + 3) & !3;
+                    let offset = self.next_local_offset;
+                    self.next_local_offset += sz;
+                    Some(offset)
+                } else {
+                    None
                 };
                 for arg in args.iter_mut().rev() {
                     let arg_ty = arg.ty().clone();
@@ -1539,11 +1752,35 @@ impl BytecodeGen {
                                 for i in (0..words).rev() {
                                     self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
                                 }
+                            } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                                self.gen_expr(arg);
+                                let addr_temp = self.get_temp_slot(0);
+                                self.emit(OpCode::StoreLocal, addr_temp, &loc);
+                                for i in (0..words).rev() {
+                                    self.emit(OpCode::LoadLocal, addr_temp, &loc);
+                                    if i > 0 {
+                                        self.emit(OpCode::PushConst, i * 4, &loc);
+                                        self.emit(OpCode::Add, 0, &loc);
+                                    }
+                                    self.emit(OpCode::LoadMem, 0, &loc);
+                                }
                             } else {
                                 self.gen_expr(arg);
                                 for _ in 1..words {
                                     self.emit(OpCode::PushConst, 0, &loc);
                                 }
+                            }
+                        } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                            self.gen_expr(arg);
+                            let addr_temp = self.get_temp_slot(0);
+                            self.emit(OpCode::StoreLocal, addr_temp, &loc);
+                            for i in (0..words).rev() {
+                                self.emit(OpCode::LoadLocal, addr_temp, &loc);
+                                if i > 0 {
+                                    self.emit(OpCode::PushConst, i * 4, &loc);
+                                    self.emit(OpCode::Add, 0, &loc);
+                                }
+                                self.emit(OpCode::LoadMem, 0, &loc);
                             }
                         } else {
                             self.gen_expr(arg);
@@ -1570,20 +1807,40 @@ impl BytecodeGen {
                         }
                     }
                 }
+                if let Some(offset) = ret_temp_offset {
+                    self.emit(OpCode::GetFrameBase, 0, &loc);
+                    self.emit(OpCode::PushConst, offset, &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                }
                 if let Expr::Identifier { name, .. } = callee.as_ref() {
                     if let Some(&idx) = self.func_index.get(name) {
                         self.emit(OpCode::Call, idx, &loc);
+                        if is_struct_ret {
+                            self.emit(OpCode::GetFrameBase, 0, &loc);
+                            self.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+                            self.emit(OpCode::Add, 0, &loc);
+                        }
                         return;
                     }
                     // Host function: direct CallHost
                     let host_id = self.resolve_host_func_id(name);
                     if host_id >= 0 {
                         self.emit(OpCode::CallHost, host_id, &loc);
+                        if is_struct_ret {
+                            self.emit(OpCode::GetFrameBase, 0, &loc);
+                            self.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+                            self.emit(OpCode::Add, 0, &loc);
+                        }
                         return;
                     }
                 }
                 self.gen_expr(callee);
                 self.emit(OpCode::CallPtr, args.len() as i32, &loc);
+                if is_struct_ret {
+                    self.emit(OpCode::GetFrameBase, 0, &loc);
+                    self.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                }
             }
             Expr::Index { array, index, ty, .. } => {
                 self.gen_index(array, index, ty, &loc, false);
@@ -1619,14 +1876,53 @@ impl BytecodeGen {
                 self.gen_assign(op, left, right, &loc);
             }
             Expr::Sizeof { target_type, operand, .. } => {
-                let size = if let Some(ref t) = target_type {
-                    self.type_size(t)
-                } else if let Some(ref op) = operand {
-                    self.type_size(op.ty())
+                let is_vla = target_type.as_ref().map(|t| t.is_vla()).unwrap_or(false)
+                    || operand.as_ref().map(|op| op.ty().is_vla()).unwrap_or(false);
+                if is_vla {
+                    if let Some(ref op) = operand {
+                        let ty = op.ty();
+                        if let Type::Array { dims, vla_dims, .. } = ty {
+                            let mut vla_idx = 0;
+                            let mut vla_dims_clone = vla_dims.clone();
+                            let elem_size = self.elem_type_size(ty);
+                            if dims.is_empty() {
+                                self.emit(OpCode::PushConst, 0, &loc);
+                            } else {
+                                for &dim in dims.iter() {
+                                    if dim > 0 {
+                                        self.emit(OpCode::PushConst, dim, &loc);
+                                    } else if let Some(dim_expr) = vla_dims_clone.get_mut(vla_idx) {
+                                        self.gen_expr(dim_expr);
+                                        vla_idx += 1;
+                                    } else {
+                                        self.emit(OpCode::PushConst, 0, &loc);
+                                    }
+                                }
+                                for _ in 1..dims.len() {
+                                    self.emit(OpCode::Mul, 0, &loc);
+                                }
+                                if elem_size > 1 {
+                                    self.emit(OpCode::PushConst, elem_size, &loc);
+                                    self.emit(OpCode::Mul, 0, &loc);
+                                }
+                            }
+                        } else {
+                            self.emit(OpCode::PushConst, 4, &loc);
+                        }
+                    } else {
+                        self.report_error("sizeof(VLA类型) 暂不支持，请使用 sizeof(VLA变量)", &loc);
+                        self.emit(OpCode::PushConst, 0, &loc);
+                    }
                 } else {
-                    0
-                };
-                self.emit(OpCode::PushConst, size, &loc);
+                    let size = if let Some(ref t) = target_type {
+                        self.type_size(t)
+                    } else if let Some(ref op) = operand {
+                        self.type_size(op.ty())
+                    } else {
+                        0
+                    };
+                    self.emit(OpCode::PushConst, size, &loc);
+                }
             }
             Expr::Cast { expr, target_type, .. } => {
                 self.gen_expr(expr);
@@ -1659,6 +1955,113 @@ impl BytecodeGen {
         }
     }
 
+    /// Generate initialization code for a nested InitList at a base address stored in a local temp slot.
+    fn gen_nested_init(&mut self, base_temp: i32, offset: i32, target_ty: &Type, init: &mut Expr, loc: &SourceLoc) {
+        match init {
+            Expr::InitList { elements, .. } => {
+                if target_ty.is_struct() {
+                    let fields = self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default();
+                    for (i, elem) in elements.iter_mut().enumerate() {
+                        if i >= fields.len() { break; }
+                        let field_offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
+                        self.gen_nested_init(base_temp, offset + field_offset, &fields[i].ty, elem, loc);
+                    }
+                } else if target_ty.is_array() {
+                    let elem_size = self.elem_type_size(target_ty);
+                    let inner_ty = target_ty.subscript_type();
+                    for (i, elem) in elements.iter_mut().enumerate() {
+                        let elem_offset = offset + (i as i32) * elem_size;
+                        self.gen_nested_init(base_temp, elem_offset, &inner_ty, elem, loc);
+                    }
+                } else {
+                    if let Some(first) = elements.first_mut() {
+                        self.gen_nested_init(base_temp, offset, target_ty, first, loc);
+                    }
+                }
+            }
+            _ => {
+                self.emit(OpCode::LoadLocal, base_temp, loc);
+                if offset != 0 {
+                    self.emit(OpCode::PushConst, offset, loc);
+                    self.emit(OpCode::Add, 0, loc);
+                }
+                self.gen_expr(init);
+                match target_ty.kind() {
+                    TypeKind::Double => self.emit(OpCode::StoreMemD, 0, loc),
+                    TypeKind::LongLong => self.emit(OpCode::StoreMemQ, 0, loc),
+                    TypeKind::Char => self.emit(OpCode::StoreMemByte, 0, loc),
+                    _ => self.emit(OpCode::StoreMem, 0, loc),
+                }
+            }
+        }
+    }
+
+    /// Flatten a nested InitList into globals_init_32 / globals_init_64 for global variable initialization.
+    fn flatten_global_init(&mut self, target_ty: &Type, init: &Expr, base_offset: u32) {
+        match init {
+            Expr::InitList { elements, .. } => {
+                if target_ty.is_struct() {
+                    let fields = self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default();
+                    for (i, elem) in elements.iter().enumerate() {
+                        if i >= fields.len() { break; }
+                        let field_offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>() as u32;
+                        self.flatten_global_init(&fields[i].ty, elem, base_offset + field_offset);
+                    }
+                } else if target_ty.is_array() {
+                    let elem_size = self.elem_type_size(target_ty) as u32;
+                    let inner_ty = target_ty.subscript_type();
+                    for (i, elem) in elements.iter().enumerate() {
+                        let elem_offset = (i as u32) * elem_size;
+                        self.flatten_global_init(&inner_ty, elem, base_offset + elem_offset);
+                    }
+                } else {
+                    if let Some(first) = elements.first() {
+                        self.flatten_global_init(target_ty, first, base_offset);
+                    }
+                }
+            }
+            Expr::FloatLiteral { value, ty, .. } => {
+                let val64 = if ty.kind() == TypeKind::Double { value.to_bits() } else { (*value).to_bits() };
+                self.globals_init_64.push((base_offset, val64));
+            }
+            Expr::LongLiteral { value, .. } => {
+                self.globals_init_64.push((base_offset, (*value as f64).to_bits()));
+            }
+            Expr::Literal { value, .. } => {
+                if target_ty.kind() == TypeKind::Double || target_ty.kind() == TypeKind::LongLong {
+                    self.globals_init_64.push((base_offset, (*value as f64).to_bits()));
+                } else {
+                    self.globals_init_32.push((base_offset, *value));
+                }
+            }
+            Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
+                match operand.as_ref() {
+                    Expr::FloatLiteral { value, ty, .. } => {
+                        let val64 = if ty.kind() == TypeKind::Double { (-*value).to_bits() } else { (-*value).to_bits() };
+                        self.globals_init_64.push((base_offset, val64));
+                    }
+                    Expr::LongLiteral { value, .. } => {
+                        self.globals_init_64.push((base_offset, (-(*value as f64)).to_bits()));
+                    }
+                    Expr::Literal { value, .. } => {
+                        if target_ty.kind() == TypeKind::Double || target_ty.kind() == TypeKind::LongLong {
+                            self.globals_init_64.push((base_offset, (-(*value as f64)).to_bits()));
+                        } else {
+                            self.globals_init_32.push((base_offset, -*value));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            Expr::Identifier { name, .. } => {
+                if let Some(&idx) = self.func_index.get(name) {
+                    self.globals_init_32.push((base_offset, idx));
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn gen_member_addr(&mut self, object: &mut Expr, member: &str, loc: &SourceLoc) {
         if object.ty().is_pointer() {
             self.gen_expr(object);
@@ -1677,6 +2080,9 @@ impl BytecodeGen {
                 self.report_error("未声明的结构体变量", loc);
                 self.emit(OpCode::PushConst, 0, loc);
             }
+        } else if object.ty().is_struct() {
+            // 函数按值返回结构体等复杂表达式，gen_expr 会留下地址
+            self.gen_expr(object);
         } else {
             self.report_error("复杂结构体表达式暂不支持", loc);
             self.emit(OpCode::PushConst, 0, loc);
@@ -1720,7 +2126,13 @@ impl BytecodeGen {
             }
         }
 
-        self.emit(OpCode::PushConst, stride, loc);
+        if stride > 0 {
+            self.emit(OpCode::PushConst, stride, loc);
+        } else if array.ty().is_vla() {
+            self.gen_vla_stride(array.ty(), loc);
+        } else {
+            self.emit(OpCode::PushConst, self.elem_type_size(array.ty()), loc);
+        }
         self.emit(OpCode::Mul, 0, loc);
         self.emit(OpCode::Add, 0, loc);
         if !is_assign && !result_ty.is_array() {
@@ -1733,6 +2145,40 @@ impl BytecodeGen {
             } else {
                 self.emit(OpCode::LoadMem, 0, loc);
             }
+        }
+    }
+
+    fn gen_vla_stride(&mut self, arr_type: &Type, loc: &SourceLoc) {
+        if let Type::Array { dims, vla_dims, .. } = arr_type {
+            let mut vla_idx = 0;
+            for i in 0..1.min(dims.len()) {
+                if dims[i] == 0 { vla_idx += 1; }
+            }
+            let mut vla_dims_clone = vla_dims.clone();
+            let mut first = true;
+            for i in 1..dims.len() {
+                if !first {
+                    self.emit(OpCode::Mul, 0, loc);
+                }
+                if dims[i] > 0 {
+                    self.emit(OpCode::PushConst, dims[i], loc);
+                } else if let Some(dim_expr) = vla_dims_clone.get_mut(vla_idx) {
+                    self.gen_expr(dim_expr);
+                    vla_idx += 1;
+                } else {
+                    self.emit(OpCode::PushConst, 0, loc);
+                }
+                first = false;
+            }
+            let elem_size = self.elem_type_size(arr_type);
+            if first {
+                self.emit(OpCode::PushConst, elem_size, loc);
+            } else {
+                self.emit(OpCode::PushConst, elem_size, loc);
+                self.emit(OpCode::Mul, 0, loc);
+            }
+        } else {
+            self.emit(OpCode::PushConst, self.elem_type_size(arr_type), loc);
         }
     }
 
@@ -1781,6 +2227,15 @@ impl BytecodeGen {
             }
             Expr::Unary { op: UnaryOp::Deref, operand, .. } => {
                 self.gen_expr(operand);
+            }
+            Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } => {
+                if ty.is_struct() {
+                    // 函数按值返回结构体，gen_expr 已在栈顶留下临时缓冲区地址
+                    self.gen_expr(expr);
+                } else {
+                    self.report_error("不支持的地址生成", loc);
+                    return;
+                }
             }
             _ => {
                 self.report_error("不支持的地址生成", loc);
@@ -2127,12 +2582,25 @@ fn flatten_init_list(elements: &[Expr], errors: &mut Vec<String>) -> Vec<i32> {
 }
 
 fn compute_stride(arr_type: &Type, elem_size: i32) -> i32 {
-    if !arr_type.is_array() || arr_type.dims().is_empty() { return elem_size; }
-    let mut stride = elem_size;
-    for i in 1..arr_type.dims().len() {
-        stride *= if arr_type.dims()[i] > 0 { arr_type.dims()[i] } else { 0 };
+    if arr_type.is_array() && !arr_type.dims().is_empty() {
+        let mut stride = elem_size;
+        for i in 1..arr_type.dims().len() {
+            stride *= if arr_type.dims()[i] > 0 { arr_type.dims()[i] } else { 0 };
+        }
+        stride
+    } else if let Type::Pointer { pointee, .. } = arr_type {
+        if pointee.is_array() && !pointee.dims().is_empty() {
+            let mut stride = elem_size;
+            for i in 0..pointee.dims().len() {
+                stride *= if pointee.dims()[i] > 0 { pointee.dims()[i] } else { 0 };
+            }
+            stride
+        } else {
+            elem_size
+        }
+    } else {
+        elem_size
     }
-    stride
 }
 
 #[derive(Debug, Clone)]
