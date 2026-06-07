@@ -1518,7 +1518,9 @@ impl BytecodeGen {
                         } else {
                             TypeKind::Int
                         };
-                        if base_ty == TypeKind::Double {
+                        if base_ty == TypeKind::Char {
+                            self.emit(OpCode::LoadMemByte, 0, &loc);
+                        } else if base_ty == TypeKind::Double {
                             self.emit(OpCode::LoadMemD, 0, &loc);
                         } else if base_ty == TypeKind::LongLong {
                             self.emit(OpCode::LoadMemQ, 0, &loc);
@@ -2452,9 +2454,11 @@ impl BytecodeGen {
             return;
         } else if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left {
             self.gen_expr(operand);
+            let left_is_char = left.ty().kind() == TypeKind::Char;
             if *op != AssignOp::Assign {
                 self.emit(OpCode::Dup, 0, loc);
-                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                if left_is_char { self.emit(OpCode::LoadMemByte, 0, loc); }
+                else if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
                 self.emit(OpCode::Swap, 0, loc);
@@ -2464,11 +2468,13 @@ impl BytecodeGen {
                 emit_compound(self, loc);
                 self.emit(OpCode::LoadLocal, addr_temp, loc);
                 self.emit(OpCode::Swap, 0, loc);
-                if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+                if left_is_char { self.emit(OpCode::StoreMemByte, 0, loc); }
+                else if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
                 else { self.emit(OpCode::StoreMem, 0, loc); }
                 self.emit(OpCode::LoadLocal, addr_temp, loc);
-                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                if left_is_char { self.emit(OpCode::LoadMemByte, 0, loc); }
+                else if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
             } else {
@@ -2476,11 +2482,13 @@ impl BytecodeGen {
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
                 self.gen_expr_with_cast(right, left_is_fp, left_is_double, loc);
-                if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
+                if left_is_char { self.emit(OpCode::StoreMemByte, 0, loc); }
+                else if left_is_double { self.emit(OpCode::StoreMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::StoreMemQ, 0, loc); }
                 else { self.emit(OpCode::StoreMem, 0, loc); }
                 self.emit(OpCode::LoadLocal, addr_temp, loc);
-                if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
+                if left_is_char { self.emit(OpCode::LoadMemByte, 0, loc); }
+                else if left_is_double { self.emit(OpCode::LoadMemD, 0, loc); }
                 else if left_is_long_long { self.emit(OpCode::LoadMemQ, 0, loc); }
                 else { self.emit(OpCode::LoadMem, 0, loc); }
             }
