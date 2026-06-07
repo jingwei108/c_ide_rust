@@ -80,12 +80,29 @@ impl Default for BytecodeGen {
 
 impl BytecodeGen {
     pub fn new() -> Self {
+        use crate::vm::bytecode_libc_index::{
+            BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT, BYTECODE_LIBC_GLOBALS_RESERVED,
+            bytecode_libc_index,
+        };
+        use crate::vm::host_func_id::BYTECODE_LIBC_PURE_FUNCS;
+        use crate::vm::vm::GLOBAL_START;
+
+        let mut func_index = HashMap::new();
+
+        // 预注册 Bytecode Libc 函数到固定索引段
+        for &name in BYTECODE_LIBC_PURE_FUNCS.iter() {
+            if let Some(idx) = bytecode_libc_index(name) {
+                func_index.insert(name.to_string(), idx);
+            }
+        }
+        let next_func_idx = BYTECODE_LIBC_BASE_INDEX + BYTECODE_LIBC_FUNC_COUNT as i32 + 1;
+
         Self {
             code: Vec::new(),
             errors: Vec::new(),
             func_table: HashMap::new(),
-            func_index: HashMap::new(),
-            next_func_idx: 1,
+            func_index,
+            next_func_idx,
             current_func: String::new(),
             current_func_arg_count: 0,
             current_func_arg_bytes: 0,
@@ -102,7 +119,7 @@ impl BytecodeGen {
             temp_slot2: -1,
             globals_init_32: Vec::new(),
             globals_init_64: Vec::new(),
-            next_global_offset: 0,
+            next_global_offset: BYTECODE_LIBC_GLOBALS_RESERVED as i32,
             f64_constants: Vec::new(),
             i64_constants: Vec::new(),
             symbols: Vec::new(),
@@ -110,7 +127,7 @@ impl BytecodeGen {
             struct_defs: HashMap::new(),
             union_defs: HashMap::new(),
             string_data: Vec::new(),
-            string_mem_offset: 0,
+            string_mem_offset: GLOBAL_START + BYTECODE_LIBC_GLOBALS_RESERVED,
             source_map: Vec::new(),
             break_patches: Vec::new(),
             continue_patches: Vec::new(),
@@ -826,8 +843,9 @@ impl BytecodeGen {
                                         } else {
                                             elements.len()
                                         };
-                                        for i in elements.len()..expected_count {
-                                            let addr_offset = (i as i32) * elem_stride;
+                                        for (i, _) in (elements.len()..expected_count).enumerate() {
+                                            let idx = elements.len() + i;
+                                            let addr_offset = (idx as i32) * elem_stride;
                                             self.emit(OpCode::LoadLocal, base_temp, loc);
                                             if addr_offset > 0 {
                                                 self.emit(OpCode::PushConst, addr_offset, loc);
@@ -1415,6 +1433,8 @@ impl BytecodeGen {
                             self.emit(OpCode::AddF, 0, &loc);
                         } else if result_is_long_long {
                             self.emit(OpCode::AddQ, 0, &loc);
+                        } else if is_unsigned {
+                            self.emit(OpCode::UAdd, 0, &loc);
                         } else {
                             self.emit(OpCode::Add, 0, &loc);
                         }
@@ -1446,6 +1466,7 @@ impl BytecodeGen {
                         if result_is_double { self.emit(OpCode::MulD, 0, &loc); }
                         else if result_is_float { self.emit(OpCode::MulF, 0, &loc); }
                         else if result_is_long_long { self.emit(OpCode::MulQ, 0, &loc); }
+                        else if is_unsigned { self.emit(OpCode::UMul, 0, &loc); }
                         else { self.emit(OpCode::Mul, 0, &loc); }
                     }
                     BinaryOp::Div => {
@@ -2358,16 +2379,19 @@ impl BytecodeGen {
                 AssignOp::AddAssign => {
                     if left_is_double { this.emit(OpCode::AddD, 0, loc); }
                     else if left_is_float { this.emit(OpCode::AddF, 0, loc); }
+                    else if left_is_unsigned { this.emit(OpCode::UAdd, 0, loc); }
                     else { this.emit(OpCode::Add, 0, loc); }
                 }
                 AssignOp::SubAssign => {
                     if left_is_double { this.emit(OpCode::SubD, 0, loc); }
                     else if left_is_float { this.emit(OpCode::SubF, 0, loc); }
+                    else if left_is_unsigned { this.emit(OpCode::USub, 0, loc); }
                     else { this.emit(OpCode::Sub, 0, loc); }
                 }
                 AssignOp::MulAssign => {
                     if left_is_double { this.emit(OpCode::MulD, 0, loc); }
                     else if left_is_float { this.emit(OpCode::MulF, 0, loc); }
+                    else if left_is_unsigned { this.emit(OpCode::UMul, 0, loc); }
                     else { this.emit(OpCode::Mul, 0, loc); }
                 }
                 AssignOp::DivAssign => {

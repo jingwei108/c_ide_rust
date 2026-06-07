@@ -20,12 +20,14 @@ fn print_usage() {
     eprintln!("  cide_cli run    <file.c> [-i <in>]  编译并全速运行");
     eprintln!("  cide_cli step   <file.c> [-i <in>]  交互式单步调试");
     eprintln!("  cide_cli unified <file.c> [-i <in>] 统一模式（时间旅行）执行并摘要");
+    eprintln!("  cide_cli export <file1.c> [file2.c ...] -o <out.json>  预编译为字节码产物");
     eprintln!();
     eprintln!("特殊文件名:");
     eprintln!("  -          从标准输入读取源代码（如 echo '...' | cide_cli run -）");
     eprintln!();
     eprintln!("选项:");
     eprintln!("  -i <file>   从文件读取标准输入（多行输入）");
+    eprintln!("  -o <file>   指定输出文件（仅 export 命令需要）");
 }
 
 fn read_source(path: &str) -> String {
@@ -226,6 +228,114 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
     }
 }
 
+fn cmd_export(source_paths: &[String], output_path: &str) {
+    use cide_native::engine::compile_pipeline::run_multi_file_pipeline;
+    use cide_native::session::{Session, CompileUnit};
+
+    let mut units = Vec::new();
+    for path in source_paths {
+        let source = read_source(path);
+        units.push(CompileUnit {
+            filename: path.clone(),
+            source,
+        });
+    }
+
+    // BytecodeGen 需要 main 函数，添加一个空 stub，导出后过滤掉
+    units.push(CompileUnit {
+        filename: "__export_main_stub.c".to_string(),
+        source: "int main() { return 0; }".to_string(),
+    });
+
+    let mut session = Session::default();
+    if let Err(e) = run_multi_file_pipeline(&mut session, units) {
+        eprintln!("编译失败: {}", e);
+        let diags: Vec<String> = session.compile.diagnostics.iter()
+            .map(|d| format!("{}:{}: {} (E{})", d.filename, d.line, d.message, d.error_code))
+            .collect();
+        if !diags.is_empty() {
+            eprintln!("诊断:\n{}", diags.join("\n"));
+        }
+        std::process::exit(1);
+    }
+
+    #[derive(serde::Serialize)]
+    struct BytecodeLibcExport {
+        version: u32,
+        code_len: usize,
+        code: Vec<cide_native::vm::instruction::Instruction>,
+        func_table: std::collections::HashMap<String, cide_native::session::FuncMeta>,
+        func_index: std::collections::HashMap<String, i32>,
+        globals_init_32: Vec<(u32, i32)>,
+        globals_init_64: Vec<(u32, u64)>,
+        string_data: Vec<(u32, String)>,
+        f64_constants: Vec<f64>,
+        i64_constants: Vec<i64>,
+        globals_size: u32,
+    }
+
+    // 过滤掉 main stub 相关的产物
+    let mut code = session.compile.bytecode.clone();
+    let mut func_table = session.compile.func_table.clone();
+    let mut func_index = session.compile.func_index.clone();
+    func_table.remove("main");
+    func_index.remove("main");
+
+    // 移除 BytecodeGen 生成的入口 wrapper（Jump + Call main + Ret）
+    // code[0] 是 Jump 到 wrapper_ip，wrapper_ip 位置是 Call main 和 Ret
+    let wrapper_ip = if !code.is_empty() && code[0].op == cide_native::vm::opcode::OpCode::Jump {
+        code[0].operand as usize
+    } else {
+        code.len()
+    };
+    // 将入口 Jump 替换为 Nop（Bytecode Libc 作为库，不需要入口 Jump）
+    if !code.is_empty() {
+        code[0] = cide_native::vm::instruction::Instruction::new(
+            cide_native::vm::opcode::OpCode::Nop,
+            0,
+            cide_native::vm::instruction::SourceLoc::default(),
+        );
+    }
+    // 截断掉 wrapper 部分（Call main + Ret）
+    code.truncate(wrapper_ip);
+
+    // 计算全局变量使用的最大偏移
+    let globals_size = session.compile.globals_init.iter()
+        .map(|(offset, _)| *offset)
+        .chain(session.compile.globals_init_64.iter().map(|(offset, _)| *offset))
+        .max()
+        .unwrap_or(0);
+
+    let export = BytecodeLibcExport {
+        version: 1,
+        code_len: code.len(),
+        code,
+        func_table,
+        func_index,
+        globals_init_32: session.compile.globals_init.clone(),
+        globals_init_64: session.compile.globals_init_64.clone(),
+        string_data: session.compile.string_data.clone(),
+        f64_constants: session.compile.f64_constants.clone(),
+        i64_constants: session.compile.i64_constants.clone(),
+        globals_size: globals_size + 4, // 预留一点余量
+    };
+
+    let json = serde_json::to_string_pretty(&export).unwrap_or_else(|e| {
+        eprintln!("序列化失败: {}", e);
+        std::process::exit(1);
+    });
+
+    fs::write(output_path, json).unwrap_or_else(|e| {
+        eprintln!("写入输出文件失败 '{}': {}", output_path, e);
+        std::process::exit(1);
+    });
+
+    println!("预编译完成: {}", output_path);
+    println!("  代码长度: {} 条指令", export.code_len);
+    println!("  函数数量: {}", export.func_index.len());
+    println!("  全局变量大小: {} bytes", export.globals_size);
+}
+
 fn cmd_unified(path: &str, input_lines: Vec<String>) {
     let source = read_source(path);
 
@@ -360,6 +470,27 @@ fn main() {
         "run" => cmd_run(file_path, input_lines),
         "step" => cmd_step(file_path, input_lines),
         "unified" => cmd_unified(file_path, input_lines),
+        "export" => {
+            // export 命令需要至少一个源文件和 -o 选项
+            let mut output_path = String::new();
+            let mut source_paths = vec![file_path.clone()];
+            let mut i = 3;
+            while i < args.len() {
+                if args[i] == "-o" && i + 1 < args.len() {
+                    output_path = args[i + 1].clone();
+                    i += 2;
+                } else {
+                    source_paths.push(args[i].clone());
+                    i += 1;
+                }
+            }
+            if output_path.is_empty() {
+                eprintln!("错误: export 命令需要 -o <输出文件> 选项");
+                print_usage();
+                std::process::exit(1);
+            }
+            cmd_export(&source_paths, &output_path);
+        }
         _ => {
             eprintln!("未知命令: {}", cmd);
             print_usage();

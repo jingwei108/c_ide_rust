@@ -20,6 +20,21 @@ pub const MEMSET: u32 = 37;
 pub const EXIT: u32 = 38;
 pub const STRCAT: u32 = 39;
 pub const ATOI: u32 = 40;
+pub const ABS: u32 = 41;
+pub const ISDIGIT: u32 = 42;
+pub const ISALPHA: u32 = 43;
+pub const ISLOWER: u32 = 44;
+pub const ISUPPER: u32 = 45;
+pub const TOLOWER: u32 = 46;
+pub const TOUPPER: u32 = 47;
+pub const ISSPACE: u32 = 48;
+pub const ISALNUM: u32 = 49;
+pub const ISPRINT: u32 = 53;
+pub const ISCNTRL: u32 = 54;
+pub const ISXDIGIT: u32 = 55;
+pub const STRNCPY: u32 = 56;
+pub const MEMCPY: u32 = 57;
+pub const MEMMOVE: u32 = 58;
 pub const FPRINTF: u32 = 50;
 pub const REALLOC: u32 = 51;
 pub const QSORT: u32 = 52;
@@ -32,9 +47,37 @@ pub const FEOF: u32 = 64;
 pub const FGETS: u32 = 65;
 pub const FPUTS: u32 = 66;
 
+// math.h
+pub const SIN: u32 = 70;
+pub const COS: u32 = 71;
+pub const SQRT: u32 = 72;
+pub const POW: u32 = 73;
+pub const ATAN: u32 = 74;
+pub const LOG: u32 = 75;
+pub const EXP: u32 = 76;
+
+/// 已由 Bytecode Libc 覆盖的纯计算函数。
+/// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
+/// 诊断敏感的函数（strcpy、printf、malloc 等）继续保留 Host Func 路径。
+pub const BYTECODE_LIBC_PURE_FUNCS: &[&str] = &[
+    "isdigit", "isalpha", "islower", "isupper",
+    "tolower", "toupper", "isspace", "isalnum",
+    "isprint", "iscntrl", "isxdigit", "abs",
+    "strlen", "strcmp",
+];
+
+/// 判断函数是否已由 Bytecode Libc 覆盖（纯计算函数）。
+pub fn is_bytecode_libc_pure(name: &str) -> bool {
+    BYTECODE_LIBC_PURE_FUNCS.contains(&name)
+}
+
 /// 将用户代码中的函数名解析为 host function ID。
 /// 包含别名映射（如 `print_int` → `OUTPUT`, `printf` → `PRINTF_N`）。
+/// 已由 Bytecode Libc 覆盖的纯计算函数返回 None，确保生成 Call 而非 CallHost。
 pub fn by_user_name(name: &str) -> Option<u32> {
+    if is_bytecode_libc_pure(name) {
+        return None;
+    }
     match name {
         "print_int" | "__cide_output" => Some(OUTPUT),
         "__cide_step" => Some(STEP),
@@ -53,6 +96,21 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "exit" => Some(EXIT),
         "strcat" => Some(STRCAT),
         "atoi" => Some(ATOI),
+        "abs" => Some(ABS),
+        "isdigit" => Some(ISDIGIT),
+        "isalpha" => Some(ISALPHA),
+        "islower" => Some(ISLOWER),
+        "isupper" => Some(ISUPPER),
+        "tolower" => Some(TOLOWER),
+        "toupper" => Some(TOUPPER),
+        "isspace" => Some(ISSPACE),
+        "isalnum" => Some(ISALNUM),
+        "isprint" => Some(ISPRINT),
+        "iscntrl" => Some(ISCNTRL),
+        "isxdigit" => Some(ISXDIGIT),
+        "strncpy" => Some(STRNCPY),
+        "memcpy" => Some(MEMCPY),
+        "memmove" => Some(MEMMOVE),
         "fprintf" => Some(FPRINTF),
         "realloc" => Some(REALLOC),
         "qsort" => Some(QSORT),
@@ -63,11 +121,19 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "feof" => Some(FEOF),
         "fgets" => Some(FGETS),
         "fputs" => Some(FPUTS),
+        "sin" => Some(SIN),
+        "cos" => Some(COS),
+        "sqrt" => Some(SQRT),
+        "pow" => Some(POW),
+        "atan" => Some(ATAN),
+        "log" => Some(LOG),
+        "exp" => Some(EXP),
         _ => None,
     }
 }
 
 /// 判断名称是否为内置宿主函数（供 TypeChecker 使用）。
+/// 包含仍走 Host 路径的函数和已切换为 Bytecode Libc 的纯计算函数。
 pub fn is_builtin(name: &str) -> bool {
-    by_user_name(name).is_some()
+    by_user_name(name).is_some() || is_bytecode_libc_pure(name)
 }

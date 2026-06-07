@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 #![allow(clippy::module_inception)]
 
+pub mod bytecode_libc_index;
+pub mod bytecode_libc_loader;
 pub mod host_func_id;
 pub mod host_funcs;
 pub mod instruction;

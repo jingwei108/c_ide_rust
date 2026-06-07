@@ -134,18 +134,52 @@ pub fn push_hints<T: CompileError>(session: &mut Session, hints: &[T], source: &
 // ========== VM 初始化 ==========
 
 pub fn setup_vm(vm: &mut CideVM, session: &Session) {
+    use crate::vm::bytecode_libc_loader::load_artifact;
+    use crate::vm::opcode::OpCode;
     use crate::vm::vm::{FuncMeta, VMSymbol};
 
     vm.reset();
-    vm.load_program(session.compile.bytecode.clone());
-    vm.set_globals_32(&session.compile.globals_init);
-    vm.set_globals_64(&session.compile.globals_init_64);
-    vm.set_f64_constants(session.compile.f64_constants.clone());
-    vm.set_i64_constants(session.compile.i64_constants.clone());
-    vm.set_max_steps(10_000_000);
 
-    for (name, meta) in &session.compile.func_table {
-        if let Some(&idx) = session.compile.func_index.get(name) {
+    // ── 1. 加载 Bytecode Libc 预编译产物 ──
+    let libc = load_artifact();
+    let libc_code_len = libc.code.len();
+
+    // ── 2. 重定位用户代码中的 Jump 指令 ──
+    let mut user_code = session.compile.bytecode.clone();
+    for instr in &mut user_code {
+        match instr.op {
+            OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero => {
+                instr.operand += libc_code_len as i32;
+            }
+            _ => {}
+        }
+    }
+
+    // ── 3. 合并代码：Bytecode Libc + 重定位后的用户代码 ──
+    let mut full_code = libc.code.clone();
+    full_code.extend_from_slice(&user_code);
+    vm.load_program(full_code);
+
+    // ── 4. 注册 Bytecode Libc 函数 ──
+    use crate::vm::bytecode_libc_index::bytecode_libc_index;
+
+    // 4a. 注册原始索引（供 Bytecode Libc 内部调用使用）
+    for (name, meta) in &libc.func_table {
+        if let Some(&raw_idx) = libc.func_index.get(name) {
+            vm.register_function(raw_idx as u32, FuncMeta {
+                ip: meta.ip,
+                arg_count: meta.arg_count,
+                param_count: meta.param_count,
+                local_count: meta.local_count,
+                param_sizes: meta.param_sizes.clone(),
+            });
+            vm.register_function_name(raw_idx as u32, name.clone());
+        }
+    }
+
+    // 4b. 注册固定索引（供用户代码调用使用）
+    for (name, meta) in &libc.func_table {
+        if let Some(idx) = bytecode_libc_index(name) {
             vm.register_function(idx as u32, FuncMeta {
                 ip: meta.ip,
                 arg_count: meta.arg_count,
@@ -157,6 +191,38 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
         }
     }
 
+    // ── 5. 注册用户函数（IP 偏移 libc_code_len） ──
+    for (name, meta) in &session.compile.func_table {
+        if let Some(&idx) = session.compile.func_index.get(name) {
+            vm.register_function(idx as u32, FuncMeta {
+                ip: meta.ip + libc_code_len,
+                arg_count: meta.arg_count,
+                param_count: meta.param_count,
+                local_count: meta.local_count,
+                param_sizes: meta.param_sizes.clone(),
+            });
+            vm.register_function_name(idx as u32, name.clone());
+        }
+    }
+
+    // ── 6. 初始化全局变量 ──
+    vm.set_globals_32(&libc.globals_init_32);
+    vm.set_globals_64(&libc.globals_init_64);
+    vm.set_globals_32(&session.compile.globals_init);
+    vm.set_globals_64(&session.compile.globals_init_64);
+
+    // ── 7. 合并常量池 ──
+    let mut f64_constants = libc.f64_constants.clone();
+    f64_constants.extend_from_slice(&session.compile.f64_constants);
+    vm.set_f64_constants(f64_constants);
+
+    let mut i64_constants = libc.i64_constants.clone();
+    i64_constants.extend_from_slice(&session.compile.i64_constants);
+    vm.set_i64_constants(i64_constants);
+
+    vm.set_max_steps(10_000_000);
+
+    // ── 8. 符号表 ──
     let symbols: Vec<VMSymbol> = session.compile.symbols.iter().map(|s| VMSymbol {
         name: s.name.clone(),
         addr: s.addr,
@@ -167,6 +233,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     }).collect();
     vm.set_symbols(symbols);
 
+    // ── 9. 可视化事件 ──
     let mut vis_lines = Vec::new();
     for m in &session.compile.algorithm_matches {
         for ev in &m.vis_events {
@@ -175,10 +242,16 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     }
     vm.set_vis_event_lines(vis_lines);
 
-    // 写入字符串数据到 VM 内存
+    // ── 10. 写入字符串数据到 VM 内存 ──
+    for &(addr, ref s) in &libc.string_data {
+        vm.write_cstring(addr, s);
+    }
     for &(addr, ref s) in &session.compile.string_data {
         vm.write_cstring(addr, s);
     }
+
+    // ── 11. VM 入口设为用户代码起始位置 ──
+    vm.set_ip(libc_code_len);
 }
 
 // ========== 统一编译管线 ==========
@@ -257,10 +330,12 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.globals_init_64 = output.globals_init_64;
     session.compile.f64_constants = output.f64_constants;
     session.compile.i64_constants = output.i64_constants;
+    // 偏移 source_map 以匹配 Bytecode Libc 代码拼接后的 IP
+    let libc_code_len = crate::vm::bytecode_libc_index::BYTECODE_LIBC_CODE_LEN as u32;
     session.compile.source_map = output
         .source_map
         .into_iter()
-        .map(|(ip, loc)| (ip, AstSourceLoc { line: loc.line, column: loc.column }))
+        .map(|(ip, loc)| (ip + libc_code_len, AstSourceLoc { line: loc.line, column: loc.column }))
         .collect();
     session.compile.func_index = output.func_index;
 
@@ -450,10 +525,12 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
     session.compile.globals_init_64 = output.globals_init_64;
     session.compile.f64_constants = output.f64_constants;
     session.compile.i64_constants = output.i64_constants;
+    // 偏移 source_map 以匹配 Bytecode Libc 代码拼接后的 IP
+    let libc_code_len = crate::vm::bytecode_libc_index::BYTECODE_LIBC_CODE_LEN as u32;
     session.compile.source_map = output
         .source_map
         .into_iter()
-        .map(|(ip, loc)| (ip, AstSourceLoc { line: loc.line, column: loc.column }))
+        .map(|(ip, loc)| (ip + libc_code_len, AstSourceLoc { line: loc.line, column: loc.column }))
         .collect();
     session.compile.func_index = output.func_index;
 

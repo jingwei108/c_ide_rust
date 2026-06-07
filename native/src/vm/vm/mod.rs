@@ -646,11 +646,18 @@ impl CideVM {
     pub fn write_cstring(&mut self, addr: u32, s: &str) {
         let a = addr as usize;
         let bytes = s.as_bytes();
-        if a + bytes.len() < self.memory.len() {
-            self.memory[a..a + bytes.len()].copy_from_slice(bytes);
-            self.memory[a + bytes.len()] = 0;
-            self.mark_dirty_page(addr, (bytes.len() + 1) as u32);
+        let total = bytes.len() + 1;
+        if a + total > self.memory.len() {
+            return;
         }
+        if let Some(log) = self.check_uaf(addr, total as u32) {
+            let msg = self.format_uaf_message(log, true);
+            self.trap(&msg, &SourceLoc::default());
+            return;
+        }
+        self.memory[a..a + bytes.len()].copy_from_slice(bytes);
+        self.memory[a + bytes.len()] = 0;
+        self.mark_dirty_page(addr, total as u32);
     }
 
     pub fn memory_ref(&self) -> &[u8] {
@@ -673,10 +680,25 @@ impl CideVM {
         MEM_SIZE
     }
 
+    /// 获取当前已释放的内存区域日志（用于 UAF/Double-Free 检测诊断）。
+    pub fn get_freed_logs(&self) -> &[FreedRegionInfo] {
+        &self.freed_logs
+    }
+
+    /// 根据函数名查找其在 VM 函数表中的索引。
+    pub fn get_func_index(&self, name: &str) -> Option<u32> {
+        self.func_names.iter().position(|n| n == name).map(|i| i as u32)
+    }
+
     /// 安全写入字节切片到 VM 内存（带 NULL Trap 和边界检查）
     pub fn write_memory(&mut self, addr: u32, data: &[u8]) -> bool {
         let end = addr as usize + data.len();
         if addr < NULL_TRAP_SIZE || end > self.memory.len() {
+            return false;
+        }
+        if let Some(log) = self.check_uaf(addr, data.len() as u32) {
+            let msg = self.format_uaf_message(log, true);
+            self.trap(&msg, &SourceLoc::default());
             return false;
         }
         self.memory[addr as usize..end].copy_from_slice(data);
@@ -703,6 +725,17 @@ impl CideVM {
             || dst_end > self.memory.len()
             || src_end > self.memory.len()
         {
+            return false;
+        }
+        let len_u32 = len as u32;
+        if let Some(log) = self.check_uaf(dst, len_u32) {
+            let msg = self.format_uaf_message(log, true);
+            self.trap(&msg, &SourceLoc::default());
+            return false;
+        }
+        if let Some(log) = self.check_uaf(src, len_u32) {
+            let msg = self.format_uaf_message(log, false);
+            self.trap(&msg, &SourceLoc::default());
             return false;
         }
         // 用临时 buffer 避免重叠问题
@@ -800,6 +833,11 @@ impl CideVM {
         if !self.check_mem_access(addr, 4, loc, false) {
             return 0;
         }
+        if let Some(log) = self.check_uaf(addr, 4) {
+            let msg = self.format_uaf_message(log, false);
+            self.trap(&msg, loc);
+            return 0;
+        }
         i32::from_le_bytes([
             self.memory[addr as usize],
             self.memory[addr as usize + 1],
@@ -812,6 +850,11 @@ impl CideVM {
         if !self.check_mem_access(addr, 4, loc, true) {
             return;
         }
+        if let Some(log) = self.check_uaf(addr, 4) {
+            let msg = self.format_uaf_message(log, true);
+            self.trap(&msg, loc);
+            return;
+        }
         let bytes = val.to_le_bytes();
         self.memory[addr as usize..addr as usize + 4].copy_from_slice(&bytes);
         self.mark_dirty_page(addr, 4);
@@ -819,6 +862,11 @@ impl CideVM {
 
     pub fn load_i64(&mut self, addr: u32, loc: &SourceLoc) -> u64 {
         if !self.check_mem_access(addr, 8, loc, false) {
+            return 0;
+        }
+        if let Some(log) = self.check_uaf(addr, 8) {
+            let msg = self.format_uaf_message(log, false);
+            self.trap(&msg, loc);
             return 0;
         }
         let mut bytes = [0u8; 8];
@@ -830,6 +878,11 @@ impl CideVM {
         if !self.check_mem_access(addr, 8, loc, true) {
             return;
         }
+        if let Some(log) = self.check_uaf(addr, 8) {
+            let msg = self.format_uaf_message(log, true);
+            self.trap(&msg, loc);
+            return;
+        }
         let bytes = val.to_le_bytes();
         self.memory[addr as usize..addr as usize + 8].copy_from_slice(&bytes);
         self.mark_dirty_page(addr, 8);
@@ -839,11 +892,21 @@ impl CideVM {
         if !self.check_mem_access(addr, 1, loc, false) {
             return 0;
         }
+        if let Some(log) = self.check_uaf(addr, 1) {
+            let msg = self.format_uaf_message(log, false);
+            self.trap(&msg, loc);
+            return 0;
+        }
         self.memory[addr as usize] as i8 as i32
     }
 
     pub fn store_i8(&mut self, addr: u32, val: i32, loc: &SourceLoc) {
         if !self.check_mem_access(addr, 1, loc, true) {
+            return;
+        }
+        if let Some(log) = self.check_uaf(addr, 1) {
+            let msg = self.format_uaf_message(log, true);
+            self.trap(&msg, loc);
             return;
         }
         self.memory[addr as usize] = val as u8;
@@ -1017,6 +1080,11 @@ impl CideVM {
 
     // --- Run ---
 
+    #[cfg(test)]
+    pub fn set_test_code(&mut self, code: Vec<Instruction>) {
+        self.code = code;
+        self.ip = 0;
+    }
 }
 
 mod trap;

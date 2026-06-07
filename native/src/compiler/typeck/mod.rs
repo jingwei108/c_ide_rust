@@ -349,6 +349,17 @@ impl TypeChecker {
             self.report_warning("整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。", loc, ErrorCode::W3054_IntToPointerCast);
             return true;
         }
+        // C 标准：任意指针或数组都可以隐式转换为 void*（Phase D 补齐 Host 函数所需）
+        if matches!(target.kind(), TypeKind::Pointer) {
+            if let Type::Pointer { pointee, .. } = target {
+                if matches!(pointee.as_ref(), Type::Void { .. })
+                    && matches!(value.kind(), TypeKind::Pointer | TypeKind::Array)
+                {
+                    self.report_hint("具体指针类型被隐式转换为 void*。", loc, ErrorCode::H3057_ImplicitConversionHint);
+                    return true;
+                }
+            }
+        }
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Pointer) {
             if let (Type::Pointer { is_const: t_const, .. }, Type::Pointer { pointee: v_pointee, is_const: v_const }) = (target, value) {
                 if matches!(v_pointee.as_ref(), Type::Void { .. }) {
@@ -758,6 +769,7 @@ impl TypeChecker {
                     self.check_builtin_qsort(args, loc)
                 }
             }
+            // math.h functions are resolved through stub declarations in funcs
             _ => self.check_user_func(name, args, loc),
         }
     }
@@ -1087,7 +1099,7 @@ impl TypeChecker {
             self.builtin_check_pointer(&mut args[0], 0, "strcpy", loc);
             self.builtin_check_pointer(&mut args[1], 1, "strcpy", loc);
         }
-        Type::void()
+        Type::pointer_to(Type::char())
     }
 
     fn check_builtin_strcmp(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {

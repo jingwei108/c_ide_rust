@@ -75,6 +75,33 @@ impl Lexer {
                 column: 0,
             }],
         });
+        macros.insert("NULL".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token {
+                ty: TokenType::Number,
+                text: "0".to_string(),
+                line: 0,
+                column: 0,
+            }],
+        });
+        macros.insert("EOF".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token {
+                ty: TokenType::Number,
+                text: "-1".to_string(),
+                line: 0,
+                column: 0,
+            }],
+        });
+        macros.insert("stdin".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token {
+                ty: TokenType::Number,
+                text: "0".to_string(),
+                line: 0,
+                column: 0,
+            }],
+        });
         Self {
             chars: source.chars().collect(),
             errors: Vec::new(),
@@ -649,8 +676,60 @@ impl Lexer {
             return;
         }
 
+        if self.chars[self.pos..].starts_with(&['i', 'n', 'c', 'l', 'u', 'd', 'e']) {
+            self.pos += 7;
+            self.column += 7;
+            self.skip_whitespace();
+            if let Some(path) = self.parse_include_path() {
+                if let Some(stub) = Self::load_stub(&path) {
+                    let mut line_end = self.pos;
+                    while line_end < self.chars.len() && self.chars[line_end] != '\n' {
+                        line_end += 1;
+                    }
+                    if line_end < self.chars.len() && self.chars[line_end] == '\n' {
+                        line_end += 1;
+                    }
+                    let stub_chars: Vec<char> = stub.replace('\n', " ").chars().collect();
+                    self.chars.splice(line_end..line_end, stub_chars);
+                }
+            }
+            while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                self.advance();
+            }
+            return;
+        }
+
         while self.pos < self.chars.len() && self.peek(0) != '\n' {
             self.advance();
+        }
+    }
+
+    fn parse_include_path(&mut self) -> Option<String> {
+        let delimiter = self.peek(0);
+        if delimiter != '<' && delimiter != '"' {
+            return None;
+        }
+        self.advance(); // consume opening delimiter
+        let start = self.pos;
+        let end_delim = if delimiter == '<' { '>' } else { '"' };
+        while self.pos < self.chars.len() && self.peek(0) != end_delim {
+            self.advance();
+        }
+        let path: String = self.chars[start..self.pos].iter().collect();
+        if self.pos < self.chars.len() && self.peek(0) == end_delim {
+            self.advance(); // consume closing delimiter
+        }
+        Some(path)
+    }
+
+    fn load_stub(path: &str) -> Option<&'static str> {
+        match path {
+            "stdio.h" => Some(include_str!("../../runtime_libc/include/stdio.h")),
+            "stdlib.h" => Some(include_str!("../../runtime_libc/include/stdlib.h")),
+            "ctype.h" => Some(include_str!("../../runtime_libc/include/ctype.h")),
+            "math.h" => Some(include_str!("../../runtime_libc/include/math.h")),
+            "string.h" => Some(include_str!("../../runtime_libc/include/string.h")),
+            _ => None,
         }
     }
 

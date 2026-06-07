@@ -278,6 +278,21 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::EXIT => host_exit(vm, session),
         host_func_id::STRCAT => host_strcat(vm, session),
         host_func_id::ATOI => host_atoi(vm, session),
+        host_func_id::ABS => host_abs(vm, session),
+        host_func_id::ISDIGIT => host_isdigit(vm, session),
+        host_func_id::ISALPHA => host_isalpha(vm, session),
+        host_func_id::ISLOWER => host_islower(vm, session),
+        host_func_id::ISUPPER => host_isupper(vm, session),
+        host_func_id::TOLOWER => host_tolower(vm, session),
+        host_func_id::TOUPPER => host_toupper(vm, session),
+        host_func_id::ISSPACE => host_isspace(vm, session),
+        host_func_id::ISALNUM => host_isalnum(vm, session),
+        host_func_id::ISPRINT => host_isprint(vm, session),
+        host_func_id::ISCNTRL => host_iscntrl(vm, session),
+        host_func_id::ISXDIGIT => host_isxdigit(vm, session),
+        host_func_id::STRNCPY => host_strncpy(vm, session),
+        host_func_id::MEMCPY => host_memcpy(vm, session),
+        host_func_id::MEMMOVE => host_memmove(vm, session),
         host_func_id::FPRINTF => host_fprintf_n(vm, session),
         host_func_id::REALLOC => host_realloc(vm, session),
         host_func_id::QSORT => host_qsort(vm, session),
@@ -288,6 +303,13 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::FEOF => host_feof(vm, session),
         host_func_id::FGETS => host_fgets(vm, session),
         host_func_id::FPUTS => host_fputs(vm, session),
+        host_func_id::SIN => host_sin(vm, session),
+        host_func_id::COS => host_cos(vm, session),
+        host_func_id::SQRT => host_sqrt(vm, session),
+        host_func_id::POW => host_pow(vm, session),
+        host_func_id::ATAN => host_atan(vm, session),
+        host_func_id::LOG => host_log(vm, session),
+        host_func_id::EXP => host_exp(vm, session),
         _ => {}
     }
 }
@@ -306,7 +328,7 @@ fn host_step(vm: &mut CideVM, session: &mut Session) {
     });
 }
 
-fn host_malloc(vm: &mut CideVM, session: &mut Session) {
+pub fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     let size = vm.pop() as i32;
     if size == 0 {
         session.runtime.output_lines.push("[warning] malloc(0) 返回 NULL。在 C 标准中，malloc(0) 的行为是实现定义的，可能返回 NULL 也可能返回一个不可解引用的非空指针。".to_string());
@@ -366,7 +388,7 @@ fn host_malloc(vm: &mut CideVM, session: &mut Session) {
     vm.push(addr as u64);
 }
 
-fn host_free(vm: &mut CideVM, session: &mut Session) {
+pub fn host_free(vm: &mut CideVM, session: &mut Session) {
     let addr = vm.pop() as u32;
     if addr == 0 {
         return;
@@ -399,7 +421,7 @@ fn host_free(vm: &mut CideVM, session: &mut Session) {
     }
 }
 
-fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
+pub fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
     let specs = parse_format_specs(&fmt);
@@ -498,7 +520,7 @@ fn read_float_token(chars: &[char], mut pos: usize) -> (String, usize) {
     (token, pos)
 }
 
-fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
+pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
     // 扫描格式字符串，记录每个 % 格式符的类型及是否带 long 修饰符
@@ -596,31 +618,53 @@ fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     }
 }
 
-fn host_strlen(vm: &mut CideVM, _session: &mut Session) {
+pub fn host_strlen(vm: &mut CideVM, _session: &mut Session) {
     let addr = vm.pop() as u32;
     let bytes = read_cbytes(vm, addr);
     vm.push(bytes.len() as u64);
 }
 
-fn host_strcpy(vm: &mut CideVM, _session: &mut Session) {
+pub fn host_strcpy(vm: &mut CideVM, session: &mut Session) {
     let dest = vm.pop() as u32;
     let src = vm.pop() as u32;
     let src_bytes = read_cbytes(vm, src);
+    let src_len = src_bytes.len();
     let mem_size = vm.get_memory_slice().len();
     if dest as usize >= mem_size {
         vm.push(0);
         return;
     }
+
+    // 注入边界检查：如果 dest 落在已知的堆分配区域内，验证容量
+    for r in &session.memory.regions {
+        if !r.is_freed && dest >= r.addr && dest < r.addr + r.size as u32 {
+            let offset = (dest - r.addr) as usize;
+            let available = (r.size as usize).saturating_sub(offset);
+            if src_len + 1 > available {
+                vm.trap(
+                    &format!(
+                        "💥 Buffer Overflow (E3070)：strcpy 目标缓冲区溢出。源字符串长度 {} 字节（含终止符 {} 字节），但目标区域 '{}' 从偏移 {} 开始仅剩 {} 字节。\n\n💡 原因：strcpy 不会检查目标缓冲区大小。\n✅ 解决方法：使用 strncpy 或确保目标缓冲区足够大（至少 {} 字节）。",
+                        src_len, src_len + 1, r.name, offset, available, src_len + 1
+                    ),
+                    &super::instruction::SourceLoc::default(),
+                );
+                return;
+            }
+            break;
+        }
+    }
+
     let max_copy = mem_size - dest as usize;
-    let copy_len = src_bytes.len().min(max_copy.saturating_sub(1));
+    let copy_len = src_len.min(max_copy.saturating_sub(1));
     for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
         vm.store_i8(dest + i as u32, b as i32, &super::instruction::SourceLoc::default());
     }
     let end = dest as usize + copy_len;
     vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
+    vm.push(dest as u64);
 }
 
-fn host_strcmp(vm: &mut CideVM, _session: &mut Session) {
+pub fn host_strcmp(vm: &mut CideVM, _session: &mut Session) {
     let addr1 = vm.pop() as u32;
     let addr2 = vm.pop() as u32;
     let mem = vm.get_memory_slice();
@@ -651,7 +695,7 @@ impl MemorySlice for CideVM {
 }
 
 
-fn host_getchar(vm: &mut CideVM, session: &mut Session) {
+pub fn host_getchar(vm: &mut CideVM, session: &mut Session) {
     // 先检查是否有可用输入
     let has_input = {
         let mut idx = session.runtime.input_index;
@@ -692,24 +736,24 @@ fn host_getchar(vm: &mut CideVM, session: &mut Session) {
     vm.push(result as u64);
 }
 
-fn host_putchar(vm: &mut CideVM, session: &mut Session) {
+pub fn host_putchar(vm: &mut CideVM, session: &mut Session) {
     let val = vm.pop();
     session.runtime.output_lines.push((val as u8 as char).to_string());
 }
 
-fn host_rand(vm: &mut CideVM, session: &mut Session) {
+pub fn host_rand(vm: &mut CideVM, session: &mut Session) {
     let seed = session.runtime.rand_seed;
     let next = seed.wrapping_mul(1103515245).wrapping_add(12345);
     session.runtime.rand_seed = next;
     vm.push((next & 0x7fff) as u64);
 }
 
-fn host_srand(vm: &mut CideVM, session: &mut Session) {
+pub fn host_srand(vm: &mut CideVM, session: &mut Session) {
     let seed = vm.pop();
     session.runtime.rand_seed = seed as u32;
 }
 
-fn host_memset(vm: &mut CideVM, _session: &mut Session) {
+pub fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     let ptr = vm.pop() as u32;
     let value = vm.pop();
     let size = vm.pop();
@@ -720,18 +764,25 @@ fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     }
     let max_write = mem_size - ptr as usize;
     let write_len = (size as usize).min(max_write);
+    // 注入 NULL 指针安全检查（与 VM store_i8 保持一致）
+    if ptr < super::vm::NULL_TRAP_SIZE && write_len > 0 {
+        let msg = format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", ptr);
+        vm.trap(&msg, &super::instruction::SourceLoc::default());
+        vm.push(ptr as u64);
+        return;
+    }
     let byte_val = (value & 0xFF) as u8;
     let mem = vm.memory_ref_mut();
     mem[ptr as usize..ptr as usize + write_len].fill(byte_val);
     vm.push(ptr as u64);
 }
 
-fn host_exit(vm: &mut CideVM, _session: &mut Session) {
+pub fn host_exit(vm: &mut CideVM, _session: &mut Session) {
     let code = vm.pop() as i32;
     vm.set_finished(code);
 }
 
-fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
+pub fn host_strcat(vm: &mut CideVM, session: &mut Session) {
     let dest = vm.pop() as u32;
     let src = vm.pop() as u32;
     let mem_size = vm.get_memory_slice().len();
@@ -743,9 +794,31 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
     while end < mem_size && vm.get_memory_slice()[end] != 0 {
         end += 1;
     }
-    let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
+    let dest_len = end - dest as usize;
     let src_bytes = read_cbytes(vm, src);
-    let copy_len = src_bytes.len().min(max_copy);
+    let src_len = src_bytes.len();
+
+    // 注入边界检查
+    for r in &session.memory.regions {
+        if !r.is_freed && dest >= r.addr && dest < r.addr + r.size as u32 {
+            let offset = (dest - r.addr) as usize;
+            let available = (r.size as usize).saturating_sub(offset);
+            if dest_len + src_len + 1 > available {
+                vm.trap(
+                    &format!(
+                        "💥 Buffer Overflow (E3070)：strcat 目标缓冲区溢出。已有 {} 字节 + 源字符串 {} 字节 + 终止符 1 字节 = {} 字节，但目标区域 '{}' 从偏移 {} 开始仅剩 {} 字节。\n\n💡 原因：strcat 不会检查目标缓冲区剩余容量。\n✅ 解决方法：使用 strncat 或确保目标缓冲区足够大。",
+                        dest_len, src_len, dest_len + src_len + 1, r.name, offset, available
+                    ),
+                    &super::instruction::SourceLoc::default(),
+                );
+                return;
+            }
+            break;
+        }
+    }
+
+    let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
+    let copy_len = src_len.min(max_copy);
     for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
         vm.store_i8((end + i) as u32, b as i32, &super::instruction::SourceLoc::default());
     }
@@ -753,14 +826,203 @@ fn host_strcat(vm: &mut CideVM, _session: &mut Session) {
     vm.push(dest as u64);
 }
 
-fn host_atoi(vm: &mut CideVM, _session: &mut Session) {
-    let addr = vm.pop() as u32;
-    let s = read_cstring(vm, addr);
-    let val = s.trim_start().parse::<i32>().unwrap_or(0);
-    vm.push(val as u64);
+pub fn host_strncpy(vm: &mut CideVM, _session: &mut Session) {
+    let dest = vm.pop() as u32;
+    let src = vm.pop() as u32;
+    let n = vm.pop() as i32;
+    let src_bytes = read_cbytes(vm, src);
+    let mem_size = vm.get_memory_slice().len();
+    if dest as usize >= mem_size {
+        vm.push(dest as u64);
+        return;
+    }
+    let max_write = mem_size - dest as usize;
+    let write_len = (n as usize).min(max_write);
+    let copy_len = src_bytes.len().min(write_len);
+    for (i, &byte) in src_bytes.iter().enumerate().take(copy_len) {
+        vm.store_i8(dest + i as u32, byte as i32, &super::instruction::SourceLoc::default());
+    }
+    for i in copy_len..write_len {
+        vm.store_i8(dest + i as u32, 0, &super::instruction::SourceLoc::default());
+    }
+    vm.push(dest as u64);
 }
 
-fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
+pub fn host_memcpy(vm: &mut CideVM, _session: &mut Session) {
+    let dest = vm.pop() as u32;
+    let src = vm.pop() as u32;
+    let n = vm.pop() as i32;
+    let mem_size = vm.get_memory_slice().len();
+    if dest as usize >= mem_size || src as usize >= mem_size {
+        vm.push(dest as u64);
+        return;
+    }
+    let copy_len = (n as usize).min(mem_size - dest as usize).min(mem_size - src as usize);
+    if copy_len > 0 {
+        let buf = {
+            let mem = vm.memory_ref();
+            mem[src as usize..src as usize + copy_len].to_vec()
+        };
+        let mem = vm.memory_ref_mut();
+        for i in 0..copy_len {
+            mem[dest as usize + i] = buf[i];
+        }
+    }
+    vm.push(dest as u64);
+}
+
+pub fn host_memmove(vm: &mut CideVM, _session: &mut Session) {
+    let dest = vm.pop() as u32;
+    let src = vm.pop() as u32;
+    let n = vm.pop() as i32;
+    let mem_size = vm.get_memory_slice().len();
+    if dest as usize >= mem_size || src as usize >= mem_size {
+        vm.push(dest as u64);
+        return;
+    }
+    let copy_len = (n as usize).min(mem_size - dest as usize).min(mem_size - src as usize);
+    if copy_len > 0 {
+        let buf = {
+            let mem = vm.memory_ref();
+            mem[src as usize..src as usize + copy_len].to_vec()
+        };
+        let mem = vm.memory_ref_mut();
+        for i in 0..copy_len {
+            mem[dest as usize + i] = buf[i];
+        }
+    }
+    vm.push(dest as u64);
+}
+
+pub fn host_abs(vm: &mut CideVM, _session: &mut Session) {
+    let n = vm.pop() as i32;
+    vm.push(if n < 0 { n.wrapping_neg() as u64 } else { n as u64 });
+}
+
+// ========== math.h Host Functions ==========
+
+pub fn host_sin(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::sin(x).to_bits());
+}
+
+pub fn host_cos(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::cos(x).to_bits());
+}
+
+pub fn host_sqrt(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::sqrt(x).to_bits());
+}
+
+pub fn host_pow(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    let y = f64::from_bits(vm.pop());
+    vm.push(libm::pow(x, y).to_bits());
+}
+
+pub fn host_atan(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::atan(x).to_bits());
+}
+
+pub fn host_log(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::log(x).to_bits());
+}
+
+pub fn host_exp(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::exp(x).to_bits());
+}
+
+pub fn host_isdigit(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= '0' as i32 && c <= '9' as i32 { 1 } else { 0 });
+}
+
+pub fn host_isalpha(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if (c >= 'a' as i32 && c <= 'z' as i32) || (c >= 'A' as i32 && c <= 'Z' as i32) { 1 } else { 0 });
+}
+
+pub fn host_islower(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= 'a' as i32 && c <= 'z' as i32 { 1 } else { 0 });
+}
+
+pub fn host_isupper(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= 'A' as i32 && c <= 'Z' as i32 { 1 } else { 0 });
+}
+
+pub fn host_tolower(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= 'A' as i32 && c <= 'Z' as i32 { c + ('a' as i32 - 'A' as i32) } else { c } as u64);
+}
+
+pub fn host_toupper(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= 'a' as i32 && c <= 'z' as i32 { c + ('A' as i32 - 'a' as i32) } else { c } as u64);
+}
+
+pub fn host_isspace(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c == ' ' as i32 || c == '\t' as i32 || c == '\n' as i32 || c == '\r' as i32 || c == '\x0C' as i32 || c == '\x0B' as i32 { 1 } else { 0 });
+}
+
+pub fn host_isalnum(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    let alpha = (c >= 'a' as i32 && c <= 'z' as i32) || (c >= 'A' as i32 && c <= 'Z' as i32);
+    let digit = c >= '0' as i32 && c <= '9' as i32;
+    vm.push(if alpha || digit { 1 } else { 0 });
+}
+
+pub fn host_isprint(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= ' ' as i32 && c <= '~' as i32 { 1 } else { 0 });
+}
+
+pub fn host_iscntrl(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if (0..=31).contains(&c) || c == 127 { 1 } else { 0 });
+}
+
+pub fn host_isxdigit(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    let digit = c >= '0' as i32 && c <= '9' as i32;
+    let lower = c >= 'a' as i32 && c <= 'f' as i32;
+    let upper = c >= 'A' as i32 && c <= 'F' as i32;
+    vm.push(if digit || lower || upper { 1 } else { 0 });
+}
+
+pub fn host_atoi(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let s = read_cstring(vm, addr);
+    let trimmed = s.trim_start();
+    let mut chars = trimmed.chars().peekable();
+    let mut sign = 1i32;
+    if let Some(&c) = chars.peek() {
+        if c == '-' {
+            sign = -1;
+            chars.next();
+        } else if c == '+' {
+            chars.next();
+        }
+    }
+    let mut val: i32 = 0;
+    for c in chars {
+        if c.is_ascii_digit() {
+            val = val.wrapping_mul(10).wrapping_add(c as i32 - '0' as i32);
+        } else {
+            break;
+        }
+    }
+    vm.push((sign.wrapping_mul(val)) as u64);
+}
+
+pub fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
     let _stream = vm.pop();
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
@@ -773,7 +1035,7 @@ fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
     session.runtime.output_lines.push(out);
 }
 
-fn host_realloc(vm: &mut CideVM, session: &mut Session) {
+pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     let ptr = vm.pop() as u32;
     let new_size = vm.pop() as i32;
 
@@ -807,6 +1069,7 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
 
     if ptr == 0 {
         // Equivalent to malloc
+        vm.push(new_size as u64);
         host_malloc(vm, session);
         return;
     }
@@ -882,6 +1145,14 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
         session.memory.heap_offset = new_offset as u32;
     }
 
+    // 清理被新分配重用的 freed_logs（必须在写入新内存之前执行，
+    // 否则 store_i8 会触发 Use-After-Free 误报）
+    let new_end = new_addr.saturating_add(aligned_new_size);
+    vm.freed_logs.retain(|log| {
+        let log_end = log.addr.saturating_add(log.size);
+        log_end <= new_addr || log.addr >= new_end
+    });
+
     // Copy old data
     let copy_size = (old_size as u32).min(aligned_new_size);
     let copy_buf = {
@@ -917,13 +1188,6 @@ fn host_realloc(vm: &mut CideVM, session: &mut Session) {
             break;
         }
     }
-
-    // 清理被新分配重用的 freed_logs
-    let new_end = new_addr.saturating_add(aligned_new_size);
-    vm.freed_logs.retain(|log| {
-        let log_end = log.addr.saturating_add(log.size);
-        log_end <= new_addr || log.addr >= new_end
-    });
 
     // Track new region
     session.memory.regions.push(MemoryRegion {

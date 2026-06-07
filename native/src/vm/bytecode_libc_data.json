@@ -1,0 +1,6568 @@
+{
+  "version": 1,
+  "code_len": 790,
+  "code": [
+    {
+      "op": "Nop",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 3,
+      "loc": {
+        "line": 3,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 4,
+      "loc": {
+        "line": 4,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 48,
+      "loc": {
+        "line": 4,
+        "column": 17
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 17
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 12,
+      "loc": {
+        "line": 4,
+        "column": 29
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 29
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 24
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 57,
+      "loc": {
+        "line": 4,
+        "column": 29
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 29
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 4,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 3,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 3,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 7,
+      "loc": {
+        "line": 7,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 8,
+      "loc": {
+        "line": 8,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 97,
+      "loc": {
+        "line": 8,
+        "column": 18
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 18
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 30
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 26,
+      "loc": {
+        "line": 8,
+        "column": 30
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 30
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 25
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 122,
+      "loc": {
+        "line": 8,
+        "column": 30
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 30
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 59
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 38,
+      "loc": {
+        "line": 8,
+        "column": 59
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 59
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 39
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 65,
+      "loc": {
+        "line": 8,
+        "column": 44
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 44
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 56
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 38,
+      "loc": {
+        "line": 8,
+        "column": 56
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 56
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 51
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 90,
+      "loc": {
+        "line": 8,
+        "column": 56
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 56
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 8,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 7,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 7,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 11,
+      "loc": {
+        "line": 11,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 12,
+      "loc": {
+        "line": 12,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 97,
+      "loc": {
+        "line": 12,
+        "column": 17
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 17
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 52,
+      "loc": {
+        "line": 12,
+        "column": 29
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 29
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 24
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 122,
+      "loc": {
+        "line": 12,
+        "column": 29
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 29
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 12,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 11,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 11,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 15,
+      "loc": {
+        "line": 15,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 16,
+      "loc": {
+        "line": 16,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 65,
+      "loc": {
+        "line": 16,
+        "column": 17
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 17
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 66,
+      "loc": {
+        "line": 16,
+        "column": 29
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 29
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 24
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 90,
+      "loc": {
+        "line": 16,
+        "column": 29
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 29
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 16,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 15,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 15,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 19,
+      "loc": {
+        "line": 19,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 20,
+      "loc": {
+        "line": 20,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 20,
+        "column": 9
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 65,
+      "loc": {
+        "line": 20,
+        "column": 14
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 20,
+        "column": 14
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 20,
+        "column": 26
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 80,
+      "loc": {
+        "line": 20,
+        "column": 26
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 20,
+        "column": 26
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 20,
+        "column": 21
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 90,
+      "loc": {
+        "line": 20,
+        "column": 26
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 20,
+        "column": 26
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 89,
+      "loc": {
+        "line": 20,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 21,
+      "loc": {
+        "line": 21,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 21,
+        "column": 16
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 97,
+      "loc": {
+        "line": 21,
+        "column": 21
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 65,
+      "loc": {
+        "line": 21,
+        "column": 27
+      }
+    },
+    {
+      "op": "Sub",
+      "operand": 0,
+      "loc": {
+        "line": 21,
+        "column": 27
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 21,
+        "column": 30
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 21,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 89,
+      "loc": {
+        "line": 20,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 22,
+      "loc": {
+        "line": 22,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 22,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 22,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 19,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 19,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 25,
+      "loc": {
+        "line": 25,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 26,
+      "loc": {
+        "line": 26,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 26,
+        "column": 9
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 97,
+      "loc": {
+        "line": 26,
+        "column": 14
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 26,
+        "column": 14
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 26,
+        "column": 26
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 105,
+      "loc": {
+        "line": 26,
+        "column": 26
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 26,
+        "column": 26
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 26,
+        "column": 21
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 122,
+      "loc": {
+        "line": 26,
+        "column": 26
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 26,
+        "column": 26
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 114,
+      "loc": {
+        "line": 26,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 27,
+      "loc": {
+        "line": 27,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 27,
+        "column": 16
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 65,
+      "loc": {
+        "line": 27,
+        "column": 21
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 97,
+      "loc": {
+        "line": 27,
+        "column": 27
+      }
+    },
+    {
+      "op": "Sub",
+      "operand": 0,
+      "loc": {
+        "line": 27,
+        "column": 27
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 27,
+        "column": 30
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 27,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 114,
+      "loc": {
+        "line": 26,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 28,
+      "loc": {
+        "line": 28,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 28,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 28,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 25,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 25,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 31,
+      "loc": {
+        "line": 31,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 32,
+      "loc": {
+        "line": 32,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 32,
+      "loc": {
+        "line": 32,
+        "column": 17
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 17
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 130,
+      "loc": {
+        "line": 32,
+        "column": 29
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 29
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 24
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 9,
+      "loc": {
+        "line": 32,
+        "column": 29
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 29
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 42
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 136,
+      "loc": {
+        "line": 32,
+        "column": 42
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 42
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 37
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 10,
+      "loc": {
+        "line": 32,
+        "column": 42
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 42
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 55
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 142,
+      "loc": {
+        "line": 32,
+        "column": 55
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 55
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 50
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 13,
+      "loc": {
+        "line": 32,
+        "column": 55
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 55
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 68
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 148,
+      "loc": {
+        "line": 32,
+        "column": 68
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 68
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 63
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 12,
+      "loc": {
+        "line": 32,
+        "column": 68
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 68
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 81
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 154,
+      "loc": {
+        "line": 32,
+        "column": 81
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 81
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 76
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 11,
+      "loc": {
+        "line": 32,
+        "column": 81
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 81
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 32,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 31,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 31,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 35,
+      "loc": {
+        "line": 35,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 36,
+      "loc": {
+        "line": 36,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 36,
+        "column": 20
+      }
+    },
+    {
+      "op": "Call",
+      "operand": 2,
+      "loc": {
+        "line": 36,
+        "column": 21
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 36,
+        "column": 35
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 166,
+      "loc": {
+        "line": 36,
+        "column": 35
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 36,
+        "column": 35
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 36,
+        "column": 34
+      }
+    },
+    {
+      "op": "Call",
+      "operand": 1,
+      "loc": {
+        "line": 36,
+        "column": 35
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 36,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 35,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 35,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 39,
+      "loc": {
+        "line": 39,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 40,
+      "loc": {
+        "line": 40,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 32,
+      "loc": {
+        "line": 40,
+        "column": 17
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 17
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 180,
+      "loc": {
+        "line": 40,
+        "column": 29
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 29
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 24
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 126,
+      "loc": {
+        "line": 40,
+        "column": 29
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 29
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 40,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 39,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 39,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 43,
+      "loc": {
+        "line": 43,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 44,
+      "loc": {
+        "line": 44,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 18
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 18
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 28
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 194,
+      "loc": {
+        "line": 44,
+        "column": 28
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 28
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 23
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 31,
+      "loc": {
+        "line": 44,
+        "column": 28
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 28
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 40
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 200,
+      "loc": {
+        "line": 44,
+        "column": 40
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 40
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 35
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 127,
+      "loc": {
+        "line": 44,
+        "column": 40
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 40
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 44,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 43,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 43,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 47,
+      "loc": {
+        "line": 47,
+        "column": 21
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 48,
+      "loc": {
+        "line": 48,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 20
+      }
+    },
+    {
+      "op": "Call",
+      "operand": 1,
+      "loc": {
+        "line": 48,
+        "column": 21
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 47
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 219,
+      "loc": {
+        "line": 48,
+        "column": 47
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 47
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 27
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 97,
+      "loc": {
+        "line": 48,
+        "column": 32
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 32
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 44
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 219,
+      "loc": {
+        "line": 48,
+        "column": 44
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 44
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 39
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 102,
+      "loc": {
+        "line": 48,
+        "column": 44
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 44
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 73
+      }
+    },
+    {
+      "op": "JumpIfNotZero",
+      "operand": 231,
+      "loc": {
+        "line": 48,
+        "column": 73
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 73
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 53
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 65,
+      "loc": {
+        "line": 48,
+        "column": 58
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 58
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 70
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 231,
+      "loc": {
+        "line": 48,
+        "column": 70
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 70
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 65
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 70,
+      "loc": {
+        "line": 48,
+        "column": 70
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 70
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 48,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 47,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 47,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 52,
+      "loc": {
+        "line": 52,
+        "column": 16
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 53,
+      "loc": {
+        "line": 53,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 16
+      }
+    },
+    {
+      "op": "Lt",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 16
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 243,
+      "loc": {
+        "line": 53,
+        "column": 25
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 21
+      }
+    },
+    {
+      "op": "Neg",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 21
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 244,
+      "loc": {
+        "line": 53,
+        "column": 25
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 25
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 53,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 52,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 52,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 56,
+      "loc": {
+        "line": 56,
+        "column": 19
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 57,
+      "loc": {
+        "line": 57,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 57,
+        "column": 16
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 57,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 58,
+      "loc": {
+        "line": 58,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 58,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 58,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 59,
+      "loc": {
+        "line": 59,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 59,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 59,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 32,
+      "loc": {
+        "line": 59,
+        "column": 18
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 59,
+        "column": 18
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 269,
+      "loc": {
+        "line": 59,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 59,
+      "loc": {
+        "line": 59,
+        "column": 23
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 60,
+      "loc": {
+        "line": 60,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 60,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 60,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 60,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 60,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 0,
+      "loc": {
+        "line": 60,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 60,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 255,
+      "loc": {
+        "line": 59,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 62,
+      "loc": {
+        "line": 62,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 62,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 62,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 45,
+      "loc": {
+        "line": 62,
+        "column": 15
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 62,
+        "column": 15
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 290,
+      "loc": {
+        "line": 62,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 62,
+      "loc": {
+        "line": 62,
+        "column": 20
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 63,
+      "loc": {
+        "line": 63,
+        "column": 9
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 63,
+        "column": 17
+      }
+    },
+    {
+      "op": "Neg",
+      "operand": 0,
+      "loc": {
+        "line": 63,
+        "column": 17
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 63,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 63,
+        "column": 9
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 63,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 64,
+      "loc": {
+        "line": 64,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 64,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 64,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 64,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 64,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 0,
+      "loc": {
+        "line": 64,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 64,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 305,
+      "loc": {
+        "line": 62,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 65,
+      "loc": {
+        "line": 65,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 65,
+        "column": 17
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 65,
+        "column": 17
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 43,
+      "loc": {
+        "line": 65,
+        "column": 22
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 65,
+        "column": 22
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 305,
+      "loc": {
+        "line": 65,
+        "column": 12
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 65,
+      "loc": {
+        "line": 65,
+        "column": 27
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 66,
+      "loc": {
+        "line": 66,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 66,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 66,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 66,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 66,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 0,
+      "loc": {
+        "line": 66,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 66,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 305,
+      "loc": {
+        "line": 65,
+        "column": 12
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 68,
+      "loc": {
+        "line": 68,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 48,
+      "loc": {
+        "line": 68,
+        "column": 18
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 18
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 31
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 317,
+      "loc": {
+        "line": 68,
+        "column": 31
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 31
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 26
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 26
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 57,
+      "loc": {
+        "line": 68,
+        "column": 31
+      }
+    },
+    {
+      "op": "Le",
+      "operand": 0,
+      "loc": {
+        "line": 68,
+        "column": 31
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 339,
+      "loc": {
+        "line": 68,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 68,
+      "loc": {
+        "line": 68,
+        "column": 36
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 69,
+      "loc": {
+        "line": 69,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 69,
+        "column": 15
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 10,
+      "loc": {
+        "line": 69,
+        "column": 21
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 69,
+        "column": 21
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 69,
+        "column": 28
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 69,
+        "column": 28
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 48,
+      "loc": {
+        "line": 69,
+        "column": 32
+      }
+    },
+    {
+      "op": "Sub",
+      "operand": 0,
+      "loc": {
+        "line": 69,
+        "column": 32
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 69,
+        "column": 35
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 69,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 69,
+        "column": 9
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 69,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 70,
+      "loc": {
+        "line": 70,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 70,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 70,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 70,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 70,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 0,
+      "loc": {
+        "line": 70,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 70,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 306,
+      "loc": {
+        "line": 68,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 72,
+      "loc": {
+        "line": 72,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 72,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 72,
+        "column": 19
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 72,
+        "column": 19
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 72,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 56,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 56,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 77,
+      "loc": {
+        "line": 77,
+        "column": 28
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 78,
+      "loc": {
+        "line": 78,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 78,
+        "column": 19
+      }
+    },
+    {
+      "op": "StoreGlobal",
+      "operand": 0,
+      "loc": {
+        "line": 78,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadGlobal",
+      "operand": 0,
+      "loc": {
+        "line": 78,
+        "column": 5
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 78,
+        "column": 5
+      }
+    },
+    {
+      "op": "RetVoid",
+      "operand": 0,
+      "loc": {
+        "line": 77,
+        "column": 6
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 81,
+      "loc": {
+        "line": 81,
+        "column": 16
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 82,
+      "loc": {
+        "line": 82,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadGlobal",
+      "operand": 0,
+      "loc": {
+        "line": 82,
+        "column": 19
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1103515245,
+      "loc": {
+        "line": 82,
+        "column": 34
+      }
+    },
+    {
+      "op": "UMul",
+      "operand": 0,
+      "loc": {
+        "line": 82,
+        "column": 34
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 12345,
+      "loc": {
+        "line": 82,
+        "column": 48
+      }
+    },
+    {
+      "op": "UAdd",
+      "operand": 0,
+      "loc": {
+        "line": 82,
+        "column": 48
+      }
+    },
+    {
+      "op": "StoreGlobal",
+      "operand": 0,
+      "loc": {
+        "line": 82,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadGlobal",
+      "operand": 0,
+      "loc": {
+        "line": 82,
+        "column": 5
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 82,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 83,
+      "loc": {
+        "line": 83,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadGlobal",
+      "operand": 0,
+      "loc": {
+        "line": 83,
+        "column": 19
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 16,
+      "loc": {
+        "line": 83,
+        "column": 34
+      }
+    },
+    {
+      "op": "LShr",
+      "operand": 0,
+      "loc": {
+        "line": 83,
+        "column": 34
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 32767,
+      "loc": {
+        "line": 83,
+        "column": 41
+      }
+    },
+    {
+      "op": "BitAnd",
+      "operand": 0,
+      "loc": {
+        "line": 83,
+        "column": 41
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 83,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 81,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 81,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 89,
+      "loc": {
+        "line": 89,
+        "column": 21
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 90,
+      "loc": {
+        "line": 90,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 90,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 90,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 91,
+      "loc": {
+        "line": 91,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 91,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 91,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 91,
+        "column": 18
+      }
+    },
+    {
+      "op": "Ne",
+      "operand": 0,
+      "loc": {
+        "line": 91,
+        "column": 18
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 398,
+      "loc": {
+        "line": 91,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 91,
+      "loc": {
+        "line": 91,
+        "column": 24
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 92,
+      "loc": {
+        "line": 92,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 92,
+        "column": 12
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 92,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 92,
+        "column": 12
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 92,
+        "column": 12
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 92,
+        "column": 12
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 92,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 93,
+      "loc": {
+        "line": 93,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 93,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 93,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 93,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 93,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 0,
+      "loc": {
+        "line": 93,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 93,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 377,
+      "loc": {
+        "line": 91,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 95,
+      "loc": {
+        "line": 95,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 95,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 95,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 89,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 89,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 98,
+      "loc": {
+        "line": 98,
+        "column": 32
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 99,
+      "loc": {
+        "line": 99,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 19
+      }
+    },
+    {
+      "op": "Ne",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 19
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 35
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 417,
+      "loc": {
+        "line": 99,
+        "column": 35
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 35
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 28
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 28
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 99,
+        "column": 35
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 35
+      }
+    },
+    {
+      "op": "Eq",
+      "operand": 0,
+      "loc": {
+        "line": 99,
+        "column": 35
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 434,
+      "loc": {
+        "line": 99,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 99,
+      "loc": {
+        "line": 99,
+        "column": 39
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 100,
+      "loc": {
+        "line": 100,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 100,
+        "column": 11
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 100,
+        "column": 11
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 100,
+        "column": 11
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 100,
+        "column": 11
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 0,
+      "loc": {
+        "line": 100,
+        "column": 11
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 100,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 101,
+      "loc": {
+        "line": 101,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 101,
+        "column": 11
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 101,
+        "column": 11
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 101,
+        "column": 11
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 101,
+        "column": 11
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 101,
+        "column": 11
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 101,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 405,
+      "loc": {
+        "line": 99,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 103,
+      "loc": {
+        "line": 103,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 103,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 103,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 103,
+        "column": 19
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 103,
+        "column": 19
+      }
+    },
+    {
+      "op": "Sub",
+      "operand": 0,
+      "loc": {
+        "line": 103,
+        "column": 19
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 103,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 98,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 98,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 106,
+      "loc": {
+        "line": 106,
+        "column": 37
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 107,
+      "loc": {
+        "line": 107,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 107,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 107,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 108,
+      "loc": {
+        "line": 108,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 108,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 108,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 108,
+        "column": 20
+      }
+    },
+    {
+      "op": "Ne",
+      "operand": 0,
+      "loc": {
+        "line": 108,
+        "column": 20
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 479,
+      "loc": {
+        "line": 108,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 108,
+      "loc": {
+        "line": 108,
+        "column": 26
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 109,
+      "loc": {
+        "line": 109,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 109,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 109,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 109,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 109,
+        "column": 15
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 109,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 109,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 109,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 109,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 109,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 110,
+      "loc": {
+        "line": 110,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 110,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 110,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 110,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 110,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 110,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 110,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 111,
+      "loc": {
+        "line": 111,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 111,
+        "column": 12
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 111,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 111,
+        "column": 12
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 111,
+        "column": 12
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 111,
+        "column": 12
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 111,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 448,
+      "loc": {
+        "line": 108,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 113,
+      "loc": {
+        "line": 113,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 113,
+        "column": 6
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 113,
+        "column": 6
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 113,
+        "column": 6
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 113,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 113,
+        "column": 6
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 113,
+        "column": 6
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 113,
+        "column": 6
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 113,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 114,
+      "loc": {
+        "line": 114,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 114,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 114,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 106,
+        "column": 7
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 106,
+        "column": 7
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 117,
+      "loc": {
+        "line": 117,
+        "column": 37
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 118,
+      "loc": {
+        "line": 118,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 118,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 118,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 119,
+      "loc": {
+        "line": 119,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 119,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 119,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 119,
+        "column": 18
+      }
+    },
+    {
+      "op": "Ne",
+      "operand": 0,
+      "loc": {
+        "line": 119,
+        "column": 18
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 512,
+      "loc": {
+        "line": 119,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 119,
+      "loc": {
+        "line": 119,
+        "column": 24
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 120,
+      "loc": {
+        "line": 120,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 120,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 120,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 120,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 120,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 120,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 120,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 498,
+      "loc": {
+        "line": 119,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 122,
+      "loc": {
+        "line": 122,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 122,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 122,
+        "column": 13
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 122,
+        "column": 20
+      }
+    },
+    {
+      "op": "Ne",
+      "operand": 0,
+      "loc": {
+        "line": 122,
+        "column": 20
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 544,
+      "loc": {
+        "line": 122,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 122,
+      "loc": {
+        "line": 122,
+        "column": 26
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 123,
+      "loc": {
+        "line": 123,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 123,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 123,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 123,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 123,
+        "column": 15
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 123,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 123,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 123,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 123,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 123,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 124,
+      "loc": {
+        "line": 124,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 124,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 124,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 124,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 124,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 124,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 124,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 125,
+      "loc": {
+        "line": 125,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 125,
+        "column": 12
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 125,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 125,
+        "column": 12
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 125,
+        "column": 12
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 125,
+        "column": 12
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 125,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 513,
+      "loc": {
+        "line": 122,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 127,
+      "loc": {
+        "line": 127,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 127,
+        "column": 6
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 127,
+        "column": 6
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 127,
+        "column": 6
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 127,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 127,
+        "column": 6
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 127,
+        "column": 6
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 127,
+        "column": 6
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 127,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 128,
+      "loc": {
+        "line": 128,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 128,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 128,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 117,
+        "column": 7
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 117,
+        "column": 7
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 131,
+      "loc": {
+        "line": 131,
+        "column": 45
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 132,
+      "loc": {
+        "line": 132,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 132,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 132,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 133,
+      "loc": {
+        "line": 133,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 133,
+        "column": 13
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 16,
+      "loc": {
+        "line": 133,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 134,
+      "loc": {
+        "line": 134,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 134,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 134,
+        "column": 16
+      }
+    },
+    {
+      "op": "Lt",
+      "operand": 0,
+      "loc": {
+        "line": 134,
+        "column": 16
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 134,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 576,
+      "loc": {
+        "line": 134,
+        "column": 29
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 134,
+        "column": 29
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 134,
+        "column": 22
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 134,
+        "column": 22
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 134,
+        "column": 29
+      }
+    },
+    {
+      "op": "Ne",
+      "operand": 0,
+      "loc": {
+        "line": 134,
+        "column": 29
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 610,
+      "loc": {
+        "line": 134,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 134,
+      "loc": {
+        "line": 134,
+        "column": 35
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 135,
+      "loc": {
+        "line": 135,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 135,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 135,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 20,
+      "loc": {
+        "line": 135,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 135,
+        "column": 15
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 135,
+        "column": 15
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 135,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 135,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 135,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 135,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 136,
+      "loc": {
+        "line": 136,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 136,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 136,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 136,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 136,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 136,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 136,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 137,
+      "loc": {
+        "line": 137,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 137,
+        "column": 12
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 137,
+        "column": 12
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 137,
+        "column": 12
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 137,
+        "column": 12
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 4,
+      "loc": {
+        "line": 137,
+        "column": 12
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 137,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 138,
+      "loc": {
+        "line": 138,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 138,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 138,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 138,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 138,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 16,
+      "loc": {
+        "line": 138,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 138,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 566,
+      "loc": {
+        "line": 134,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 140,
+      "loc": {
+        "line": 140,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 140,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 140,
+        "column": 16
+      }
+    },
+    {
+      "op": "Lt",
+      "operand": 0,
+      "loc": {
+        "line": 140,
+        "column": 16
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 640,
+      "loc": {
+        "line": 140,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 140,
+      "loc": {
+        "line": 140,
+        "column": 19
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 141,
+      "loc": {
+        "line": 141,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 141,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 141,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 20,
+      "loc": {
+        "line": 141,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 141,
+        "column": 14
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 141,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 141,
+        "column": 10
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 141,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 141,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 142,
+      "loc": {
+        "line": 142,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 142,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 142,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 142,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 142,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 142,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 142,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 143,
+      "loc": {
+        "line": 143,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 143,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 143,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 143,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 143,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 16,
+      "loc": {
+        "line": 143,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 143,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 611,
+      "loc": {
+        "line": 140,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 145,
+      "loc": {
+        "line": 145,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 145,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 145,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 131,
+        "column": 7
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 131,
+        "column": 7
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 148,
+      "loc": {
+        "line": 148,
+        "column": 44
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 149,
+      "loc": {
+        "line": 149,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 149,
+        "column": 23
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 149,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 150,
+      "loc": {
+        "line": 150,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 150,
+        "column": 23
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 16,
+      "loc": {
+        "line": 150,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 151,
+      "loc": {
+        "line": 151,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 151,
+        "column": 13
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 20,
+      "loc": {
+        "line": 151,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 152,
+      "loc": {
+        "line": 152,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 152,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 152,
+        "column": 16
+      }
+    },
+    {
+      "op": "Lt",
+      "operand": 0,
+      "loc": {
+        "line": 152,
+        "column": 16
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 687,
+      "loc": {
+        "line": 152,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 152,
+      "loc": {
+        "line": 152,
+        "column": 19
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 153,
+      "loc": {
+        "line": 153,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 153,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 153,
+        "column": 11
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 24,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 153,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 153,
+        "column": 18
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 153,
+        "column": 19
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 19
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 19
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 19
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 24,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 12
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 153,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 154,
+      "loc": {
+        "line": 154,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 154,
+        "column": 10
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 154,
+        "column": 10
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 154,
+        "column": 10
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 154,
+        "column": 10
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 20,
+      "loc": {
+        "line": 154,
+        "column": 10
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 154,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 656,
+      "loc": {
+        "line": 152,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 156,
+      "loc": {
+        "line": 156,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 156,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 156,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 148,
+        "column": 7
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 148,
+        "column": 7
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 159,
+      "loc": {
+        "line": 159,
+        "column": 45
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 160,
+      "loc": {
+        "line": 160,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 160,
+        "column": 23
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 12,
+      "loc": {
+        "line": 160,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 161,
+      "loc": {
+        "line": 161,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 161,
+        "column": 23
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 16,
+      "loc": {
+        "line": 161,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 162,
+      "loc": {
+        "line": 162,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 162,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 162,
+        "column": 13
+      }
+    },
+    {
+      "op": "Lt",
+      "operand": 0,
+      "loc": {
+        "line": 162,
+        "column": 13
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 741,
+      "loc": {
+        "line": 162,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 162,
+      "loc": {
+        "line": 162,
+        "column": 16
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 163,
+      "loc": {
+        "line": 163,
+        "column": 9
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 163,
+        "column": 17
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 20,
+      "loc": {
+        "line": 163,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 164,
+      "loc": {
+        "line": 164,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 164,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 164,
+        "column": 20
+      }
+    },
+    {
+      "op": "Lt",
+      "operand": 0,
+      "loc": {
+        "line": 164,
+        "column": 20
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 740,
+      "loc": {
+        "line": 164,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 164,
+      "loc": {
+        "line": 164,
+        "column": 23
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 165,
+      "loc": {
+        "line": 165,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 165,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 165,
+        "column": 15
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 24,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 165,
+        "column": 20
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 165,
+        "column": 22
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 165,
+        "column": 23
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 23
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 23
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 23
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 24,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 16
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 165,
+        "column": 13
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 166,
+      "loc": {
+        "line": 166,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 20,
+      "loc": {
+        "line": 166,
+        "column": 14
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 166,
+        "column": 14
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 166,
+        "column": 14
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 166,
+        "column": 14
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 20,
+      "loc": {
+        "line": 166,
+        "column": 14
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 166,
+        "column": 13
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 709,
+      "loc": {
+        "line": 164,
+        "column": 9
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 779,
+      "loc": {
+        "line": 162,
+        "column": 5
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 168,
+      "loc": {
+        "line": 168,
+        "column": 12
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 169,
+      "loc": {
+        "line": 169,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 169,
+        "column": 17
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 169,
+        "column": 21
+      }
+    },
+    {
+      "op": "Sub",
+      "operand": 0,
+      "loc": {
+        "line": 169,
+        "column": 21
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 28,
+      "loc": {
+        "line": 169,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 170,
+      "loc": {
+        "line": 170,
+        "column": 9
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 28,
+      "loc": {
+        "line": 170,
+        "column": 16
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 170,
+        "column": 21
+      }
+    },
+    {
+      "op": "Ge",
+      "operand": 0,
+      "loc": {
+        "line": 170,
+        "column": 21
+      }
+    },
+    {
+      "op": "JumpIfZero",
+      "operand": 779,
+      "loc": {
+        "line": 170,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 170,
+      "loc": {
+        "line": 170,
+        "column": 24
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 171,
+      "loc": {
+        "line": 171,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 12,
+      "loc": {
+        "line": 171,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 28,
+      "loc": {
+        "line": 171,
+        "column": 15
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 24,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 16,
+      "loc": {
+        "line": 171,
+        "column": 20
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 28,
+      "loc": {
+        "line": 171,
+        "column": 22
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 171,
+        "column": 23
+      }
+    },
+    {
+      "op": "Mul",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 23
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 23
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 23
+      }
+    },
+    {
+      "op": "StoreMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 24,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "LoadMemByte",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 16
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 171,
+        "column": 13
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 172,
+      "loc": {
+        "line": 172,
+        "column": 13
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 28,
+      "loc": {
+        "line": 172,
+        "column": 14
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 172,
+        "column": 14
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 1,
+      "loc": {
+        "line": 172,
+        "column": 14
+      }
+    },
+    {
+      "op": "Sub",
+      "operand": 0,
+      "loc": {
+        "line": 172,
+        "column": 14
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 28,
+      "loc": {
+        "line": 172,
+        "column": 14
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 172,
+        "column": 13
+      }
+    },
+    {
+      "op": "Jump",
+      "operand": 748,
+      "loc": {
+        "line": 170,
+        "column": 9
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 175,
+      "loc": {
+        "line": 175,
+        "column": 5
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 175,
+        "column": 12
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 175,
+        "column": 5
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 159,
+        "column": 7
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 159,
+        "column": 7
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 177,
+      "loc": {
+        "line": 177,
+        "column": 12
+      }
+    },
+    {
+      "op": "StepEvent",
+      "operand": 177,
+      "loc": {
+        "line": 177,
+        "column": 14
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 177,
+        "column": 21
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 177,
+        "column": 14
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 177,
+        "column": 5
+      }
+    },
+    {
+      "op": "Ret",
+      "operand": 0,
+      "loc": {
+        "line": 177,
+        "column": 5
+      }
+    }
+  ],
+  "func_table": {
+    "isprint": {
+      "ip": 169,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "isalnum": {
+      "ip": 157,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "abs": {
+      "ip": 234,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "memmove": {
+      "ip": 692,
+      "arg_count": 3,
+      "param_count": 3,
+      "local_count": 32,
+      "param_sizes": [
+        1,
+        1,
+        1
+      ]
+    },
+    "toupper": {
+      "ip": 94,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "isupper": {
+      "ip": 55,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "strncpy": {
+      "ip": 558,
+      "arg_count": 3,
+      "param_count": 3,
+      "local_count": 24,
+      "param_sizes": [
+        1,
+        1,
+        1
+      ]
+    },
+    "isalpha": {
+      "ip": 15,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "isspace": {
+      "ip": 119,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "strcpy": {
+      "ip": 443,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 16,
+      "param_sizes": [
+        1,
+        1
+      ]
+    },
+    "isxdigit": {
+      "ip": 203,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "memcpy": {
+      "ip": 645,
+      "arg_count": 3,
+      "param_count": 3,
+      "local_count": 28,
+      "param_sizes": [
+        1,
+        1,
+        1
+      ]
+    },
+    "strlen": {
+      "ip": 372,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ]
+    },
+    "srand": {
+      "ip": 346,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "iscntrl": {
+      "ip": 183,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "rand": {
+      "ip": 353,
+      "arg_count": 0,
+      "param_count": 0,
+      "local_count": 0,
+      "param_sizes": []
+    },
+    "strcat": {
+      "ip": 493,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 16,
+      "param_sizes": [
+        1,
+        1
+      ]
+    },
+    "strcmp": {
+      "ip": 403,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 8,
+      "param_sizes": [
+        1,
+        1
+      ]
+    },
+    "tolower": {
+      "ip": 69,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "isdigit": {
+      "ip": 1,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    },
+    "atoi": {
+      "ip": 247,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 12,
+      "param_sizes": [
+        1
+      ]
+    },
+    "islower": {
+      "ip": 41,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ]
+    }
+  },
+  "func_index": {
+    "memmove": 22,
+    "atoi": 13,
+    "strcpy": 18,
+    "isdigit": 1,
+    "toupper": 6,
+    "memcpy": 21,
+    "islower": 3,
+    "tolower": 5,
+    "srand": 14,
+    "iscntrl": 10,
+    "strcat": 19,
+    "isalpha": 2,
+    "strncpy": 20,
+    "isprint": 9,
+    "isspace": 7,
+    "strlen": 16,
+    "strcmp": 17,
+    "isupper": 4,
+    "abs": 12,
+    "isxdigit": 11,
+    "isalnum": 8,
+    "rand": 15
+  },
+  "globals_init_32": [
+    [
+      0,
+      1
+    ]
+  ],
+  "globals_init_64": [],
+  "string_data": [],
+  "f64_constants": [],
+  "i64_constants": [],
+  "globals_size": 4
+}

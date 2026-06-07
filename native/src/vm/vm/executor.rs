@@ -368,6 +368,69 @@ impl CideVM {
                             self.mem_stack_top -= aligned_size;
                             self.push(self.mem_stack_top as u64);
                         }
+                        OpCode::Memcpy => {
+                            let dest = self.pop() as u32;
+                            let src = self.pop() as u32;
+                            let n = self.pop();
+                            let mem_size = self.memory_ref().len();
+                            if dest as usize >= mem_size || src as usize >= mem_size {
+                                self.push(dest as u64);
+                                return;
+                            }
+                            let copy_len = (n as usize)
+                                .min(mem_size - dest as usize)
+                                .min(mem_size - src as usize);
+                            if copy_len > 0 {
+                                let buf = {
+                                    let mem = self.memory_ref();
+                                    mem[src as usize..src as usize + copy_len].to_vec()
+                                };
+                                let mem = self.memory_ref_mut();
+                                for i in 0..copy_len {
+                                    mem[dest as usize + i] = buf[i];
+                                }
+                            }
+                            self.push(dest as u64);
+                        }
+                        OpCode::Memset => {
+                            let ptr = self.pop() as u32;
+                            let value = self.pop();
+                            let size = self.pop();
+                            let mem_size = self.memory_ref().len();
+                            if ptr as usize >= mem_size {
+                                self.push(ptr as u64);
+                                return;
+                            }
+                            // NULL 指针安全检查（与 host_memset 保持一致）
+                            if ptr < NULL_TRAP_SIZE && size > 0 {
+                                self.trap(
+                                    &format!(
+                                        "向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。",
+                                        ptr
+                                    ),
+                                    loc,
+                                );
+                                self.push(ptr as u64);
+                                return;
+                            }
+                            let max_write = mem_size - ptr as usize;
+                            let write_len = (size as usize).min(max_write);
+                            let byte_val = (value & 0xFF) as u8;
+                            let mem = self.memory_ref_mut();
+                            mem[ptr as usize..ptr as usize + write_len].fill(byte_val);
+                            self.push(ptr as u64);
+                        }
+                        OpCode::Strlen => {
+                            let addr = self.pop() as u32;
+                            let mem = self.memory_ref();
+                            let start = addr as usize;
+                            if start >= mem.len() {
+                                self.push(0);
+                            } else {
+                                let len = mem[start..].iter().take_while(|&&b| b != 0).count();
+                                self.push(len as u64);
+                            }
+                        }
             _ => {}
         }
     }
@@ -382,6 +445,11 @@ impl CideVM {
                             } else {
                                 self.push(r as u64);
                             }
+                        }
+                        OpCode::UAdd => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            self.push(a.wrapping_add(b) as u64);
                         }
                         OpCode::Sub => {
                             let b = self.pop() as i32;
@@ -407,6 +475,11 @@ impl CideVM {
                             } else {
                                 self.push(r as u64);
                             }
+                        }
+                        OpCode::UMul => {
+                            let b = self.pop() as i32;
+                            let a = self.pop() as i32;
+                            self.push(a.wrapping_mul(b) as u64);
                         }
                         OpCode::Div => {
                             let b = self.pop() as i32;
@@ -959,12 +1032,14 @@ impl CideVM {
 
             OpCode::LoadMem | OpCode::StoreMem | OpCode::LoadMemD | OpCode::StoreMemD |
             OpCode::LoadMemByte | OpCode::StoreMemByte | OpCode::LoadMemQ | OpCode::StoreMemQ |
-            OpCode::SplitD | OpCode::SplitQ | OpCode::StackAlloc => {
+            OpCode::SplitD | OpCode::SplitQ | OpCode::StackAlloc |
+            OpCode::Memcpy | OpCode::Memset | OpCode::Strlen => {
                 self.execute_memory(op, operand, loc);
             }
 
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg |
-            OpCode::UDiv | OpCode::UMod | OpCode::USub | OpCode::UNeg => {
+            OpCode::UDiv | OpCode::UMod | OpCode::USub | OpCode::UNeg |
+            OpCode::UAdd | OpCode::UMul => {
                 self.execute_arithmetic(op, operand, loc);
             }
 
@@ -1108,5 +1183,120 @@ impl CideVM {
         } else {
             StepResult::Ok
         }
+    }
+}
+
+#[cfg(test)]
+mod builtin_tests {
+    use super::*;
+    use crate::vm::instruction::{Instruction, SourceLoc};
+    use crate::vm::opcode::OpCode;
+    use crate::session::Session;
+
+    fn exec_single(vm: &mut CideVM, session: &mut Session, op: OpCode) {
+        vm.set_test_code(vec![Instruction::new(op, 0, SourceLoc { line: 1, column: 1 })]);
+        let result = vm.step(session);
+        assert!(
+            !vm.has_error() || matches!(result, StepResult::Trap),
+            "指令意外失败: {}",
+            vm.get_error()
+        );
+    }
+
+    #[test]
+    fn test_builtin_strlen() {
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        let addr = 0x2000u32;
+        let s = b"hello\0";
+        vm.memory_ref_mut()[addr as usize..addr as usize + s.len()].copy_from_slice(s);
+        vm.push(addr as u64);
+        exec_single(&mut vm, &mut session, OpCode::Strlen);
+        assert_eq!(vm.get_stack().last().copied().unwrap() as usize, 5);
+    }
+
+    #[test]
+    fn test_builtin_strlen_empty() {
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        let addr = 0x2000u32;
+        vm.memory_ref_mut()[addr as usize] = 0;
+        vm.push(addr as u64);
+        exec_single(&mut vm, &mut session, OpCode::Strlen);
+        assert_eq!(vm.get_stack().last().copied().unwrap() as usize, 0);
+    }
+
+    #[test]
+    fn test_builtin_strlen_out_of_bounds() {
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        vm.push((1024 * 1024) as u64); // MEM_SIZE
+        exec_single(&mut vm, &mut session, OpCode::Strlen);
+        assert_eq!(vm.get_stack().last().copied().unwrap() as usize, 0);
+    }
+
+    #[test]
+    fn test_builtin_memset() {
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        let addr = 0x2000u32;
+        // 参数入栈顺序与 codegen 一致（从右到左：size, value, ptr）
+        vm.push(5);           // size
+        vm.push(0x41);        // value ('A')
+        vm.push(addr as u64); // ptr
+        exec_single(&mut vm, &mut session, OpCode::Memset);
+        assert_eq!(vm.get_stack().last().copied().unwrap() as u32, addr);
+        let mem = vm.memory_ref();
+        for i in 0..5 {
+            assert_eq!(mem[addr as usize + i], b'A');
+        }
+    }
+
+    #[test]
+    fn test_builtin_memset_null_trap() {
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        let addr = 0x100u32; // NULL trap area
+        vm.push(5);
+        vm.push(0x41);
+        vm.push(addr as u64);
+        exec_single(&mut vm, &mut session, OpCode::Memset);
+        assert!(vm.has_error(), "Memset 应对 NULL 指针区域触发 trap");
+    }
+
+    #[test]
+    fn test_builtin_memcpy() {
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        let src = 0x2000u32;
+        let dst = 0x3000u32;
+        let data = b"world\0";
+        vm.memory_ref_mut()[src as usize..src as usize + data.len()].copy_from_slice(data);
+        // 参数入栈顺序与 codegen 一致（从右到左：n, src, dest）
+        vm.push(5);          // n
+        vm.push(src as u64); // src
+        vm.push(dst as u64); // dest
+        exec_single(&mut vm, &mut session, OpCode::Memcpy);
+        assert_eq!(vm.get_stack().last().copied().unwrap() as u32, dst);
+        let mem = vm.memory_ref();
+        assert_eq!(&mem[dst as usize..dst as usize + 5], b"world");
+    }
+
+    #[test]
+    fn test_builtin_memcpy_overlap_safety() {
+        // Builtin Memcpy 不做重叠处理（与 host_memcpy 一致，未定义行为）。
+        // 此处仅验证它能正确复制无重叠区域。
+        let mut vm = CideVM::new();
+        let mut session = Session::default();
+        let src = 0x2000u32;
+        let dst = 0x2005u32;
+        let data = b"abcde";
+        vm.memory_ref_mut()[src as usize..src as usize + data.len()].copy_from_slice(data);
+        vm.push(5);
+        vm.push(src as u64);
+        vm.push(dst as u64);
+        exec_single(&mut vm, &mut session, OpCode::Memcpy);
+        let mem = vm.memory_ref();
+        assert_eq!(&mem[dst as usize..dst as usize + 5], b"abcde");
     }
 }

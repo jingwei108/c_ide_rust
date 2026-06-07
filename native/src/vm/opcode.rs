@@ -137,4 +137,9 @@ define_opcode! {
     StackAlloc = 119,
     USub = 120,
     UNeg = 121,
+    UAdd = 122,
+    UMul = 123,
+    Memcpy = 124,
+    Memset = 125,
+    Strlen = 126,
 }

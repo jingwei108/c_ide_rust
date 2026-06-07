@@ -33,13 +33,23 @@ impl TypeChecker {
                 let right_type = self.resolve_expr_type(right);
                 *ty = match op {
                     BinaryOp::Add | BinaryOp::Sub => {
+                        let left_is_ptrlike = left_type.is_pointer() || left_type.is_array();
+                        let right_is_ptrlike = right_type.is_pointer() || right_type.is_array();
                         if self.is_scalar(&left_type) && self.is_scalar(&right_type) {
                             promote_type(&left_type, &right_type)
-                        } else if left_type.is_pointer() && self.is_int(&right_type) {
-                            left_type.clone()
-                        } else if self.is_int(&left_type) && right_type.is_pointer() && matches!(op, BinaryOp::Add) {
-                            right_type.clone()
-                        } else if left_type.is_pointer() && right_type.is_pointer() && matches!(op, BinaryOp::Sub) {
+                        } else if left_is_ptrlike && self.is_int(&right_type) {
+                            if left_type.is_array() {
+                                Type::pointer_to(left_type.subscript_type())
+                            } else {
+                                left_type.clone()
+                            }
+                        } else if self.is_int(&left_type) && right_is_ptrlike && matches!(op, BinaryOp::Add) {
+                            if right_type.is_array() {
+                                Type::pointer_to(right_type.subscript_type())
+                            } else {
+                                right_type.clone()
+                            }
+                        } else if left_is_ptrlike && right_is_ptrlike && matches!(op, BinaryOp::Sub) {
                             Type::int()
                         } else {
                             self.report_error("算术运算要求两边都是 int 类型，或指针与整数", loc, ErrorCode::E3016_ArithmeticTypeError);
