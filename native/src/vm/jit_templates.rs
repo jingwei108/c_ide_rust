@@ -222,6 +222,12 @@ fn tpl_neg(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut S
     None
 }
 
+fn tpl_uneg(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+    let a = vm.pop() as u32;
+    vm.push(a.wrapping_neg() as u64);
+    None
+}
+
 // --- Comparison / Logic ---
 
 fn tpl_eq(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
@@ -475,6 +481,7 @@ fn opcode_to_jit_fn(op: OpCode) -> JitFn {
         OpCode::Div => tpl_div,
         OpCode::Mod => tpl_mod,
         OpCode::Neg => tpl_neg,
+        OpCode::UNeg => tpl_uneg,
         OpCode::Eq => tpl_eq,
         OpCode::Ne => tpl_ne,
         OpCode::Lt => tpl_lt,

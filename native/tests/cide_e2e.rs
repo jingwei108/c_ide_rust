@@ -196,20 +196,17 @@ const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
 /// Monitored by `test_cide_e2e_knr_known_failures` below.
 const KNOWN_KR_FAILURES: &[&str] = &[
     // 阶段 2: K&R 第 3-4 章（残留）
-    "kr_3_4", // INT_MIN 取反溢出
-    "kr_4_3", // 局部变量遮蔽全局数组
-    "kr_4_4", // 同 kr_4_3
-    "kr_4_6", // 同 kr_4_3
+    // kr_4_3/kr_4_4/kr_4_6 已修复 (作用域隔离 + printf %g 格式支持)
     "kr_4_5", // math.h 不支持
-    "kr_4_9", // 内置 qsort 函数名冲突
+    // kr_4_9 已修复 (用户函数 qsort 可遮蔽内置函数)
     // 阶段 3: K&R 第 5-6 章
     "kr_5_1",
     "kr_5_2",
     "kr_5_8",
     "kr_5_9",
     "kr_5_10",
-    "kr_5_11",
-    "kr_5_13",
+    // kr_5_11 已修复 (char*[] 指针数组 elem_type_size / 初始化路径)
+    // kr_5_13 已修复 (getchar Batch 模式多行输入)
     "kr_5_14",
     "kr_5_16",
     "kr_6_1",

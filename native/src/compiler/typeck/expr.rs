@@ -120,6 +120,8 @@ impl TypeChecker {
                         }
                         if operand_type.kind() == TypeKind::Double { Type::double() }
                         else if operand_type.kind() == TypeKind::Float { Type::float() }
+                        else if operand_type.kind() == TypeKind::LongLong { Type::long_long() }
+                        else if operand_type.is_unsigned() { Type::unsigned_int() }
                         else { Type::int() }
                     }
                     UnaryOp::Not => {

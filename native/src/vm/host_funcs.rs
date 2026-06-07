@@ -129,6 +129,56 @@ fn apply_width(s: &str, width: Option<usize>, flags: &str) -> String {
     }
 }
 
+fn trim_trailing_zeros_and_dot(s: &str) -> String {
+    if !s.contains('.') {
+        return s.to_string();
+    }
+    let mut result = s.trim_end_matches('0').to_string();
+    if result.ends_with('.') {
+        result.pop();
+    }
+    result
+}
+
+fn format_g(val: f64, prec: usize, upper: bool) -> String {
+    if val.is_nan() {
+        return if upper { "NAN" } else { "nan" }.to_string();
+    }
+    if val.is_infinite() {
+        return if val.is_sign_positive() {
+            if upper { "INF" } else { "inf" }.to_string()
+        } else {
+            if upper { "-INF" } else { "-inf" }.to_string()
+        };
+    }
+    if val == 0.0 {
+        return "0".to_string();
+    }
+
+    let prec = prec.max(1);
+    let abs_val = val.abs();
+    let exp = abs_val.log10().floor() as i32;
+
+    let mut result;
+    let e_char = if upper { 'E' } else { 'e' };
+
+    if exp < -4 || exp >= prec as i32 {
+        let mantissa = abs_val / 10f64.powi(exp);
+        let s = format!("{:.*}", prec - 1, mantissa);
+        let s = trim_trailing_zeros_and_dot(&s);
+        result = format!("{}{}{:+#03}", s, e_char, exp);
+    } else {
+        let frac_digits = (prec as i32 - 1 - exp).max(0) as usize;
+        let s = format!("{:.*}", frac_digits, abs_val);
+        result = trim_trailing_zeros_and_dot(&s);
+    }
+
+    if val < 0.0 && !result.starts_with('-') {
+        result = format!("-{}", result);
+    }
+    result
+}
+
 /// 根据格式字符串和参数列表生成 printf 输出。
 fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
     let mut out = String::new();
@@ -172,6 +222,18 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                             let f = f64::from_bits(arg);
                             let prec = precision.unwrap_or(6);
                             let val = format!("{:.*}", prec, f);
+                            piece = apply_width(&val, width, &flags);
+                        }
+                        'g' => {
+                            let f = f64::from_bits(arg);
+                            let prec = precision.unwrap_or(6);
+                            let val = format_g(f, prec, false);
+                            piece = apply_width(&val, width, &flags);
+                        }
+                        'G' => {
+                            let f = f64::from_bits(arg);
+                            let prec = precision.unwrap_or(6);
+                            let val = format_g(f, prec, true);
                             piece = apply_width(&val, width, &flags);
                         }
                         's' => {

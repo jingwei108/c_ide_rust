@@ -308,20 +308,20 @@ impl TypeChecker {
     }
 
     fn check_scalar_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
-        if !matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) {
+        if !matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
             return false;
         }
-        if !matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) {
+        if !matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
             return false;
         }
         // 警告可能丢失精度的情况
-        if matches!(target.kind(), TypeKind::Char) && matches!(value.kind(), TypeKind::Int | TypeKind::Float | TypeKind::Double) {
+        if matches!(target.kind(), TypeKind::Char) && matches!(value.kind(), TypeKind::Int | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
             self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
         }
-        if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Float | TypeKind::Double) {
+        if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
             self.report_warning(&format!("{} 被隐式转换为 int，可能会丢失精度。", value), loc, ErrorCode::W3053_ImplicitScalarConversion);
         }
-        if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Double) {
+        if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Double | TypeKind::LongLong) {
             self.report_warning("double 被隐式转换为 float，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
         }
         // 提示安全的隐式提升
@@ -332,10 +332,11 @@ impl TypeChecker {
             let src = if matches!(value.kind(), TypeKind::Char) { "char" } else { "int" };
             self.report_hint(&format!("{} 被隐式提升为 float。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
         }
-        if matches!(target.kind(), TypeKind::Double) && matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float) {
+        if matches!(target.kind(), TypeKind::Double) && matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong) {
             let src = match value.kind() {
                 TypeKind::Char => "char",
                 TypeKind::Float => "float",
+                TypeKind::LongLong => "long long",
                 _ => "int",
             };
             self.report_hint(&format!("{} 被隐式提升为 double。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
@@ -750,7 +751,13 @@ impl TypeChecker {
             "fputs" => self.check_builtin_fputs(args, loc),
             "fprintf" => self.check_builtin_fprintf(args, loc),
             "realloc" => self.check_builtin_realloc(args, loc),
-            "qsort" => self.check_builtin_qsort(args, loc),
+            "qsort" => {
+                if self.funcs.contains_key(name) {
+                    self.check_user_func(name, args, loc)
+                } else {
+                    self.check_builtin_qsort(args, loc)
+                }
+            }
             _ => self.check_user_func(name, args, loc),
         }
     }

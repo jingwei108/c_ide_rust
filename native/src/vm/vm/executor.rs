@@ -458,6 +458,10 @@ impl CideVM {
                                 self.push((-a) as u64);
                             }
                         }
+                        OpCode::UNeg => {
+                            let a = self.pop() as u32;
+                            self.push(a.wrapping_neg() as u64);
+                        }
             _ => {}
         }
     }
@@ -960,7 +964,7 @@ impl CideVM {
             }
 
             OpCode::Add | OpCode::Sub | OpCode::Mul | OpCode::Div | OpCode::Mod | OpCode::Neg |
-            OpCode::UDiv | OpCode::UMod | OpCode::USub => {
+            OpCode::UDiv | OpCode::UMod | OpCode::USub | OpCode::UNeg => {
                 self.execute_arithmetic(op, operand, loc);
             }
 

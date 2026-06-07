@@ -1,0 +1,269 @@
+# Cide 标准库拓展与测试防线设计
+
+> **核心原则**：测试不是为了标榜通过率，而是为了诚实地发现自己可能存在的问题。Cide 的错误会误导学生，所以我们宁可数据难看，也不扭曲代码去迎合编译器。
+>
+> **motto**: *All in. Record don't hide. Fix real bugs, not test cases.*
+
+---
+
+## 一、背景：为什么需要这套设计
+
+Cide 已有 300+ 测试用例，但 C 语言极其灵活，即使如此规模的测试，面对真实世界的 C 代码仍可能暴露未发现的边缘问题。更关键的是：
+
+- **标准库不是外设，是教学核心**：学生写的每一行 `printf`、`malloc`、`strcpy` 都是教学体验的一部分；
+- **四层架构引入新风险**：同一功能可能同时存在 VM Builtin、Rust Host、Bytecode Libc 三种实现，它们之间的一致性需要独立验证；
+- **闭源开发，无用户反馈**：我们不能消耗学生时间去发现问题，更不能通过"修改测试代码来让测试通过"这种自欺欺人的方式粉饰数据。
+
+因此，标准库的拓展必须与一套**不妥协的测试哲学**同时推进。
+
+---
+
+## 二、标准库四层架构（Cide Runtime Library）
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Layer A: VM Builtin 指令（极少量，性能关键）                │
+│  Memcpy / Memset / Strlen（可选）                           │
+│  → 直接由 executor.rs 原生执行，Rust 实现，带边界检查        │
+├─────────────────────────────────────────────────────────────┤
+│  Layer B: Rust Host Function（诊断敏感 + 宿主机能力）        │
+│  malloc/free/realloc, strcpy/strcat（带诊断）, printf/scanf │
+│  fopen/fclose, qsort, exit, math(sin/cos via libm)          │
+│  → 注入 UAF/Bounds 检查，操作 session state / VFS            │
+├─────────────────────────────────────────────────────────────┤
+│  Layer C: Precompiled Bytecode Libc（纯算法，诊断不敏感）    │
+│  isdigit, isalpha, abs, atoi, tolower, strncpy, memcpy...   │
+│  → 编译期静态链接到用户字节码，源码可展示，无 host 开销      │
+├─────────────────────────────────────────────────────────────┤
+│  Layer D: Inline C Source（教学展示用）                      │
+│  学生自己写的辅助函数，或老师提供的"看看 libc 怎么实现"代码   │
+│  → 与普通用户代码一起编译                                    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 2.1 分层规则
+
+| 类型 | 示例 | 必须放在 | 原因 |
+|---|---|---|---|
+| **内存安全诊断敏感** | `strcpy`, `strcat`, `memcpy`, `memmove`, `malloc`, `free`, `realloc` | **Layer B: Rust Host** | 需要注入边界检查、UAF 检测、行号追踪，Rust 侧可精确控制错误信息。 |
+| **I/O 沙盒敏感** | `printf`, `scanf`, `fopen`, `fgets` | **Layer B: Rust Host** | 需要操作 `session.runtime.output_lines` / VFS / input buffer。 |
+| **VM 回调敏感** | `qsort`, `bsearch` | **Layer B: Rust Host** | 需要 `call_user_function` 回调 VM 函数。 |
+| **纯计算、无副作用** | `sin`, `cos`, `abs`, `atoi`, `isdigit` | **Layer C: Bytecode** 或 **Layer B: Rust** | 无诊断需求，Bytecode 可教学展示；Rust 可借助 `libm` 精度。 |
+| **超高频内存原语** | `memcpy`, `memset`, `strlen`（未来） | **Layer A: Builtin 指令** | 原生执行，避免 CallHost 开销。 |
+
+### 2.2 关键决策
+
+- **不是 musl**：Layer C 的源码不是 musl 子集，而是"用 Cide-C 子集重写的纯算法库"，从 musl/pdclib/PicoC 中按需裁剪；
+- **预编译静态链接**：构建时将 `native/runtime_libc/src/*.c` 编译为字节码常量，嵌入 Rust 代码，全局函数表预留固定索引，运行时无重定位开销；
+- **双轨数学函数**：`sin`/`cos` 默认走 Layer C（泰勒展开，源码可见）；配置开启"精确模式"时走 Layer B（`libm` crate，IEEE 754 精度）。
+
+---
+
+## 三、测试防线设计
+
+在现有两条防线之上，新增**三层契约验证**。三条防线互不替代，分层协作。
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  防线 3：三层契约验证（新增）                                    │
+│  ├─ 3a. Host Function 契约测试：Rust 单元测试直接验证边界行为    │
+│  ├─ 3b. Bytecode Libc 自举一致性：C 源码 → Clang vs Cide       │
+│  └─ 3c. 差分压力测试：同一功能多实现交叉对比                     │
+├────────────────────────────────────────────────────────────────┤
+│  防线 2：K&R + LeetCode 真实程序回归（已有）                     │
+│  └─ 验证"真实世界代码能不能跑"                                  │
+├────────────────────────────────────────────────────────────────┤
+│  防线 1：Shadow Verification 影子验证（已有）                    │
+│  └─ 验证"与 Clang 行为是否一致"                                 │
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### 3.1 防线 3a：Host Function 契约测试（Host Contract Tests）
+
+**目标**：验证 Layer B（Rust Host Func）的每个函数在边界条件、安全注入、标准一致性上是否达标。
+
+**为什么现有防线做不到**：Shadow Verification 跑的是 C 代码，如果 `strcpy` 的越界检查没生效，但测试用例恰好没写越界，就发现不了。
+
+**测试哲学（不可妥协）**：
+- **NO_CODE_DISTORTION**：测试代码不扭曲 C 语义去迎合 Cide。例如，不会因为 Cide 的 `printf` 不支持 `%lld` 就把测试里的 `long long` 改成 `int`。
+- **RECORD_DONT_HIDE**：Host Func 的任何异常行为（包括未定义行为）必须记录。即使 C 标准允许实现定义，Cide 也必须给出明确、稳定的行为，并在文档中记录。
+- **FIX_REAL_BUGS**：测试失败时，修 Host Func 的实现，而不是改测试预期值让它通过。
+
+**示例**：
+```rust
+#[test]
+fn test_host_strcpy_traps_on_overflow() {
+    let mut vm = CideVM::new();
+    let mut session = Session::new();
+    
+    let dst = vm.heap_alloc(5);
+    let src = vm.write_cstring("hello world");
+    
+    vm.push(src as i32);
+    vm.push(dst as i32);
+    host_strcpy(&mut vm, &mut session);
+    
+    // 必须触发 TrapBounds，而不是静默越界
+    assert!(session.runtime.trap.is_some());
+}
+
+#[test]
+fn test_host_atoi_standard_conformance() {
+    // C 标准：atoi("  -123abc") == -123
+    // 必须如实记录 Cide 的行为，若与标准不同，标记为偏差
+}
+```
+
+**能 catch 的问题**：
+- `malloc(0)` 返回 NULL 还是有效指针？
+- `free(NULL)` 是否安全？
+- `printf("%.2f", 2.675)` 的舍入是否正确？
+- `memcpy(dst, src, 0)` 是否允许 dst/src 为 NULL（C 标准允许）？
+- 边界检查是否在所有代码路径生效？
+
+---
+
+### 3.2 防线 3b：Bytecode Libc 自举一致性测试（Bytecode Self-Consistency）
+
+**目标**：验证 Cide 编译器 + VM 能否正确编译并运行"自己的标准库"。
+
+**核心逻辑**：把 Layer C（Bytecode Libc）的 C 源码同时交给：
+1. **Clang**：编译成原生可执行文件，输出作为 **唯一 golden**；
+2. **Cide**：编译成字节码，在 VM 中运行，输出与 golden 对比。
+
+**测试哲学（不可妥协）**：
+- **ALL_IN**：所有 Bytecode Libc 的 C 源码必须参与验证，不因为"这个函数很简单"就跳过。
+- **GOLDEN_FROM_CLANG**：golden 只能来自 Clang，不能来自 Cide 自己。
+- **NO_CODE_DISTORTION**：Bytecode Libc 的 C 源码不得为了通过 Cide 编译器而改写（例如，不能因为它不支持某个语法就重写算法）。如果 Cide 编译失败，那是编译器的缺口，记录为 `compile_gap`。
+
+**为什么这是"印证本项目是否正确"的最佳方式**：
+- 这是**编译器自举的轻量版**。如果 Cide 能正确编译并执行自己的 C 代码，说明编译器和 VM 的语义实现是自洽的。
+- 这些 C 代码是可控的、可读的，不像 musl 那样依赖大量未支持特性。
+- 一旦发现差异，可以 100% 确定是 Cide 编译器或 VM 的 bug。
+
+**目录结构**：
+```
+native/tests/bytecode_libc_consistency/
+├── src/                    # Bytecode Libc 的 C 源码副本
+│   ├── ctype.c
+│   └── string_simple.c
+├── drivers/                # 测试驱动（main 函数）
+│   ├── test_isdigit.c
+│   └── test_abs.c
+├── golden_clang/           # Clang 编译运行的输出
+└── run_consistency_test.py # 自动化脚本
+```
+
+**能 catch 的问题**：
+- Cide 编译器对 `ctype.c` 的某个指针运算生成错误字节码；
+- CideVM 对 `for` 循环或 `if` 条件的执行与 Clang 语义偏差；
+- Bytecode Libc 中某个函数的实现本身有 bug（与 Host Func 版结果不一致）。
+
+---
+
+### 3.3 防线 3c：差分压力测试（Differential Stress Test）
+
+**目标**：对**同一功能**的两种实现（Layer B Rust Host vs Layer C Bytecode）进行交叉验证。
+
+**核心思想**：如果 `strlen` 既有 Rust Host 实现，又有 Bytecode C 实现，那么对同一随机输入，两者结果应该**永远一致**。如果不一致，至少有一个是错的。
+
+**测试哲学（不可妥协）**：
+- **不预设哪边是对的**：差分测试失败时，两边都要审查，不能默认"Host 版一定对"。
+- **记录所有偏差**：即使偏差极小（如 `printf` 浮点精度第 6 位不同），也要记录。
+- **不通过删减测试用例来消除差异**：不能因为某个 edge case 总是触发差异，就把它从随机生成器中去掉。
+
+**实施方式**：
+
+1. **内存操作差分**：
+   ```rust
+   let addr = random_addr();
+   let len = random_len();
+   let result_host = host_strlen(vm, addr);
+   let result_bc = vm.call_bytecode_func("strlen", addr);
+   assert_eq!(result_host, result_bc, "strlen divergence at addr={}", addr);
+   ```
+
+2. **标准库覆盖矩阵**：
+   | 函数 | Host Contract | Bytecode Consistency | Differential | 状态 |
+   |---|---|---|---|---|
+   | `strlen` | ✅ | ✅ | ✅ | 已验证 |
+   | `isdigit` | N/A | ✅ | Host vs Bytecode | 已验证 |
+   | `strcpy` | ✅（边界检查） | 待实现 | Host vs Bytecode | 进行中 |
+   | `printf %f` | ✅（精度） | N/A | N/A | 已验证 |
+
+3. **恶意输入模糊测试**：
+   对 `scanf`、`printf`、`malloc/free` 组合生成随机调用序列，验证不崩溃、不泄漏、不误报/漏报 UAF。
+
+---
+
+## 四、测试发现的任何问题：不扭曲代码，不粉饰失败
+
+这是本设计的**不可妥协原则**，独立于具体技术方案：
+
+| 禁止行为 | 正确做法 |
+|---|---|
+| 把测试里的 `long long` 改成 `int` 来绕过不支持 | 记录为 `compile_gap`，推动编译器支持 |
+| 把 `printf("%lld", x)` 改成 `printf("%d", (int)x)` | 记录为缺失特性，不修改测试源码 |
+| 发现 `strcpy` 越界检查漏报，就把测试里越界的字符串改短 | 修 Host Func 的边界检查逻辑 |
+| Bytecode Libc 编译不过，就重写 C 代码绕过语法限制 | 记录编译器缺口，保留原始 C 代码 |
+| 差分测试浮点第 6 位不同，就放宽精度到 `1e-3` | 记录精度偏差，分析是 Host 还是 Bytecode 的问题 |
+| 因为某测试"总是失败"就从 CI 中移除 | 标记为 `KNOWN_FAILURE`，持续监控，一旦意外通过则 CI 报警 |
+
+**记录模板**：任何失败必须在对应的 `*_FAILURES.md` 中按以下格式追加：
+
+```markdown
+### <case_name>
+
+- **来源**: Host Contract / Bytecode Consistency / Differential / K&R / LeetCode
+- **失败原因**: <编译错误 / 运行时错误 / 输出不匹配 / 安全检查失效 / 差分偏差>
+- **最小复现**: <关键代码片段>
+- **是否 Cide 限制**: 是/否
+- **是否标准库实现偏差**: 是/否
+- **学生影响评级**: P0（误导学生） / P1（限制已知） / P2（边缘场景）
+- **建议**: <修复方向 / 记录为已知限制 / 待进一步分析>
+```
+
+---
+
+## 五、四条防线的协作关系
+
+| 防线 | 发现问题类型 | 速度 | 精准定位 | 是否新增 |
+|---|---|---|---|---|
+| **3a Host Contract** | Host Func 边界条件遗漏、安全注入失效 | ⚡ 毫秒级 | 精准到函数 | ✅ 新增 |
+| **3b Bytecode Self-Consistency** | 编译器/VM 对真实 C 代码的语义偏差 | 🔶 秒级 | 精准到源码行 | ✅ 新增 |
+| **3c Differential Stress** | 多实现版本间的隐藏不一致 | 🔶 秒级 | 精准到函数对 | ✅ 新增 |
+| **2 K&R/LeetCode** | 真实程序组合缺陷 | 🐢 分钟级 | 端到端 | 已有 |
+| **1 Shadow Verification** | 与 Clang 的整体偏离 | 🐢 分钟级 | 端到端 | 已有 |
+
+**关键互补性**：
+- Shadow 发现"和 Clang 不一样" → 但不知道是 Host Func 错了、VM 错了、还是编译器错了；
+- **三层契约能精确定位到 layer**：如果 Host Contract 过了但 Shadow 挂了，说明问题在编译器或 VM；如果 Bytecode Self-Consistency 过了但 Differential 挂了，说明 Host Func 与 Bytecode 实现有偏差。
+
+---
+
+## 六、实施路线图
+
+| 阶段 | 任务 | 产出 |
+|---|---|---|
+| **Phase A** | Host Contract 骨架：`native/tests/host_contract_tests.rs`，覆盖 `malloc`/`free`/`strcpy`/`printf` 边界条件 | `cargo test --test host_contract_tests` 全绿 |
+| **Phase B** | Bytecode Libc 最小集：`isdigit`、`abs`、`tolower` C 源码 + 自举一致性驱动 + golden | `python run_bytecode_consistency.py` 通过 |
+| **Phase C** | 差分测试骨架：对 `strlen`/`isdigit`/`abs` 同时调用 Host 和 Bytecode 版，交叉验证 | 差分测试全绿 |
+| **Phase D** | 扩展 Bytecode Libc 到 20+ 函数，逐函数补齐 Host Contract + Bytecode Consistency + Differential | 覆盖矩阵更新 |
+| **Phase E** | 模糊测试：随机内存状态 + 随机标准库调用序列，验证安全检测不泄漏 | 24 小时 fuzz 无崩溃 |
+| **Phase F** | CI 集成：三层契约全部接入 `.github/workflows/`，失败记录自动更新 | PR 时自动跑三层验证 |
+
+---
+
+## 七、与现有文档的衔接
+
+- `C_SUBSET_SPEC.md`：补充"Cide 标准库子集"章节，明确 Layer B/Layer C 支持清单；
+- `SHADOW_VERIFICATION_FRAMEWORK.md`：扩展 Shadow 报告格式，新增 `std_lib_gap` 分类；
+- `PHASE_KR_LEETCODE_TEST_PLAN.md`：K&R/LeetCode 中涉及标准库的题目，优先走 Bytecode Libc 路径，暴露编译器缺口；
+- `AGENTS.md`：更新"已知限制"，引用本文档中的标准库覆盖矩阵。
+
+---
+
+*文档状态：设计草案*
+*最后更新：2026-06-07*

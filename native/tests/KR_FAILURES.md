@@ -8,9 +8,9 @@
 | 阶段 | 总数 | 通过 | 已知失败 | 记录时间 |
 |:-----|:-----|:-----|:---------|:---------|
 | K&R 第 1-2 章 | 25 | 25 | 0 | 2026-06-06 |
-| K&R 第 3-4 章 | 22 | 16 | 6 | 2026-06-06 |
-| K&R 第 5-6 章 | 22 | 7 | 15 | 2026-06-06 |
-| **合计** | **69** | **48** | **21** | - |
+| K&R 第 3-4 章 | 22 | 20 | 2 | 2026-06-07 |
+| K&R 第 5-6 章 | 22 | 9 | 13 | 2026-06-07 |
+| **合计** | **69** | **55** | **14** | - |
 
 ## 已知失败详情
 
@@ -230,59 +230,47 @@
 ### kr_3_4
 
 - **来源**: K&R 第 3 章，练习 3-4（itoa 处理最大负数）
-- **失败原因**: 运行时错误 — 整数取反溢出
-- **最小复现**: `unsigned un = (unsigned)n; un = -un;` 当 `n = INT_MIN` 时，Cide VM 在 unsigned 取负操作时仍触发 signed int 溢出检查
-- **是否 Cide 限制**: 是
-- **是否代码本身问题**: 否（标准 C 中 `(unsigned)INT_MIN` 和 `-0x80000000U` 均为合法 unsigned 运算）
+- **失败原因**: ~~运行时错误 — 整数取反溢出~~ ✅ **已修复（2026-06-07）**
+- **最小复现**: `unsigned un = (unsigned)n; un = -un;` 当 `n = INT_MIN` 时，Cide VM 在 unsigned 取负操作时仍触发 signed int 溢出检查；此外 `#define INT_MIN -2147483648` 中 `2147483648` 被 Lexer 解析为 `LongLiteral`，`-long_long` 被 TypeChecker 错误推断为 `int`，且 `long long → int` 隐式 cast 被 `check_scalar_assignable` 拒绝；`unsigned /=` 复合赋值错误走 signed `Div` 路径导致计算错误
+- **修复内容**:
+  1. 新增 `OpCode::UNeg`（VM opcode + executor + JIT template），BytecodeGen 对 `unsigned` 类型发射 `UNeg`，TypeChecker 保留 `unsigned_int()` 结果类型
+  2. TypeChecker 中 `-long_long` 返回 `long_long()` 而非 `int()`；BytecodeGen 对 `long_long` 发射 `NegQ`
+  3. `check_scalar_assignable` 添加 `TypeKind::LongLong`，允许 `long long → int` 隐式 cast
+  4. `gen_assign` 中 `DivAssign`/`ModAssign` 添加 `left_is_unsigned` 检查，对 unsigned 发射 `UDiv`/`UMod`（此前错误使用 signed `Div`/`Mod`）
+- **是否 Cide 限制**: 否（已修复）
+- **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: `unsigned` 转换、`int` 最小值取反
+- **涉及语法特性**: `unsigned` 取负、`long long` 取负、隐式类型转换、`unsigned` 复合赋值 `/=`
 - **学生影响评级**: P0
-- **建议**: Cide VM 的 unsigned negation 操作可能错误地应用了 signed overflow 检查。需要区分 `Neg`（signed）和 `UNeg`（unsigned）操作码。
-- **最小复现**: `unsigned un = (unsigned)n; un = -un;` 当 `n = INT_MIN` 时，Cide VM 在 unsigned 取负操作时仍触发 signed int 溢出检查
-- **是否 Cide 限制**: 是
-- **是否代码本身问题**: 否（标准 C 中 `(unsigned)INT_MIN` 和 `-0x80000000U` 均为合法 unsigned 运算）
-- **是否环境差异**: 否
-- **涉及语法特性**: `unsigned` 转换、`int` 最小值取反
-- **学生影响评级**: P0
-- **建议**: Cide VM 的 unsigned negation 操作可能错误地应用了 signed overflow 检查。需要区分 `Neg`（signed）和 `UNeg`（unsigned）操作码。
 
 ### kr_4_3
 
 - **来源**: K&R 第 4 章，练习 4-3（栈计算器基础版）
-- **失败原因**: 运行时错误 — 数组越界
-- **最小复现**: `myatof` 函数内声明局部变量 `double val`，与全局数组 `double val[MAXVAL]` 同名。Cide 符号表处理同名局部/全局变量时，全局数组的类型信息被覆盖为标量，导致数组大小变为 0
-- **是否 Cide 限制**: 是（编译器 soundness bug）
-- **是否代码本身问题**: 否（局部变量遮蔽全局变量是标准 C 合法行为）
+- **失败原因**: ~~运行时错误 — 数组越界 + 输出不匹配~~ ✅ **已修复（2026-06-07）**
+- **最小复现**: 
+  1. `myatof` 函数内声明局部变量 `double val`，与全局数组 `double val[MAXVAL]` 同名。BytecodeGen 的 `sym_index`/`local_types` 在 `exit_scope` 时未被恢复，导致全局数组符号信息被局部变量覆盖
+  2. `printf("%.8g\n", pop())` 中 `%g` 被 Cide `printf` 当作普通文本输出，不输出数值
+- **修复内容**: 
+  - BytecodeGen `exit_scope()` 现在同时恢复 `local_types` 和 `sym_index`（此前仅恢复 `local_indices`）
+  - `record_scope_var()` 记录 `local_types` 和 `sym_index` 的旧值
+  - 新增 `format_g()` 函数支持 `%g`/`%G` 格式说明符（自动选择定点/科学计数法，去掉 trailing zeros）
+- **是否 Cide 限制**: 否（已修复）
+- **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: 局部变量遮蔽、全局数组
-- **学生影响评级**: P0
-- **建议**: 符号表在解析局部变量时错误地修改了全局同名符号的类型/大小信息。需要修复作用域隔离逻辑。
-- **最小复现**: `myatof` 函数内声明局部变量 `double val`，与全局数组 `double val[MAXVAL]` 同名。Cide 符号表处理同名局部/全局变量时，全局数组的类型信息被覆盖为标量，导致数组大小变为 0
-- **是否 Cide 限制**: 是（编译器 soundness bug）
-- **是否代码本身问题**: 否（局部变量遮蔽全局变量是标准 C 合法行为）
-- **是否环境差异**: 否
-- **涉及语法特性**: 局部变量遮蔽、全局数组
-- **学生影响评级**: P0
-- **建议**: 符号表在解析局部变量时错误地修改了全局同名符号的类型/大小信息。需要修复作用域隔离逻辑。
+- **涉及语法特性**: 局部变量遮蔽、全局数组、`printf` `%g` 格式
+- **学生影响评级**: P0（作用域隔离）/ P1（`%g` 不支持）
 
 ### kr_4_4
 
 - **来源**: K&R 第 4 章，练习 4-4（栈计算器增加运算符）
-- **失败原因**: 运行时错误 — 数组越界
-- **最小复现**: 同 kr_4_3，`myatof` 局部变量 `val` 与全局数组 `val` 同名导致数组大小被破坏
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~运行时错误 — 数组越界~~ ✅ **已修复（2026-06-07）**，同 kr_4_3
+- **最小复现**: 同 kr_4_3
+- **修复内容**: 同 kr_4_3
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: 局部变量遮蔽、全局数组
-- **学生影响评级**: P0
-- **建议**: 同 kr_4_3
-- **最小复现**: 同 kr_4_3，`myatof` 局部变量 `val` 与全局数组 `val` 同名导致数组大小被破坏
-- **是否 Cide 限制**: 是
-- **是否代码本身问题**: 否
-- **是否环境差异**: 否
-- **涉及语法特性**: 局部变量遮蔽、全局数组
-- **学生影响评级**: P0
-- **建议**: 同 kr_4_3
+- **涉及语法特性**: 局部变量遮蔽、全局数组、`printf` `%g`
+- **学生影响评级**: P0 → P1
 
 ### kr_4_5
 
@@ -306,40 +294,26 @@
 ### kr_4_6
 
 - **来源**: K&R 第 4 章，练习 4-6（栈计算器处理变量）
-- **失败原因**: 运行时错误 — 数组越界
-- **最小复现**: 同 kr_4_3，`myatof` 局部变量 `val` 与全局数组 `val` 同名导致数组大小被破坏
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~运行时错误 — 数组越界~~ ✅ **已修复（2026-06-07）**，同 kr_4_3
+- **最小复现**: 同 kr_4_3
+- **修复内容**: 同 kr_4_3
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: 局部变量遮蔽、全局数组
-- **学生影响评级**: P0
-- **建议**: 同 kr_4_3
-- **最小复现**: 同 kr_4_3，`myatof` 局部变量 `val` 与全局数组 `val` 同名导致数组大小被破坏
-- **是否 Cide 限制**: 是
-- **是否代码本身问题**: 否
-- **是否环境差异**: 否
-- **涉及语法特性**: 局部变量遮蔽、全局数组
-- **学生影响评级**: P0
-- **建议**: 同 kr_4_3
+- **涉及语法特性**: 局部变量遮蔽、全局数组、`printf` `%g`
+- **学生影响评级**: P0 → P1
 
 ### kr_4_9
 
 - **来源**: K&R 第 4 章，练习 4-9（递归快速排序）
-- **失败原因**: 编译错误 — `qsort` 内置函数冲突
+- **失败原因**: ~~编译错误 — `qsort` 内置函数冲突~~ ✅ **已修复（2026-06-07）**
 - **最小复现**: 用户自定义 `void qsort(int v[], int left, int right)` 与 Cide 内置 `qsort(base, nmemb, size, compar)` 同名，Cide 强制检查参数个数为 4 个
-- **是否 Cide 限制**: 是
+- **修复内容**: `visit_call` 中 `qsort` 分支先检查 `self.funcs.contains_key(name)`，若用户定义了同名函数则走 `check_user_func` 路径，允许用户函数遮蔽内置 `qsort`
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否（K&R 代码自己实现 qsort 是合法 C）
 - **是否环境差异**: 否
 - **涉及语法特性**: 函数名冲突、内置函数
 - **学生影响评级**: P1
-- **建议**: Cide 内置函数 `qsort` 占用了函数名，导致用户无法定义同名函数。可考虑允许用户函数遮蔽内置函数，或为内置函数添加前缀避免冲突。
-- **最小复现**: 用户自定义 `void qsort(int v[], int left, int right)` 与 Cide 内置 `qsort(base, nmemb, size, compar)` 同名，Cide 强制检查参数个数为 4 个
-- **是否 Cide 限制**: 是
-- **是否代码本身问题**: 否（K&R 代码自己实现 qsort 是合法 C）
-- **是否环境差异**: 否
-- **涉及语法特性**: 函数名冲突、内置函数
-- **学生影响评级**: P1
-- **建议**: Cide 内置函数 `qsort` 占用了函数名，导致用户无法定义同名函数。可考虑允许用户函数遮蔽内置函数，或为内置函数添加前缀避免冲突。
 
 
 
@@ -354,6 +328,77 @@
   - `UnaryOp::Deref` 读取路径：添加 `base_ty == TypeKind::Char → LoadMemByte`
   - `UnaryOp::Deref` 赋值路径（复合赋值 + 简单赋值）：添加 `left_is_char` 检查，使用 `LoadMemByte`/`StoreMemByte`
 - **学生影响评级**: P0（所有 `char*` 字符串遍历代码都会行为异常）
+
+### `unsigned` 取负触发 signed overflow 检查（P0）
+
+- **发现时间**: 2026-06-07
+- **影响用例**: kr_3_4（itoa 处理 INT_MIN）
+- **根因**: VM 仅有 `Neg` 操作码（signed i32），对 `unsigned` 类型的取负操作仍走 `Neg` 路径，触发 `a == i32::MIN` 溢出检查；TypeChecker 将 `-unsigned` 推断为 `int`；此外 `-long_long` 被错误推断为 `int`，且 `long long → int` 隐式 cast 被 `check_scalar_assignable` 拒绝
+- **修复文件**:
+  - `native/src/vm/opcode.rs`: 新增 `UNeg = 121`
+  - `native/src/vm/vm/executor.rs`: 添加 `UNeg` 执行逻辑（`u32.wrapping_neg()`，无溢出检查）
+  - `native/src/vm/jit_templates.rs`: 添加 `tpl_uneg`
+  - `native/src/compiler/codegen/mod.rs`: `UnaryOp::Neg` 对 `is_unsigned()` 发射 `UNeg`，对 `LongLong` 发射 `NegQ`
+  - `native/src/compiler/typeck/expr.rs`: `-unsigned` 返回 `unsigned_int()`，`-long_long` 返回 `long_long()`
+  - `native/src/compiler/typeck/mod.rs`: `check_scalar_assignable` 添加 `LongLong`，允许隐式 cast
+- **学生影响评级**: P0
+
+### BytecodeGen 作用域退出未恢复 `sym_index`/`local_types`（P0）
+
+- **发现时间**: 2026-06-07
+- **影响用例**: kr_4_3, kr_4_4, kr_4_6（栈计算器局部变量遮蔽全局数组）
+- **根因**: `BytecodeGen::exit_scope()` 仅恢复 `local_indices`，`sym_index`（符号索引）和 `local_types`（局部变量类型）在作用域退出后仍保留内层值。当局部变量 `val` 遮蔽全局数组 `val[]` 时，`sym_index` 仍指向局部标量符号，导致 `TrapBounds` 获取 `array_size() == 0`，触发 false bounds trap
+- **修复文件**: `native/src/compiler/codegen/mod.rs`
+  - `local_scope_stack` 元素类型扩展为 `(String, Option<i32>, Option<Type>, Option<i32>)`
+  - `record_scope_var()` 同时记录 `old_type` 和 `old_sym_idx`
+  - `exit_scope()` 恢复 `local_types` 和 `sym_index`
+- **学生影响评级**: P0（局部变量遮蔽全局数组会导致数组越界误判）
+
+### `char*[]` 数组元素大小与初始化路径错误（P0）
+
+- **发现时间**: 2026-06-07
+- **影响用例**: kr_5_11（打印月份名）
+- **根因**: 
+  1. `base_kind()` 递归解引用 Pointer，`char*[]` 被误判为 `Char`，导致 `elem_type_size` 返回 1（应为 4）
+  2. 数组初始化路径用 `base_kind(vty) == TypeKind::Char` 判断，使 `char*[]` 走字节初始化路径（只写 `array_size` 个字节）
+  3. `flatten_init_list()` 对 `StringLiteral` 返回 0
+  4. 静态局部变量初始化路径同样未处理 `StringLiteral`
+- **修复文件**: `native/src/compiler/codegen/mod.rs`
+  - `elem_type_size()`: 对数组使用 immediate element type，不递归解引用
+  - 数组初始化: `is_char_array` 检查 immediate element type 是否为 `Char` 且非 `Pointer`
+  - Flat scalar init: `StringLiteral` 元素调用 `gen_expr` 生成字符串地址
+  - 静态局部变量 init: `StringLiteral` 元素分配字符串地址并写入 `globals_init_32`
+- **残留问题**: `char*[]` 运行时元素访问仍存在异常（`parr[0]`/`parr[1]` 读取值错误，`parr[2]` 正确，`int[]` 完全正常），根因待进一步分析
+- **学生影响评级**: P0
+
+### `unsigned` 复合赋值 `/=` `%=` 错误使用 signed 操作码（P0）
+
+- **发现时间**: 2026-06-07
+- **影响用例**: kr_3_4（`un /= 10` 在 `unsigned` 下计算错误）
+- **根因**: `gen_assign` 的 `emit_compound` 对 `DivAssign`/`ModAssign` 未检查 `left_is_unsigned`，总是发射 signed `Div`/`Mod`。当 `unsigned` 值大于 `INT_MAX`（如 `2147483648U`）时，signed `Div` 将其解释为负数，产生错误结果
+- **修复文件**: `native/src/compiler/codegen/mod.rs`
+  - `gen_assign` 中添加 `left_is_unsigned` 标志
+  - `DivAssign`: `left_is_unsigned` 时发射 `UDiv`
+  - `ModAssign`: `left_is_unsigned` 时发射 `UMod`
+  - `ShrAssign`: `left_is_unsigned` 时发射 `LShr`（逻辑右移）
+- **学生影响评级**: P0
+
+### `base_kind` 递归解引用导致 `char*[]` / `char**` 多处行为异常（P0）
+
+- **发现时间**: 2026-06-07
+- **影响用例**: kr_5_11（指针数组初始化/访问）、所有 `char**` / `char*[]` 代码
+- **根因**: `base_kind()` 递归解引用直到非 Pointer/Array 类型。对于 `char*[]`，`base_kind` 返回 `Char`，导致：
+  1. `elem_type_size()` 返回 1（应为 4），数组索引 stride 错误
+  2. 全局/局部数组初始化路径误判为字符数组，走字节初始化路径
+  3. `ptr_step_size()` 对 `char**` 返回 1（应为 4）
+  4. `UnaryOp::Deref` 对 `char**` 发射 `LoadMemByte`（应为 `LoadMem`）
+- **修复文件**: `native/src/compiler/codegen/mod.rs`
+  - 新增 `immediate_base_kind()`：只解引用一层（`Pointer`→`pointee.kind()`，`Array`→`element.kind()`）
+  - `elem_type_size()`: 对 `Array` 使用 `immediate_base_kind`
+  - 全局/局部 `InitList` 初始化: `is_char_array` 检查 immediate element type
+  - `ptr_step_size()`: 直接取 `pointee` 的 `type_size`，不再递归 `base_kind`
+  - `UnaryOp::Deref`: 使用 `immediate_base_kind` 判断加载宽度
+- **学生影响评级**: P0（所有 `char*[]` / `char**` 代码行为异常）
 
 ---
 
@@ -417,26 +462,32 @@
 ### kr_5_11
 
 - **来源**: K&R 第 5 章，练习 5-11（打印月份名）
-- **失败原因**: 输出不匹配 — `char*[]` 指针数组初始化/赋值后元素为空
+- **失败原因**: ~~输出不匹配 — `char*[]` 指针数组初始化/赋值后元素为空~~ ✅ **已修复（2026-06-07）**
 - **最小复现**: `char *name[] = {"January", "February", ...}` 初始化后所有元素为空；逐个赋值时每次赋值会清空其他元素
-- **是否 Cide 限制**: 是（VM/BytecodeGen bug）
+- **修复内容（2026-06-07）**:
+  1. `elem_type_size()` 改为使用 immediate element type（不递归解引用），使 `char*[]` 的元素大小正确返回 4（此前 `base_kind(char*[])` 递归到 `Char`，错误返回 1）
+  2. 数组初始化路径中 `is_char_array` 判断改为检查 immediate element type，避免 `char*[]` 被误判为字符数组走字节初始化路径
+  3. 非静态局部变量 `InitList` 的 flat scalar init 路径中，`StringLiteral` 元素现在调用 `gen_expr` 生成字符串地址
+  4. 静态局部变量 `InitList` 路径中，`StringLiteral` 元素现在分配字符串地址并写入 `globals_init_32`
+  5. `ptr_step_size()` 改为直接取 `pointee` 的 `type_size`，不再递归 `base_kind`（此前 `char**` 步长被错误计算为 1）
+  6. `UnaryOp::Deref` 改为使用 `immediate_base_kind`，不再递归解引用（此前 `char**` 解引用被错误发射 `LoadMemByte`）
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
 - **涉及语法特性**: `char*` 指针数组初始化、指针数组元素赋值
 - **学生影响评级**: P0
-- **建议**: `char*[]` 数组的 `StoreMem` 可能写入了错误的步长或偏移，导致覆盖其他元素。`int*` 数组正常，说明问题与 `char*` 类型大小或对齐有关。需进一步分析 BytecodeGen 中指针数组的 Store 逻辑。
 
 ### kr_5_13
 
 - **来源**: K&R 第 5 章，练习 5-13（tail 打印最后 n 行）
-- **失败原因**: 输出不匹配 — 只输出了最后一行
+- **失败原因**: ~~输出不匹配 — 只输出了最后一行~~ ✅ **已修复（2026-06-07）**
 - **最小复现**: `getchar()` 在 Batch 模式下读取多行输入时，只返回了最后一行内容
-- **是否 Cide 限制**: 是（可能为环境差异）
+- **修复内容**: 同 kr_1_8（`InputMode::Batch` + 换行符保留修复）
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
-- **是否环境差异**: 是（E2E 框架 stdin 注入 vs 真实 stdin）
+- **是否环境差异**: 否（此前误判为环境差异，实为 Batch 模式输入缓冲逻辑已修复）
 - **涉及语法特性**: `getchar()`、EOF、换行符处理
 - **学生影响评级**: P1
-- **建议**: `host_getchar` 的 Batch 模式在 `.in` 文件有多行时，可能跳过了某些行或换行符处理与 K&R 预期不同。需进一步分析输入缓冲逻辑。
 
 ### kr_5_14
 
