@@ -195,8 +195,29 @@ const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
 /// Known K&R failures documented in KR_FAILURES.md.
 /// Monitored by `test_cide_e2e_knr_known_failures` below.
 const KNOWN_KR_FAILURES: &[&str] = &[
-    // 2026-06-06: K&R 第 1 章所有 getchar EOF 相关失败已通过 InputMode::Batch 修复。
-    // 若未来新增 K&R 失败，请在此记录并同步更新 KR_FAILURES.md。
+    // 阶段 2: K&R 第 3-4 章（残留）
+    "kr_3_4", // INT_MIN 取反溢出
+    "kr_4_3", // 局部变量遮蔽全局数组
+    "kr_4_4", // 同 kr_4_3
+    "kr_4_6", // 同 kr_4_3
+    "kr_4_5", // math.h 不支持
+    "kr_4_9", // 内置 qsort 函数名冲突
+    // 阶段 3: K&R 第 5-6 章
+    "kr_5_1",
+    "kr_5_2",
+    "kr_5_8",
+    "kr_5_9",
+    "kr_5_10",
+    "kr_5_11",
+    "kr_5_13",
+    "kr_5_14",
+    "kr_5_16",
+    "kr_6_1",
+    "kr_6_2",
+    "kr_6_3",
+    "kr_6_4",
+    "kr_6_5",
+    "kr_6_6",
 ];
 
 /// Known LeetCode failures documented in LEETCODE_FAILURES.md.
