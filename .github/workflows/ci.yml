@@ -30,9 +30,40 @@ jobs:
         run: cargo build --release
         working-directory: native
 
+      - name: Check Bytecode Libc precompiled artifacts are up-to-date
+        run: python scripts/precompile_bytecode_libc.py --check
+        shell: bash
+
       - name: Run Rust tests
         run: cargo test
         working-directory: native
+
+      - name: Phase A - Host Contract Tests
+        run: cargo test --test host_contract_tests
+        working-directory: native
+
+      - name: Phase B - Bytecode Libc Consistency
+        run: cargo test --test bytecode_libc_consistency
+        working-directory: native
+
+      - name: Phase C - Differential Stress Tests
+        run: cargo test --test differential_stress
+        working-directory: native
+
+      - name: Phase E - Fuzz Stress Tests
+        run: cargo test --test fuzz_stress_test
+        working-directory: native
+
+      - name: Three Tier Consistency Check & Report
+        run: python scripts/ci_three_tier_check.py
+        shell: bash
+
+      - name: Upload Three Tier Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: three-tier-report
+          path: reports/three_tier_report.md
 
       - name: Run clippy
         run: cargo clippy -- -D warnings

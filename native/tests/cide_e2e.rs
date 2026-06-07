@@ -196,8 +196,7 @@ const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
 /// Monitored by `test_cide_e2e_knr_known_failures` below.
 const KNOWN_KR_FAILURES: &[&str] = &[
     // 阶段 2: K&R 第 3-4 章（残留）
-    // kr_4_3/kr_4_4/kr_4_6 已修复 (作用域隔离 + printf %g 格式支持)
-    "kr_4_5", // math.h 不支持
+    // kr_4_3/kr_4_4/kr_4_5/kr_4_6 已修复 (作用域隔离 + printf %g 格式支持 + math.h)
     // kr_4_9 已修复 (用户函数 qsort 可遮蔽内置函数)
     // 阶段 3: K&R 第 5-6 章
     "kr_5_1",
