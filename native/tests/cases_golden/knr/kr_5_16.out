@@ -1,0 +1,2 @@
+foo:  pointer to int
+bar:  pointer to function returning int
