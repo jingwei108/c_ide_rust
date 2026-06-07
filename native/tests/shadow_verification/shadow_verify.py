@@ -697,6 +697,7 @@ SHADOW_CASES: List[ShadowCase] = [
     ShadowCase("vla_2d", 'int main() { int n = 2; int a[n][3]; a[0][0] = 1; a[0][1] = 2; a[1][0] = 3; printf("%d %d", a[0][1], a[1][0]); return 0; }', "baseline"),
     ShadowCase("vla_sizeof", 'int main() { int n = 4; int a[n]; printf("%d", sizeof(a)); return 0; }', "baseline"),
     ShadowCase("vla_param_decay", 'int sum(int n, int a[n]) { int s = 0; for (int i = 0; i < n; i++) s += a[i]; return s; } int main() { int arr[3] = {1,2,3}; printf("%d", sum(3, arr)); return 0; }', "baseline"),
+    ShadowCase("vla_sizeof_type", 'int main() { int n = 4; printf("%d", sizeof(int[n])); return 0; }', "baseline"),
     ShadowCase("static_assert", 'int main() { _Static_assert(1 == 1, "ok"); printf("ok"); return 0; }', "static_assert"),
     ShadowCase("complex_number", 'int main() { double complex z = 1.0 + 2.0*I; printf("%.1f", creal(z)); return 0; }', "complex_number"),
 

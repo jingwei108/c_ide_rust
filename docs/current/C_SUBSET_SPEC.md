@@ -95,6 +95,10 @@ struct Node n = {10, 0};      // 完整初始化
 struct Node m = {5};          // 部分初始化（剩余字段自动为 0）
 struct Node a = {1, 0};
 struct Node b = {2, &a};      // 初始化列表中可使用取地址表达式
+struct Node c = {.val = 10, .next = 0};  // Designated Initializer
+
+// 数组 Designated Initializer
+int arr[5] = {[0] = 1, [3] = 4};  // 稀疏初始化，未指定元素自动为 0
 
 // 枚举（编译期常量，底层为 int）
 enum Color { Red, Green, Blue };
@@ -114,8 +118,6 @@ typedef int* IntPtr;
 - **多级指针**：`int**`、`struct Node**` 等，支持解引用、取地址、数组索引、指针算术、显式 cast
 - **struct**：链表、树等数据结构的基础；支持按值返回（Hidden Return Pointer ABI）
 - **VLA（变长数组）**：C99 局部变长数组，运行时栈分配；支持一维/多维、sizeof 运行时求值、函数参数退化
-- **enum**：编译期计算常量值，生成 CideVM 全局常量，便于教学演示状态机
-- **typedef**：简化复杂类型声明，提升代码可读性
 - **enum**：编译期计算常量值，生成 CideVM 全局常量，便于教学演示状态机
 - **typedef**：简化复杂类型声明，提升代码可读性
 
@@ -269,6 +271,7 @@ sizeof(p)        // 4
 - **短路求值**：`&&` 和 `||` 必须支持短路，这是重要的概念
 - **-> 和 . 行为一致**：struct 统一为引用语义，学生不需要理解 `(*p).val` 的转换
 - **sizeof**：编译期计算，帮助学生理解类型大小和内存布局
+- **逗号运算符**：优先级最低的表达式运算符，用于 `while (a--, a > 0)`、`for` 步进多操作等场景
 
 ### 2.4 函数
 
@@ -332,7 +335,7 @@ arr[1] = 2;
 | `double` | ✅ **已支持**：完整 64 位精度浮点运算、数组、函数参数/返回值、printf `%lf` / scanf `%lf` | — |
 | `char` / `char*` / 字符串 | ✅ **已支持**：char 按 i32 存储，字符串通过 Data Segment 注入；支持 `strlen`/`strcpy`/`strcmp`/`strcat` | — |
 | `break` / `continue` | ✅ **已支持**：循环控制的核心语法 | — |
-| `goto` | 教学上不鼓励使用；增加控制流图复杂度 | "暂不支持 `goto`" |
+| `goto` | ✅ **已支持**：无条件跳转到函数内标签 | — |
 | `do...while` | ✅ **已支持**：至少执行一次的循环 | — |
 | `switch` / `case` / `default` | ✅ **已支持**：多分支选择，支持 fallthrough | — |
 | 预处理 (`#include`) | CideVM 沙盒中无意义 | "解释器模式下无需 `#include`，直接编写代码即可" |
@@ -345,7 +348,9 @@ arr[1] = 2;
 | `typedef` | ✅ **已支持**：类型别名，提升代码可读性 | — |
 | `enum` | ✅ **已支持**：编译期常量，底层为 int | — |
 | `extern` | ✅ **已支持**：声明外部符号，不分配存储空间，允许与后续定义共存 | — |
-| `static`（全局）/ `volatile` / `restrict` | 存储类和类型修饰符，增加复杂度 | "暂不支持存储类修饰符" |
+| `static`（全局/函数） | ✅ **已支持**：全局 static 内部链接性（跨文件隔离）、函数 static 文件级可见性 | — |
+| `volatile` | ✅ **已支持**：类型修饰符已解析，教学 VM 中无特殊语义（与现代编译器一致） | — |
+| `restrict` | 存储类和类型修饰符，增加复杂度 | "暂不支持存储类修饰符" |
 | `const` | ✅ **已支持**：直接变量 `const` 语义，阻止赋值和自增/自减 | — |
 
 ### 3.2 隐式转换与编译器警告
@@ -558,6 +563,9 @@ int main() { return 0; }
 - [x] **函数按值返回结构体** — 已支持（Hidden Return Pointer ABI），支持赋值、直接成员访问、作为函数参数
 - [x] **多级指针** — 已支持 `int**` / `struct Node**`，含解引用、取地址、数组索引、指针算术、显式 cast
 - [x] **VLA（变长数组）** — 已支持局部一维/多维 VLA、`sizeof` 运行时求值、函数参数退化；全局/静态 VLA 编译期拒绝
+- [x] **通用逗号运算符** — 已支持 `(a, b)` 表达式，左值求值后丢弃，返回右操作数类型
+- [x] **Designated Initializer** — 已支持 `.field = val`（结构体）和 `[i] = val`（一维数组），局部变量上下文；全局/静态变量 designated init 暂不支持
+- [x] **`offsetof(struct S, field)`** — 已支持编译期常量计算（结构体/联合体）
 
 ---
 
@@ -569,30 +577,27 @@ int main() { return 0; }
 
 | 特性 | 典型触发场景 | 实现路径 | 复杂度 |
 |------|-------------|----------|--------|
-| **通用逗号运算符** `a, b` | `while (a--, a > 0)`、表达式语句多操作 | Parser 优先级 + CodeGen 左值丢弃 | 🟡 中 |
-| **Designated Initializer** `.field = val` / `[i] = val` | `struct S s = {.x = 1};`、稀疏数组初始化 | Parser 扩展 + CodeGen 支持 | 🟡 中 |
-| **`offsetof(struct S, field)`** | 数据结构内存布局教学 | 编译期宏 / 常量计算 | 🟢 低 |
+| ~~**通用逗号运算符** `a, b`~~ | ~~`while (a--, a > 0)`、表达式语句多操作~~ | ✅ 已完成 | — |
+| ~~**Designated Initializer** `.field = val` / `[i] = val`~~ | ~~`struct S s = {.x = 1};`、稀疏数组初始化~~ | ✅ 已完成（局部变量） | — |
+| ~~**`offsetof(struct S, field)`~~ | ~~数据结构内存布局教学~~ | ✅ 已完成（编译期常量） | — |
 
 ### 8.2 🟠 P1 — 短期实现（教学/算法必备）
 
 | 特性 | 典型触发场景 | 实现路径 | 复杂度 |
 |------|-------------|----------|--------|
-| **`static`（全局/函数）完整语义** | 链接性控制、内部函数 | 符号表隔离（已有基础） | 🟡 中 |
-| **`goto`** | 状态机、错误处理清理（虽不鼓励但存在） | 新增 AST 节点 + Bytecode 跳转 | 🟡 中 |
-| **`volatile`** | 嵌入式/硬件相关课程 | 关键字已存在 TokenType，需接入语义 | 🟡 中 |
-| **条件编译** `#ifdef` / `#ifndef` / `#endif` | 头文件保护、跨平台代码 | Preprocessor 扩展 | 🔴 高 |
-| **`va_list` / `va_start` / `va_arg` / `va_end`** | 用户自定义变参函数 | 编译器支持 + ABI 约定 | 🔴 高 |
+| ~~**`static`（全局/函数）完整语义**~~ | ~~链接性控制、内部函数~~ | ✅ 已完成 | — |
+| ~~**`goto`**~~ | ~~状态机、错误处理清理（虽不鼓励但存在）~~ | ✅ 已完成 | — |
+| ~~**条件编译** `#ifdef` / `#ifndef` / `#else` / `#endif`~~ | ~~头文件保护、跨平台代码~~ | ✅ 已完成（Lexer 层状态栈，支持嵌套） | — |
 
 ### 8.3 🟡 P2 — 中期实现（进阶需求）
 
 | 特性 | 典型触发场景 | 实现路径 | 复杂度 |
 |------|-------------|----------|--------|
-| **`restrict`** | 高性能数组操作优化提示 | 关键字 + 类型检查提示 | 🟢 低 |
-| **`inline`** | 小型函数内联 | 关键字识别（优化阶段暂跳过） | 🟢 低 |
-| **`_Bool` / `bool`** | C99 原生布尔类型 | 已有 `stdbool.h` 规划，底层可映射为 `int` | 🟢 低 |
-| **`register`** / **`auto`** | 存储类说明符 | 关键字识别并忽略（现代编译器自动优化） | 🟢 低 |
-| **`sizeof(VLA类型)`** `sizeof(int[n])` | VLA 元编程 | CodeGen 扩展 | 🟡 中 |
-| **全局 VLA** | 极少见，但标准允许 | 当前编译期拒绝，需全局栈分配机制 | 🔴 高 |
+| ~~**`restrict`**~~ | ~~高性能数组操作优化提示~~ | ✅ 已完成（关键字识别，教学 VM 中无特殊语义） | — |
+| ~~**`inline`**~~ | ~~小型函数内联~~ | ✅ 已完成（关键字识别并忽略） | — |
+| ~~**`_Bool` / `bool`**~~ | ~~C99 原生布尔类型~~ | ✅ 已完成（底层映射为 `int`） | — |
+| ~~**`register`** / **`auto`**~~ | ~~存储类说明符~~ | ✅ 已完成（关键字识别并忽略） | — |
+| ~~**`sizeof(VLA类型)`** `sizeof(int[n])`~~ | ~~VLA 元编程~~ | ✅ 已完成（BytecodeGen 运行时求值） | — |
 
 ### 8.4 ⚫ 明确排除项（实现复杂 / 教学价值极低）
 
@@ -604,6 +609,8 @@ int main() { return 0; }
 | `_Static_assert` / `_Alignas` / `_Alignof` | C11 进阶，教学很少涉及 |
 | `_Noreturn` / `_Thread_local` / `_Atomic` | 同上 |
 | `union` 的复杂初始化规则 | 当前已支持基本 union，复杂初始化极少见 |
+| **`va_list` / `va_start` / `va_arg` / `va_end`** | 自定义变参需全编译管线 + ABI 改造；`printf`/`scanf` 已内置支持，教学价值有限 |
+| **全局 VLA** | 标准允许但教学/实际代码中极少见；实现需全局运行时栈分配机制 |
 | 完整预处理器（`#` / `##` 操作符、多行宏、条件宏表达式计算） | 教学场景 `#define` 常量宏已足够 |
 
 ---
@@ -635,11 +642,12 @@ int main() { return 0; }
 ```
 数据类型：int、char、float、double、unsigned、long long、int*、char*、float*、double*、
           int[]、char[]、double[]、struct、union、enum
-类型系统：typedef、sizeof、const、static（局部+全局）、extern
+类型系统：typedef、sizeof、const、**static（局部+全局+函数）**、extern
 语句：变量声明、赋值、if/else、while、do...while、for、switch/case/default、
-       break、continue、return、goto、块作用域
+       break、continue、return、**goto**、块作用域
 表达式：算术、比较、逻辑、位运算、赋值、三目运算符、逗号运算符、数组索引、
-        函数调用、&、*、struct访问、++/--、字符串字面量、sizeof、显式类型转换
+        函数调用、&、*、struct访问、++/--、字符串字面量、sizeof、offsetof、显式类型转换、
+        designated initializer（.field / [index]）
 函数：定义/调用/递归/前向声明/函数指针/变参（printf/scanf + 未来自定义）
 内存：malloc/free/realloc/calloc
 I/O：printf、scanf、sprintf、snprintf、sscanf、fprintf、puts、getchar、putchar、

@@ -349,6 +349,110 @@ impl VirtualFileSystem {
         0
     }
 
+    /// fgetc：从文件读取一个字节
+    /// 返回字节值（0-255）或 EOF（-1）
+    pub fn fgetc(&mut self, fd: u32, vm: &mut CideVM) -> i32 {
+        let desc = match self.descriptors.get_mut(&fd) {
+            Some(d) => d,
+            None => return -1,
+        };
+        let meta = match self.files.get(&desc.file_name) {
+            Some(m) => m,
+            None => return -1,
+        };
+        if desc.cursor >= meta.size {
+            desc.eof = true;
+            return -1;
+        }
+        let byte_addr = meta.heap_addr + desc.cursor as u32;
+        let mut b = [0u8; 1];
+        if !vm.read_memory_to(byte_addr, &mut b) {
+            return -1;
+        }
+        desc.cursor += 1;
+        if desc.cursor >= meta.size {
+            desc.eof = true;
+        }
+        b[0] as i32
+    }
+
+    /// fputc：向文件写入一个字节
+    /// 返回写入的字节值（成功）或 EOF（-1，失败）
+    pub fn fputc(&mut self, fd: u32, c: i32, vm: &mut CideVM, memory: &mut MemoryState) -> i32 {
+        let desc = match self.descriptors.get_mut(&fd) {
+            Some(d) => d,
+            None => return -1,
+        };
+        if desc.mode == VfsMode::Read {
+            return -1;
+        }
+        let meta = match self.files.get_mut(&desc.file_name) {
+            Some(m) => m,
+            None => return -1,
+        };
+        let new_size = desc.cursor + 1;
+        if new_size > meta.capacity {
+            let new_cap = align4(new_size.max(meta.capacity * 2));
+            if !realloc_vfs_file(memory, vm, meta, new_cap) {
+                return -1;
+            }
+        }
+        let dst_addr = meta.heap_addr + desc.cursor as u32;
+        let tmp = [c as u8; 1];
+        if !vm.write_memory(dst_addr, &tmp) {
+            return -1;
+        }
+        desc.cursor += 1;
+        if desc.cursor > meta.size {
+            meta.size = desc.cursor;
+        }
+        c
+    }
+
+    /// fseek：移动文件光标
+    /// whence: SEEK_SET=0, SEEK_CUR=1, SEEK_END=2
+    /// 返回 0（成功）或 -1（失败）
+    pub fn fseek(&mut self, fd: u32, offset: i32, whence: i32) -> i32 {
+        let desc = match self.descriptors.get_mut(&fd) {
+            Some(d) => d,
+            None => return -1,
+        };
+        let meta = match self.files.get(&desc.file_name) {
+            Some(m) => m,
+            None => return -1,
+        };
+        let new_cursor = match whence {
+            0 => offset as i64,
+            1 => desc.cursor as i64 + offset as i64,
+            2 => meta.size as i64 + offset as i64,
+            _ => return -1,
+        };
+        if new_cursor < 0 {
+            return -1;
+        }
+        desc.cursor = new_cursor as usize;
+        desc.eof = false;
+        0
+    }
+
+    /// ftell：返回当前文件光标位置
+    /// 返回光标位置（成功）或 -1（失败）
+    pub fn ftell(&self, fd: u32) -> i32 {
+        let desc = match self.descriptors.get(&fd) {
+            Some(d) => d,
+            None => return -1,
+        };
+        desc.cursor as i32
+    }
+
+    /// rewind：将文件光标重置到开头并清除 EOF 标志
+    pub fn rewind(&mut self, fd: u32) {
+        if let Some(desc) = self.descriptors.get_mut(&fd) {
+            desc.cursor = 0;
+            desc.eof = false;
+        }
+    }
+
     /// 获取文件描述符对应的文件名（用于调试）
     pub fn get_file_name(&self, fd: u32) -> Option<&str> {
         self.descriptors.get(&fd).map(|d| d.file_name.as_str())

@@ -32,8 +32,8 @@
 ### binarySearchTreeValidation_default
 - **现象**: `INT_MIN`/`INT_MAX` 未声明（E3023）；`isValidBST` 第 2/3 参数类型不匹配（E3038）
 - **根因**: Cide 不支持 `<limits.h>` 的 `INT_MIN`/`INT_MAX` 宏；`long long` 类型作为函数参数可能未被 TypeChecker 正确处理。
-- **分类**: Cide 已知限制 + 模板依赖未支持头文件
-- **是否 Cide 限制**: ✅ 是。`<limits.h>` 不在 AGENTS.md 支持列表中。
+- **分类**: ✅ **已修复**（2026-06-07）。新增 `<limits.h>` 支持，`INT_MIN`/`INT_MAX` 已预定义。
+- **是否 Cide 限制**: 否
 
 ### dfs_default
 - **现象**: 输出不匹配 — Cide 输出 `"0 1 2"`，Golden `"0 1 3 4 2"`

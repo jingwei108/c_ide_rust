@@ -175,7 +175,8 @@ impl Parser {
                 TokenType::Struct | TokenType::Switch | TokenType::Case |
                 TokenType::Default | TokenType::Typedef | TokenType::Enum |
                 TokenType::Unsigned | TokenType::Long | TokenType::Short |
-                TokenType::Signed | TokenType::Const | TokenType::RBrace => return,
+                TokenType::Signed | TokenType::Const | TokenType::Bool |
+                TokenType::RBrace => return,
                 _ => { self.advance(); }
             }
         }
@@ -187,6 +188,7 @@ impl Parser {
            self.check(TokenType::Enum) || self.check(TokenType::Unsigned) ||
            self.check(TokenType::Long) || self.check(TokenType::Short) ||
            self.check(TokenType::Signed) || self.check(TokenType::Const) ||
+           self.check(TokenType::Volatile) || self.check(TokenType::Bool) ||
            self.check(TokenType::Union) {
             return true;
         }
@@ -208,6 +210,8 @@ impl Parser {
         let mut program = ProgramNode::default();
 
         while !self.is_at_end() {
+            // 跳过函数前缀修饰符 inline（可能出现在 static/extern 之前或之后）
+            while self.check(TokenType::Inline) { self.advance(); }
             if self.check(TokenType::Typedef) {
                 let checkpoint = self.pos;
                 let errors_checkpoint = self.errors.len();
@@ -334,7 +338,7 @@ impl Parser {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
                 } else {
-                    Some(self.parse_expression())
+                    Some(self.parse_assign())
                 }
             } else { None };
             program.globals.push(GlobalDecl {
@@ -350,7 +354,7 @@ impl Parser {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
                     } else {
-                        Some(self.parse_expression())
+                        Some(self.parse_assign())
                     }
                 } else { None };
                 program.globals.push(GlobalDecl {
@@ -475,6 +479,11 @@ impl Parser {
         let mut is_const = false;
         loop {
             if self.match_token(TokenType::Const) { is_const = true; continue; }
+            if self.match_token(TokenType::Volatile) { continue; }
+            if self.match_token(TokenType::Restrict) { continue; }
+            if self.match_token(TokenType::Register) { continue; }
+            if self.match_token(TokenType::Auto) { continue; }
+            if self.match_token(TokenType::Inline) { continue; }
             if self.match_token(TokenType::Signed) { continue; }
             if self.match_token(TokenType::Unsigned) { is_unsigned = true; continue; }
             if self.match_token(TokenType::Long) {
@@ -536,6 +545,8 @@ impl Parser {
                 self.typedef_names.insert(name_tok.text.clone(), Type::int());
             }
             Type::int()
+        } else if self.match_token(TokenType::Bool) {
+            Type::int()
         } else if self.check(TokenType::Identifier) {
             if let Some(ty) = self.typedef_names.get(&self.current().text).cloned() {
                 self.advance();
@@ -585,6 +596,10 @@ impl Parser {
             if !is_abstract {
                 guard.ptr_count += 1;
             }
+            // 跳过指针限定符（const/volatile/restrict），教学 VM 中无特殊语义
+            while self.match_token(TokenType::Const)
+                || self.match_token(TokenType::Volatile)
+                || self.match_token(TokenType::Restrict) {}
         }
 
         let (name, mut node) = if self.match_token(TokenType::LParen) {
@@ -628,7 +643,7 @@ impl Parser {
                 let size_expr = if self.check(TokenType::RBracket) {
                     None
                 } else {
-                    let expr = self.parse_expression();
+                    let expr = self.parse_assign();
                     Some(Box::new(expr))
                 };
                 self.consume(TokenType::RBracket, "预期 ']'");
@@ -874,22 +889,32 @@ impl Parser {
             TokenType::Return => self.parse_return_stmt(),
             TokenType::Break => self.parse_break_stmt(),
             TokenType::Continue => self.parse_continue_stmt(),
+            TokenType::Goto => self.parse_goto_stmt(),
             TokenType::Switch => self.parse_switch_stmt(),
             TokenType::Case | TokenType::Default => self.parse_case_stmt(),
-            _ if self.is_type_token() || self.is_static_token() => {
+            _ if self.is_type_token() || self.is_static_token() ||
+                   self.check(TokenType::Register) || self.check(TokenType::Auto) || self.check(TokenType::Inline) => {
                 let is_static = self.is_static_token();
                 if is_static {
                     self.advance(); // consume 'static'
                 }
+                while self.check(TokenType::Register) || self.check(TokenType::Auto) || self.check(TokenType::Inline) {
+                    self.advance();
+                }
                 self.parse_var_decl_stmt(is_static)
             }
             _ => {
+                // Label statement: ident : stmt
+                if self.check(TokenType::Identifier) && self.peek(1).ty == TokenType::Colon {
+                    return self.parse_label_stmt();
+                }
                 let checkpoint = self.pos;
                 let stmt = self.parse_expr_stmt();
                 if self.pos == checkpoint {
                     self.synchronize(&[
                         TokenType::Semicolon, TokenType::RBrace,
                         TokenType::Int, TokenType::Void, TokenType::Char, TokenType::Float, TokenType::Double, TokenType::Long,
+                        TokenType::Bool,
                         TokenType::If, TokenType::While, TokenType::Do, TokenType::For,
                         TokenType::Return, TokenType::Break, TokenType::Continue,
                         TokenType::Struct, TokenType::Switch, TokenType::Typedef,
@@ -928,7 +953,7 @@ impl Parser {
             if self.check(TokenType::LBrace) {
                 Some(self.parse_init_list())
             } else {
-                Some(self.parse_expression())
+                Some(self.parse_assign())
             }
         } else { None };
 
@@ -939,7 +964,7 @@ impl Parser {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
                 } else {
-                    Some(self.parse_expression())
+                    Some(self.parse_assign())
                 }
             } else { None };
             extra_vars.push((extra_ty, extra_name, extra_init));
@@ -998,6 +1023,24 @@ impl Parser {
         Stmt::Continue { loc: SourceLoc { line: loc.line, column: loc.column } }
     }
 
+    fn parse_goto_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        self.consume(TokenType::Goto, "预期 'goto'");
+        let label = self.current().text.clone();
+        self.consume(TokenType::Identifier, "goto 后预期标签名");
+        self.consume(TokenType::Semicolon, "goto 后预期 ';'");
+        Stmt::Goto { label, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
+    fn parse_label_stmt(&mut self) -> Stmt {
+        let loc = self.current().clone();
+        let label = self.current().text.clone();
+        self.advance(); // consume identifier
+        self.consume(TokenType::Colon, "标签名后预期 ':'");
+        let stmt = Box::new(self.parse_statement());
+        Stmt::Label { label, stmt, loc: SourceLoc { line: loc.line, column: loc.column } }
+    }
+
     fn parse_for_stmt(&mut self) -> Stmt {
         let loc = self.current().clone();
         self.consume(TokenType::For, "预期 'for'");
@@ -1011,7 +1054,7 @@ impl Parser {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
                 } else {
-                    Some(self.parse_expression())
+                    Some(self.parse_assign())
                 }
             } else { None };
             let mut extra_vars = Vec::new();
@@ -1021,7 +1064,7 @@ impl Parser {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())
                     } else {
-                        Some(self.parse_expression())
+                        Some(self.parse_assign())
                     }
                 } else { None };
                 extra_vars.push((extra_ty, extra_name, extra_init));
@@ -1090,7 +1133,7 @@ impl Parser {
         let mut args = Vec::new();
         if self.check(TokenType::RParen) { return args; }
         loop {
-            args.push(self.parse_expression());
+            args.push(self.parse_assign());
             if !self.match_token(TokenType::Comma) { break; }
         }
         args
@@ -1162,7 +1205,7 @@ impl Parser {
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
             if self.match_token(TokenType::Assign) {
-                let val_expr = self.parse_expression();
+                let val_expr = self.parse_assign();
                 if let Expr::Literal { value, .. } = val_expr {
                     next_value = value;
                 }

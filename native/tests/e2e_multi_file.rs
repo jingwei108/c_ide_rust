@@ -162,3 +162,103 @@ int main() {
     let diag = session.compile.diagnostics.first().unwrap();
     assert_eq!(diag.filename, "main.c", "诊断应指向 main.c");
 }
+
+
+#[test]
+fn test_multi_file_static_global_isolation() {
+    let mut session = make_session();
+    let units = vec![
+        CompileUnit {
+            filename: "main.c".to_string(),
+            source: r#"
+#include <stdio.h>
+
+extern int secret_val;
+
+int main() {
+    printf("%d", secret_val);
+    return 0;
+}
+"#.to_string(),
+        },
+        CompileUnit {
+            filename: "utils.c".to_string(),
+            source: r#"
+static int secret_val = 42;
+"#.to_string(),
+        },
+    ];
+
+    let result = run_multi_file_pipeline(&mut session, units);
+    assert!(result.is_err(), "static 全局变量跨文件访问应该编译失败");
+
+    let has_static_error = session.compile.diagnostics.iter().any(|d| {
+        d.error_code == ErrorCode::E3059_StaticGlobalAccess as i32
+    });
+    assert!(has_static_error, "应报告 E3059 static 全局变量访问错误");
+}
+
+#[test]
+fn test_same_file_static_global_ok() {
+    let mut session = make_session();
+    let units = vec![
+        CompileUnit {
+            filename: "main.c".to_string(),
+            source: r#"
+#include <stdio.h>
+
+static int counter = 0;
+
+int next() {
+    counter++;
+    return counter;
+}
+
+int main() {
+    printf("%d", next());
+    return 0;
+}
+"#.to_string(),
+        },
+    ];
+
+    let result = run_multi_file_pipeline(&mut session, units);
+    assert!(result.is_ok(), "同一文件内 static 全局变量访问应成功: {:?}", session.compile.errors);
+}
+
+#[test]
+fn test_multi_file_static_global_same_name() {
+    let mut session = make_session();
+    let units = vec![
+        CompileUnit {
+            filename: "main.c".to_string(),
+            source: r#"
+#include <stdio.h>
+
+static int val = 10;
+
+int get_main_val() {
+    return val;
+}
+
+int main() {
+    printf("%d", get_main_val());
+    return 0;
+}
+"#.to_string(),
+        },
+        CompileUnit {
+            filename: "utils.c".to_string(),
+            source: r#"
+static int val = 20;
+
+int get_utils_val() {
+    return val;
+}
+"#.to_string(),
+        },
+    ];
+
+    let result = run_multi_file_pipeline(&mut session, units);
+    assert!(result.is_ok(), "同名 static 全局变量在不同文件应互不干扰: {:?}", session.compile.errors);
+}

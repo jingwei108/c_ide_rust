@@ -4,7 +4,10 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
-    Struct, Union, Sizeof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Extern, Float, Double,
+    Struct, Union, Sizeof, Offsetof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Extern, Float, Double,
+    Volatile,
+    Inline, Restrict, Register, Auto, Bool,
+    Goto,
     Null,
     Identifier, Number, UnsignedLiteral, FloatLiteral, LongLiteral, CharLiteral, String,
     Plus, Minus, Star, Slash, Percent,
@@ -44,6 +47,12 @@ struct MacroDef {
     body: Vec<Token>,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ConditionalState {
+    active: bool,
+    has_else: bool,
+}
+
 pub struct Lexer {
     chars: Vec<char>,
     errors: Vec<LexerError>,
@@ -51,6 +60,7 @@ pub struct Lexer {
     line: i32,
     column: i32,
     macros: HashMap<String, MacroDef>,
+    conditional_stack: Vec<ConditionalState>,
 }
 
 impl Lexer {
@@ -102,6 +112,62 @@ impl Lexer {
                 column: 0,
             }],
         });
+        // stdlib.h macros
+        macros.insert("EXIT_SUCCESS".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "0".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("EXIT_FAILURE".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "1".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("RAND_MAX".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "32767".to_string(), line: 0, column: 0 }],
+        });
+        // stdio.h macros
+        macros.insert("SEEK_SET".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "0".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("SEEK_CUR".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "1".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("SEEK_END".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "2".to_string(), line: 0, column: 0 }],
+        });
+        // limits.h macros
+        macros.insert("INT_MAX".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "2147483647".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("INT_MIN".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "-2147483648".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("LONG_MAX".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "2147483647".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("LONG_MIN".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "-2147483648".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("CHAR_BIT".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "8".to_string(), line: 0, column: 0 }],
+        });
+        // stdbool.h macros
+        macros.insert("true".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "1".to_string(), line: 0, column: 0 }],
+        });
+        macros.insert("false".to_string(), MacroDef {
+            params: vec![],
+            body: vec![Token { ty: TokenType::Number, text: "0".to_string(), line: 0, column: 0 }],
+        });
         Self {
             chars: source.chars().collect(),
             errors: Vec::new(),
@@ -109,6 +175,7 @@ impl Lexer {
             line: 1,
             column: 1,
             macros,
+            conditional_stack: Vec::new(),
         }
     }
 
@@ -122,6 +189,14 @@ impl Lexer {
             }
             tokens.push(t);
         }
+        if !self.conditional_stack.is_empty() {
+            self.errors.push(LexerError {
+                message: "未闭合的 #ifdef / #ifndef 块".to_string(),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1013_UnclosedConditional as i32,
+            });
+        }
         let expanded = self.expand_macros(tokens);
         (expanded, self.errors)
     }
@@ -131,6 +206,60 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Token {
+        // 条件编译跳过模式：跳过所有不活跃的代码块
+        while self.is_skipping() {
+            // 跳过空白
+            while self.pos < self.chars.len() {
+                let c = self.peek(0);
+                if c.is_ascii_whitespace() {
+                    self.advance();
+                } else {
+                    break;
+                }
+            }
+            if self.pos >= self.chars.len() {
+                return self.make_token(TokenType::Eof, "");
+            }
+            // 跳过块注释
+            if self.peek(0) == '/' && self.peek(1) == '*' {
+                self.advance();
+                self.advance();
+                while self.pos < self.chars.len() {
+                    if self.peek(0) == '*' && self.peek(1) == '/' {
+                        self.advance();
+                        self.advance();
+                        break;
+                    }
+                    self.advance();
+                }
+                continue;
+            }
+            // 跳过行注释
+            if self.peek(0) == '/' && self.peek(1) == '/' {
+                while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                    self.advance();
+                }
+                if self.pos < self.chars.len() {
+                    self.advance();
+                }
+                continue;
+            }
+            if self.peek(0) == '#' {
+                self.skip_preprocessor_directive();
+                if !self.is_skipping() {
+                    break;
+                }
+                continue;
+            }
+            // 不是预处理指令，跳过整行
+            while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                self.advance();
+            }
+            if self.pos < self.chars.len() {
+                self.advance();
+            }
+        }
+
         self.skip_whitespace();
 
         if self.pos >= self.chars.len() {
@@ -665,42 +794,148 @@ impl Lexer {
         tok
     }
 
+    fn is_skipping(&self) -> bool {
+        self.conditional_stack.iter().any(|s| !s.active)
+    }
+
     fn skip_preprocessor_directive(&mut self) {
         self.advance(); // consume '#'
         self.skip_whitespace();
 
-        if self.chars[self.pos..].starts_with(&['d', 'e', 'f', 'i', 'n', 'e']) {
-            self.pos += 6;
-            self.column += 6;
-            self.parse_define_directive();
-            return;
+        // 读取指令名
+        let dir_start = self.pos;
+        while self.pos < self.chars.len() {
+            let c = self.peek(0);
+            if c.is_ascii_alphabetic() {
+                self.advance();
+            } else {
+                break;
+            }
         }
+        let directive: String = self.chars[dir_start..self.pos].iter().collect();
 
-        if self.chars[self.pos..].starts_with(&['i', 'n', 'c', 'l', 'u', 'd', 'e']) {
-            self.pos += 7;
-            self.column += 7;
-            self.skip_whitespace();
-            if let Some(path) = self.parse_include_path() {
-                if let Some(stub) = Self::load_stub(&path) {
-                    let mut line_end = self.pos;
-                    while line_end < self.chars.len() && self.chars[line_end] != '\n' {
-                        line_end += 1;
+        match directive.as_str() {
+            "define" => {
+                if !self.is_skipping() {
+                    self.parse_define_directive();
+                } else {
+                    while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                        self.advance();
                     }
-                    if line_end < self.chars.len() && self.chars[line_end] == '\n' {
-                        line_end += 1;
-                    }
-                    let stub_chars: Vec<char> = stub.replace('\n', " ").chars().collect();
-                    self.chars.splice(line_end..line_end, stub_chars);
                 }
             }
-            while self.pos < self.chars.len() && self.peek(0) != '\n' {
-                self.advance();
+            "include" => {
+                if !self.is_skipping() {
+                    self.skip_whitespace();
+                    if let Some(path) = self.parse_include_path() {
+                        if let Some(stub) = Self::load_stub(&path) {
+                            let mut line_end = self.pos;
+                            while line_end < self.chars.len() && self.chars[line_end] != '\n' {
+                                line_end += 1;
+                            }
+                            if line_end < self.chars.len() && self.chars[line_end] == '\n' {
+                                line_end += 1;
+                            }
+                            let stub_chars: Vec<char> = stub.replace('\n', " ").chars().collect();
+                            self.chars.splice(line_end..line_end, stub_chars);
+                        }
+                    }
+                }
+                while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                    self.advance();
+                }
             }
-            return;
+            "ifdef" => {
+                self.handle_conditional_directive(true);
+            }
+            "ifndef" => {
+                self.handle_conditional_directive(false);
+            }
+            "else" => {
+                self.handle_else_directive();
+            }
+            "endif" => {
+                self.handle_endif_directive();
+            }
+            _ => {
+                // 未知指令，跳过整行
+                while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                    self.advance();
+                }
+            }
         }
+    }
 
+    fn handle_conditional_directive(&mut self, is_ifdef: bool) {
+        self.skip_whitespace();
+        let id_start = self.pos;
+        while self.pos < self.chars.len() {
+            let c = self.peek(0);
+            if c.is_ascii_alphanumeric() || c == '_' {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        let _ident: String = self.chars[id_start..self.pos].iter().collect();
+
+        // 跳过行尾
         while self.pos < self.chars.len() && self.peek(0) != '\n' {
             self.advance();
+        }
+
+        let active = if self.is_skipping() {
+            false
+        } else {
+            let defined = self.macros.contains_key(&_ident);
+            if is_ifdef { defined } else { !defined }
+        };
+
+        self.conditional_stack.push(ConditionalState {
+            active,
+            has_else: false,
+        });
+    }
+
+    fn handle_else_directive(&mut self) {
+        while self.pos < self.chars.len() && self.peek(0) != '\n' {
+            self.advance();
+        }
+
+        if let Some(state) = self.conditional_stack.last_mut() {
+            if state.has_else {
+                self.errors.push(LexerError {
+                    message: "重复的 #else".to_string(),
+                    line: self.line,
+                    column: self.column,
+                    code: ErrorCode::E1012_DuplicateElse as i32,
+                });
+            } else {
+                state.has_else = true;
+                state.active = !state.active;
+            }
+        } else {
+            self.errors.push(LexerError {
+                message: "没有匹配的 #ifdef / #ifndef 就出现 #else".to_string(),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1011_UnmatchedConditional as i32,
+            });
+        }
+    }
+
+    fn handle_endif_directive(&mut self) {
+        while self.pos < self.chars.len() && self.peek(0) != '\n' {
+            self.advance();
+        }
+
+        if self.conditional_stack.pop().is_none() {
+            self.errors.push(LexerError {
+                message: "没有匹配的 #ifdef / #ifndef 就出现 #endif".to_string(),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1011_UnmatchedConditional as i32,
+            });
         }
     }
 
@@ -729,6 +964,8 @@ impl Lexer {
             "ctype.h" => Some(include_str!("../../runtime_libc/include/ctype.h")),
             "math.h" => Some(include_str!("../../runtime_libc/include/math.h")),
             "string.h" => Some(include_str!("../../runtime_libc/include/string.h")),
+            "limits.h" => Some(include_str!("../../runtime_libc/include/limits.h")),
+            "stdbool.h" => Some(include_str!("../../runtime_libc/include/stdbool.h")),
             _ => None,
         }
     }
@@ -812,7 +1049,15 @@ impl Lexer {
             }
         }
 
-        self.skip_whitespace();
+        // 跳过宏名与 body 之间的空白，但不要把下一行也吞进来
+        while self.pos < self.chars.len() {
+            let c = self.peek(0);
+            if c == ' ' || c == '\t' || c == '\r' {
+                self.advance();
+            } else {
+                break;
+            }
+        }
 
         let body_start = self.pos;
         while self.pos < self.chars.len() && self.peek(0) != '\n' {
@@ -982,6 +1227,7 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         "struct"   => Some(TokenType::Struct),
         "union"    => Some(TokenType::Union),
         "sizeof"   => Some(TokenType::Sizeof),
+        "offsetof" => Some(TokenType::Offsetof),
         "switch"   => Some(TokenType::Switch),
         "case"     => Some(TokenType::Case),
         "default"  => Some(TokenType::Default),
@@ -993,8 +1239,16 @@ fn keyword_type(text: &str) -> Option<TokenType> {
         "signed"   => Some(TokenType::Signed),
         "const"    => Some(TokenType::Const),
         "extern"   => Some(TokenType::Extern),
+        "volatile" => Some(TokenType::Volatile),
+        "inline"   => Some(TokenType::Inline),
+        "restrict" => Some(TokenType::Restrict),
+        "register" => Some(TokenType::Register),
+        "auto"     => Some(TokenType::Auto),
+        "_Bool"    => Some(TokenType::Bool),
+        "bool"     => Some(TokenType::Bool),
         "float"    => Some(TokenType::Float),
         "double"   => Some(TokenType::Double),
+        "goto"     => Some(TokenType::Goto),
         "NULL"     => Some(TokenType::Null),
         "null"     => Some(TokenType::Null),
         _          => None,

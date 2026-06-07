@@ -4631,3 +4631,237 @@ int main() {
     let out = filter_outputs(output);
     assert_eq!(out.join(""), "0 2 10 12", "All-dim VLA should work");
 }
+
+#[test]
+fn test_e2e_goto_forward_jump() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 0;
+    goto end;
+    x = 100;
+end:
+    printf("%d\n", x);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "0", "Forward goto should skip assignment");
+}
+
+#[test]
+fn test_e2e_goto_backward_jump() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int i = 0;
+loop:
+    if (i >= 3) goto end;
+    printf("%d", i);
+    i++;
+    goto loop;
+end:
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "012", "Backward goto should form loop");
+}
+
+#[test]
+fn test_e2e_goto_undefined_label_error() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    goto nowhere;
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_err(), "Undefined goto label should produce compile error");
+    let err = result.unwrap_err();
+    assert!(err.contains("3071") || err.contains("未定义"), "Expected E3071 undefined label error, got: {}", err);
+}
+
+#[test]
+fn test_e2e_conditional_ifdef_defined() {
+    let src = r#"
+#include <stdio.h>
+#define MODE
+#ifdef MODE
+int get_val() { return 100; }
+#else
+int get_val() { return 200; }
+#endif
+int main() {
+    printf("%d\n", get_val());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "100", "When MODE is defined, get_val() should return 100");
+}
+
+#[test]
+fn test_e2e_conditional_ifdef_undefined() {
+    let src = r#"
+#include <stdio.h>
+#ifdef MODE
+int get_val() { return 100; }
+#else
+int get_val() { return 200; }
+#endif
+int main() {
+    printf("%d\n", get_val());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "200", "When MODE is undefined, get_val() should return 200");
+}
+
+#[test]
+fn test_e2e_conditional_header_guard() {
+    let src = r#"
+#include <stdio.h>
+#ifndef MYHEADER_H
+#define MYHEADER_H
+int helper() { return 42; }
+#endif
+int main() {
+    printf("%d\n", helper());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "42", "Header guard should allow helper() to be compiled");
+}
+
+#[test]
+fn test_e2e_conditional_nested() {
+    let src = r#"
+#include <stdio.h>
+#define OUTER
+#ifdef OUTER
+  #ifdef INNER
+    int val = 1;
+  #else
+    int val = 2;
+  #endif
+#else
+  int val = 3;
+#endif
+int main() {
+    printf("%d\n", val);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "2", "When OUTER defined but INNER undefined, val should be 2");
+}
+
+#[test]
+fn test_e2e_conditional_nested_both_defined() {
+    let src = r#"
+#include <stdio.h>
+#define OUTER
+#define INNER
+#ifdef OUTER
+  #ifdef INNER
+    int val = 1;
+  #else
+    int val = 2;
+  #endif
+#else
+  int val = 3;
+#endif
+int main() {
+    printf("%d\n", val);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "1", "When both OUTER and INNER defined, val should be 1");
+}
+
+#[test]
+fn test_e2e_conditional_ifndef() {
+    let src = r#"
+#include <stdio.h>
+#ifndef RELEASE
+int debug() { return 1; }
+#else
+int debug() { return 0; }
+#endif
+int main() {
+    printf("%d\n", debug());
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "1", "When RELEASE is not defined, debug() should return 1");
+}
+
+#[test]
+fn test_e2e_vla_sizeof_type() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 5;
+    printf("%d\n", sizeof(int[n]));
+    printf("%d\n", sizeof(int[n][3]));
+    int m = 2;
+    printf("%d\n", sizeof(int[n][m]));
+    printf("%d\n", sizeof(double[n]));
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "20604040", "sizeof(VLA type) should compute runtime sizes correctly");
+}
+
+#[test]
+fn test_e2e_vla_sizeof_type_in_expr() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 5;
+    int elem_count = sizeof(int[n]) / sizeof(int);
+    printf("%d\n", elem_count);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, outputs) = result.unwrap();
+    let out = filter_outputs(outputs);
+    assert_eq!(out.join(""), "5", "sizeof(int[n]) / sizeof(int) should equal n");
+}

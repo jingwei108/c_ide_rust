@@ -184,7 +184,6 @@ fn test_cide_e2e_baseline() {
 const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
     "bTree_default",
     "bellmanFord_default",
-    "binarySearchTreeValidation_default",
     "infixEvaluation_default",
     "polynomialAdd_default",
     "redBlackTree_default",

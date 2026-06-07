@@ -354,6 +354,7 @@ pub enum BinaryOp {
     Eq, Ne, Lt, Le, Gt, Ge,
     And, Or,
     BitAnd, BitOr, BitXor, Shl, Shr,
+    Comma,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -365,6 +366,27 @@ pub enum UnaryOp {
 pub enum AssignOp {
     Assign, AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
     AndAssign, OrAssign, XorAssign, ShlAssign, ShrAssign,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum Designator {
+    Field(String),
+    Index(Box<Expr>),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct InitElement {
+    pub designators: Vec<Designator>,
+    pub value: Expr,
+}
+
+impl std::ops::Deref for InitElement {
+    type Target = Expr;
+    fn deref(&self) -> &Expr { &self.value }
+}
+
+impl std::ops::DerefMut for InitElement {
+    fn deref_mut(&mut self) -> &mut Expr { &mut self.value }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -384,7 +406,8 @@ pub enum Expr {
     Ternary { cond: Box<Expr>, then_branch: Box<Expr>, else_branch: Box<Expr>, loc: SourceLoc, ty: Type },
     Sizeof { target_type: Option<Type>, operand: Option<Box<Expr>>, loc: SourceLoc, ty: Type },
     Cast { expr: Box<Expr>, target_type: Type, loc: SourceLoc, ty: Type },
-    InitList { elements: Vec<Expr>, loc: SourceLoc, ty: Type },
+    InitList { elements: Vec<InitElement>, loc: SourceLoc, ty: Type },
+    Offsetof { target_type: Type, field: String, loc: SourceLoc, ty: Type },
 }
 
 impl Default for Expr {
@@ -412,6 +435,7 @@ macro_rules! expr_field {
             Expr::Sizeof { $field, .. } => $field,
             Expr::Cast { $field, .. } => $field,
             Expr::InitList { $field, .. } => $field,
+            Expr::Offsetof { $field, .. } => $field,
         }
     };
 }
@@ -446,6 +470,8 @@ pub enum Stmt {
     Continue { loc: SourceLoc },
     Switch { cond: Expr, body: Box<Stmt>, loc: SourceLoc },
     Case { label: Option<Expr>, stmt: Box<Stmt>, loc: SourceLoc },
+    Goto { label: String, loc: SourceLoc },
+    Label { label: String, stmt: Box<Stmt>, loc: SourceLoc },
 }
 
 // ============================================================================

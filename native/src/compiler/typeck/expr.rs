@@ -27,6 +27,37 @@ fn promote_type(a: &Type, b: &Type) -> Type {
 
 impl TypeChecker {
     pub fn resolve_expr_type(&mut self, expr: &mut Expr) -> Type {
+        // Handle offsetof: compute offset at compile time and replace with Literal
+        if let Expr::Offsetof { target_type, field, loc, .. } = expr {
+            let type_name = target_type.name().to_string();
+            let field_name = field.clone();
+            let loc_val = *loc;
+            let mut offset = 0;
+            let mut found = false;
+            if let Some(struct_sym) = self.structs.get(&type_name) {
+                for (fty, fname) in &struct_sym.fields {
+                    if *fname == field_name {
+                        found = true;
+                        break;
+                    }
+                    offset += self.compute_type_size(fty);
+                }
+                if !found {
+                    self.report_error(&format!("结构体 '{}' 没有字段 '{}'", type_name, field_name), &loc_val, ErrorCode::E3042_UnknownMember);
+                }
+            } else if let Some(union_sym) = self.unions.get(&type_name) {
+                // Union: all fields start at offset 0
+                if !union_sym.fields.iter().any(|(_, fname)| *fname == field_name) {
+                    self.report_error(&format!("联合体 '{}' 没有字段 '{}'", type_name, field_name), &loc_val, ErrorCode::E3042_UnknownMember);
+                }
+                offset = 0;
+            } else {
+                self.report_error(&format!("未知的结构体/联合体类型 '{}'", type_name), &loc_val, ErrorCode::E3004_TypeMismatch);
+            }
+            *expr = Expr::Literal { value: offset, loc: loc_val, ty: Type::int() };
+            return Type::int();
+        }
+
         match expr {
             Expr::Binary { op, left, right, loc, ty } => {
                 let left_type = self.resolve_expr_type(left);
@@ -104,6 +135,10 @@ impl TypeChecker {
                         } else {
                             left_type.clone()
                         }
+                    }
+                    BinaryOp::Comma => {
+                        // Comma operator: evaluate left, discard result, return right's type
+                        right_type.clone()
                     }
                 };
                 ty.clone()
@@ -191,6 +226,13 @@ impl TypeChecker {
             }
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
+                    if sym.is_static && sym.is_global {
+                        if let Some(files) = self.static_global_files.get(name) {
+                            if !files.contains(&self.current_file) {
+                                self.report_error(&format!("static 全局变量 '{}' 在其他文件中不可见", name), loc, ErrorCode::E3059_StaticGlobalAccess);
+                            }
+                        }
+                    }
                     *ty = sym.ty;
                 } else if let Some(sym) = self.funcs.get(name).cloned() {
                     // Function name used as value (function pointer)
@@ -374,6 +416,10 @@ impl TypeChecker {
                 }
                 *ty = Type::void();
                 ty.clone()
+            }
+            Expr::Offsetof { .. } => {
+                // Should have been replaced by Literal above; unreachable
+                Type::int()
             }
         }
     }

@@ -11,6 +11,9 @@ pub enum ErrorCode {
     E1006_UnsupportedFeature = 1006,
     E1007_ComplexDeclarator = 1007,
     E1010_UnterminatedComment = 1010,
+    E1011_UnmatchedConditional = 1011,
+    E1012_DuplicateElse = 1012,
+    E1013_UnclosedConditional = 1013,
     E2001_ExpectedType = 2001,
     E2002_ExpectedArraySize = 2002,
     E2003_ExpectedExpr = 2003,
@@ -85,4 +88,5 @@ pub enum ErrorCode {
     W3064_DoublePointerCast = 3064,
     E3057_ConstViolation = 3065,
     E3070_BufferOverflow = 3070,
+    E3071_UndefinedLabel = 3071,
 }

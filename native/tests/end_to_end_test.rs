@@ -878,3 +878,209 @@ int main() {
     assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
 }
 
+
+// P0: comma operator
+#[test]
+fn test_e2e_comma_operator_basic() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = (1, 2, 3);
+    printf("%d", a);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_comma_operator_side_effects() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 0, y = 0;
+    int r = (x = 1, y = 2, x + y);
+    printf("%d %d %d", x, y, r);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1 2 3")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_comma_operator_in_while() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a = 5;
+    while (a--, a > 0) {
+        printf("%d ", a);
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("4 3 2 1")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_comma_operator_in_for() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int i, j;
+    for (i = 0, j = 10; i < j; i++, j--) {
+        printf("%d%d ", i, j);
+    }
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("010 19 28 37 46 ")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_comma_operator_func_args_not_affected() {
+    let src = r#"
+#include <stdio.h>
+int add(int a, int b) { return a + b; }
+int main() {
+    int r = add(1, 2);
+    printf("%d", r);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
+}
+
+// P0: Designated Initializer
+#[test]
+fn test_e2e_designated_struct_init() {
+    let src = r#"
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+    int z;
+};
+int main() {
+    struct Point p = {.y = 20, .x = 10};
+    printf("%d %d %d", p.x, p.y, p.z);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("10 20 0")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_designated_array_init() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a[5] = {[0] = 1, [3] = 4};
+    printf("%d %d %d %d %d", a[0], a[1], a[2], a[3], a[4]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1 0 0 4 0")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_designated_struct_nested_field() {
+    let src = r#"
+#include <stdio.h>
+struct S {
+    int a;
+    int b;
+};
+struct T {
+    struct S s;
+    int c;
+};
+int main() {
+    struct T t = {.s = {1, 2}, .c = 3};
+    printf("%d %d %d", t.s.a, t.s.b, t.c);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1 2 3")), "Outputs: {:?}", outputs);
+}
+
+// P0: offsetof
+#[test]
+fn test_e2e_offsetof_struct() {
+    let src = r#"
+#include <stdio.h>
+struct Point {
+    int x;
+    int y;
+    int z;
+};
+int main() {
+    int ox = offsetof(struct Point, x);
+    int oy = offsetof(struct Point, y);
+    int oz = offsetof(struct Point, z);
+    printf("%d %d %d", ox, oy, oz);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("0 4 8")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_offsetof_union() {
+    let src = r#"
+#include <stdio.h>
+union U {
+    int a;
+    char b;
+    double c;
+};
+int main() {
+    int oa = offsetof(union U, a);
+    int ob = offsetof(union U, b);
+    int oc = offsetof(union U, c);
+    printf("%d %d %d", oa, ob, oc);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("0 0 0")), "Outputs: {:?}", outputs);
+}

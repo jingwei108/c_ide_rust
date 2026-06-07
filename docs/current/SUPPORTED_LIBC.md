@@ -141,20 +141,20 @@
 
 | 头文件 | 内容 | 分层 | 动作 | 学生场景 |
 |--------|------|------|------|---------|
-| `<stdlib.h>` | `qsort` | **Layer B** | 存根添加声明 | LeetCode 排序、数据结构教材 |
-| `<limits.h>` | `INT_MAX`, `INT_MIN`, `LONG_MAX`, `LONG_MIN`, `CHAR_BIT` | **无 Layer** | 新增 stub 头文件（宏定义） | DP 初始化、边界判断 |
-| `<stdbool.h>` | `bool`, `true`, `false` | **无 Layer** | 新增 stub 头文件 | 现代 C 代码标配 |
-| `<stdlib.h>` | `EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX` | **无 Layer** | 存根添加宏定义 | 程序返回值、随机数范围 |
-| `<stdio.h>` | `SEEK_SET`, `SEEK_CUR`, `SEEK_END` | **无 Layer** | 存根添加宏定义 | `fseek` 定位 |
+| `<stdlib.h>` | `qsort` | **Layer B** | ✅ 存根已添加 | LeetCode 排序、数据结构教材 |
+| `<limits.h>` | `INT_MAX`, `INT_MIN`, `LONG_MAX`, `LONG_MIN`, `CHAR_BIT` | **无 Layer** | ✅ Lexer 预定义宏 + stub 头文件 | DP 初始化、边界判断 |
+| `<stdbool.h>` | `bool`, `true`, `false` | **无 Layer** | ✅ stub typedef + Lexer 预定义宏 | 现代 C 代码标配 |
+| `<stdlib.h>` | `EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX` | **无 Layer** | ✅ Lexer 预定义宏 | 程序返回值、随机数范围 |
+| `<stdio.h>` | `SEEK_SET`, `SEEK_CUR`, `SEEK_END` | **无 Layer** | ✅ Lexer 预定义宏 | `fseek` 定位 |
 
 #### 5.2.2 新增函数（P0 核心）
 
 | 头文件 | 函数 | 分层 | 学生场景 |
 |--------|------|------|---------|
-| `<stdio.h>` | `puts` | **Layer B** | 简单输出字符串+换行 |
-| `<stdio.h>` | `sprintf`, `snprintf` | **Layer B** | 字符串构造、数字转字符串 |
-| `<stdio.h>` | `sscanf` | **Layer B** | 字符串解析 |
-| `<stdlib.h>` | `calloc` | **Layer B** | 安全分配并零初始化（图论邻接表） |
+| `<stdio.h>` | `puts` | **Layer B** | ✅ 已实现 | 简单输出字符串+换行 |
+| `<stdio.h>` | `sprintf`, `snprintf` | **Layer B** | ✅ 已实现 | 字符串构造、数字转字符串 |
+| `<stdio.h>` | `sscanf` | **Layer B** | ✅ 已实现 | 字符串解析 |
+| `<stdlib.h>` | `calloc` | **Layer B** | ✅ 已实现 | 安全分配并零初始化（图论邻接表） |
 
 ---
 
@@ -164,7 +164,7 @@
 
 | 头文件 | 函数 | 分层 | 分层依据 |
 |--------|------|------|---------|
-| `<stdlib.h>` | `bsearch` | **Layer B** | VM 回调敏感（需调用用户比较函数） |
+| `<stdlib.h>` | `bsearch` | **Layer B** | ✅ 已实现 | VM 回调敏感（需调用用户比较函数） |
 | `<stdlib.h>` | `atof`, `atol` | **Layer C** | 纯计算，无副作用 |
 | `<stdlib.h>` | `strtol`, `strtod` | **Layer B** | 涉及 `errno` 设置 + `endptr` 写入 |
 | `<stdlib.h>` | `abort` | **Layer B** | 需操作 session state（终止+诊断） |
@@ -246,11 +246,11 @@
 ### 5.7 推荐实施路线图
 
 #### Phase A（第 1 周）：基础设施 + 立即可用
-- [ ] `qsort` 存根声明修复（1 行）
-- [ ] 新增 stub 头文件：`limits.h`, `stdbool.h`
-- [ ] 补全已有头文件宏：`EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX`, `SEEK_SET/CUR/END`
-- [ ] `puts`, `sprintf`, `snprintf`, `sscanf`
-- [ ] `calloc`, `bsearch`
+- [x] `qsort` 存根声明修复（1 行）
+- [x] 新增 stub 头文件：`limits.h`, `stdbool.h`
+- [x] 补全已有头文件宏：`EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX`, `SEEK_SET/CUR/END`
+- [x] `puts`, `sprintf`, `snprintf`, `sscanf`
+- [x] `calloc`, `bsearch`
 
 **目标**：LeetCode 中 90% 的 C 解法能编译通过。
 

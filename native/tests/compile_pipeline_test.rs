@@ -54,6 +54,107 @@ int main() {
 }
 
 #[test]
+fn test_compile_conditional_ifdef() {
+    let src = r#"
+#define DEBUG
+#ifdef DEBUG
+int foo() { return 42; }
+#else
+int foo() { return 0; }
+#endif
+int main() {
+    return foo();
+}
+"#;
+    let result = compile_source(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+}
+
+#[test]
+fn test_compile_conditional_ifndef() {
+    let src = r#"
+#ifndef RELEASE
+int debug_mode = 1;
+#endif
+int main() {
+    return debug_mode;
+}
+"#;
+    let result = compile_source(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+}
+
+#[test]
+fn test_compile_conditional_header_guard() {
+    let src = r#"
+#ifndef MYHEADER_H
+#define MYHEADER_H
+int helper() { return 123; }
+#endif
+int main() {
+    return helper();
+}
+"#;
+    let result = compile_source(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+}
+
+#[test]
+fn test_compile_conditional_nested() {
+    let src = r#"
+#define OUTER
+#ifdef OUTER
+  #define INNER
+  #ifdef INNER
+    int val = 1;
+  #else
+    int val = 2;
+  #endif
+#else
+  int val = 3;
+#endif
+int main() {
+    return val;
+}
+"#;
+    let result = compile_source(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+}
+
+#[test]
+fn test_compile_conditional_skip_block() {
+    let src = r#"
+#ifdef UNDEFINED
+int skipped = 0;
+#else
+int skipped = 1;
+#endif
+int main() {
+    return skipped;
+}
+"#;
+    let result = compile_source(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+}
+
+#[test]
+fn test_compile_vla_sizeof_type() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int n = 5;
+    printf("%d\n", sizeof(int[n]));
+    printf("%d\n", sizeof(int[n][3]));
+    int m = 2;
+    printf("%d\n", sizeof(int[n][m]));
+    return 0;
+}
+"#;
+    let result = compile_source(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+}
+
+#[test]
 fn test_compile_with_vars_and_arithmetic() {
     let src = r#"
 int main() {

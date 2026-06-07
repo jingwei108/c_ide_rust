@@ -14,6 +14,7 @@ use cide_native::vm::host_funcs::{
     host_strcat, host_memset, host_atoi, host_printf_n, host_scanf_n,
     host_getchar, host_putchar, host_rand, host_srand,
     host_sin, host_cos, host_sqrt, host_pow, host_atan, host_log, host_exp,
+    host_puts, host_calloc, host_bsearch, host_sprintf, host_snprintf, host_sscanf,
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -669,4 +670,260 @@ fn test_math_log_zero_returns_neg_inf() {
     host_log(&mut vm, &mut session);
     let result = f64::from_bits(vm.pop());
     assert!(result.is_infinite() && result.is_sign_negative(), "log(0.0) 应返回 -inf，实际 {}", result);
+}
+
+
+// ─── puts 契约 ───────────────────────────────────────────────────────────────
+
+#[test]
+fn test_puts_basic_string_with_newline() {
+    let (mut vm, mut session) = fresh_session();
+    let s = 0x2000;
+    write_test_string(&mut vm, s, "hello");
+    vm.push(s as u64);
+    host_puts(&mut vm, &mut session);
+    assert_eq!(session.runtime.output_lines.last().unwrap(), "hello\n");
+    let ret = vm.pop() as i32;
+    assert!(ret >= 0, "puts 成功时应返回非负值");
+}
+
+#[test]
+fn test_puts_empty_string_outputs_only_newline() {
+    let (mut vm, mut session) = fresh_session();
+    let s = 0x2000;
+    write_test_string(&mut vm, s, "");
+    vm.push(s as u64);
+    host_puts(&mut vm, &mut session);
+    assert_eq!(session.runtime.output_lines.last().unwrap(), "\n");
+}
+
+// ─── calloc 契约 ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_calloc_zero_initializes_memory() {
+    let (mut vm, mut session) = fresh_session();
+    vm.push(4); // size
+    vm.push(3); // nmemb
+    host_calloc(&mut vm, &mut session);
+    let addr = vm.pop() as u32;
+    assert!(addr >= NULL_TRAP_SIZE, "calloc 必须返回非 NULL 地址");
+    let mem = vm.memory_ref();
+    for i in 0..12 {
+        assert_eq!(mem[addr as usize + i], 0, "calloc 分配的内存必须为零初始化");
+    }
+}
+
+#[test]
+fn test_calloc_records_region_metadata() {
+    let (mut vm, mut session) = fresh_session();
+    vm.push(8);
+    vm.push(2);
+    host_calloc(&mut vm, &mut session);
+    let addr = vm.pop() as u32;
+    let region = session.memory.regions.iter()
+        .find(|r| r.addr == addr && !r.is_freed)
+        .expect("calloc 后必须记录 region");
+    assert_eq!(region.size, 16);
+    assert_eq!(region.alloc_by, "calloc");
+}
+
+#[test]
+fn test_calloc_zero_nmemb_returns_null() {
+    let (mut vm, mut session) = fresh_session();
+    vm.push(4);
+    vm.push(0);
+    host_calloc(&mut vm, &mut session);
+    let addr = vm.pop() as u32;
+    assert_eq!(addr, 0, "calloc(0, size) 应返回 NULL");
+}
+
+// ─── bsearch 契约 ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_bsearch_found_existing_element() {
+    let (mut vm, mut session) = fresh_session();
+    let base = 0x2000;
+    let key = 0x2100;
+    // arr = [10, 20, 30, 40, 50]
+    for (i, &v) in [10i32, 20, 30, 40, 50].iter().enumerate() {
+        vm.store_i32(base + (i * 4) as u32, v, &cide_native::vm::instruction::SourceLoc::default());
+    }
+    vm.store_i32(key, 30, &cide_native::vm::instruction::SourceLoc::default());
+    // args: key, base, nmemb=5, size=4, compar=0 (default byte comparison)
+    vm.push(0);             // compar
+    vm.push(4);             // size
+    vm.push(5);             // nmemb
+    vm.push(base as u64);   // base
+    vm.push(key as u64);    // key
+    host_bsearch(&mut vm, &mut session);
+    let result = vm.pop() as u32;
+    assert_eq!(result, base + 8, "bsearch 应找到第 3 个元素（地址 base+8）");
+}
+
+#[test]
+fn test_bsearch_not_found_returns_null() {
+    let (mut vm, mut session) = fresh_session();
+    let base = 0x2000;
+    let key = 0x2100;
+    for (i, &v) in [10i32, 20, 30, 40, 50].iter().enumerate() {
+        vm.store_i32(base + (i * 4) as u32, v, &cide_native::vm::instruction::SourceLoc::default());
+    }
+    vm.store_i32(key, 99, &cide_native::vm::instruction::SourceLoc::default());
+    vm.push(0);
+    vm.push(4);
+    vm.push(5);
+    vm.push(base as u64);
+    vm.push(key as u64);
+    host_bsearch(&mut vm, &mut session);
+    let result = vm.pop() as u32;
+    assert_eq!(result, 0, "bsearch 未找到时应返回 NULL（0）");
+}
+
+#[test]
+fn test_bsearch_empty_array_returns_null() {
+    let (mut vm, mut session) = fresh_session();
+    let base = 0x2000;
+    let key = 0x2100;
+    vm.store_i32(key, 10, &cide_native::vm::instruction::SourceLoc::default());
+    vm.push(0);
+    vm.push(4);
+    vm.push(0); // nmemb = 0
+    vm.push(base as u64);
+    vm.push(key as u64);
+    host_bsearch(&mut vm, &mut session);
+    let result = vm.pop() as u32;
+    assert_eq!(result, 0, "bsearch 空数组应返回 NULL");
+}
+
+// ─── sprintf 契约 ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_sprintf_basic_formatting() {
+    let (mut vm, mut session) = fresh_session();
+    let buf = 0x2000;
+    let fmt = 0x3000;
+    write_test_string(&mut vm, fmt, "value=%d");
+    vm.push(42u64);       // arg
+    vm.push(fmt as u64);  // fmt
+    vm.push(buf as u64);  // buf
+    host_sprintf(&mut vm, &mut session);
+    let ret = vm.pop() as i32;
+    let s = read_test_string(&vm, buf);
+    assert_eq!(s, "value=42");
+    assert_eq!(ret, 8, "sprintf 应返回写入字符数（不含 \\0）");
+}
+
+#[test]
+fn test_sprintf_multiple_args() {
+    let (mut vm, mut session) = fresh_session();
+    let buf = 0x2000;
+    let fmt = 0x3000;
+    write_test_string(&mut vm, fmt, "%d+%d=%d");
+    vm.push(5u64);
+    vm.push(3u64);
+    vm.push(2u64);
+    vm.push(fmt as u64);
+    vm.push(buf as u64);
+    host_sprintf(&mut vm, &mut session);
+    let s = read_test_string(&vm, buf);
+    assert_eq!(s, "2+3=5");
+}
+
+// ─── snprintf 契约 ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_snprintf_truncates_and_null_terminates() {
+    let (mut vm, mut session) = fresh_session();
+    let buf = 0x2000;
+    let fmt = 0x3000;
+    write_test_string(&mut vm, fmt, "hello world");
+    vm.push(fmt as u64);
+    vm.push(6);           // size = 6 (最多写 5 字符 + \0)
+    vm.push(buf as u64);
+    host_snprintf(&mut vm, &mut session);
+    let ret = vm.pop() as i32;
+    let s = read_test_string(&vm, buf);
+    assert_eq!(s, "hello", "snprintf 应截断到 size-1");
+    assert_eq!(ret, 11, "snprintf 返回值应为未截断时的总长度");
+}
+
+#[test]
+fn test_snprintf_zero_size_writes_nothing() {
+    let (mut vm, mut session) = fresh_session();
+    let buf = 0x2000;
+    let fmt = 0x3000;
+    vm.memory_ref_mut()[buf as usize] = 0xAA;
+    write_test_string(&mut vm, fmt, "x");
+    vm.push(fmt as u64);
+    vm.push(0);           // size = 0
+    vm.push(buf as u64);
+    host_snprintf(&mut vm, &mut session);
+    let ret = vm.pop() as i32;
+    let byte = vm.memory_ref()[buf as usize];
+    assert_eq!(byte, 0xAA, "snprintf(size=0) 不得写入 buf");
+    assert_eq!(ret, 1, "snprintf 返回值仍应为未截断长度");
+}
+
+// ─── sscanf 契约 ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_sscanf_two_integers() {
+    let (mut vm, mut session) = fresh_session();
+    let src = 0x2000;
+    let fmt = 0x3000;
+    let dst1 = 0x4000;
+    let dst2 = 0x4004;
+    write_test_string(&mut vm, src, "10 20");
+    write_test_string(&mut vm, fmt, "%d %d");
+    vm.push(dst2 as u64);
+    vm.push(dst1 as u64);
+    vm.push(fmt as u64);
+    vm.push(src as u64);
+    host_sscanf(&mut vm, &mut session);
+    let matched = vm.pop() as i32;
+    let v1 = vm.load_i32(dst1, &cide_native::vm::instruction::SourceLoc::default());
+    let v2 = vm.load_i32(dst2, &cide_native::vm::instruction::SourceLoc::default());
+    assert_eq!(matched, 2, "sscanf 应返回成功匹配数 2");
+    assert_eq!(v1, 10);
+    assert_eq!(v2, 20);
+}
+
+#[test]
+fn test_sscanf_string_token() {
+    let (mut vm, mut session) = fresh_session();
+    let src = 0x2000;
+    let fmt = 0x3000;
+    let dst = 0x4000;
+    write_test_string(&mut vm, src, "hello world");
+    write_test_string(&mut vm, fmt, "%s");
+    vm.push(dst as u64);
+    vm.push(fmt as u64);
+    vm.push(src as u64);
+    host_sscanf(&mut vm, &mut session);
+    let matched = vm.pop() as i32;
+    let s = read_test_string(&vm, dst);
+    assert_eq!(matched, 1);
+    assert_eq!(s, "hello");
+}
+
+#[test]
+fn test_sscanf_mixed_int_and_string() {
+    let (mut vm, mut session) = fresh_session();
+    let src = 0x2000;
+    let fmt = 0x3000;
+    let dst_int = 0x4000;
+    let dst_str = 0x4100;
+    write_test_string(&mut vm, src, "42 abc");
+    write_test_string(&mut vm, fmt, "%d %s");
+    vm.push(dst_str as u64);
+    vm.push(dst_int as u64);
+    vm.push(fmt as u64);
+    vm.push(src as u64);
+    host_sscanf(&mut vm, &mut session);
+    let matched = vm.pop() as i32;
+    let v = vm.load_i32(dst_int, &cide_native::vm::instruction::SourceLoc::default());
+    let s = read_test_string(&vm, dst_str);
+    assert_eq!(matched, 2);
+    assert_eq!(v, 42);
+    assert_eq!(s, "abc");
 }

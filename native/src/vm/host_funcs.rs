@@ -312,6 +312,33 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::EXP => host_exp(vm, session),
         host_func_id::STRDUP => host_strdup(vm, session),
         host_func_id::UNGETC => host_ungetc(vm, session),
+        host_func_id::PUTS => host_puts(vm, session),
+        host_func_id::CALLOC => host_calloc(vm, session),
+        host_func_id::BSEARCH => host_bsearch(vm, session),
+        host_func_id::SPRINTF => host_sprintf(vm, session),
+        host_func_id::SNPRINTF => host_snprintf(vm, session),
+        host_func_id::SSCANF => host_sscanf(vm, session),
+        host_func_id::FGETC => host_fgetc(vm, session),
+        host_func_id::FPUTC => host_fputc(vm, session),
+        host_func_id::FSEEK => host_fseek(vm, session),
+        host_func_id::FTELL => host_ftell(vm, session),
+        host_func_id::REWIND => host_rewind(vm, session),
+        host_func_id::STRNCAT => host_strncat(vm, session),
+        host_func_id::STRNCMP => host_strncmp(vm, session),
+        host_func_id::MEMCMP => host_memcmp(vm, session),
+        host_func_id::STRCHR => host_strchr(vm, session),
+        host_func_id::STRRCHR => host_strrchr(vm, session),
+        host_func_id::STRSTR => host_strstr(vm, session),
+        host_func_id::MEMCHR => host_memchr(vm, session),
+        host_func_id::ATOF => host_atof(vm, session),
+        host_func_id::ATOL => host_atol(vm, session),
+        host_func_id::TAN => host_tan(vm, session),
+        host_func_id::LOG10 => host_log10(vm, session),
+        host_func_id::FABS => host_fabs(vm, session),
+        host_func_id::CEIL => host_ceil(vm, session),
+        host_func_id::FLOOR => host_floor(vm, session),
+        host_func_id::ROUND => host_round(vm, session),
+        host_func_id::FMOD => host_fmod(vm, session),
         _ => {}
     }
 }
@@ -1485,4 +1512,521 @@ fn read_fd_from_stream(vm: &CideVM, stream: u32) -> u32 {
         return 0;
     }
     i32::from_le_bytes([mem[start], mem[start + 1], mem[start + 2], mem[start + 3]]) as u32
+}
+
+
+// ========== Phase A libc extensions ==========
+
+pub fn host_puts(vm: &mut CideVM, session: &mut Session) {
+    let s_addr = vm.pop() as u32;
+    let s = read_cstring(vm, s_addr);
+    session.runtime.output_lines.push(s + "\n");
+    vm.push(1); // puts returns non-negative on success
+}
+
+pub fn host_calloc(vm: &mut CideVM, session: &mut Session) {
+    let size = vm.pop() as i32;
+    let nmemb = vm.pop() as i32;
+    if size <= 0 || nmemb <= 0 {
+        vm.push(0);
+        return;
+    }
+    let total = (nmemb as u32).saturating_mul(size as u32);
+    let aligned_size = (total + 3) & !3;
+    let addr = match session.memory.allocate_raw(aligned_size, vm.get_memory_size()) {
+        Some(a) => a,
+        None => {
+            vm.push(0);
+            return;
+        }
+    };
+    // zero-initialize
+    for i in 0..aligned_size {
+        vm.store_i8(addr + i, 0, &super::instruction::SourceLoc::default());
+    }
+    // clean freed_logs
+    let new_end = addr.saturating_add(aligned_size);
+    vm.freed_logs.retain(|log| {
+        let log_end = log.addr.saturating_add(log.size);
+        log_end <= addr || log.addr >= new_end
+    });
+    session.memory.alloc_counter += 1;
+    session.memory.regions.push(MemoryRegion {
+        addr,
+        size: total as i32,
+        name: format!("heap_{}", session.memory.alloc_counter),
+        ty: "int".to_string(),
+        is_heap: true,
+        is_freed: false,
+        alloc_line: vm.get_current_line(),
+        alloc_by: "calloc".to_string(),
+    });
+    vm.push(addr as u64);
+}
+
+const MAX_BSEARCH_DEPTH: i32 = 8;
+
+pub fn host_bsearch(vm: &mut CideVM, session: &mut Session) {
+    let key = vm.pop() as u32;
+    let base = vm.pop() as u32;
+    let nmemb = vm.pop() as usize;
+    let size = vm.pop() as usize;
+    let compar = vm.pop() as u32;
+
+    if vm.qsort_depth() >= MAX_BSEARCH_DEPTH {
+        session.runtime.output_lines.push("[bsearch] 嵌套深度超过限制，防止栈溢出".to_string());
+        vm.push(0);
+        return;
+    }
+
+    if nmemb == 0 || size == 0 || base == 0 || key == 0 {
+        vm.push(0);
+        return;
+    }
+
+    let mem_size = vm.get_memory_slice().len();
+    if base as usize + nmemb * size > mem_size {
+        vm.push(0);
+        return;
+    }
+
+    vm.set_qsort_depth(vm.qsort_depth() + 1);
+
+    const MAX_COMPARE_STEPS: i32 = 1000;
+    let mut lo: usize = 0;
+    let mut hi: usize = nmemb;
+    let mut result_ptr: u32 = 0;
+
+    if compar == 0 {
+        let mem = vm.get_memory_slice();
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            let a_start = key as usize;
+            let b_start = (base as usize) + mid * size;
+            let a = &mem[a_start..a_start + size];
+            let b = &mem[b_start..b_start + size];
+            match a.cmp(b) {
+                std::cmp::Ordering::Less => { lo = mid + 1; }
+                std::cmp::Ordering::Greater => { hi = mid; }
+                std::cmp::Ordering::Equal => { result_ptr = b_start as u32; break; }
+            }
+        }
+    } else {
+        while lo < hi {
+            let mid = (lo + hi) / 2;
+            let addr_key = key as i32;
+            let addr_mid = (base as i32) + (mid as i32) * (size as i32);
+            let cmp_result = vm.call_user_function(session, compar, &[addr_key, addr_mid], MAX_COMPARE_STEPS);
+            match cmp_result {
+                Some(v) if v < 0 => { hi = mid; }
+                Some(v) if v > 0 => { lo = mid + 1; }
+                Some(_) => { result_ptr = addr_mid as u32; break; }
+                None => { break; }
+            }
+        }
+    }
+
+    vm.set_qsort_depth(vm.qsort_depth() - 1);
+    vm.push(result_ptr as u64);
+}
+
+pub fn host_sprintf(vm: &mut CideVM, _session: &mut Session) {
+    let buf_addr = vm.pop() as u32;
+    let fmt_addr = vm.pop() as u32;
+    let fmt = read_cstring(vm, fmt_addr);
+    let specs = parse_format_specs(&fmt);
+    let mut args = Vec::with_capacity(specs.len());
+    for _ in 0..specs.len() {
+        args.push(vm.pop());
+    }
+    let out = format_printf_string(vm, &fmt, &args);
+    let bytes = out.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        vm.store_i8(buf_addr + i as u32, b as i32, &super::instruction::SourceLoc::default());
+    }
+    vm.store_i8(buf_addr + bytes.len() as u32, 0, &super::instruction::SourceLoc::default());
+    vm.push(bytes.len() as u64);
+}
+
+pub fn host_snprintf(vm: &mut CideVM, _session: &mut Session) {
+    let buf_addr = vm.pop() as u32;
+    let size = vm.pop() as i32;
+    let fmt_addr = vm.pop() as u32;
+    let fmt = read_cstring(vm, fmt_addr);
+    let specs = parse_format_specs(&fmt);
+    let mut args = Vec::with_capacity(specs.len());
+    for _ in 0..specs.len() {
+        args.push(vm.pop());
+    }
+    let out = format_printf_string(vm, &fmt, &args);
+    let bytes = out.as_bytes();
+    if size > 0 {
+        let n = std::cmp::min(bytes.len(), (size as usize).saturating_sub(1));
+        for i in 0..n {
+            vm.store_i8(buf_addr + i as u32, bytes[i] as i32, &super::instruction::SourceLoc::default());
+        }
+        vm.store_i8(buf_addr + n as u32, 0, &super::instruction::SourceLoc::default());
+    }
+    vm.push(bytes.len() as u64);
+}
+
+pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
+    let str_addr = vm.pop() as u32;
+    let fmt_addr = vm.pop() as u32;
+    let fmt = read_cstring(vm, fmt_addr);
+    let src = read_cstring(vm, str_addr);
+    let spec_types = parse_scanf_specs(&fmt);
+    let mut ptrs = Vec::with_capacity(spec_types.len());
+    for _ in 0..spec_types.len() {
+        ptrs.push(vm.pop() as u32);
+    }
+    let chars: Vec<char> = src.chars().collect();
+    let mut pos = 0usize;
+    let mut matched = 0usize;
+    for (i, (spec, len_mod)) in spec_types.iter().enumerate() {
+        let ptr = ptrs[i];
+        match spec {
+            'd' => {
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' || chars[pos] == '-' {
+                    pos += 1;
+                }
+                while pos < chars.len() && chars[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                if *len_mod >= 2 {
+                    let value: i64 = token.parse().unwrap_or(0);
+                    vm.store_i64(ptr, value as u64, &super::instruction::SourceLoc::default());
+                } else {
+                    let value: i32 = token.parse().unwrap_or(0);
+                    vm.store_i32(ptr, value, &super::instruction::SourceLoc::default());
+                }
+                matched += 1;
+            }
+            'u' => {
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                if chars[pos] == '+' {
+                    pos += 1;
+                }
+                while pos < chars.len() && chars[pos].is_ascii_digit() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                if *len_mod >= 2 {
+                    let value: u64 = token.parse().unwrap_or(0);
+                    vm.store_i64(ptr, value, &super::instruction::SourceLoc::default());
+                } else {
+                    let value: u32 = token.parse().unwrap_or(0);
+                    vm.store_i32(ptr, value as i32, &super::instruction::SourceLoc::default());
+                }
+                matched += 1;
+            }
+            'f' => {
+                let (token, new_pos) = read_float_token(&chars, pos);
+                pos = new_pos;
+                if token.is_empty() { break; }
+                if *len_mod >= 1 {
+                    let value: f64 = token.parse().unwrap_or(0.0);
+                    vm.store_i64(ptr, value.to_bits(), &super::instruction::SourceLoc::default());
+                } else {
+                    let value: f32 = token.parse().unwrap_or(0.0);
+                    vm.store_i32(ptr, value.to_bits() as i32, &super::instruction::SourceLoc::default());
+                }
+                matched += 1;
+            }
+            'c' => {
+                if pos >= chars.len() { break; }
+                let ch = chars[pos];
+                vm.store_i8(ptr, ch as i32, &super::instruction::SourceLoc::default());
+                pos += 1;
+                matched += 1;
+            }
+            's' => {
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() { break; }
+                let start = pos;
+                while pos < chars.len() && !chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                let bytes = token.as_bytes();
+                for (j, &b) in bytes.iter().enumerate() {
+                    vm.store_i8(ptr + j as u32, b as i32, &super::instruction::SourceLoc::default());
+                }
+                vm.store_i8(ptr + bytes.len() as u32, 0, &super::instruction::SourceLoc::default());
+                matched += 1;
+            }
+            _ => {}
+        }
+    }
+    vm.push(matched as u64);
+}
+
+// ========== VFS I/O extensions ==========
+
+pub fn host_fgetc(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ch = vfs.fgetc(fd, vm);
+    session.vfs = vfs;
+    vm.push(ch as i64 as u64);
+}
+
+pub fn host_fputc(vm: &mut CideVM, session: &mut Session) {
+    let c = vm.pop() as i32;
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.fputc(fd, c, vm, &mut session.memory);
+    session.vfs = vfs;
+    vm.push(ret as i64 as u64);
+}
+
+pub fn host_fseek(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let offset = vm.pop() as i32;
+    let whence = vm.pop() as i32;
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.fseek(fd, offset, whence);
+    session.vfs = vfs;
+    vm.push(ret as u64);
+}
+
+pub fn host_ftell(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.ftell(fd);
+    session.vfs = vfs;
+    vm.push(ret as i64 as u64);
+}
+
+pub fn host_rewind(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    vfs.rewind(fd);
+    session.vfs = vfs;
+}
+
+// ========== String / memory extensions ==========
+
+pub fn host_strncat(vm: &mut CideVM, _session: &mut Session) {
+    let dest = vm.pop() as u32;
+    let src = vm.pop() as u32;
+    let n = vm.pop() as usize;
+    let mem_size = vm.get_memory_slice().len();
+    if dest as usize >= mem_size {
+        vm.push(dest as u64);
+        return;
+    }
+    let mut end = dest as usize;
+    while end < mem_size && vm.get_memory_slice()[end] != 0 {
+        end += 1;
+    }
+    let src_bytes = read_cbytes(vm, src);
+    let copy_len = src_bytes.len().min(n);
+    let max_copy = mem_size.saturating_sub(end).saturating_sub(1);
+    let actual_copy = copy_len.min(max_copy);
+    for (i, &b) in src_bytes.iter().enumerate().take(actual_copy) {
+        vm.store_i8((end + i) as u32, b as i32, &super::instruction::SourceLoc::default());
+    }
+    vm.store_i8((end + actual_copy) as u32, 0, &super::instruction::SourceLoc::default());
+    vm.push(dest as u64);
+}
+
+pub fn host_strncmp(vm: &mut CideVM, _session: &mut Session) {
+    let addr1 = vm.pop() as u32;
+    let addr2 = vm.pop() as u32;
+    let n = vm.pop() as usize;
+    let mem = vm.get_memory_slice();
+    let mut i = 0usize;
+    let result = loop {
+        if i >= n {
+            break 0;
+        }
+        let a = if addr1 as usize + i < mem.len() { mem[addr1 as usize + i] } else { 0 };
+        let b = if addr2 as usize + i < mem.len() { mem[addr2 as usize + i] } else { 0 };
+        if a != b {
+            break (a as i8).wrapping_sub(b as i8) as i32;
+        }
+        if a == 0 {
+            break 0;
+        }
+        i += 1;
+    };
+    vm.push(result as u64);
+}
+
+pub fn host_memcmp(vm: &mut CideVM, _session: &mut Session) {
+    let addr1 = vm.pop() as u32;
+    let addr2 = vm.pop() as u32;
+    let n = vm.pop() as usize;
+    let mem = vm.get_memory_slice();
+    let mut result = 0i32;
+    for i in 0..n {
+        let a = if addr1 as usize + i < mem.len() { mem[addr1 as usize + i] } else { 0 };
+        let b = if addr2 as usize + i < mem.len() { mem[addr2 as usize + i] } else { 0 };
+        if a != b {
+            result = (a as i8).wrapping_sub(b as i8) as i32;
+            break;
+        }
+    }
+    vm.push(result as u64);
+}
+
+pub fn host_strchr(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let c = vm.pop() as i32;
+    let mem = vm.get_memory_slice();
+    let mut i = 0usize;
+    let result = loop {
+        let b = if addr as usize + i < mem.len() { mem[addr as usize + i] } else { 0 };
+        if b as i32 == c {
+            break addr + i as u32;
+        }
+        if b == 0 {
+            break 0;
+        }
+        i += 1;
+    };
+    vm.push(result as u64);
+}
+
+pub fn host_strrchr(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let c = vm.pop() as i32;
+    let mem = vm.get_memory_slice();
+    let mut result = 0u32;
+    let mut i = 0usize;
+    while addr as usize + i < mem.len() {
+        let b = mem[addr as usize + i];
+        if b as i32 == c {
+            result = addr + i as u32;
+        }
+        if b == 0 {
+            break;
+        }
+        i += 1;
+    }
+    vm.push(result as u64);
+}
+
+pub fn host_strstr(vm: &mut CideVM, _session: &mut Session) {
+    let haystack = vm.pop() as u32;
+    let needle = vm.pop() as u32;
+    let needle_bytes = read_cbytes(vm, needle);
+    let haystack_bytes = read_cbytes(vm, haystack);
+    if needle_bytes.is_empty() {
+        vm.push(haystack as u64);
+        return;
+    }
+    let result = haystack_bytes.windows(needle_bytes.len()).position(|window| window == needle_bytes);
+    vm.push(match result {
+        Some(pos) => (haystack + pos as u32) as u64,
+        None => 0,
+    });
+}
+
+pub fn host_memchr(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let c = vm.pop() as i32;
+    let n = vm.pop() as usize;
+    let mem = vm.get_memory_slice();
+    let mut result = 0u32;
+    for i in 0..n {
+        if addr as usize + i >= mem.len() {
+            break;
+        }
+        if mem[addr as usize + i] as i32 == c {
+            result = addr + i as u32;
+            break;
+        }
+    }
+    vm.push(result as u64);
+}
+
+// ========== Conversion extensions ==========
+
+pub fn host_atof(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let s = read_cstring(vm, addr);
+    let val: f64 = s.trim().parse().unwrap_or(0.0);
+    vm.push(val.to_bits());
+}
+
+pub fn host_atol(vm: &mut CideVM, _session: &mut Session) {
+    let addr = vm.pop() as u32;
+    let s = read_cstring(vm, addr);
+    let trimmed = s.trim_start();
+    let mut chars = trimmed.chars().peekable();
+    let mut sign = 1i64;
+    if let Some(&c) = chars.peek() {
+        if c == '-' {
+            sign = -1;
+            chars.next();
+        } else if c == '+' {
+            chars.next();
+        }
+    }
+    let mut val: i64 = 0;
+    for c in chars {
+        if c.is_ascii_digit() {
+            val = val.wrapping_mul(10).wrapping_add(c as i64 - '0' as i64);
+        } else {
+            break;
+        }
+    }
+    vm.push((sign.wrapping_mul(val)) as u64);
+}
+
+// ========== Math extensions ==========
+
+pub fn host_tan(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::tan(x).to_bits());
+}
+
+pub fn host_log10(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::log10(x).to_bits());
+}
+
+pub fn host_fabs(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::fabs(x).to_bits());
+}
+
+pub fn host_ceil(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::ceil(x).to_bits());
+}
+
+pub fn host_floor(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::floor(x).to_bits());
+}
+
+pub fn host_round(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::round(x).to_bits());
+}
+
+pub fn host_fmod(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    let y = f64::from_bits(vm.pop());
+    vm.push(libm::fmod(x, y).to_bits());
 }

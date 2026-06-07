@@ -839,7 +839,7 @@ fn expr_has_min_max_assign(expr: &Expr) -> bool {
         Expr::Member { object, .. } => expr_has_min_max_assign(object),
         Expr::Cast { expr: e, .. } => expr_has_min_max_assign(e),
         Expr::Sizeof { operand: Some(e), .. } => expr_has_min_max_assign(e),
-        Expr::InitList { elements, .. } => elements.iter().any(expr_has_min_max_assign),
+        Expr::InitList { elements, .. } => elements.iter().any(|e| expr_has_min_max_assign(&e.value)),
         _ => false,
     }
 }
@@ -936,6 +936,7 @@ fn expr_to_string(expr: &Expr) -> String {
                 BinaryOp::BitXor => "^",
                 BinaryOp::Shl => "<<",
                 BinaryOp::Shr => ">>",
+                BinaryOp::Comma => ",",
             };
             format!("{} {} {}", expr_to_string(left), op_str, expr_to_string(right))
         }
@@ -1005,10 +1006,13 @@ fn expr_to_string(expr: &Expr) -> String {
             format!("({}){}", target_type, expr_to_string(e))
         }
         Expr::InitList { elements, .. } => {
-            let elems: Vec<String> = elements.iter().map(expr_to_string).collect();
+            let elems: Vec<String> = elements.iter().map(|e| expr_to_string(&e.value)).collect();
             format!("{{{}}}", elems.join(", "))
         }
         Expr::CallPtr { .. } => "fp(...)".to_string(),
+        Expr::Offsetof { target_type, field, .. } => {
+            format!("offsetof({}, {})", target_type, field)
+        }
     }
 }
 

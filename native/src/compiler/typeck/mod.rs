@@ -16,6 +16,7 @@ pub(crate) struct VarSymbol {
     #[allow(dead_code)]
     is_global: bool,
     is_extern: bool,
+    is_static: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -37,6 +38,7 @@ pub struct TypeChecker {
     funcs: HashMap<String, FuncSymbol>,
     static_func_sigs: HashMap<String, FuncSymbol>,
     static_func_files: HashMap<String, Vec<String>>,
+    static_global_files: HashMap<String, Vec<String>>,
     structs: HashMap<String, StructSymbol>,
     unions: HashMap<String, StructSymbol>,
     scopes: Vec<HashMap<String, VarSymbol>>,
@@ -45,6 +47,8 @@ pub struct TypeChecker {
     loop_depth: i32,
     switch_depth: i32,
     current_func_params: HashSet<String>,
+    func_labels: HashMap<String, SourceLoc>,
+    pending_gotos: Vec<(String, SourceLoc)>,
 }
 
 /// 根据 (from, to) 类型对判断是否允许隐式转换，并返回转换后的目标类型。
@@ -86,6 +90,35 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
 }
 
 impl TypeChecker {
+
+    /// Compute the byte size of a type using the registered struct/union definitions.
+    pub fn compute_type_size(&self, ty: &Type) -> i32 {
+        match ty.kind() {
+            TypeKind::Void => 0,
+            TypeKind::Int => 4,
+            TypeKind::Char => 1,
+            TypeKind::Float => 4,
+            TypeKind::Double | TypeKind::LongLong => 8,
+            TypeKind::Pointer | TypeKind::Function => 4,
+            TypeKind::Array => {
+                if ty.is_vla() { return 4; }
+                let elem_count = ty.total_elements();
+                let base_elem = crate::compiler::ast::base_element_type(ty);
+                let elem_size = self.compute_type_size(base_elem);
+                elem_count * elem_size
+            }
+            TypeKind::Struct => {
+                self.structs.get(ty.name()).map(|s| {
+                    s.fields.iter().map(|(fty, _)| self.compute_type_size(fty)).sum()
+                }).unwrap_or(0)
+            }
+            TypeKind::Union => {
+                self.unions.get(ty.name()).map(|s| {
+                    s.fields.iter().map(|(fty, _)| self.compute_type_size(fty)).max().unwrap_or(0)
+                }).unwrap_or(0)
+            }
+        }
+    }
 
     pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
         // Pass 1: Register structs and unions
@@ -135,7 +168,10 @@ impl TypeChecker {
         // Pass 2.5: Register globals and check initializers
         self.enter_scope();
         for g in &mut program.globals {
-            self.declare_var(&g.name, &g.ty, true, g.is_extern);
+            self.declare_var(&g.name, &g.ty, true, g.is_extern, g.is_static);
+            if g.is_static {
+                self.static_global_files.entry(g.name.clone()).or_default().push(g.source_file.clone());
+            }
         }
         for g in &mut program.globals {
             if let Some(ref mut init) = g.init {
@@ -175,7 +211,7 @@ impl TypeChecker {
         self.scopes.pop();
     }
 
-    fn declare_var(&mut self, name: &str, ty: &Type, is_global: bool, is_extern: bool) {
+    fn declare_var(&mut self, name: &str, ty: &Type, is_global: bool, is_extern: bool, is_static: bool) {
         if self.scopes.is_empty() {
             self.scopes.push(HashMap::new());
         }
@@ -187,7 +223,13 @@ impl TypeChecker {
             }
             // Non-extern definition can replace an extern declaration
             if existing.is_extern {
-                scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern });
+                scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern, is_static });
+                return;
+            }
+            // Multiple static globals with the same name in different files are allowed
+            // (internal linkage). We keep the latest one; access check is done at use site.
+            if existing.is_static && is_static && is_global {
+                scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern, is_static });
                 return;
             }
             self.report_error(
@@ -197,7 +239,7 @@ impl TypeChecker {
             );
             return;
         }
-        scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern });
+        scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern, is_static });
     }
 
     pub(crate) fn lookup_var(&self, name: &str) -> Option<VarSymbol> {
@@ -443,14 +485,53 @@ impl TypeChecker {
                 return;
             }
         };
+        let has_designators = elements.iter().any(|e| !e.designators.is_empty());
+        if has_designators {
+            for elem in elements.iter_mut() {
+                if elem.designators.is_empty() {
+                    self.report_error("初始化列表中不能混合使用指定初始化和非指定初始化", loc, ErrorCode::E3005_ArrayInitTooMany);
+                    continue;
+                }
+                if elem.designators.len() != 1 {
+                    self.report_error("暂不支持多级 designated initializer", loc, ErrorCode::E3005_ArrayInitTooMany);
+                    continue;
+                }
+                match &elem.designators[0] {
+                    Designator::Field(field_name) => {
+                        if let Some(field_idx) = fields.iter().position(|f| &f.1 == field_name) {
+                            let field_ty = &fields[field_idx].0;
+                            if field_ty.is_struct() && matches!(&elem.value, Expr::InitList { .. }) {
+                                self.check_struct_initializer(field_ty, &mut elem.value, loc);
+                            } else if field_ty.is_array() && matches!(&elem.value, Expr::InitList { .. }) {
+                                let mut sub_ty = field_ty.clone();
+                                self.check_array_initializer(&mut sub_ty, &mut elem.value, loc);
+                            } else {
+                                let e_type = self.resolve_expr_type(&mut elem.value);
+                                if !self.check_assignable(field_ty, &e_type, loc) {
+                                    self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", field_name, field_ty, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                                } else {
+                                    insert_implicit_cast(&mut elem.value, field_ty);
+                                }
+                            }
+                        } else {
+                            self.report_error(&format!("结构体 '{}' 没有字段 '{}'", struct_type.name(), field_name), loc, ErrorCode::E3042_UnknownMember);
+                        }
+                    }
+                    _ => {
+                        self.report_error("结构体初始化只能使用 .field 形式的 designator", loc, ErrorCode::E3005_ArrayInitTooMany);
+                    }
+                }
+            }
+            return;
+        }
         if elements.len() > fields.len() {
             self.report_error("初始化列表元素数量超过结构体字段数", loc, ErrorCode::E3005_ArrayInitTooMany);
         }
         for (i, elem) in elements.iter_mut().enumerate() {
             if i >= fields.len() { break; }
-            if fields[i].0.is_struct() && matches!(elem, Expr::InitList { .. }) {
+            if fields[i].0.is_struct() && matches!(&elem.value, Expr::InitList { .. }) {
                 self.check_struct_initializer(&fields[i].0, elem, loc);
-            } else if fields[i].0.is_array() && matches!(elem, Expr::InitList { .. }) {
+            } else if fields[i].0.is_array() && matches!(&elem.value, Expr::InitList { .. }) {
                 let mut sub_ty = fields[i].0.clone();
                 self.check_array_initializer(&mut sub_ty, elem, loc);
             } else {
@@ -506,6 +587,11 @@ impl TypeChecker {
 
         if !arr_type.dims().is_empty() && arr_type.dims().len() > 1 {
             if let Expr::InitList { elements, .. } = init {
+                let has_designators = elements.iter().any(|e| !e.designators.is_empty());
+                if has_designators {
+                    self.report_error("多维数组暂不支持 designated initializer", loc, ErrorCode::E3009_InvalidArrayInit);
+                    return;
+                }
                 let total_elems = arr_type.total_elements();
                 if let Type::Array { dims, array_size, .. } = arr_type {
                     if dims[0] <= 0 {
@@ -523,6 +609,37 @@ impl TypeChecker {
         }
 
         if let Expr::InitList { elements, .. } = init {
+            let has_designators = elements.iter().any(|e| !e.designators.is_empty());
+            if has_designators {
+                for elem in elements.iter_mut() {
+                    if elem.designators.is_empty() {
+                        self.report_error("初始化列表中不能混合使用指定初始化和非指定初始化", loc, ErrorCode::E3005_ArrayInitTooMany);
+                        continue;
+                    }
+                    if elem.designators.len() != 1 {
+                        self.report_error("暂不支持多级 designated initializer", loc, ErrorCode::E3005_ArrayInitTooMany);
+                        continue;
+                    }
+                    match &mut elem.designators[0] {
+                        Designator::Index(idx_expr) => {
+                            let idx_ty = self.resolve_expr_type(idx_expr);
+                            if !self.is_int(&idx_ty) {
+                                self.report_error("数组索引必须是 int 类型", loc, ErrorCode::E3039_ArrayIndexType);
+                            }
+                            let e_type = self.resolve_expr_type(&mut elem.value);
+                            if !self.check_assignable(&elem_type, &e_type, loc) {
+                                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                            } else {
+                                insert_implicit_cast(&mut elem.value, &elem_type);
+                            }
+                        }
+                        _ => {
+                            self.report_error("数组初始化只能使用 [index] 形式的 designator", loc, ErrorCode::E3005_ArrayInitTooMany);
+                        }
+                    }
+                }
+                return;
+            }
             let mut expected_size = arr_type.array_size();
             if expected_size <= 0 {
                 expected_size = elements.len() as i32;
@@ -534,9 +651,9 @@ impl TypeChecker {
                 self.report_error("初始化列表元素数量超过数组大小", loc, ErrorCode::E3005_ArrayInitTooMany);
             }
             for elem in elements.iter_mut() {
-                if elem_type.is_struct() && matches!(elem, Expr::InitList { .. }) {
+                if elem_type.is_struct() && matches!(&elem.value, Expr::InitList { .. }) {
                     self.check_struct_initializer(&elem_type, elem, loc);
-                } else if elem_type.is_array() && matches!(elem, Expr::InitList { .. }) {
+                } else if elem_type.is_array() && matches!(&elem.value, Expr::InitList { .. }) {
                     let mut sub_ty = elem_type.clone();
                     self.check_array_initializer(&mut sub_ty, elem, loc);
                 } else {
@@ -573,14 +690,25 @@ impl TypeChecker {
         self.current_file = node.source_file.clone();
         self.current_func_return = node.return_type.clone();
         self.current_func_params.clear();
+        self.func_labels.clear();
+        self.pending_gotos.clear();
         self.enter_scope();
         for p in &node.params {
             self.current_func_params.insert(p.name.clone());
-            self.declare_var(&p.name, &p.ty, false, false);
+            self.declare_var(&p.name, &p.ty, false, false, false);
         }
         if let Some(ref mut body) = node.body {
             self.dispatch_stmt(body);
         }
+        let unresolved: Vec<(String, SourceLoc)> = self.pending_gotos.iter()
+            .filter(|(label, _)| !self.func_labels.contains_key(label))
+            .map(|(label, loc)| (label.clone(), *loc))
+            .collect();
+        for (label, loc) in unresolved {
+            self.report_error(&format!("goto 目标标签 '{}' 未定义", label), &loc, ErrorCode::E3071_UndefinedLabel);
+        }
+        self.pending_gotos.clear();
+        self.func_labels.clear();
         self.exit_scope();
         self.current_func_params.clear();
     }
@@ -592,7 +720,7 @@ impl TypeChecker {
                 for s in stmts { self.dispatch_stmt(s); }
                 self.exit_scope();
             }
-            Stmt::VarDecl { var_type, name, init, extra_vars, loc, .. } => {
+            Stmt::VarDecl { var_type, name, init, extra_vars, loc, is_static, .. } => {
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         self.check_array_initializer(var_type, init_expr, loc);
@@ -607,7 +735,7 @@ impl TypeChecker {
                         }
                     }
                 }
-                self.declare_var(name, var_type, false, false);
+                self.declare_var(name, var_type, false, false, *is_static);
                 for (ety, ename, einit) in extra_vars.iter_mut() {
                     if let Some(ref mut init_expr) = einit {
                         if ety.is_array() {
@@ -623,7 +751,7 @@ impl TypeChecker {
                             }
                         }
                     }
-                    self.declare_var(ename, ety, false, false);
+                    self.declare_var(ename, ety, false, false, false);
                 }
             }
             Stmt::Expr { expr, .. } => { self.resolve_expr_type(expr); }
@@ -706,6 +834,21 @@ impl TypeChecker {
                 }
                 self.dispatch_stmt(stmt);
             }
+            Stmt::Goto { label, loc } => {
+                if self.func_labels.contains_key(label) {
+                    // Label already defined, ok
+                } else {
+                    self.pending_gotos.push((label.clone(), *loc));
+                }
+            }
+            Stmt::Label { label, stmt, loc } => {
+                if self.func_labels.contains_key(label) {
+                    self.report_error(&format!("标签 '{}' 重复定义", label), loc, ErrorCode::E3001_VarRedeclared);
+                } else {
+                    self.func_labels.insert(label.clone(), *loc);
+                }
+                self.dispatch_stmt(stmt);
+            }
         }
     }
 
@@ -771,6 +914,33 @@ impl TypeChecker {
                     self.check_builtin_qsort(args, loc)
                 }
             }
+            "puts" => self.check_builtin_puts(args, loc),
+            "calloc" => self.check_builtin_calloc(args, loc),
+            "bsearch" => self.check_builtin_bsearch(args, loc),
+            "sprintf" => self.check_builtin_sprintf(args, loc),
+            "snprintf" => self.check_builtin_snprintf(args, loc),
+            "sscanf" => self.check_builtin_sscanf(args, loc),
+            "fgetc" => self.check_builtin_fgetc(args, loc),
+            "fputc" => self.check_builtin_fputc(args, loc),
+            "fseek" => self.check_builtin_fseek(args, loc),
+            "ftell" => self.check_builtin_ftell(args, loc),
+            "rewind" => self.check_builtin_rewind(args, loc),
+            "strncat" => self.check_builtin_strncat(args, loc),
+            "strncmp" => self.check_builtin_strncmp(args, loc),
+            "memcmp" => self.check_builtin_memcmp(args, loc),
+            "strchr" => self.check_builtin_strchr(args, loc),
+            "strrchr" => self.check_builtin_strrchr(args, loc),
+            "strstr" => self.check_builtin_strstr(args, loc),
+            "memchr" => self.check_builtin_memchr(args, loc),
+            "atof" => self.check_builtin_atof(args, loc),
+            "atol" => self.check_builtin_atol(args, loc),
+            "tan" => self.check_builtin_tan(args, loc),
+            "log10" => self.check_builtin_log10(args, loc),
+            "fabs" => self.check_builtin_fabs(args, loc),
+            "ceil" => self.check_builtin_ceil(args, loc),
+            "floor" => self.check_builtin_floor(args, loc),
+            "round" => self.check_builtin_round(args, loc),
+            "fmod" => self.check_builtin_fmod(args, loc),
             // math.h functions are resolved through stub declarations in funcs
             _ => self.check_user_func(name, args, loc),
         }
@@ -1302,6 +1472,78 @@ impl TypeChecker {
         Type::void()
     }
 
+    fn check_builtin_puts(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "puts", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "puts", loc);
+        }
+        Type::int()
+    }
+
+    fn check_builtin_calloc(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("calloc 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            for i in 0..2 {
+                self.builtin_check_int(&mut args[i], i, "calloc", loc);
+            }
+        }
+        Type::pointer_to(Type::void())
+    }
+
+    fn check_builtin_bsearch(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 5 {
+            self.report_error("bsearch 需要五个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let key_type = self.resolve_expr_type(&mut args[0]);
+            if !key_type.is_pointer() && !key_type.is_array() {
+                self.report_error("bsearch 第一个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            let base_type = self.resolve_expr_type(&mut args[1]);
+            if !base_type.is_pointer() && !base_type.is_array() {
+                self.report_error("bsearch 第二个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            for i in 2..4 {
+                self.builtin_check_int(&mut args[i], i, "bsearch", loc);
+            }
+            let compar_type = self.resolve_expr_type(&mut args[4]);
+            if !matches!(compar_type.kind(), TypeKind::Int) && !compar_type.is_pointer() {
+                self.report_error("bsearch 第五个参数必须是函数指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::pointer_to(Type::void())
+    }
+
+    fn check_builtin_sprintf(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() < 2 {
+            self.report_error("sprintf 至少需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "sprintf", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "sprintf", loc);
+        }
+        Type::int()
+    }
+
+    fn check_builtin_snprintf(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() < 3 {
+            self.report_error("snprintf 至少需要三个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "snprintf", loc);
+            self.builtin_check_int(&mut args[1], 1, "snprintf", loc);
+            self.builtin_check_pointer(&mut args[2], 2, "snprintf", loc);
+        }
+        Type::int()
+    }
+
+    fn check_builtin_sscanf(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() < 2 {
+            self.report_error("sscanf 至少需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "sscanf", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "sscanf", loc);
+        }
+        Type::int()
+    }
+
     fn check_builtin_fopen(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if args.len() != 2 {
             self.report_error("fopen 需要两个参数（路径和模式）", loc, ErrorCode::E3028_BuiltInArgCount);
@@ -1420,6 +1662,250 @@ impl TypeChecker {
             }
         }
         Type::int()
+    }
+
+    fn check_builtin_fgetc(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "fgetc", loc) {
+            let stream_type = self.resolve_expr_type(&mut args[0]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("fgetc 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_fputc(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("fputc 需要两个参数（字符和文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let c_type = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::int(), &c_type, loc) {
+                self.report_error("fputc 第一个参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::int());
+            }
+            let stream_type = self.resolve_expr_type(&mut args[1]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("fputc 第二个参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_fseek(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 3 {
+            self.report_error("fseek 需要三个参数（文件指针、偏移量、起始位置）", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            let stream_type = self.resolve_expr_type(&mut args[0]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("fseek 第一个参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+            for i in 1..3 {
+                let t = self.resolve_expr_type(&mut args[i]);
+                if !self.check_assignable(&Type::int(), &t, loc) {
+                    self.report_error(&format!("fseek 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                } else {
+                    insert_implicit_cast(&mut args[i], &Type::int());
+                }
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_ftell(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "ftell", loc) {
+            let stream_type = self.resolve_expr_type(&mut args[0]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("ftell 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::int()
+    }
+
+    fn check_builtin_rewind(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "rewind", loc) {
+            let stream_type = self.resolve_expr_type(&mut args[0]);
+            if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
+                self.report_error("rewind 参数必须是文件指针", loc, ErrorCode::E3029_BuiltInArgType);
+            }
+        }
+        Type::void()
+    }
+
+    fn check_builtin_strncat(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 3 {
+            self.report_error("strncat 需要三个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "strncat", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "strncat", loc);
+            self.builtin_check_int(&mut args[2], 2, "strncat", loc);
+        }
+        Type::pointer_to(Type::char())
+    }
+
+    fn check_builtin_strncmp(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 3 {
+            self.report_error("strncmp 需要三个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "strncmp", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "strncmp", loc);
+            self.builtin_check_int(&mut args[2], 2, "strncmp", loc);
+        }
+        Type::int()
+    }
+
+    fn check_builtin_memcmp(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 3 {
+            self.report_error("memcmp 需要三个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "memcmp", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "memcmp", loc);
+            self.builtin_check_int(&mut args[2], 2, "memcmp", loc);
+        }
+        Type::int()
+    }
+
+    fn check_builtin_strchr(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("strchr 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "strchr", loc);
+            self.builtin_check_int(&mut args[1], 1, "strchr", loc);
+        }
+        Type::pointer_to(Type::char())
+    }
+
+    fn check_builtin_strrchr(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("strrchr 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "strrchr", loc);
+            self.builtin_check_int(&mut args[1], 1, "strrchr", loc);
+        }
+        Type::pointer_to(Type::char())
+    }
+
+    fn check_builtin_strstr(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("strstr 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "strstr", loc);
+            self.builtin_check_pointer(&mut args[1], 1, "strstr", loc);
+        }
+        Type::pointer_to(Type::char())
+    }
+
+    fn check_builtin_memchr(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 3 {
+            self.report_error("memchr 需要三个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            self.builtin_check_pointer(&mut args[0], 0, "memchr", loc);
+            self.builtin_check_int(&mut args[1], 1, "memchr", loc);
+            self.builtin_check_int(&mut args[2], 2, "memchr", loc);
+        }
+        Type::pointer_to(Type::void())
+    }
+
+    fn check_builtin_atof(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "atof", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "atof", loc);
+        }
+        Type::double()
+    }
+
+    fn check_builtin_atol(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "atol", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "atol", loc);
+        }
+        Type::long_long()
+    }
+
+    fn check_builtin_tan(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "tan", loc) {
+            let t = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::double(), &t, loc) {
+                self.report_error("tan 参数必须是 double", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::double());
+            }
+        }
+        Type::double()
+    }
+
+    fn check_builtin_log10(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "log10", loc) {
+            let t = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::double(), &t, loc) {
+                self.report_error("log10 参数必须是 double", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::double());
+            }
+        }
+        Type::double()
+    }
+
+    fn check_builtin_fabs(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "fabs", loc) {
+            let t = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::double(), &t, loc) {
+                self.report_error("fabs 参数必须是 double", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::double());
+            }
+        }
+        Type::double()
+    }
+
+    fn check_builtin_ceil(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "ceil", loc) {
+            let t = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::double(), &t, loc) {
+                self.report_error("ceil 参数必须是 double", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::double());
+            }
+        }
+        Type::double()
+    }
+
+    fn check_builtin_floor(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "floor", loc) {
+            let t = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::double(), &t, loc) {
+                self.report_error("floor 参数必须是 double", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::double());
+            }
+        }
+        Type::double()
+    }
+
+    fn check_builtin_round(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "round", loc) {
+            let t = self.resolve_expr_type(&mut args[0]);
+            if !self.check_assignable(&Type::double(), &t, loc) {
+                self.report_error("round 参数必须是 double", loc, ErrorCode::E3029_BuiltInArgType);
+            } else {
+                insert_implicit_cast(&mut args[0], &Type::double());
+            }
+        }
+        Type::double()
+    }
+
+    fn check_builtin_fmod(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if args.len() != 2 {
+            self.report_error("fmod 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
+        } else {
+            for i in 0..2 {
+                let t = self.resolve_expr_type(&mut args[i]);
+                if !self.check_assignable(&Type::double(), &t, loc) {
+                    self.report_error(&format!("fmod 第 {} 个参数必须是 double", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                } else {
+                    insert_implicit_cast(&mut args[i], &Type::double());
+                }
+            }
+        }
+        Type::double()
     }
 
     fn check_user_func(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {

@@ -107,3 +107,179 @@ fn test_lexer_multiline() {
     assert_eq!(tokens[0].line, 1); // int
     assert_eq!(tokens[5].line, 2); // int on second line
 }
+
+// ============================================================================
+// 条件编译（#ifdef / #ifndef / #else / #endif）单元测试
+// ============================================================================
+
+#[test]
+fn test_lexer_ifdef_defined() {
+    let src = "#define DEBUG 1\n#ifdef DEBUG\nint x = 1;\n#endif";
+    let tokens = tokenize(src);
+    // x 应该被编译
+    let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
+    assert!(ids.iter().any(|(_, text)| text == "x"), "x should be tokenized when DEBUG is defined");
+}
+
+#[test]
+fn test_lexer_ifdef_undefined() {
+    let src = "#ifdef UNDEFINED\nint y = 2;\n#endif\nint z = 3;";
+    let tokens = tokenize(src);
+    // y 应该被跳过，z 应该被编译
+    let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
+    assert!(!ids.iter().any(|(_, text)| text == "y"), "y should be skipped when UNDEFINED is not defined");
+    assert!(ids.iter().any(|(_, text)| text == "z"), "z should be tokenized after #endif");
+}
+
+#[test]
+fn test_lexer_ifndef() {
+    let src = "#ifndef FLAG\nint a = 1;\n#endif";
+    let tokens = tokenize(src);
+    // FLAG 未定义，所以 a 应该被编译
+    let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
+    assert!(ids.iter().any(|(_, text)| text == "a"), "a should be tokenized when FLAG is not defined");
+}
+
+#[test]
+fn test_lexer_ifndef_defined() {
+    let src = "#define FLAG 1\n#ifndef FLAG\nint b = 2;\n#endif\nint c = 3;";
+    let tokens = tokenize(src);
+    // FLAG 已定义，所以 b 应该被跳过，c 应该被编译
+    let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
+    assert!(!ids.iter().any(|(_, text)| text == "b"), "b should be skipped when FLAG is defined");
+    assert!(ids.iter().any(|(_, text)| text == "c"), "c should be tokenized after #endif");
+}
+
+#[test]
+fn test_lexer_conditional_else() {
+    let src = "#define MODE 1\n#ifdef MODE\nint a = 1;\n#else\nint a = 2;\n#endif";
+    let tokens = tokenize(src);
+    // MODE 定义了，所以 a=1 应该被编译，a=2 应该被跳过
+    let nums: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Number).collect();
+    assert!(nums.iter().any(|(_, text)| text == "1"), "1 should appear when MODE is defined");
+    assert!(!nums.iter().any(|(_, text)| text == "2"), "2 should be skipped in #else block");
+}
+
+#[test]
+fn test_lexer_conditional_else_undefined() {
+    let src = "#ifdef MODE\nint a = 1;\n#else\nint a = 2;\n#endif";
+    let tokens = tokenize(src);
+    // MODE 未定义，所以 a=1 应该被跳过，a=2 应该被编译
+    let nums: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Number).collect();
+    assert!(!nums.iter().any(|(_, text)| text == "1"), "1 should be skipped when MODE is not defined");
+    assert!(nums.iter().any(|(_, text)| text == "2"), "2 should appear in #else block");
+}
+
+#[test]
+fn test_lexer_nested_conditional() {
+    let src = r#"
+#define OUTER
+#ifdef OUTER
+  #define INNER
+  #ifdef INNER
+    int x = 1;
+  #else
+    int x = 2;
+  #endif
+#else
+  int x = 3;
+#endif
+"#;
+    let tokens = tokenize(src);
+    // OUTER 和 INNER 都定义了，所以 x=1 应该被编译，x=2 和 x=3 应该被跳过
+    let nums: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Number).collect();
+    assert!(nums.iter().any(|(_, text)| text == "1"), "1 should appear");
+    assert!(!nums.iter().any(|(_, text)| text == "2"), "2 should be skipped");
+    assert!(!nums.iter().any(|(_, text)| text == "3"), "3 should be skipped");
+}
+
+#[test]
+fn test_lexer_nested_skip_inner() {
+    let src = r#"
+#ifdef OUTER
+  #ifdef INNER
+    int x = 1;
+  #endif
+#endif
+int y = 2;
+"#;
+    let tokens = tokenize(src);
+    // OUTER 未定义，所以所有内部代码都被跳过，只有 y=2 被编译
+    let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
+    assert!(!ids.iter().any(|(_, text)| text == "x"), "x should be skipped");
+    assert!(ids.iter().any(|(_, text)| text == "y"), "y should be tokenized");
+}
+
+#[test]
+fn test_lexer_header_guard_pattern() {
+    let src = r#"
+#ifndef MYHEADER_H
+#define MYHEADER_H
+int global = 42;
+#endif
+"#;
+    let tokens = tokenize(src);
+    // 第一次遇到 MYHEADER_H 未定义，所以内容被编译；然后 MYHEADER_H 被定义
+    let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
+    assert!(ids.iter().any(|(_, text)| text == "global"), "global should be tokenized");
+}
+
+#[test]
+fn test_lexer_conditional_with_comments() {
+    let src = r#"
+#ifdef FLAG
+/* block comment */
+int a = 1;
+#else
+// line comment
+int a = 2;
+#endif
+"#;
+    let tokens = tokenize(src);
+    // FLAG 未定义，所以 #else 块生效，a=2 被编译
+    let nums: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Number).collect();
+    assert!(!nums.iter().any(|(_, text)| text == "1"), "1 should be skipped");
+    assert!(nums.iter().any(|(_, text)| text == "2"), "2 should appear");
+}
+
+#[test]
+fn test_lexer_conditional_error_unclosed() {
+    let src = "#ifdef FLAG\nint x = 1;";
+    let (_, errors) = Lexer::new(src).tokenize();
+    assert!(!errors.is_empty(), "Expected error for unclosed #ifdef");
+    assert!(errors.iter().any(|e| e.code == 1013), "Expected E1013_UnclosedConditional");
+}
+
+#[test]
+fn test_lexer_conditional_error_unmatched_endif() {
+    let src = "int x = 1;\n#endif";
+    let (_, errors) = Lexer::new(src).tokenize();
+    assert!(!errors.is_empty(), "Expected error for unmatched #endif");
+    assert!(errors.iter().any(|e| e.code == 1011), "Expected E1011_UnmatchedConditional");
+}
+
+#[test]
+fn test_lexer_conditional_error_duplicate_else() {
+    let src = "#ifdef FLAG\nint a = 1;\n#else\nint a = 2;\n#else\nint a = 3;\n#endif";
+    let (_, errors) = Lexer::new(src).tokenize();
+    assert!(!errors.is_empty(), "Expected error for duplicate #else");
+    assert!(errors.iter().any(|e| e.code == 1012), "Expected E1012_DuplicateElse");
+}
+
+#[test]
+fn test_lexer_define_inside_skipped_block() {
+    let src = r#"
+#ifdef UNDEFINED
+#define SECRET 999
+#endif
+int x = SECRET;
+"#;
+    let (_, errors) = Lexer::new(src).tokenize();
+    // SECRET 在跳过块内定义，不应生效；之后使用 SECRET 应该报错（未定义标识符）
+    // 注意：lexer 层只会保留 SECRET 作为 Identifier，不会展开宏
+    // 这里主要验证 SECRET 没有被注册为宏
+    // 由于 SECRET 未定义，编译时会在 parser/typeck 报错
+    // 本测试只验证 lexer 没有产生错误（条件编译本身正确处理）
+    assert!(errors.is_empty() || !errors.iter().any(|e| e.code == 1011 || e.code == 1012 || e.code == 1013),
+        "Should not produce conditional compilation errors");
+}

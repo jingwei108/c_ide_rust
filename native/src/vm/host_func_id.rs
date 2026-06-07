@@ -57,6 +57,41 @@ pub const LOG: u32 = 75;
 pub const EXP: u32 = 76;
 pub const STRDUP: u32 = 77;
 pub const UNGETC: u32 = 78;
+pub const PUTS: u32 = 79;
+pub const CALLOC: u32 = 80;
+pub const BSEARCH: u32 = 81;
+pub const SPRINTF: u32 = 82;
+pub const SNPRINTF: u32 = 83;
+pub const SSCANF: u32 = 84;
+
+// VFS I/O 扩展
+pub const FGETC: u32 = 85;
+pub const FPUTC: u32 = 86;
+pub const FSEEK: u32 = 87;
+pub const FTELL: u32 = 88;
+pub const REWIND: u32 = 89;
+
+// 字符串/内存扩展
+pub const STRNCAT: u32 = 90;
+pub const STRNCMP: u32 = 91;
+pub const MEMCMP: u32 = 92;
+pub const STRCHR: u32 = 93;
+pub const STRRCHR: u32 = 94;
+pub const STRSTR: u32 = 95;
+pub const MEMCHR: u32 = 96;
+
+// 转换扩展
+pub const ATOF: u32 = 97;
+pub const ATOL: u32 = 98;
+
+// 数学扩展
+pub const TAN: u32 = 99;
+pub const LOG10: u32 = 100;
+pub const FABS: u32 = 101;
+pub const CEIL: u32 = 102;
+pub const FLOOR: u32 = 103;
+pub const ROUND: u32 = 104;
+pub const FMOD: u32 = 105;
 
 /// 已由 Bytecode Libc 覆盖的纯计算函数。
 /// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
@@ -132,6 +167,33 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "exp" => Some(EXP),
         "strdup" => Some(STRDUP),
         "ungetc" => Some(UNGETC),
+        "puts" => Some(PUTS),
+        "calloc" => Some(CALLOC),
+        "bsearch" => Some(BSEARCH),
+        "sprintf" => Some(SPRINTF),
+        "snprintf" => Some(SNPRINTF),
+        "sscanf" => Some(SSCANF),
+        "fgetc" => Some(FGETC),
+        "fputc" => Some(FPUTC),
+        "fseek" => Some(FSEEK),
+        "ftell" => Some(FTELL),
+        "rewind" => Some(REWIND),
+        "strncat" => Some(STRNCAT),
+        "strncmp" => Some(STRNCMP),
+        "memcmp" => Some(MEMCMP),
+        "strchr" => Some(STRCHR),
+        "strrchr" => Some(STRRCHR),
+        "strstr" => Some(STRSTR),
+        "memchr" => Some(MEMCHR),
+        "atof" => Some(ATOF),
+        "atol" => Some(ATOL),
+        "tan" => Some(TAN),
+        "log10" => Some(LOG10),
+        "fabs" => Some(FABS),
+        "ceil" => Some(CEIL),
+        "floor" => Some(FLOOR),
+        "round" => Some(ROUND),
+        "fmod" => Some(FMOD),
         _ => None,
     }
 }

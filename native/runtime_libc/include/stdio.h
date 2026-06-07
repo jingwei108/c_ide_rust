@@ -3,9 +3,13 @@ typedef void* FILE;
 
 int printf(const char* fmt);
 int scanf(const char* fmt);
+int sprintf(char* buf, const char* fmt);
+int snprintf(char* buf, int size, const char* fmt);
+int sscanf(const char* str, const char* fmt);
 int fprintf(FILE* stream, const char* fmt);
 int getchar(void);
 int putchar(int c);
+int puts(const char* s);
 FILE* fopen(const char* path, const char* mode);
 int fclose(FILE* stream);
 int fread(void* ptr, int size, int nmemb, FILE* stream);

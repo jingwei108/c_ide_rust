@@ -412,6 +412,7 @@ fn test_smart_checkpoint_triggers() {
             waiting_input: false,
             rand_seed: 0,
             vis_event_cache: Vec::new(),
+            ungetc_char: None,
         },
         memory_state: cide_native::vm::snapshot::MemorySnapshot {
             regions: Vec::new(),

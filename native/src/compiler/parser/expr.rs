@@ -2,7 +2,17 @@ use super::*;
 
 impl Parser {
     pub(crate) fn parse_expression(&mut self) -> Expr {
-        self.parse_assign()
+        self.parse_comma()
+    }
+
+    pub(crate) fn parse_comma(&mut self) -> Expr {
+        let mut left = self.parse_assign();
+        while self.match_token(TokenType::Comma) {
+            let right = self.parse_assign();
+            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            left = Expr::Binary { op: BinaryOp::Comma, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+        }
+        left
     }
 
     pub(crate) fn parse_assign(&mut self) -> Expr {
@@ -215,6 +225,9 @@ impl Parser {
         if self.match_token(TokenType::Sizeof) {
             return self.parse_sizeof();
         }
+        if self.match_token(TokenType::Offsetof) {
+            return self.parse_offsetof();
+        }
         if self.check(TokenType::LParen) {
             let checkpoint = self.pos;
             let typedef_snapshot = self.typedef_names.clone();
@@ -306,6 +319,16 @@ impl Parser {
         Expr::Sizeof { target_type: None, operand: Some(Box::new(expr)), loc, ty: Type::int() }
     }
 
+    pub(crate) fn parse_offsetof(&mut self) -> Expr {
+        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+        self.consume(TokenType::LParen, "offsetof 后预期 '('");
+        let target_type = self.parse_base_type();
+        self.consume(TokenType::Comma, "offsetof 参数之间预期 ','");
+        let field_tok = self.consume(TokenType::Identifier, "offsetof 预期字段名").clone();
+        self.consume(TokenType::RParen, "offsetof 后预期 ')'");
+        Expr::Offsetof { target_type, field: field_tok.text, loc, ty: Type::int() }
+    }
+
     pub(crate) fn parse_type_only(&mut self) -> Type {
         let mut base = self.parse_base_type();
         while self.match_token(TokenType::Star) {
@@ -351,11 +374,24 @@ impl Parser {
         let mut elements = Vec::new();
         if !self.check(TokenType::RBrace) {
             loop {
-                if self.check(TokenType::LBrace) {
-                    elements.push(self.parse_init_list());
-                } else {
-                    elements.push(self.parse_expression());
+                let mut designators = Vec::new();
+                // Designated initializer: .field = value or [index] = value
+                if self.match_token(TokenType::Dot) {
+                    let field_tok = self.consume(TokenType::Identifier, "Designator 预期字段名").clone();
+                    designators.push(Designator::Field(field_tok.text));
+                    self.consume(TokenType::Assign, "Designated initializer 预期 '='");
+                } else if self.match_token(TokenType::LBracket) {
+                    let idx_expr = self.parse_assign();
+                    self.consume(TokenType::RBracket, "Designator 预期 ']'");
+                    designators.push(Designator::Index(Box::new(idx_expr)));
+                    self.consume(TokenType::Assign, "Designated initializer 预期 '='");
                 }
+                let value = if self.check(TokenType::LBrace) {
+                    self.parse_init_list()
+                } else {
+                    self.parse_assign()
+                };
+                elements.push(InitElement { designators, value });
                 if !self.match_token(TokenType::Comma) { break; }
             }
         }
