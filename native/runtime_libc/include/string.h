@@ -8,3 +8,4 @@ char* strcat(char* dest, const char* src);
 void* memcpy(void* dest, const void* src, int n);
 void* memmove(void* dest, const void* src, int n);
 void* memset(void* ptr, int value, int n);
+char* strdup(const char* s);

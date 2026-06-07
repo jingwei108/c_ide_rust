@@ -1596,8 +1596,11 @@ impl BytecodeGen {
                             immediate_base_kind(operand.ty())
                         } else {
                             TypeKind::Int
-        };
-                        if base_ty == TypeKind::Char {
+                        };
+                        if base_ty == TypeKind::Function {
+                            // Function pointer dereference: *fp yields the function itself,
+                            // which immediately decays back to the same pointer. No load.
+                        } else if base_ty == TypeKind::Char {
                             self.emit(OpCode::LoadMemByte, 0, &loc);
                         } else if base_ty == TypeKind::Double {
                             self.emit(OpCode::LoadMemD, 0, &loc);
@@ -2140,6 +2143,12 @@ impl BytecodeGen {
                 if let Some(&idx) = self.func_index.get(name) {
                     self.globals_init_32.push((base_offset, idx));
                 }
+            }
+            Expr::StringLiteral { value, .. } => {
+                let str_addr = self.string_mem_offset;
+                self.string_data.push((str_addr, value.clone()));
+                self.string_mem_offset += (value.len() + 1) as u32;
+                self.globals_init_32.push((base_offset, str_addr as i32));
             }
             _ => {}
         }

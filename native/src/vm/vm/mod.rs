@@ -448,6 +448,7 @@ impl CideVM {
         session.runtime.waiting_input = snap.runtime.waiting_input;
         session.runtime.rand_seed = snap.runtime.rand_seed;
         session.runtime.vis_event_cache = snap.runtime.vis_event_cache.clone();
+        session.runtime.ungetc_char = snap.runtime.ungetc_char;
 
         // Session 内存管理状态
         session.memory.regions = snap.memory_state.regions.clone();

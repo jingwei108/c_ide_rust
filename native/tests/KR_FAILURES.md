@@ -9,8 +9,8 @@
 |:-----|:-----|:-----|:---------|:---------|
 | K&R 第 1-2 章 | 25 | 25 | 0 | 2026-06-06 |
 | K&R 第 3-4 章 | 22 | 20 | 2 | 2026-06-07 |
-| K&R 第 5-6 章 | 22 | 9 | 13 | 2026-06-07 |
-| **合计** | **69** | **55** | **14** | - |
+| K&R 第 5-6 章 | 22 | 16 | 6 | 2026-06-07 |
+| **合计** | **69** | **62** | **7** | - |
 
 ## 已知失败详情
 
@@ -400,20 +400,20 @@
 ### kr_5_1
 
 - **来源**: K&R 第 5 章，练习 5-1（getint）
-- **失败原因**: 编译错误 — `isdigit` 未声明、`ungetc` 未声明、`stdin` 未声明
-- **最小复现**: `#include <ctype.h>` 不被 Cide 支持，`isdigit` 不是内置函数；`ungetc`/`stdin` 不是 Cide 内置 I/O
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — `isdigit` 未声明、`ungetc` 未声明、`stdin` 未声明~~ ✅ **已修复（2026-06-07）**
+- **最小复现**: `<ctype.h>` 已支持（`isdigit` 走 Bytecode Libc 路径），`stdin` 已预定义宏；`ungetc` 仍非 Cide 内置函数
+- **修复内容**: 新增 `UNGETC = 78` Host Func（`host_ungetc`），在 `RuntimeState` 中增加 `ungetc_char: Option<i32>` 单字符缓存，`host_getchar` 优先返回缓存字符
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: `<ctype.h>`、`ungetc`、`stdin`
+- **涉及语法特性**: `ungetc`
 - **学生影响评级**: P1
-- **建议**: Cide 教学子集明确不支持 `<ctype.h>`。记录为已知限制。
 
 ### kr_5_2
 
 - **来源**: K&R 第 5 章，练习 5-2（getfloat）
-- **失败原因**: 编译错误 — 同 kr_5_1，`isdigit`/`ungetc`/`stdin` 未声明
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — 同 kr_5_1，`ungetc` 未声明~~ ✅ **已修复（2026-06-07）**
+- **是否 Cide 限制**: 否（已修复）
 - **建议**: 同 kr_5_1
 
 ### kr_5_8
@@ -431,14 +431,16 @@
 ### kr_5_9
 
 - **来源**: K&R 第 5 章，练习 5-9（qsort 递减序）
-- **失败原因**: 编译错误 — 函数指针调用类型检查错误
-- **最小复现**: `(*comp)(v[i], v[left])` 被 TypeChecker 报告为"不能对非函数指针类型进行调用"
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — 函数指针调用类型检查错误~~ ✅ **已修复（2026-06-07）**
+- **最小复现**: `(*comp)(v[i], v[left])` 被 TypeChecker 报告为"不能对非函数指针类型进行调用"；VM 运行时 `*comp` 解引用错误执行 `LoadMem`，导致读取 NULL 指针区域
+- **修复内容**:
+  1. `native/src/compiler/typeck/expr.rs`: `CallPtr` 分支增加对 `Type::Function` 的直接匹配，支持 `(*fp)(args)` 形式
+  2. `native/src/compiler/codegen/mod.rs`: `UnaryOp::Deref` 对 `TypeKind::Function` 跳过 `LoadMem`（函数解引用即自身，会再次退化为指针）
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: 函数指针解引用调用、参数类型匹配
+- **涉及语法特性**: 函数指针解引用调用 `(*fp)(args)`
 - **学生影响评级**: P1
-- **建议**: 函数指针通过 `(*fp)(args)` 调用时，TypeChecker 可能未正确识别 `fp` 的函数指针类型。需进一步分析。
 
 ### kr_5_10
 
@@ -511,51 +513,62 @@
 ### kr_6_1
 
 - **来源**: K&R 第 6 章，练习 6-1（getword 提取关键字）
-- **失败原因**: 编译错误 — `isspace`/`isalpha`/`isalnum`/`ungetc`/`stdin` 未声明
-- **是否 Cide 限制**: 是
-- **建议**: 同 kr_5_1
+- **失败原因**: ~~编译错误 — `isspace`/`isalpha`/`isalnum`/`ungetc`/`stdin` 未声明~~ ✅ **标准库拓展后只剩 `ungetc`（2026-06-07）** → 运行时错误：`struct key keytab[] = { {"auto", 0}, ... }` 全局结构体数组中 `char*` 成员的 `StringLiteral` 初始化异常
+- **最小复现**: 
+  1. `<ctype.h>` 已支持，`stdin` 已预定义宏，`ungetc` 已新增 Host Func
+  2. 编译通过，但运行时 `keytab[0].word` 读取到的值不是字符串地址，而是字符串内容本身（如 `"auto"` 的 ASCII 字节 `0x6f747561`），导致 `strcmp` 解引用非法地址触发 NULL 指针陷阱
+- **是否 Cide 限制**: 是（全局结构体数组 `char*` 初始化 Bug）
+- **是否代码本身问题**: 否
+- **是否环境差异**: 否
+- **涉及语法特性**: `ungetc`、全局结构体数组初始化、`char*` 成员
+- **学生影响评级**: P0
+- **建议**: 根因待进一步定位。`flatten_global_init` 已增加 `StringLiteral` 分支，但测试表明该分支未实际生效；`flatten_init_list` 对 `StringLiteral` 返回 0 亦未生效。怀疑 `keytab` 的 AST 类型或初始化表达式在 Parser/TypeChecker 阶段与预期不符，导致 BytecodeGen 走了错误的初始化路径。已记录为已知 Bug，待后续修复。
 
 ### kr_6_2
 
 - **来源**: K&R 第 6 章，练习 6-2（统计 C 关键字，二叉树）
-- **失败原因**: 编译错误 — Parser 不支持函数指针/结构体组合语法
-- **最小复现**: `struct tnode *addtree(struct tnode *, char *);` 前向声明中返回结构体指针的函数原型 Parser 报错
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — Parser 不支持函数指针/结构体组合语法~~ ✅ **已修复（2026-06-07）**
+- **最小复现**: `struct tnode *addtree(struct tnode *, char *);` 前向声明中，指针类型无名参数（`struct tnode *`）导致 `parse_param_list` 错误进入 `parse_declarator`，触发"预期标识符名称"
+- **修复内容**: `native/src/compiler/parser/mod.rs` `parse_param_list` 增加对 `*` 的前瞻：跳过所有 `*` 后若是 `Comma`/`RParen`，则构造 `Pointer→...→Base` 类型作为无名参数；`parse_func_decl` 返回类型从单 `*` 改为 `while` 支持多级指针；后续 `ungetc` Host Func 拓展解除剩余限制
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: 返回结构体指针的函数前向声明
+- **涉及语法特性**: 指针类型无名参数前向声明、`ungetc`
 - **学生影响评级**: P1
-- **建议**: Parser 对返回 `struct X*` 的函数前向声明支持不完善。需进一步分析。
 
 ### kr_6_3
 
 - **来源**: K&R 第 6 章，练习 6-3（交叉引用）
-- **失败原因**: 编译错误 — 同 kr_6_2
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — 同 kr_6_2~~ ✅ **已修复（2026-06-07）**
+- **是否 Cide 限制**: 否（已修复）
 - **建议**: 同 kr_6_2
 
 ### kr_6_4
 
 - **来源**: K&R 第 6 章，练习 6-4（统计单词频率）
-- **失败原因**: 编译错误 — 同 kr_6_2
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — 同 kr_6_2~~ ✅ **已修复（2026-06-07）**
+- **是否 Cide 限制**: 否（已修复）
 - **建议**: 同 kr_6_2
 
 ### kr_6_5
 
 - **来源**: K&R 第 6 章，练习 6-5（哈希表查找）
-- **失败原因**: 编译错误 — `strdup` 未声明
+- **失败原因**: ~~编译错误 — `strdup` 未声明~~ ✅ **已修复（2026-06-07）**
 - **最小复现**: `strdup` 不是 Cide 内置函数
-- **是否 Cide 限制**: 是
+- **修复内容**:
+  1. `native/src/vm/host_func_id.rs`: 新增 `STRDUP = 77`
+  2. `native/src/vm/host_funcs.rs`: 新增 `host_strdup`，复用 `read_cbytes` + `allocate_raw` + `MemoryRegion` 追踪
+  3. `native/src/compiler/typeck/mod.rs`: 新增 `check_builtin_strdup`
+  4. `native/runtime_libc/include/string.h`: 添加 `char* strdup(const char* s);` 存根声明
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
 - **涉及语法特性**: `strdup`
 - **学生影响评级**: P1
-- **建议**: Cide 不支持 `strdup`。可内联为 `malloc`+`strcpy` 但不得扭曲原始代码。记录为已知限制。
 
 ### kr_6_6
 
 - **来源**: K&R 第 6 章，练习 6-6（表查找 define/undef）
-- **失败原因**: 编译错误 — `strdup` 未声明
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — `strdup` 未声明~~ ✅ **已修复（2026-06-07）**
+- **是否 Cide 限制**: 否（已修复）
 - **建议**: 同 kr_6_5

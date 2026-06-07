@@ -745,8 +745,10 @@ impl TypeChecker {
             "strlen" => self.check_builtin_strlen(args, loc),
             "strcpy" => self.check_builtin_strcpy(args, loc),
             "strcmp" => self.check_builtin_strcmp(args, loc),
+            "strdup" => self.check_builtin_strdup(args, loc),
             "getchar" => self.check_builtin_getchar(args, loc),
             "putchar" => self.check_builtin_putchar(args, loc),
+            "ungetc" => self.check_builtin_ungetc(args, loc),
             "rand" => self.check_builtin_rand(args, loc),
             "srand" => self.check_builtin_srand(args, loc),
             "memset" => self.check_builtin_memset(args, loc),
@@ -1102,6 +1104,13 @@ impl TypeChecker {
         Type::pointer_to(Type::char())
     }
 
+    fn check_builtin_strdup(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 1, "strdup", loc) {
+            self.builtin_check_pointer(&mut args[0], 0, "strdup", loc);
+        }
+        Type::pointer_to(Type::char())
+    }
+
     fn check_builtin_strcmp(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if self.builtin_check_count(args, 2, "strcmp", loc) {
             self.builtin_check_pointer(&mut args[0], 0, "strcmp", loc);
@@ -1112,6 +1121,14 @@ impl TypeChecker {
 
     fn check_builtin_getchar(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         self.builtin_check_count(args, 0, "getchar", loc);
+        Type::int()
+    }
+
+    fn check_builtin_ungetc(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        if self.builtin_check_count(args, 2, "ungetc", loc) {
+            self.builtin_check_int(&mut args[0], 0, "ungetc", loc);
+            self.builtin_check_int(&mut args[1], 1, "ungetc", loc);
+        }
         Type::int()
     }
 

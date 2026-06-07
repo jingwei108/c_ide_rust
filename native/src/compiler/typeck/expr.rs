@@ -214,31 +214,39 @@ impl TypeChecker {
                     }
                 }
                 let callee_ty = self.resolve_expr_type(callee);
-                if let Type::Pointer { pointee, .. } = &callee_ty {
+                let func_info = if let Type::Pointer { pointee, .. } = &callee_ty {
                     if let Type::Function { param_types, return_type, .. } = pointee.as_ref() {
-                        if args.len() != param_types.len() {
-                            self.report_error(&format!("函数指针调用参数数量不匹配：期望 {}，实际 {}", param_types.len(), args.len()), loc, ErrorCode::E3037_FuncArgCount);
-                        } else {
-                            for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
-                                let arg_type = self.resolve_expr_type(arg);
-                                if !self.check_assignable(expected, &arg_type, loc) {
-                                    self.report_error(&format!("函数指针调用第 {} 个参数类型不匹配", i + 1), loc, ErrorCode::E3038_FuncArgType);
-                                } else {
-                                    insert_implicit_cast(arg, expected);
-                                }
-                            }
-                        }
-                        *ty = return_type.as_ref().clone();
+                        Some((param_types.clone(), return_type.as_ref().clone()))
                     } else {
                         // Allow calling through generic pointer (with warning)
                         self.report_warning("通过通用指针调用函数，建议显式转换为函数指针", loc, ErrorCode::W3055_VoidPointerCast);
                         for arg in args.iter_mut() { self.resolve_expr_type(arg); }
                         *ty = Type::int();
+                        None
                     }
+                } else if let Type::Function { param_types, return_type, .. } = &callee_ty {
+                    // Support (*fp)(args) where callee type is Function directly
+                    Some((param_types.clone(), return_type.as_ref().clone()))
                 } else {
                     self.report_error("不能对非函数指针类型进行调用", loc, ErrorCode::E3045_CompoundAssignType);
                     for arg in args.iter_mut() { self.resolve_expr_type(arg); }
                     *ty = Type::int();
+                    None
+                };
+                if let Some((param_types, return_type)) = func_info {
+                    if args.len() != param_types.len() {
+                        self.report_error(&format!("函数指针调用参数数量不匹配：期望 {}，实际 {}", param_types.len(), args.len()), loc, ErrorCode::E3037_FuncArgCount);
+                    } else {
+                        for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
+                            let arg_type = self.resolve_expr_type(arg);
+                            if !self.check_assignable(expected, &arg_type, loc) {
+                                self.report_error(&format!("函数指针调用第 {} 个参数类型不匹配", i + 1), loc, ErrorCode::E3038_FuncArgType);
+                            } else {
+                                insert_implicit_cast(arg, expected);
+                            }
+                        }
+                    }
+                    *ty = return_type;
                 }
                 ty.clone()
             }

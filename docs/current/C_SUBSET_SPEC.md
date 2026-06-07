@@ -561,13 +561,60 @@ int main() { return 0; }
 
 ---
 
-## 8. 结论
+## 8. 下一阶段语法拓展蓝图
+
+> 目标：与标准库拓展同步推进，一次性补齐会导致学生代码编译失败的语法缺口。
+
+### 8.1 🔴 P0 — 立即填补（编译失败最高频）
+
+| 特性 | 典型触发场景 | 实现路径 | 复杂度 |
+|------|-------------|----------|--------|
+| **通用逗号运算符** `a, b` | `while (a--, a > 0)`、表达式语句多操作 | Parser 优先级 + CodeGen 左值丢弃 | 🟡 中 |
+| **Designated Initializer** `.field = val` / `[i] = val` | `struct S s = {.x = 1};`、稀疏数组初始化 | Parser 扩展 + CodeGen 支持 | 🟡 中 |
+| **`offsetof(struct S, field)`** | 数据结构内存布局教学 | 编译期宏 / 常量计算 | 🟢 低 |
+
+### 8.2 🟠 P1 — 短期实现（教学/算法必备）
+
+| 特性 | 典型触发场景 | 实现路径 | 复杂度 |
+|------|-------------|----------|--------|
+| **`static`（全局/函数）完整语义** | 链接性控制、内部函数 | 符号表隔离（已有基础） | 🟡 中 |
+| **`goto`** | 状态机、错误处理清理（虽不鼓励但存在） | 新增 AST 节点 + Bytecode 跳转 | 🟡 中 |
+| **`volatile`** | 嵌入式/硬件相关课程 | 关键字已存在 TokenType，需接入语义 | 🟡 中 |
+| **条件编译** `#ifdef` / `#ifndef` / `#endif` | 头文件保护、跨平台代码 | Preprocessor 扩展 | 🔴 高 |
+| **`va_list` / `va_start` / `va_arg` / `va_end`** | 用户自定义变参函数 | 编译器支持 + ABI 约定 | 🔴 高 |
+
+### 8.3 🟡 P2 — 中期实现（进阶需求）
+
+| 特性 | 典型触发场景 | 实现路径 | 复杂度 |
+|------|-------------|----------|--------|
+| **`restrict`** | 高性能数组操作优化提示 | 关键字 + 类型检查提示 | 🟢 低 |
+| **`inline`** | 小型函数内联 | 关键字识别（优化阶段暂跳过） | 🟢 低 |
+| **`_Bool` / `bool`** | C99 原生布尔类型 | 已有 `stdbool.h` 规划，底层可映射为 `int` | 🟢 低 |
+| **`register`** / **`auto`** | 存储类说明符 | 关键字识别并忽略（现代编译器自动优化） | 🟢 低 |
+| **`sizeof(VLA类型)`** `sizeof(int[n])` | VLA 元编程 | CodeGen 扩展 | 🟡 中 |
+| **全局 VLA** | 极少见，但标准允许 | 当前编译期拒绝，需全局栈分配机制 | 🔴 高 |
+
+### 8.4 ⚫ 明确排除项（实现复杂 / 教学价值极低）
+
+| 特性 | 排除理由 |
+|------|---------|
+| `bitfield`（位域） | 文档已排除；嵌入式专用，初学者不需要 |
+| `_Complex` / `_Imaginary` / `<complex.h>` | 数学/工程专用，教学不用 |
+| `_Generic`（C11 泛型选择） | 学生几乎不用，实现复杂 |
+| `_Static_assert` / `_Alignas` / `_Alignof` | C11 进阶，教学很少涉及 |
+| `_Noreturn` / `_Thread_local` / `_Atomic` | 同上 |
+| `union` 的复杂初始化规则 | 当前已支持基本 union，复杂初始化极少见 |
+| 完整预处理器（`#` / `##` 操作符、多行宏、条件宏表达式计算） | 教学场景 `#define` 常量宏已足够 |
+
+---
+
+## 9. 结论
 
 ### 对于一个教学场景，多少合适？
 
 **答案**：
 
-> **足够演示 C 语言的核心概念（变量、控制流、函数、指针、内存），但排除会分散注意力的进阶特性和实现复杂度高的语法。**
+> **足够演示 C 语言的核心概念（变量、控制流、函数、指针、内存），覆盖 C89/C99 教学高频语法与标准库，排除会分散注意力的进阶特性。**
 
 ### 黄金法则
 
@@ -583,25 +630,34 @@ int main() { return 0; }
    - `int a, b;` → 可能困惑（为什么可以一行两个？）→ **已支持** ✅（`int a = 1, b = 2;`）
    - `p++` vs `arr[i++]` → 需要理解步长缩放，但已支持并带教学提示 → **保留**
 
-### 最终推荐的 Cide-C 子集（Phase 1 ~ 3 完整版）
+### 最终推荐的 Cide-C 子集（Phase 1 ~ 5 完整版）
 
 ```
-数据类型：int、char、float、double、unsigned、int*、char*、float*、double*、int[]、char[]、double[]、struct、enum
-类型系统：typedef、sizeof、const
+数据类型：int、char、float、double、unsigned、long long、int*、char*、float*、double*、
+          int[]、char[]、double[]、struct、union、enum
+类型系统：typedef、sizeof、const、static（局部+全局）、extern
 语句：变量声明、赋值、if/else、while、do...while、for、switch/case/default、
-       break、continue、return、块作用域
-表达式：算术、比较、逻辑、位运算、赋值、三目运算符、数组索引、函数调用、&、*、
-        struct访问、++/--、字符串字面量、sizeof、显式类型转换
-函数：定义/调用/递归/前向声明
-内存：malloc/free/realloc
-I/O：printf、scanf、fprintf、getchar、putchar
-字符串：strlen、strcpy、strcmp、strcat、atoi
-其他：rand/srand/memset/exit/qsort
+       break、continue、return、goto、块作用域
+表达式：算术、比较、逻辑、位运算、赋值、三目运算符、逗号运算符、数组索引、
+        函数调用、&、*、struct访问、++/--、字符串字面量、sizeof、显式类型转换
+函数：定义/调用/递归/前向声明/函数指针/变参（printf/scanf + 未来自定义）
+内存：malloc/free/realloc/calloc
+I/O：printf、scanf、sprintf、snprintf、sscanf、fprintf、puts、getchar、putchar、
+     fopen、fclose、fread、fwrite、fgets、fputs、fgetc、fputc、fseek、ftell、rewind
+字符串：strlen、strcpy、strncpy、strcmp、strncmp、strcat、strncat、memcpy、memmove、
+        memset、memcmp、strchr、strrchr、strstr、memchr、strdup
+其他：rand/srand/exit/abort/qsort/bsearch/atoi/atof/atol/time/clock/assert
+数学：sin、cos、tan、sqrt、pow、atan、log、log10、exp、fabs、ceil、floor、round、fmod
+字符：isdigit、isalpha、islower、isupper、isalnum、isspace、isprint、iscntrl、isxdigit、
+      tolower、toupper
+宏/类型：NULL、EOF、INT_MAX、INT_MIN、bool、true、false、size_t、ptrdiff_t、
+         EXIT_SUCCESS、EXIT_FAILURE
 
-不支持：bitfield、goto、文件I/O、static（全局）/volatile/restrict、
-       VLA 边界检查（运行时）、sizeof(VLA类型)（如 sizeof(int[n])）、
-       完整预处理器（仅 #define 常量宏）
+不支持：bitfield、_Complex、_Generic、_Static_assert、_Alignas/_Alignof、
+       _Noreturn/_Thread_local/_Atomic、完整预处理器（仅 #define 常量宏 + 条件编译）
 ```
 
-这个范围覆盖了 C 语言的核心教学价值（变量、控制流、函数、指针、内存、字符串、类型系统），
-同时保持了编译器实现的可控性（~3500 行代码）。
+这个范围覆盖了 C 语言的核心教学价值（变量、控制流、函数、指针、内存、字符串、类型系统、标准库），
+能让学生刷 LeetCode（95%+ C 解法编译通过）、学习数据结构教材（95%+ 示例代码直接运行）、
+学习 K&R / 谭浩强 C 语言教材（95%+ 示例可直接运行），
+同时保持了编译器实现的可控性。

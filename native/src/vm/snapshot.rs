@@ -92,6 +92,7 @@ pub struct RuntimeSnapshot {
     pub waiting_input: bool,
     pub rand_seed: u32,
     pub vis_event_cache: Vec<VisEvent>,
+    pub ungetc_char: Option<i32>,
 }
 
 #[derive(Clone)]
@@ -113,6 +114,7 @@ impl From<&RuntimeState> for RuntimeSnapshot {
             waiting_input: rt.waiting_input,
             rand_seed: rt.rand_seed,
             vis_event_cache: rt.vis_event_cache.clone(),
+            ungetc_char: rt.ungetc_char,
         }
     }
 }

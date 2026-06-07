@@ -437,8 +437,8 @@ impl Parser {
         let base_type = self.parse_base_type();
 
         let mut ret_type = base_type.clone();
-        if self.match_token(TokenType::Star) {
-            ret_type = Type::pointer_to(base_type.clone());
+        while self.match_token(TokenType::Star) {
+            ret_type = Type::pointer_to(ret_type.clone());
         }
 
         let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
@@ -823,6 +823,21 @@ impl Parser {
             let (pty, pname) = if self.check(TokenType::Comma) || self.check(TokenType::RParen) {
                 // 无名参数（函数原型声明）：int foo(int);
                 (base_type, String::new())
+            } else if self.check(TokenType::Star) {
+                // 前瞻：跳过所有 * 后看是否是 Comma/RParen，以支持 int foo(char *);
+                let lookahead = self.look_ahead_skip_stars();
+                if lookahead < self.tokens.len()
+                    && (self.tokens[lookahead].ty == TokenType::Comma
+                        || self.tokens[lookahead].ty == TokenType::RParen)
+                {
+                    let mut ty = base_type;
+                    while self.match_token(TokenType::Star) {
+                        ty = Type::pointer_to(ty);
+                    }
+                    (ty, String::new())
+                } else {
+                    self.parse_declarator(&base_type)
+                }
             } else {
                 self.parse_declarator(&base_type)
             };

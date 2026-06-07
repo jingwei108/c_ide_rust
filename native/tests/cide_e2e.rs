@@ -199,21 +199,21 @@ const KNOWN_KR_FAILURES: &[&str] = &[
     // kr_4_3/kr_4_4/kr_4_5/kr_4_6 已修复 (作用域隔离 + printf %g 格式支持 + math.h)
     // kr_4_9 已修复 (用户函数 qsort 可遮蔽内置函数)
     // 阶段 3: K&R 第 5-6 章
-    "kr_5_1",
-    "kr_5_2",
+    // kr_5_1 已修复 (添加 ungetc Host Func)
+    // kr_5_2 已修复 (添加 ungetc Host Func)
     "kr_5_8",
-    "kr_5_9",
+    // kr_5_9 已修复 (TypeChecker 支持 (*fp)(args) + BytecodeGen 函数指针解引用不加载内存)
     "kr_5_10",
     // kr_5_11 已修复 (char*[] 指针数组 elem_type_size / 初始化路径)
     // kr_5_13 已修复 (getchar Batch 模式多行输入)
     "kr_5_14",
     "kr_5_16",
     "kr_6_1",
-    "kr_6_2",
-    "kr_6_3",
-    "kr_6_4",
-    "kr_6_5",
-    "kr_6_6",
+    // kr_6_2 已修复 (Parser 指针无名参数 + ungetc)
+    // kr_6_3 已修复 (Parser 指针无名参数 + ungetc)
+    // kr_6_4 已修复 (Parser 指针无名参数 + ungetc)
+    // kr_6_5 已修复 (添加 strdup Host Func)
+    // kr_6_6 已修复 (添加 strdup Host Func)
 ];
 
 /// Known LeetCode failures documented in LEETCODE_FAILURES.md.

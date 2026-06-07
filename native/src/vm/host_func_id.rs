@@ -55,6 +55,8 @@ pub const POW: u32 = 73;
 pub const ATAN: u32 = 74;
 pub const LOG: u32 = 75;
 pub const EXP: u32 = 76;
+pub const STRDUP: u32 = 77;
+pub const UNGETC: u32 = 78;
 
 /// 已由 Bytecode Libc 覆盖的纯计算函数。
 /// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
@@ -128,6 +130,8 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "atan" => Some(ATAN),
         "log" => Some(LOG),
         "exp" => Some(EXP),
+        "strdup" => Some(STRDUP),
+        "ungetc" => Some(UNGETC),
         _ => None,
     }
 }

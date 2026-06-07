@@ -13,3 +13,4 @@ int fwrite(void* ptr, int size, int nmemb, FILE* stream);
 int feof(FILE* stream);
 char* fgets(char* s, int n, FILE* stream);
 int fputs(const char* s, FILE* stream);
+int ungetc(int c, FILE* stream);

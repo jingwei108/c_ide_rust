@@ -167,6 +167,7 @@ pub struct RuntimeState {
     pub waiting_input: bool,
     pub heatmap: ExecutionHeatmap,
     pub input_mode: InputMode,
+    pub ungetc_char: Option<i32>,
 }
 
 impl RuntimeState {

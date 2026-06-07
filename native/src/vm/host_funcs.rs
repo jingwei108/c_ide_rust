@@ -310,6 +310,8 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::ATAN => host_atan(vm, session),
         host_func_id::LOG => host_log(vm, session),
         host_func_id::EXP => host_exp(vm, session),
+        host_func_id::STRDUP => host_strdup(vm, session),
+        host_func_id::UNGETC => host_ungetc(vm, session),
         _ => {}
     }
 }
@@ -624,6 +626,76 @@ pub fn host_strlen(vm: &mut CideVM, _session: &mut Session) {
     vm.push(bytes.len() as u64);
 }
 
+pub fn host_strdup(vm: &mut CideVM, session: &mut Session) {
+    let src = vm.pop() as u32;
+    let src_bytes = read_cbytes(vm, src);
+    let len = src_bytes.len();
+    let size = (len + 1) as i32;
+    if size <= 0 {
+        vm.push(0);
+        return;
+    }
+    let aligned_size = ((size as u32) + 3) & !3;
+    let addr = match session.memory.allocate_raw(aligned_size, vm.get_memory_size()) {
+        Some(a) => a,
+        None => {
+            vm.push(0);
+            return;
+        }
+    };
+    // 清理被新分配重用的 freed_logs
+    let new_end = addr.saturating_add(aligned_size);
+    vm.freed_logs.retain(|log| {
+        let log_end = log.addr.saturating_add(log.size);
+        log_end <= addr || log.addr >= new_end
+    });
+    // 复制字符串内容（含终止符）
+    let mem_size = vm.get_memory_slice().len();
+    if (addr as usize) < mem_size {
+        let max_write = mem_size - addr as usize;
+        let write_len = len.min(max_write.saturating_sub(1));
+        for (i, &b) in src_bytes.iter().enumerate().take(write_len) {
+            vm.store_i8(addr + i as u32, b as i32, &super::instruction::SourceLoc::default());
+        }
+        let end = addr as usize + write_len;
+        if end < mem_size {
+            vm.store_i8(end as u32, 0, &super::instruction::SourceLoc::default());
+        }
+    }
+    // reuse or add region
+    let mut reused = false;
+    for r in &mut session.memory.regions {
+        if r.addr == addr && r.is_freed {
+            r.is_freed = false;
+            r.size = size;
+            reused = true;
+            break;
+        }
+    }
+    if !reused {
+        session.memory.alloc_counter += 1;
+        session.memory.regions.push(MemoryRegion {
+            addr,
+            size,
+            name: format!("heap_{}", session.memory.alloc_counter),
+            ty: "int".to_string(),
+            is_heap: true,
+            is_freed: false,
+            alloc_line: vm.get_current_line(),
+            alloc_by: "strdup".to_string(),
+        });
+    } else {
+        for r in &mut session.memory.regions {
+            if r.addr == addr && !r.is_freed {
+                r.alloc_line = vm.get_current_line();
+                r.alloc_by = "strdup".to_string();
+                break;
+            }
+        }
+    }
+    vm.push(addr as u64);
+}
+
 pub fn host_strcpy(vm: &mut CideVM, session: &mut Session) {
     let dest = vm.pop() as u32;
     let src = vm.pop() as u32;
@@ -695,7 +767,19 @@ impl MemorySlice for CideVM {
 }
 
 
+pub fn host_ungetc(vm: &mut CideVM, session: &mut Session) {
+    let ch = vm.pop() as i32;
+    let _stream = vm.pop() as i32;
+    session.runtime.ungetc_char = Some(ch);
+    vm.push(ch as i64 as u64);
+}
+
 pub fn host_getchar(vm: &mut CideVM, session: &mut Session) {
+    // 先检查 ungetc 缓存
+    if let Some(ch) = session.runtime.ungetc_char.take() {
+        vm.push(ch as i64 as u64);
+        return;
+    }
     // 先检查是否有可用输入
     let has_input = {
         let mut idx = session.runtime.input_index;
