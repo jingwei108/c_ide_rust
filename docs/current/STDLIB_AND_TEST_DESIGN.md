@@ -22,9 +22,9 @@ Cide 已有 300+ 测试用例，但 C 语言极其灵活，即使如此规模的
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│  Layer A: VM Builtin 指令（极少量，性能关键）                │
-│  Memcpy / Memset / Strlen（可选）                           │
-│  → 直接由 executor.rs 原生执行，Rust 实现，带边界检查        │
+│  Layer A: VM Builtin 指令（极少量，性能关键）                 │
+│  Memcpy / Memset / Strlen（可选）                            │
+│  → 直接由 executor.rs 原生执行，Rust 实现，带边界检查          │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer B: Rust Host Function（诊断敏感 + 宿主机能力）        │
 │  malloc/free/realloc, strcpy/strcat（带诊断）, printf/scanf │
@@ -265,5 +265,100 @@ native/tests/bytecode_libc_consistency/
 
 ---
 
-*文档状态：设计草案*
+## 八、当前实现状态：诚实盘点（As-of 2026-06-07）
+
+> 本章节基于实际代码审计，不粉饰完成度。已实现的标注 ✅，骨架存在但未产品化的标注 ⚠️，完全空白的标注 ❌。
+
+### 8.1 已实现（超出预期）
+
+| 组件 | 状态 | 说明 |
+|---|---|---|
+| **Layer B Host Func 扩展** | ✅ | ctype 全家桶（12 个函数）、`abs`、`strncpy`、`memcpy`、`memmove` 已注册；`strcpy` 已注入 **E3070 Buffer Overflow** 诊断；**math.h** `sin`/`cos`/`sqrt`/`pow`/`atan`/`log`/`exp` 已通过 `libm` 注册 |
+| **Layer C Bytecode Libc 骨架** | ⚠️ | ~~`native/tests/bytecode_libc_consistency/src/`~~ → 已迁移至 `native/runtime_libc/src/`，C 源码质量合格；10 个驱动测试持续通过 |
+| **3a Host Contract 测试** | ✅ | `native/tests/host_contract_tests.rs`（~650 行），覆盖 malloc(0)、UAF、Double-Free、strcpy 溢出、printf 边界、**math 函数精度与边界** |
+| **3b Bytecode Self-Consistency** | ✅ | `native/tests/bytecode_libc_consistency.rs`（196 行），Clang vs Cide 自举对比机制已跑通 |
+| **3c Differential Stress** | ✅ | `native/tests/differential_stress.rs`（404 行），Host vs Bytecode 交叉验证已覆盖 ctype/stdlib/string 子集 |
+| **3d Fuzz 压力测试** | ✅ | `native/tests/fuzz_stress_test.rs`（971 行），随机序列 + 安全检测验证 |
+
+### 8.2 未实现（按优先级排序）
+
+#### P0 — 学生直接受影响，必须尽快补齐
+
+| 缺口 | 影响 | 现状 |
+|---|---|---|
+| **1. 数学函数（math.h）** | K&R 4.5（栈计算器）、LeetCode 数值题、学生写 `sin(3.14)` 直接报 `undefined function` | ✅ **已修复（2026-06-07）**。引入 `libm` crate，注册 7 个数学函数 Host Func ID，TypeChecker 通过 `math.h` 存根声明识别，`kr_4_5` 从已知失败移除 |
+| **2. 头文件存根系统（Stub Headers）** | `#include <stdio.h>` 仍被 Lexer 直接跳过（`lexer.rs:641-655`），`size_t`/`FILE*`/`NULL`/`EOF` 没有通过头文件声明加载，全靠编译器硬编码兜底 | ✅ **已修复（2026-06-07）**。Lexer 加载 `runtime_libc/include/{stdio.h,stdlib.h,ctype.h,math.h,string.h}` 存根；`NULL`/`EOF`/`stdin`/`stdout`/`stderr` 预定义宏内置；TypeChecker 逐步替代硬编码（math 函数已完成） |
+
+#### P1 — 架构完整性的关键缺口
+
+| 缺口 | 影响 | 现状 |
+|---|---|---|
+| **3. Bytecode Libc 产品化** | 学生代码调用 `isdigit(c)` 时走的是 **Rust Host Func**，不是 Bytecode Libc 的 C 实现；无法展示"libc 源码"教学价值 | ✅ **已完成（2026-06-07）**。构建期预编译脚本 `scripts/precompile_bytecode_libc.py` + `cide_cli export` 已建立；全局函数表固定索引段（1000~）已实现；ctype 纯计算函数（`isdigit`/`isalpha`/.../`abs`）已切换为 Bytecode 路径；**2026-06-07 追加：`strlen`/`strcmp` 已加入 Bytecode Libc 产品路径**；`bytecode_libc_consistency.rs` 和 `differential_stress.rs` 测试验证通过 |
+| **4. VM Builtin 指令（Layer A）** | `memcpy`/`memset`/`strlen` 仍走 `OpCode::CallHost`，没有专用指令优化 | ⚠️ **实验性骨架已完成（2026-06-07）**。`OpCode::Memcpy`/`Memset`/`Strlen` 已添加至 `opcode.rs`；`executor.rs` 已实现带边界检查的指令语义；7 个单元测试全部通过。暂未接入 codegen，待 profiling 确认瓶颈后启用 |
+
+#### P2 — 文档与长期维护
+
+| 缺口 | 影响 | 现状 |
+|---|---|---|
+| **5. 标准库覆盖矩阵文档** | 无法向学生/教师明确承诺"Cide 支持哪些标准库函数" | ✅ **已完成（2026-06-07）**。已创建 `docs/current/SUPPORTED_LIBC.md`，按头文件分类维护函数级 Layer/类型检查来源/三层验证状态，并记录剩余缺口 |
+
+### 8.3 Bytecode Libc 产品化路径（已打通）
+
+```
+用户代码 isdigit(c)
+    │
+    ▼
+TypeChecker 看到函数名 "isdigit"（头文件存根已声明）
+    │
+    ▼
+host_func_id::by_user_name("isdigit") → None（纯计算函数已切换为 Bytecode）
+    │
+    ▼
+BytecodeGen 查 func_index → 命中固定索引 1000
+    │
+    ▼
+生成 OpCode::Call(1000)
+    │
+    ▼
+VM 执行 Bytecode Libc 的 C 实现 `isdigit()`
+```
+
+**产品路径验证**：`cargo test --test bytecode_libc_consistency` 全绿，
+`differential_stress.rs` Host vs Bytecode 交叉验证全绿，
+Shadow Verification 无新增输出差异。
+
+### 8.4 推荐实施顺序
+
+```
+Round 1（P0 紧急）：✅ 已完成
+  ├─ 引入 libm crate，注册 sin/cos/sqrt/pow/atan/log/exp host func
+  └─ 写 Host Contract 测试验证 math 函数精度
+
+Round 2（P0 紧急）：✅ 已完成
+  ├─ 建立 native/runtime_libc/include/ 存根头文件
+  ├─ 改造 Lexer：#include <ctype.h> / <stdlib.h> / <math.h> 加载存根，而非跳过
+  └─ TypeChecker 中通过头文件声明识别标准库符号（逐步替代硬编码函数名匹配）
+
+Round 3（P1 架构）：✅ 已完成（2026-06-07）
+  ├─ ✅ 构建期预编译脚本 `scripts/precompile_bytecode_libc.py` + `cide_cli export`
+  ├─ ✅ 生成 `native/src/vm/bytecode_libc_data.json` + `bytecode_libc_index.rs`
+  ├─ ✅ 全局函数表固定索引段（1000~1021）+ VM 代码拼接 + Jump 重定位
+  ├─ ✅ 编译器前端：ctype 纯计算函数生成 Call 而非 CallHost
+  ├─ ✅ 全局地址空间预留（BYTECODE_LIBC_GLOBALS_RESERVED = 1024）
+  ├─ ✅ Bytecode Libc Consistency / Differential Stress 测试适配通过
+  └─ ✅ 2026-06-07 追加：`strlen`/`strcmp` 已加入 `BYTECODE_LIBC_PURE_FUNCS`，切换到 Bytecode Libc 产品路径；`is_builtin` 同步更新以支持无 `#include` 调用
+
+Round 4（P1 优化）：⚠️ 实验性骨架已完成（2026-06-07）
+  └─ ✅ `OpCode::Memcpy`/`Memset`/`Strlen` 已添加至 `opcode.rs`（124~126）
+  └─ ✅ `executor.rs` `execute_memory` 已实现原生执行逻辑（带 NULL 指针安全检查与越界截断）
+  └─ ✅ 7 个 Rust 单元测试全部通过（`builtin_tests`：strlen ×3、memset ×2、memcpy ×2）
+  └─ ⏳ 暂未接入 codegen：待 profiling 确认 `CallHost`/`Call` 开销为瓶颈后，再由 BytecodeGen 对 `strlen`/`memcpy`/`memset` 生成 Layer A 指令
+
+Round 5（P2 文档）：✅ 已完成
+  └─ 撰写 `docs/current/SUPPORTED_LIBC.md`，按 `stdio.h`/`stdlib.h`/`ctype.h`/`math.h`/`string.h` 分类维护函数级 Layer/类型检查来源/Host Contract/Bytecode Consistency/Differential 验证状态，并记录 `math.h` 与头文件存根两个已解除缺口
+```
+
+---
+
+*文档状态：设计草案 + 实现状态审计*
 *最后更新：2026-06-07*

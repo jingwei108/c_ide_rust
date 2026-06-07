@@ -71,6 +71,86 @@ docs/                   设计文档、事故报告
 | Phase 26 | Flutter Bridge 通信优化：Stream 模式、差分编码 `StepPayloadDelta`、符号表 dedup | ✅ 完成 |
 | Phase 27 | 数据结构语法拓展 P0+P1：数组退化、`unsigned` 全链路、`const`、`extern`、VLA 全管线 | ✅ 完成 |
 | Phase 28 | CLI 调试工具 `cide_cli`：`compile`/`run`/`step`/`unified`，支持 stdin 管道快速测试 | ✅ 完成 |
+| Phase 29 | Bytecode Libc 产品化：构建期预编译 + 固定索引段 + ctype/abs 走 Bytecode 路径 | ✅ 完成 |
+
+## 测试防线
+
+Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是为了标榜通过率，而是为了诚实地发现自己可能存在的问题*。任何失败必须如实记录，禁止通过修改测试预期值来粉饰数据。
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  防线 5：CI 集成与一致性监控（Phase F）                          │
+│  └─ PR 时自动跑全部防线，*_FAILURES.md 与测试结果交叉验证        │
+├────────────────────────────────────────────────────────────────┤
+│  防线 4：Fuzz 压力测试（Phase E）                                │
+│  └─ 随机内存状态 + 随机标准库调用序列，验证安全检测不泄漏         │
+├────────────────────────────────────────────────────────────────┤
+│  防线 3：三层契约验证（Phase A~C）                               │
+│  ├─ 3a Host Contract：Rust 单元测试直接验证 Host Func 边界行为   │
+│  ├─ 3b Bytecode Self-Consistency：C 源码 → Clang vs Cide 自举   │
+│  └─ 3c Differential Stress：同一功能多实现交叉对比               │
+├────────────────────────────────────────────────────────────────┤
+│  防线 2：K&R + LeetCode 真实程序回归（已有）                      │
+│  └─ 验证"真实世界代码能不能跑"                                   │
+├────────────────────────────────────────────────────────────────┤
+│  防线 1：Shadow Verification 影子验证（已有）                     │
+│  └─ 验证"与 Clang 行为是否一致"                                  │
+└────────────────────────────────────────────────────────────────┘
+```
+
+### 防线 1：Shadow Verification
+
+将同一 C 源码同时交给 **Clang** 与 **Cide** 编译执行，对比 stdout 输出是否完全一致。Golden 只能来自 Clang，不能来自 Cide 自己。
+
+- **覆盖**：281 个 Baseline 用例 + 82 个模板生成用例 + 69 个 K&R 用例 + LeetCode
+- **驱动**：`python native/tests/shadow_verification/shadow_verify.py`
+- **报告**：`native/tests/shadow_verification/reports/`
+
+### 防线 2：K&R + LeetCode 真实程序回归
+
+收集真实教学/竞赛代码作为端到端回归用例，验证"真实世界代码能不能跑"。
+
+- **Baseline**：`native/tests/cases/baseline/`（281 个，全绿）
+- **K&R**：《C程序设计语言》课后习题（69 个，55 绿，14 已知失败）
+- **Template Generated**：算法模板批量生成（82 个，74 绿，8 已知失败）
+- **报告**：`native/tests/TEST_REPORT.md`、`KR_FAILURES.md`、`E2E_FAILURES.md`
+
+### 防线 3：三层契约验证
+
+同一功能可能同时存在 VM Builtin、Rust Host、Bytecode Libc 三种实现，需要独立验证它们之间的一致性。
+
+| 子层 | 目标 | 关键文件 |
+|------|------|----------|
+| **3a Host Contract** | 验证 Layer B Host Func 的边界条件、安全注入（UAF/Double-Free/Buffer Overflow）| `native/tests/host_contract_tests.rs` |
+| **3b Bytecode Self-Consistency** | Cide 编译器 + VM 能否正确编译并运行"自己的标准库" | `native/tests/bytecode_libc_consistency.rs` + `bytecode_libc_consistency/src/*.c` |
+| **3c Differential Stress** | 同一功能的 Host 版与 Bytecode 版交叉验证，结果必须永远一致 | `native/tests/differential_stress.rs` |
+
+- **失败记录**：`HOST_CONTRACT_FAILURES.md`、`BYTECODE_LIBC_FAILURES.md`、`DIFFERENTIAL_FAILURES.md`
+
+### 防线 4：Fuzz 压力测试
+
+使用**确定性 RNG** 生成随机内存状态与随机标准库调用序列，验证安全检测不泄漏、不崩溃。
+
+| 场景 | 覆盖内容 |
+|------|----------|
+| **Fuzz A** | malloc/free/realloc 随机序列 + UAF/Double-Free 检测验证 |
+| **Fuzz B** | strcpy/strcat/strncpy/memcpy/memmove + Buffer Overflow (E3070) |
+| **Fuzz C** | printf/scanf/getchar/putchar 随机格式与输入 |
+| **Fuzz D** | 混合恶意序列（内存/字符串/IO/rand 交叉） |
+| **Fuzz E** | 随机分配 + 部分释放，验证泄漏报告准确性 |
+
+- **驱动**：`cargo test --test fuzz_stress_test`
+- **记录**：`native/tests/FUZZ_FAILURES.md`
+
+### 防线 5：CI 集成与一致性监控
+
+`.github/workflows/ci.yml` 在每次 Push/PR 时自动运行以上全部防线，并执行 `scripts/ci_three_tier_check.py` 进行一致性检查：
+
+- 若 `*_FAILURES.md` 中标记为 `KNOWN_FAILURE` 的测试现在通过了 → **报错提示更新文档**
+- 若测试失败了但文档中没有对应记录 → **报错提示添加记录**
+- 生成 `reports/three_tier_report.md` 作为 CI artifact 上传
+
+---
 
 ## 编码约定
 
@@ -110,9 +190,13 @@ docs/                   设计文档、事故报告
 
 **字符串**：`strlen`、`strcpy`、`strcmp`、`strcat`、`atoi`
 
+**数学**：`sin`/`cos`/`sqrt`/`pow`/`atan`/`log`/`exp`（通过 `libm`，`double` 精度）
+
+**头文件**：`#include <stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 加载存根声明
+
 **其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`#define` 宏（对象宏/参数化宏/嵌套调用）
 
-**明确不支持**：`goto`、bitfield、文件 I/O（沙盒中不支持）、`volatile` / `restrict`、全局 `static`、完整预处理器（仅 `#define` 常量宏）
+**明确不支持**：`goto`、bitfield、文件 I/O（沙盒中不支持）、`volatile` / `restrict`、全局 `static`、完整预处理器（仅 `#define` 常量宏 + `#include` 标准库存根）
 
 ## 已知限制
 
@@ -120,6 +204,7 @@ docs/                   设计文档、事故报告
 - **参数化宏调用后带分号** — 形如 `SWAP(int,x,y);` 的参数化宏调用，若宏体本身已包含大括号 `{ ... }`，展开后形成 `{ ... };`（复合语句 + 空语句），当前 Parser 无法正确解析。workaround：宏调用后不加额外分号，或使用 `do { ... } while(0)` 模式
 - **VLA 边界检查** — VLA 数组索引暂不支持编译期/运行时的 `TrapBounds` 边界检查（`bound_size` 为 0，检查被跳过）
 - **`sizeof(VLA类型)`** — `sizeof(int[n])` 暂不支持，需使用 `sizeof(VLA变量)`（如 `sizeof(a)`）
+- **`#include` 非标准库路径** — 仅支持 `<stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 的存根加载；自定义头文件或 `"header.h"` 形式暂不支持
 
 > 历史特性详情和 Bug 修复记录见 [`CHANGELOG.md`](CHANGELOG.md) 和 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。
 
