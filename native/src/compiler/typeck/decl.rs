@@ -424,7 +424,7 @@ impl TypeChecker {
         }
 
         // Fallback: Bytecode Libc functions are pre-registered at codegen time
-        if let Some((ret_ty, param_types)) = crate::vm::bytecode_libc_index::bytecode_libc_sig(name) {
+        if let Some((ret_ty, param_types)) = crate::vm::bytecode_libc_sig::bytecode_libc_sig(name) {
             if args.len() != param_types.len() {
                 self.report_error(
                     &format!(
