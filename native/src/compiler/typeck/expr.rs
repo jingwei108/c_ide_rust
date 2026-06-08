@@ -326,7 +326,11 @@ impl TypeChecker {
                             }
                         }
                     }
-                    *ty = sym.ty;
+                    *ty = sym.ty.clone();
+                    // Auto-dereference reference types for expression value
+                    if let Type::Reference { base, .. } | Type::RValueRef { base, .. } = &sym.ty {
+                        *ty = *base.clone();
+                    }
                 } else if let Some(sym) = self.funcs.get(name).cloned() {
                     // Function name used as value (function pointer)
                     *ty = Type::function_pointer(sym.return_type, sym.param_types);

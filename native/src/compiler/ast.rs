@@ -450,6 +450,18 @@ impl Type {
     pub fn is_auto(&self) -> bool {
         matches!(self, Type::Auto)
     }
+    pub fn is_reference(&self) -> bool {
+        matches!(self, Type::Reference { .. })
+    }
+    pub fn is_rvalue_ref(&self) -> bool {
+        matches!(self, Type::RValueRef { .. })
+    }
+    pub fn reference_base(&self) -> Option<&Type> {
+        match self {
+            Type::Reference { base, .. } | Type::RValueRef { base, .. } => Some(base),
+            _ => None,
+        }
+    }
 
     /// 递归获取数组的最内层元素类型。对非数组类型返回自身克隆。
     pub fn innermost_element_type(&self) -> Self {

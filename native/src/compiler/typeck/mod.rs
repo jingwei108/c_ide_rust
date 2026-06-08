@@ -851,10 +851,10 @@ impl TypeChecker {
                 return false;
             }
             // Non-reference value binding to reference: check base type compatibility
-            if t_base.as_ref() == value || (*t_const && self.check_scalar_assignable(t_base, value, loc)) {
+            if t_base.as_ref() == value {
                 return true;
             }
-            if t_base.as_ref() == value {
+            if t_base.kind() == value.kind() && matches!(t_base.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
                 return true;
             }
             if let Type::Pointer { pointee: t_pt, .. } = t_base.as_ref() {
@@ -902,6 +902,7 @@ impl TypeChecker {
             Expr::Member { .. } => true,
             Expr::Index { .. } => true,
             Expr::Unary { op: UnaryOp::Deref, .. } => true,
+            Expr::Call { .. } | Expr::CallPtr { .. } => expr.ty().is_reference() || expr.ty().is_rvalue_ref(),
             _ => false,
         }
     }

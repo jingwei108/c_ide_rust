@@ -117,6 +117,16 @@ impl TypeChecker {
                                     ErrorCode::E3004_TypeMismatch,
                                 );
                             } else {
+                                // C++ reference binding lvalue check
+                                if let Type::Reference { is_const, .. } = ety {
+                                    if !*is_const && !self.is_lvalue(init_expr) {
+                                        self.report_error(
+                                            "非 const 引用必须绑定到左值",
+                                            loc,
+                                            ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                        );
+                                    }
+                                }
                                 insert_implicit_cast(init_expr, ety);
                             }
                         }
@@ -371,7 +381,18 @@ impl TypeChecker {
                             ErrorCode::E3038_FuncArgType,
                         );
                     } else {
-                        insert_implicit_cast(arg, expected);
+                        if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                            let arg_loc = *arg.loc();
+                            let old = std::mem::take(arg);
+                            *arg = Expr::Unary {
+                                op: UnaryOp::Addr,
+                                operand: Box::new(old),
+                                loc: arg_loc,
+                                ty: expected.clone(),
+                            };
+                        } else {
+                            insert_implicit_cast(arg, expected);
+                        }
                     }
                 }
             }
@@ -410,7 +431,18 @@ impl TypeChecker {
                             ErrorCode::E3038_FuncArgType,
                         );
                     } else {
-                        insert_implicit_cast(arg, expected);
+                        if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                            let arg_loc = *arg.loc();
+                            let old = std::mem::take(arg);
+                            *arg = Expr::Unary {
+                                op: UnaryOp::Addr,
+                                operand: Box::new(old),
+                                loc: arg_loc,
+                                ty: expected.clone(),
+                            };
+                        } else {
+                            insert_implicit_cast(arg, expected);
+                        }
                     }
                 }
             }

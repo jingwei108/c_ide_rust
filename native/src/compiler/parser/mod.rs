@@ -15,6 +15,8 @@ pub struct ParseError {
 pub(crate) enum DeclaratorNode {
     Base,
     Pointer(Box<DeclaratorNode>),
+    Reference(Box<DeclaratorNode>, bool /* is_const */),
+    RValueRef(Box<DeclaratorNode>),
     Array(Box<DeclaratorNode>, Option<Box<Expr>>),
     Function(Box<DeclaratorNode>, Vec<Param>),
 }
@@ -36,7 +38,7 @@ pub(crate) struct DeclaratorGuard {
 fn node_cross_count(node: &DeclaratorNode) -> i32 {
     match node {
         DeclaratorNode::Base => 0,
-        DeclaratorNode::Pointer(inner) => {
+        DeclaratorNode::Pointer(inner) | DeclaratorNode::Reference(inner, _) | DeclaratorNode::RValueRef(inner) => {
             let add = match inner.as_ref() {
                 DeclaratorNode::Array(_, _) | DeclaratorNode::Function(_, _) => 1,
                 _ => 0,
@@ -402,8 +404,12 @@ impl Parser {
     /// 从当前位置前瞻，跳过连续的 `*` 指针前缀，返回跳过后的 token 索引。
     fn look_ahead_skip_stars(&self) -> usize {
         let mut lookahead = self.pos;
-        while lookahead < self.tokens.len() && self.tokens[lookahead].ty == TokenType::Star {
-            lookahead += 1;
+        while lookahead < self.tokens.len() {
+            match self.tokens[lookahead].ty {
+                TokenType::Star => lookahead += 1,
+                TokenType::Ampersand | TokenType::AndAnd if self.is_cpp_mode => lookahead += 1,
+                _ => break,
+            }
         }
         lookahead
     }
@@ -621,8 +627,10 @@ impl Parser {
                 self.consume(TokenType::LParen, "预期 '('");
                 let params = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
+                let init_list = self.parse_ctor_init_list();
                 let body = if self.check(TokenType::LBrace) {
-                    Some(self.parse_statement())
+                    let block = self.parse_statement();
+                    Self::merge_ctor_init_into_body(init_list, Some(block))
                 } else {
                     self.consume(TokenType::Semicolon, "构造函数声明后预期 ';'");
                     None
@@ -681,8 +689,10 @@ impl Parser {
 
                 if method_name == name && ptr_depth == 0 && matches!(final_ret.kind(), TypeKind::Void | TypeKind::Int) {
                     // 构造函数（简化：与类同名且无返回类型修饰）
+                    let init_list = self.parse_ctor_init_list();
                     let body = if self.check(TokenType::LBrace) {
-                        Some(self.parse_statement())
+                        let block = self.parse_statement();
+                        Self::merge_ctor_init_into_body(init_list, Some(block))
                     } else {
                         self.consume(TokenType::Semicolon, "构造函数声明后预期 ';'");
                         None
@@ -807,6 +817,14 @@ impl Parser {
         let mut ret_type = base_type.clone();
         while self.match_token(TokenType::Star) {
             ret_type = Type::pointer_to(ret_type.clone());
+        }
+        if self.is_cpp_mode {
+            if self.match_token(TokenType::Ampersand) {
+                let is_const = self.match_token(TokenType::Const);
+                ret_type = Type::Reference { base: Box::new(ret_type), is_const };
+            } else if self.match_token(TokenType::AndAnd) {
+                ret_type = Type::RValueRef { base: Box::new(ret_type) };
+            }
         }
 
         let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
@@ -1043,9 +1061,15 @@ impl Parser {
         guard: &mut DeclaratorGuard,
         is_abstract: bool,
     ) -> (DeclaratorNode, Option<String>) {
-        let mut ptr_prefixes = 0;
+        #[derive(Debug, Clone)]
+        enum Prefix {
+            Pointer,
+            Reference(bool), // is_const
+            RValueRef,
+        }
+        let mut prefixes = Vec::new();
         while self.match_token(TokenType::Star) {
-            ptr_prefixes += 1;
+            prefixes.push(Prefix::Pointer);
             if !is_abstract {
                 guard.ptr_count += 1;
             }
@@ -1054,6 +1078,21 @@ impl Parser {
                 || self.match_token(TokenType::Volatile)
                 || self.match_token(TokenType::Restrict)
             {}
+        }
+        if self.is_cpp_mode {
+            while self.match_token(TokenType::Ampersand) {
+                let is_const = self.match_token(TokenType::Const);
+                prefixes.push(Prefix::Reference(is_const));
+                if !is_abstract {
+                    guard.ptr_count += 1;
+                }
+            }
+            while self.match_token(TokenType::AndAnd) {
+                prefixes.push(Prefix::RValueRef);
+                if !is_abstract {
+                    guard.ptr_count += 1;
+                }
+            }
         }
 
         let (name, mut node) = if self.match_token(TokenType::LParen) {
@@ -1126,9 +1165,13 @@ impl Parser {
             }
         }
 
-        // 再应用前缀指针（从外到内，但解释时从内到外）
-        for _ in 0..ptr_prefixes {
-            node = DeclaratorNode::Pointer(Box::new(node));
+        // 再应用前缀（从外到内，但解释时从内到外）
+        for prefix in prefixes {
+            match prefix {
+                Prefix::Pointer => node = DeclaratorNode::Pointer(Box::new(node)),
+                Prefix::Reference(is_const) => node = DeclaratorNode::Reference(Box::new(node), is_const),
+                Prefix::RValueRef => node = DeclaratorNode::RValueRef(Box::new(node)),
+            }
         }
 
         if !is_abstract {
@@ -1163,6 +1206,14 @@ impl Parser {
     fn interpret_declarator_node(node: &DeclaratorNode, base_type: &Type) -> Type {
         match node {
             DeclaratorNode::Base => base_type.clone(),
+            DeclaratorNode::Reference(inner, is_const) => {
+                let inner_ty = Self::interpret_declarator_node(inner, base_type);
+                Type::Reference { base: Box::new(inner_ty), is_const: *is_const }
+            }
+            DeclaratorNode::RValueRef(inner) => {
+                let inner_ty = Self::interpret_declarator_node(inner, base_type);
+                Type::RValueRef { base: Box::new(inner_ty) }
+            }
             DeclaratorNode::Pointer(inner) => {
                 let inner_ty = Self::interpret_declarator_node(inner, base_type);
                 match inner.as_ref() {
@@ -1346,6 +1397,66 @@ impl Parser {
             }
         }
         params
+    }
+
+    /// Parse optional constructor member initializer list: `: field1(expr1), field2(expr2)`
+    fn parse_ctor_init_list(&mut self) -> Vec<(String, Expr)> {
+        let mut init_list = Vec::new();
+        if !self.check(TokenType::Colon) {
+            return init_list;
+        }
+        self.advance(); // consume ':'
+        loop {
+            let field_tok = self.advance();
+            let field_name = field_tok.text.clone();
+            self.consume(TokenType::LParen, "预期 '('");
+            let init_expr = self.parse_expression();
+            self.consume(TokenType::RParen, "预期 ')'");
+            init_list.push((field_name, init_expr));
+            if !self.check(TokenType::Comma) {
+                break;
+            }
+            self.advance(); // consume ','
+        }
+        init_list
+    }
+
+    /// Merge constructor initializer list into the body by prepending
+    /// `this->field = expr;` assignments at the start of the block.
+    fn merge_ctor_init_into_body(init_list: Vec<(String, Expr)>, body: Option<Stmt>) -> Option<Stmt> {
+        if init_list.is_empty() {
+            return body;
+        }
+        match body {
+            Some(Stmt::Block { mut stmts, loc }) => {
+                let mut new_stmts = Vec::new();
+                for (field, expr) in init_list {
+                    let expr_loc = expr.loc().clone();
+                    let assign_expr = Expr::Assign {
+                        op: AssignOp::Assign,
+                        left: Box::new(Expr::Member {
+                            object: Box::new(Expr::This {
+                                loc: expr_loc.clone(),
+                                ty: Type::default(),
+                            }),
+                            member: field,
+                            loc: expr_loc.clone(),
+                            ty: Type::default(),
+                        }),
+                        right: Box::new(expr),
+                        loc: expr_loc.clone(),
+                        ty: Type::default(),
+                    };
+                    new_stmts.push(Stmt::Expr {
+                        expr: assign_expr,
+                        loc: expr_loc,
+                    });
+                }
+                new_stmts.append(&mut stmts);
+                Some(Stmt::Block { stmts: new_stmts, loc })
+            }
+            other => other,
+        }
     }
 
     // =========================================================================

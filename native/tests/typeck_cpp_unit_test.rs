@@ -256,3 +256,64 @@ fn test_try_stmt_typecheck() {
     let has_try_error = errors.iter().any(|e| e.message.contains("异常"));
     assert!(has_try_error, "Expected exception not supported error, got: {:?}", errors);
 }
+
+// ============================================================================
+// Reference Tests (Stage 4)
+// ============================================================================
+
+#[test]
+fn test_cpp_reference_decl() {
+    let src = r#"
+int main() {
+    int x = 10;
+    int& r = x;
+    const int& cr = x;
+    return r;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_reference_bind_lvalue() {
+    let src = r#"
+int main() {
+    int x = 10;
+    int& r = x;
+    r = 20;
+    return x;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_reference_bind_rvalue_error() {
+    let src = r#"
+int main() {
+    int& r = 5;
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    let has_ref_error = errors.iter().any(|e| e.message.contains("左值") || e.code == 4029);
+    assert!(has_ref_error, "Expected lvalue required error, got: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_reference_param() {
+    let src = r#"
+void inc(int& x) {
+    x = x + 1;
+}
+int main() {
+    int a = 5;
+    inc(a);
+    return a;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}

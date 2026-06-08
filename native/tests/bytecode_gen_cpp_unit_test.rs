@@ -730,3 +730,82 @@ int main() {
     assert_eq!(ret, 0);
     assert_eq!(outputs, vec!["321"]);
 }
+
+// ============================================================================
+// Stage 4: Reference Tests
+// ============================================================================
+
+#[test]
+fn test_cpp_reference_auto_deref() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 10;
+    int& r = x;
+    printf("%d\n", r);
+    r = 20;
+    printf("%d\n", r);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["10", "20"]);
+}
+
+#[test]
+fn test_cpp_reference_modify_original() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int x = 10;
+    int& r = x;
+    r = 20;
+    printf("%d\n", x);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["20"]);
+}
+
+#[test]
+fn test_cpp_reference_param() {
+    let src = r#"
+#include <stdio.h>
+void inc(int& x) {
+    x = x + 1;
+}
+int main() {
+    int a = 5;
+    inc(a);
+    printf("%d\n", a);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["6"]);
+}
+
+#[test]
+fn test_cpp_reference_return() {
+    let src = r#"
+#include <stdio.h>
+int g_val = 42;
+int& get_ref() {
+    return g_val;
+}
+int main() {
+    int& r = get_ref();
+    printf("%d\n", r);
+    r = 100;
+    printf("%d\n", g_val);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["42", "100"]);
+}

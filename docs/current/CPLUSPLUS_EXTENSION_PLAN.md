@@ -1,8 +1,8 @@
 # Cide C++14 教学子集拓展实施计划
 
-**版本**: 2.3  
+**版本**: 2.5  
 **日期**: 2026-06-08  
-**状态**: Stage 3 完成（`new[]/delete[]` 元素构造析构 + 逆序析构 + temp slot 扩展至 4 个），57/57 C++ 单元测试全绿，C++ 三 tier 已纳入 CI  
+**状态**: Stage 5 完成（Dogfooding 基础设施：`compile_cpp_bytecode` + `assert_bytecode_equivalent` + `cpp_dogfooding_test.rs`），Stage 6 启动（`vector<int>` Dogfooding 运行一致性验证通过），72/72 C++ 单元测试全绿（含 7 个 Dogfooding 测试），C++ 三 tier 已纳入 CI  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
@@ -1133,7 +1133,7 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 
 ## 十、Dogfooding 与 C++ 容器验证
 
-> **当前状态（2026-06-08）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。C++ 扩展 57/57 单元测试全绿。
+> **当前状态（2026-06-08）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。Stage 4 引用声明与基本语义已完成：`int& r = x` 全链路通过；`T&` 函数参数/返回值支持；引用自动解引用；引用参数隐式取地址；返回引用的函数调用识别为左值。Stage 5 Dogfooding 基础设施已完成：`native/tests/test_utils.rs` 提供 `compile_cpp_bytecode` + `assert_bytecode_equivalent`（Jump/Call 归一化 + diff 输出）；`native/tests/cpp_dogfooding_test.rs` 提供 harness 和工具自验证。Stage 6 `vector<int>` Dogfooding 已启动：C++ 模板类 `vector<int>`（使用 `new[]/delete[]` + 循环复制）编译通过并运行正确，stdout 与 C 基线 `cide_vec_int` 一致（`3\n1\n4\n`）。**构造函数成员初始化列表 `Class() : field(val) {}` 已修复**：Parser 在两个构造函数分支增加 `parse_ctor_init_list()`，降解为 `this->field = expr;` 赋值语句插入 `Block` 开头。C++ 扩展 74/74 单元测试全绿（含 2 个新增初始化列表测试 + 7 个 Dogfooding 测试）。
 
 ### 10.1 Stage 0：验证 BytecodeGen（已完成 ✅）
 
@@ -1161,7 +1161,7 @@ public:
 2. 手写等价的 C 代码（直接调用 `cide_vec_*`）→ 生成字节码 B
 3. 对比 A ≡ B（逐指令一致）→ 证明 BytecodeGen 正确
 
-### 10.2 Stage 1：Dogfooding 验证（下一步，Go/No-Go 检查点已就绪）
+### 10.2 Stage 1：Dogfooding 验证（进行中 🔄）
 
 当 Cide C++ 编译器成熟后，用 Cide C++ 子集写**不依赖 C 容器函数**的纯 C++ 容器：
 

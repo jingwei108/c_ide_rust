@@ -397,3 +397,95 @@ int main() {
         panic!("Expected Block");
     }
 }
+
+#[test]
+fn test_parser_cpp_ctor_init_list() {
+    let src = r#"
+class Point {
+public:
+    int x;
+    int y;
+    Point() : x(10), y(20) {}
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let class = &program.classes[0];
+    assert_eq!(class.members.len(), 3);
+    match &class.members[2] {
+        ClassMember::Constructor { body, .. } => {
+            assert!(body.is_some());
+            if let Stmt::Block { stmts, .. } = body.as_ref().unwrap() {
+                // Init list should produce two Expr::Assign statements before the body content.
+                assert!(
+                    stmts.len() >= 2,
+                    "Expected at least 2 statements (init list), got {}",
+                    stmts.len()
+                );
+                // First statement should be this->x = 10
+                if let Stmt::Expr { expr, .. } = &stmts[0] {
+                    if let Expr::Assign { left, .. } = expr {
+                        if let Expr::Member { member, .. } = left.as_ref() {
+                            assert_eq!(member, "x", "First init should be x");
+                        } else {
+                            panic!("Expected Member access on this");
+                        }
+                    } else {
+                        panic!("Expected Assign expr, got {:?}", expr);
+                    }
+                } else {
+                    panic!("Expected Expr statement");
+                }
+                // Second statement should be this->y = 20
+                if let Stmt::Expr { expr, .. } = &stmts[1] {
+                    if let Expr::Assign { left, .. } = expr {
+                        if let Expr::Member { member, .. } = left.as_ref() {
+                            assert_eq!(member, "y", "Second init should be y");
+                        } else {
+                            panic!("Expected Member access on this");
+                        }
+                    } else {
+                        panic!("Expected Assign expr, got {:?}", expr);
+                    }
+                } else {
+                    panic!("Expected Expr statement");
+                }
+            } else {
+                panic!("Expected Block body");
+            }
+        }
+        _ => panic!("Expected Constructor, got {:?}", class.members[2]),
+    }
+}
+
+#[test]
+fn test_parser_cpp_ctor_init_list_with_body() {
+    let src = r#"
+class Rect {
+public:
+    int w;
+    int h;
+    Rect(int a, int b) : w(a), h(b) {
+        int area = w * h;
+    }
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let class = &program.classes[0];
+    match &class.members[2] {
+        ClassMember::Constructor { body, .. } => {
+            if let Stmt::Block { stmts, .. } = body.as_ref().unwrap() {
+                // Init list (2 assignments) + body content (1 VarDecl)
+                assert_eq!(stmts.len(), 3, "Expected 3 statements: 2 init + 1 body");
+            } else {
+                panic!("Expected Block body");
+            }
+        }
+        _ => panic!("Expected Constructor"),
+    }
+}

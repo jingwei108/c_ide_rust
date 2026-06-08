@@ -59,6 +59,21 @@ impl ExprGen for BytecodeGen {
                     self.emit(OpCode::PushConst, idx, &loc);
                     return;
                 }
+                // C++ reference auto-dereference
+                let base_ty = self.local_types.get(name)
+                    .or_else(|| self.global_types.get(name))
+                    .or_else(|| self.static_local_types.get(name))
+                    .and_then(|t| t.reference_base().cloned());
+                if base_ty.is_some() {
+                    self.gen_addr(expr, &loc);
+                    match base_ty.unwrap().kind() {
+                        TypeKind::Char => self.emit(OpCode::LoadMemByte, 0, &loc),
+                        TypeKind::Double => self.emit(OpCode::LoadMemD, 0, &loc),
+                        TypeKind::LongLong => self.emit(OpCode::LoadMemQ, 0, &loc),
+                        _ => self.emit(OpCode::LoadMem, 0, &loc),
+                    }
+                    return;
+                }
                 // static local variable
                 if let Some(&static_offset) = self.static_local_indices.get(name) {
                     if let Some(ty) = self.static_local_types.get(name) {
@@ -1244,10 +1259,22 @@ impl ExprGen for BytecodeGen {
         match expr {
             Expr::Identifier { name, .. } => {
                 if let Some(&offset) = self.local_indices.get(name) {
+                    if let Some(ty) = self.local_types.get(name) {
+                        if ty.is_reference() || ty.is_rvalue_ref() {
+                            self.emit(OpCode::LoadLocal, offset, loc);
+                            return;
+                        }
+                    }
                     self.emit(OpCode::GetFrameBase, 0, loc);
                     self.emit(OpCode::PushConst, offset, loc);
                     self.emit(OpCode::Add, 0, loc);
                 } else if let Some(&offset) = self.global_indices.get(name) {
+                    if let Some(ty) = self.global_types.get(name) {
+                        if ty.is_reference() || ty.is_rvalue_ref() {
+                            self.emit(OpCode::LoadGlobal, offset, loc);
+                            return;
+                        }
+                    }
                     self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, loc);
                 } else {
                     self.report_error("未声明的变量", loc);
@@ -1266,8 +1293,8 @@ impl ExprGen for BytecodeGen {
             } => {
                 self.gen_expr(operand);
             }
-            Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } if ty.is_struct() => {
-                // 函数按值返回结构体，gen_expr 已在栈顶留下临时缓冲区地址
+            Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } if ty.is_struct() || ty.is_reference() || ty.is_rvalue_ref() => {
+                // 函数按值返回结构体 / 返回引用，gen_expr 已在栈顶留下地址
                 self.gen_expr(expr);
             }
             Expr::Lambda { .. } => {
@@ -1426,6 +1453,108 @@ impl ExprGen for BytecodeGen {
         };
 
         if let Expr::Identifier { name, .. } = left {
+            let is_ref = self.local_types.get(name).map(|t| t.is_reference() || t.is_rvalue_ref()).unwrap_or(false)
+                || self.global_types.get(name).map(|t| t.is_reference() || t.is_rvalue_ref()).unwrap_or(false)
+                || self.static_local_types.get(name).map(|t| t.is_reference() || t.is_rvalue_ref()).unwrap_or(false);
+            if is_ref {
+                let base_ty = self.local_types.get(name)
+                    .or_else(|| self.global_types.get(name))
+                    .or_else(|| self.static_local_types.get(name))
+                    .and_then(|t| t.reference_base().cloned())
+                    .unwrap_or(Type::int());
+                let base_is_double = base_ty.kind() == TypeKind::Double;
+                let base_is_float = base_ty.kind() == TypeKind::Float;
+                let base_is_long_long = base_ty.kind() == TypeKind::LongLong;
+                let base_is_fp = base_is_double || base_is_float;
+                self.gen_addr(left, loc);
+                if *op != AssignOp::Assign {
+                    self.emit(OpCode::Dup, 0, loc);
+                    match base_ty.kind() {
+                        TypeKind::Char => self.emit(OpCode::LoadMemByte, 0, loc),
+                        TypeKind::Double => self.emit(OpCode::LoadMemD, 0, loc),
+                        TypeKind::LongLong => self.emit(OpCode::LoadMemQ, 0, loc),
+                        _ => self.emit(OpCode::LoadMem, 0, loc),
+                    }
+                    self.emit(OpCode::Swap, 0, loc);
+                    let addr_temp = self.get_temp_slot(0);
+                    self.emit(OpCode::StoreLocal, addr_temp, loc);
+                    self.gen_expr_with_cast(right, base_is_fp, base_is_double, loc);
+                    match op {
+                        AssignOp::AddAssign => {
+                            if base_is_double { self.emit(OpCode::AddD, 0, loc); }
+                            else if base_is_float { self.emit(OpCode::AddF, 0, loc); }
+                            else if base_ty.is_unsigned() { self.emit(OpCode::UAdd, 0, loc); }
+                            else { self.emit(OpCode::Add, 0, loc); }
+                        }
+                        AssignOp::SubAssign => {
+                            if base_is_double { self.emit(OpCode::SubD, 0, loc); }
+                            else if base_is_float { self.emit(OpCode::SubF, 0, loc); }
+                            else if base_ty.is_unsigned() { self.emit(OpCode::USub, 0, loc); }
+                            else { self.emit(OpCode::Sub, 0, loc); }
+                        }
+                        AssignOp::MulAssign => {
+                            if base_is_double { self.emit(OpCode::MulD, 0, loc); }
+                            else if base_is_float { self.emit(OpCode::MulF, 0, loc); }
+                            else if base_ty.is_unsigned() { self.emit(OpCode::UMul, 0, loc); }
+                            else { self.emit(OpCode::Mul, 0, loc); }
+                        }
+                        AssignOp::DivAssign => {
+                            if base_is_double { self.emit(OpCode::DivD, 0, loc); }
+                            else if base_is_float { self.emit(OpCode::DivF, 0, loc); }
+                            else if base_ty.is_unsigned() { self.emit(OpCode::UDiv, 0, loc); }
+                            else { self.emit(OpCode::Div, 0, loc); }
+                        }
+                        AssignOp::ModAssign => {
+                            if base_is_long_long { self.emit(OpCode::ModQ, 0, loc); }
+                            else if base_ty.is_unsigned() { self.emit(OpCode::UMod, 0, loc); }
+                            else { self.emit(OpCode::Mod, 0, loc); }
+                        }
+                        AssignOp::AndAssign => { self.emit(OpCode::BitAnd, 0, loc); }
+                        AssignOp::OrAssign => { self.emit(OpCode::BitOr, 0, loc); }
+                        AssignOp::XorAssign => { self.emit(OpCode::BitXor, 0, loc); }
+                        AssignOp::ShlAssign => { self.emit(OpCode::Shl, 0, loc); }
+                        AssignOp::ShrAssign => {
+                            if base_ty.is_unsigned() { self.emit(OpCode::LShr, 0, loc); }
+                            else { self.emit(OpCode::Shr, 0, loc); }
+                        }
+                        _ => {}
+                    }
+                    self.emit(OpCode::LoadLocal, addr_temp, loc);
+                    self.emit(OpCode::Swap, 0, loc);
+                    match base_ty.kind() {
+                        TypeKind::Char => self.emit(OpCode::StoreMemByte, 0, loc),
+                        TypeKind::Double => self.emit(OpCode::StoreMemD, 0, loc),
+                        TypeKind::LongLong => self.emit(OpCode::StoreMemQ, 0, loc),
+                        _ => self.emit(OpCode::StoreMem, 0, loc),
+                    }
+                    self.emit(OpCode::LoadLocal, addr_temp, loc);
+                    match base_ty.kind() {
+                        TypeKind::Char => self.emit(OpCode::LoadMemByte, 0, loc),
+                        TypeKind::Double => self.emit(OpCode::LoadMemD, 0, loc),
+                        TypeKind::LongLong => self.emit(OpCode::LoadMemQ, 0, loc),
+                        _ => self.emit(OpCode::LoadMem, 0, loc),
+                    }
+                } else {
+                    self.emit(OpCode::Dup, 0, loc);
+                    let addr_temp = self.get_temp_slot(0);
+                    self.emit(OpCode::StoreLocal, addr_temp, loc);
+                    self.gen_expr_with_cast(right, base_is_fp, base_is_double, loc);
+                    match base_ty.kind() {
+                        TypeKind::Char => self.emit(OpCode::StoreMemByte, 0, loc),
+                        TypeKind::Double => self.emit(OpCode::StoreMemD, 0, loc),
+                        TypeKind::LongLong => self.emit(OpCode::StoreMemQ, 0, loc),
+                        _ => self.emit(OpCode::StoreMem, 0, loc),
+                    }
+                    self.emit(OpCode::LoadLocal, addr_temp, loc);
+                    match base_ty.kind() {
+                        TypeKind::Char => self.emit(OpCode::LoadMemByte, 0, loc),
+                        TypeKind::Double => self.emit(OpCode::LoadMemD, 0, loc),
+                        TypeKind::LongLong => self.emit(OpCode::LoadMemQ, 0, loc),
+                        _ => self.emit(OpCode::LoadMem, 0, loc),
+                    }
+                }
+                return;
+            }
             if let Some(&static_offset) = self.static_local_indices.get(name) {
                 if *op != AssignOp::Assign {
                     if left_is_double {

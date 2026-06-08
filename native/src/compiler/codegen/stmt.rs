@@ -498,6 +498,10 @@ impl StmtGen for BytecodeGen {
                                     self.emit(OpCode::StoreMemByte, 0, loc);
                                 }
                             }
+                        } else if vty.is_reference() || vty.is_rvalue_ref() {
+                            // C++ reference initialization: store address of initializer
+                            self.gen_addr(e, loc);
+                            self.emit(OpCode::StoreLocal, local_offset, loc);
                         } else {
                             self.gen_expr(e);
                             if vty.kind() == TypeKind::Float
@@ -710,20 +714,29 @@ impl StmtGen for BytecodeGen {
                         }
                         self.emit(OpCode::RetVoid, 0, loc);
                     } else {
-                        self.gen_expr(v);
-                        let ret_is_float = self
+                        let ret_is_ref = self
                             .func_table
                             .get(&self.current_func)
-                            .map(|m| {
-                                m.return_type.kind() == TypeKind::Float || m.return_type.kind() == TypeKind::Double
-                            })
+                            .map(|m| m.return_type.is_reference() || m.return_type.is_rvalue_ref())
                             .unwrap_or(false);
-                        if ret_is_float && v.ty().kind() != TypeKind::Float && v.ty().kind() != TypeKind::Double {
-                            self.emit(OpCode::CastI2F, 0, loc);
-                        } else if !ret_is_float
-                            && (v.ty().kind() == TypeKind::Float || v.ty().kind() == TypeKind::Double)
-                        {
-                            self.emit(OpCode::CastF2I, 0, loc);
+                        if ret_is_ref {
+                            self.gen_addr(v, loc);
+                        } else {
+                            self.gen_expr(v);
+                            let ret_is_float = self
+                                .func_table
+                                .get(&self.current_func)
+                                .map(|m| {
+                                    m.return_type.kind() == TypeKind::Float || m.return_type.kind() == TypeKind::Double
+                                })
+                                .unwrap_or(false);
+                            if ret_is_float && v.ty().kind() != TypeKind::Float && v.ty().kind() != TypeKind::Double {
+                                self.emit(OpCode::CastI2F, 0, loc);
+                            } else if !ret_is_float
+                                && (v.ty().kind() == TypeKind::Float || v.ty().kind() == TypeKind::Double)
+                            {
+                                self.emit(OpCode::CastF2I, 0, loc);
+                            }
                         }
                         // C++ 栈对象 RAII：return 前按 LIFO 调用所有活跃 scope 的析构函数
                         self.emit_dtors_for_scope_exit(0, loc);

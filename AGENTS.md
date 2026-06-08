@@ -79,6 +79,7 @@ docs/                   设计文档、事故报告
 | Phase 34 | C++ 扩展 Stage 0.5：容器收口（list<int>/vector<char>/sort_int）、C++ 三 tier 纳入 CI、CPP_FAILURES.md | ✅ 完成 |
 | Phase 35 | C++ 扩展 Stage 2：栈对象 RAII（默认构造函数自动调用 / scope exit / return / break / continue 自动析构） | ✅ 完成 |
 | Phase 36 | C++ 扩展 Stage 3：`new[]/delete[]` 元素构造析构（base[-4] 存 count、逆序 dtor、temp slot 扩展至 4 个） | ✅ 完成 |
+| Phase 37 | C++ 扩展 Stage 4：引用声明与基本语义（`int& r = x` 全链路；`T&` 参数/返回值；引用自动解引用；隐式取地址；返回引用左值识别） | ✅ 完成 |
 
 ## 测试防线
 

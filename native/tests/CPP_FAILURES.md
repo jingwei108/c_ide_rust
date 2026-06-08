@@ -5,12 +5,14 @@
 
 ## 当前状态
 
-截至 Stage 3（`new[]/delete[]` 元素构造析构）完成：
+截至 Stage 5（Dogfooding 基础设施）完成：
 
 - `parser_cpp_unit_test.rs`: 15/15 通过
-- `typeck_cpp_unit_test.rs`: 13/13 通过
-- `bytecode_gen_cpp_unit_test.rs`: 29/29 通过
-- **C++ 扩展合计: 57/57 通过**
+- `parser_cpp_unit_test.rs`: 17/17 通过（含 2 个新增初始化列表测试）
+- `typeck_cpp_unit_test.rs`: 17/17 通过（含 Stage 4 引用 4 个）
+- `bytecode_gen_cpp_unit_test.rs`: 33/33 通过（含 Stage 4 引用 4 个）
+- `cpp_dogfooding_test.rs`: 7/7 通过（Stage 5 基础设施自验证 + Stage 6 `vector<int>` 首个 Dogfooding）
+- **C++ 扩展合计: 74/74 通过**
 
 **当前无已知失败。**
 
@@ -32,7 +34,16 @@
 
 无。
 
+## Dogfooding 过程中发现的语言子集边界
+
+- ~~**构造函数成员初始化列表 `Class() : field(val) {}` 暂不支持**~~ → **已修复（2026-06-08）**
+  - Parser 在两个构造函数分支（无返回类型 + 有返回类型）的 `RParen` 后增加 `parse_ctor_init_list()`
+  - 初始化列表被降解为构造函数体内 `this->field = expr;` 赋值语句，插入到 `Block` 开头
+  - 新增白盒测试 `test_parser_cpp_ctor_init_list`、`test_parser_cpp_ctor_init_list_with_body`
+  - Dogfooding `vector<int>` 已恢复为标准初始化列表写法
+
 ## 待观察项
 
 - `list_int` 无 `clear` 方法（C 实现未提供，不影响当前测试）
 - `sort_int` 为自由函数，非容器方法，不经过 `cpp_container.rs` 降级路径
+- C++ `vector<int>` 与 C `cide_vec_int` 的 `push_back` 字节码差异：C++ 版使用 `new[]/delete[]` + 循环复制，C 版使用 `realloc`。算法差异导致字节码不一致，但这属于实现方式不同而非编译器缺陷。以运行 stdout 一致性为首要验收标准。
