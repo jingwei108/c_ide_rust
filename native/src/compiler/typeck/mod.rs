@@ -80,6 +80,8 @@ pub struct TypeChecker {
     current_class: Option<String>,
     /// Template instantiations discovered during type checking; appended to program.funcs at the end.
     pending_instantiations: Vec<(String, FuncDecl)>,
+    /// Class template instantiations discovered during type checking; appended to program.classes at the end.
+    pending_class_instantiations: Vec<(String, ClassDecl)>,
     /// Lambdas discovered during type checking; lifted to ClassDecl + FuncDecl at the end.
     pending_lambdas: Vec<LambdaInfo>,
 }
@@ -385,6 +387,13 @@ impl TypeChecker {
             if f.body.is_some() {
                 self.visit_func_decl(f);
             }
+        }
+
+        // Drain class template instantiations discovered during Pass 3
+        // so Pass 3.5 can check their methods.
+        let pending_classes: Vec<_> = self.pending_class_instantiations.drain(..).collect();
+        for (name, c) in pending_classes {
+            program.classes.push(c);
         }
 
         // Pass 3.5: Check class method / constructor / destructor bodies

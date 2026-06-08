@@ -55,6 +55,13 @@ impl BytecodeGen {
             } else {
                 self.emit(OpCode::LoadLocal, ptr_temp, loc);
             }
+        } else {
+            // Non-class type: if init is present, store it directly
+            if let Some(init_expr) = init {
+                self.emit(OpCode::Dup, 0, loc);
+                self.gen_expr(init_expr);
+                self.emit(OpCode::StoreMem, 0, loc);
+            }
         }
     }
 

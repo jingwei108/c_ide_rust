@@ -251,6 +251,104 @@ int main() {
 }
 
 #[test]
+fn test_cpp_class_template_box_int() {
+    let src = r#"
+#include <stdio.h>
+template <class T> class Box {
+public:
+    T value;
+};
+int main() {
+    Box<int> b;
+    b.value = 42;
+    printf("%d\n", b.value);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["42"]);
+}
+
+#[test]
+fn test_cpp_class_template_adder_int() {
+    let src = r#"
+#include <stdio.h>
+template <class T> class Adder {
+public:
+    T add(T a, T b) { return a + b; }
+};
+int main() {
+    Adder<int> a;
+    printf("%d\n", a.add(3, 4));
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["7"]);
+}
+
+#[test]
+fn test_cpp_class_template_wrapper_int_new() {
+    let src = r#"
+#include <stdio.h>
+template <class T> class Wrapper {
+public:
+    T v;
+    Wrapper(T x) { v = x; }
+};
+int main() {
+    Wrapper<int>* w = new Wrapper<int>(10);
+    printf("%d\n", w->v);
+    delete w;
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["10"]);
+}
+
+#[test]
+fn test_cpp_class_template_ptr_int() {
+    let src = r#"
+#include <stdio.h>
+template <class T> class Ptr {
+public:
+    T* p;
+};
+int main() {
+    Ptr<int> ptr;
+    ptr.p = new int;
+    *ptr.p = 5;
+    printf("%d\n", *ptr.p);
+    delete ptr.p;
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["5"]);
+}
+
+#[test]
+fn test_cpp_new_int_with_init() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int* p = new int(5);
+    printf("%d\n", *p);
+    delete p;
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["5"]);
+}
+
+#[test]
 fn test_cpp_container_vec_int() {
     let src = r#"
 #include <stdio.h>
@@ -327,6 +425,72 @@ fn test_cpp_builtin_layout_from_toml() {
     assert!(method_names.contains(&"push_back"), "cide_vec_int should have push_back method");
     assert!(method_names.contains(&"size"), "cide_vec_int should have size method");
     assert!(method_names.contains(&"get"), "cide_vec_int should have get method");
+}
+
+#[test]
+fn test_cpp_container_vec_char() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    cide_vec_char v;
+    cide_vec_init_char(&v);
+    cide_vec_push_char(&v, 'a');
+    cide_vec_push_char(&v, 'b');
+    printf("%d\n", cide_vec_size_char(&v));
+    printf("%c\n", cide_vec_get_char(&v, 0));
+    printf("%c\n", cide_vec_get_char(&v, 1));
+    cide_vec_pop_char(&v);
+    printf("%d\n", cide_vec_size_char(&v));
+    cide_vec_destroy_char(&v);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["2", "a", "b", "1"]);
+}
+
+#[test]
+fn test_cpp_container_list_int() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    cide_list_int l;
+    cide_list_init_int(&l);
+    cide_list_push_back_int(&l, 1);
+    cide_list_push_back_int(&l, 2);
+    cide_list_push_front_int(&l, 0);
+    printf("%d\n", cide_list_size_int(&l));
+    printf("%d\n", cide_list_get_int(&l, 0));
+    printf("%d\n", cide_list_get_int(&l, 1));
+    printf("%d\n", cide_list_get_int(&l, 2));
+    cide_list_pop_back_int(&l);
+    printf("%d\n", cide_list_size_int(&l));
+    cide_list_destroy_int(&l);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["3", "0", "1", "2", "2"]);
+}
+
+#[test]
+fn test_cpp_sort_int() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[] = {5, 2, 8, 1, 9};
+    cide_sort_int(arr, 5);
+    for (int i = 0; i < 5; i++) {
+        printf("%d\n", arr[i]);
+    }
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["1", "2", "5", "8", "9"]);
 }
 
 #[test]

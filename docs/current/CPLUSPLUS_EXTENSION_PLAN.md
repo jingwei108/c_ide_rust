@@ -1296,7 +1296,7 @@ cide_cli compile hello.cpp --show-ast       # 显示 C++ AST
 
 ### B. 类型映射表完整版
 
-详见 `native/src/compiler/cpp_frontend/type_map.rs`（待实现）。
+详见 `native/src/compiler/cpp_frontend/type_map.rs`（已实现，覆盖 vector<int/float/char>、list<int>、string）。
 
 ### C. 相关文档
 

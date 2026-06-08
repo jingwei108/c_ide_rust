@@ -531,7 +531,9 @@ impl StmtGen for BytecodeGen {
                         }
                     } else {
                         // Zero-initialize
-                        if sz == 8 && vty.kind() == TypeKind::Double {
+                        if sz == 0 {
+                            // Nothing to do for zero-size types
+                        } else if sz == 8 && vty.kind() == TypeKind::Double {
                             self.emit(OpCode::PushConst, 0, loc);
                             self.emit(OpCode::CastI2D, 0, loc);
                             self.emit(OpCode::StoreLocalD, local_offset, loc);

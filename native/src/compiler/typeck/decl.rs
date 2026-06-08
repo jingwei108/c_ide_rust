@@ -70,6 +70,8 @@ impl TypeChecker {
                         *var_type = Type::int();
                     }
                 }
+                // Class template instantiation
+                *var_type = self.resolve_template_id(var_type, loc);
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         self.check_array_initializer(var_type, init_expr, loc);
@@ -100,6 +102,7 @@ impl TypeChecker {
                 }
                 self.declare_var(name, var_type, false, false, *is_static);
                 for (ety, ename, einit) in extra_vars.iter_mut() {
+                    *ety = self.resolve_template_id(ety, loc);
                     if let Some(ref mut init_expr) = einit {
                         if ety.is_array() {
                             self.check_array_initializer(ety, init_expr, loc);

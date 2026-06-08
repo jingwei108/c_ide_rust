@@ -219,6 +219,110 @@ impl TypeChecker {
         }
     }
 
+    /// 若类型（含嵌套）为 TemplateId，触发类模板实例化并返回对应的 Class 类型；否则返回原类型。
+    pub(crate) fn resolve_template_id(&mut self, ty: &Type, loc: &SourceLoc) -> Type {
+        match ty.clone() {
+            Type::TemplateId { base, args, .. } => {
+                if let Some((mangled, new_class)) = self.try_monomorphize_class(&base, &args) {
+                    self.pending_class_instantiations.push((mangled.clone(), new_class));
+                    Type::Class { name: mangled, is_const: false }
+                } else if !self.templates.contains_key(&base) {
+                    self.report_error(
+                        &format!("未知模板类 '{}'", base),
+                        loc,
+                        ErrorCode::E3023_UndeclaredVar,
+                    );
+                    Type::int()
+                } else {
+                    let mangled = format!("{}__{}", base, args.iter().map(|a| a.mangle_name()).collect::<Vec<_>>().join("__"));
+                    Type::Class { name: mangled, is_const: false }
+                }
+            }
+            Type::Pointer { pointee, is_const } => {
+                let new_pointee = self.resolve_template_id(&pointee, loc);
+                Type::Pointer { pointee: Box::new(new_pointee), is_const }
+            }
+            Type::Array { element, array_size, dims, is_const, is_vla, vla_dims } => {
+                let new_element = self.resolve_template_id(&element, loc);
+                Type::Array { element: Box::new(new_element), array_size, dims, is_const, is_vla, vla_dims }
+            }
+            Type::Reference { base: inner, is_const } => {
+                let new_inner = self.resolve_template_id(&inner, loc);
+                Type::Reference { base: Box::new(new_inner), is_const }
+            }
+            Type::RValueRef { base: inner } => {
+                let new_inner = self.resolve_template_id(&inner, loc);
+                Type::RValueRef { base: Box::new(new_inner) }
+            }
+            _ => ty.clone(),
+        }
+    }
+
+    /// 尝试实例化类模板。返回 (mangled_name, ClassDecl) 若成功。
+    pub(crate) fn try_monomorphize_class(&mut self, base: &str, args: &[Type]) -> Option<(String, ClassDecl)> {
+        let template = self.templates.get(base)?.clone();
+        let class_decl = match &template.decl {
+            Templateable::Class(c) => c.as_ref(),
+            _ => return None,
+        };
+
+        if template.params.is_empty() || template.params.len() != args.len() {
+            return None;
+        }
+
+        let mut type_map: HashMap<String, Type> = HashMap::new();
+        for (tp, arg) in template.params.iter().zip(args.iter()) {
+            type_map.insert(tp.name.clone(), arg.clone());
+        }
+
+        let mangled = Self::mangle_template_name(base, args);
+        if self.classes.contains_key(&mangled) || self.structs.contains_key(&mangled) {
+            return None; // Already instantiated
+        }
+
+        let mut new_class = class_decl.clone();
+        new_class.name = mangled.clone();
+        self.replace_template_types_in_class(&mut new_class, &type_map);
+
+        // Register layout immediately so Pass 3 can resolve members
+        self.register_single_class_layout(&mangled, &new_class);
+
+        Some((mangled, new_class))
+    }
+
+    fn replace_template_types_in_class(&self, class: &mut ClassDecl, type_map: &HashMap<String, Type>) {
+        // Replace types in base class name? For now, base is not a template param in our subset
+        for member in &mut class.members {
+            match member {
+                ClassMember::Field { ty, .. } => {
+                    *ty = Self::replace_template_type(ty, type_map);
+                }
+                ClassMember::Method { ret, params, body, .. } => {
+                    *ret = Self::replace_template_type(ret, type_map);
+                    for p in params.iter_mut() {
+                        p.ty = Self::replace_template_type(&p.ty, type_map);
+                    }
+                    if let Some(ref mut b) = body {
+                        self.replace_template_types_in_stmt(b, type_map);
+                    }
+                }
+                ClassMember::Constructor { params, body, .. } => {
+                    for p in params.iter_mut() {
+                        p.ty = Self::replace_template_type(&p.ty, type_map);
+                    }
+                    if let Some(ref mut b) = body {
+                        self.replace_template_types_in_stmt(b, type_map);
+                    }
+                }
+                ClassMember::Destructor { body, .. } => {
+                    if let Some(ref mut b) = body {
+                        self.replace_template_types_in_stmt(b, type_map);
+                    }
+                }
+            }
+        }
+    }
+
     fn replace_template_types_in_expr(&self, expr: &mut Expr, type_map: &HashMap<String, Type>) {
         match expr {
             Expr::Binary { left, right, .. } => {

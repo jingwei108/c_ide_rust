@@ -312,6 +312,70 @@ int main() {
 }
 
 #[test]
+fn test_parser_template_id_type() {
+    let src = r#"
+template <typename T> class vector { public: T* data; };
+int main() {
+    vector<int> v;
+    return 0;
+}
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let body = program.funcs[0].body.as_ref().unwrap();
+    if let Stmt::Block { stmts, .. } = body {
+        if let Stmt::VarDecl { var_type, .. } = &stmts[0] {
+            if let cide_native::compiler::ast::Type::TemplateId { base, args, .. } = var_type {
+                assert_eq!(base, "vector");
+                assert_eq!(args.len(), 1);
+                assert!(matches!(args[0], cide_native::compiler::ast::Type::Int { .. }));
+            } else {
+                panic!("Expected TemplateId, got {:?}", var_type);
+            }
+        } else {
+            panic!("Expected VarDecl");
+        }
+    } else {
+        panic!("Expected Block");
+    }
+}
+
+#[test]
+fn test_parser_template_id_nested_pointer() {
+    let src = r#"
+template <typename T> class vector { public: T* data; };
+int main() {
+    vector<int>* p;
+    return 0;
+}
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let body = program.funcs[0].body.as_ref().unwrap();
+    if let Stmt::Block { stmts, .. } = body {
+        if let Stmt::VarDecl { var_type, .. } = &stmts[0] {
+            if let cide_native::compiler::ast::Type::Pointer { pointee, .. } = var_type {
+                if let cide_native::compiler::ast::Type::TemplateId { base, args, .. } = pointee.as_ref() {
+                    assert_eq!(base, "vector");
+                    assert_eq!(args.len(), 1);
+                    assert!(matches!(args[0], cide_native::compiler::ast::Type::Int { .. }));
+                } else {
+                    panic!("Expected Pointer<TemplateId>, got {:?}", pointee);
+                }
+            } else {
+                panic!("Expected Pointer, got {:?}", var_type);
+            }
+        } else {
+            panic!("Expected VarDecl");
+        }
+    } else {
+        panic!("Expected Block");
+    }
+}
+
+#[test]
 fn test_parser_cpp_lambda() {
     let src = r#"
 int main() {

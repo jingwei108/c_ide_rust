@@ -37,6 +37,12 @@ static KLIB_METHOD_MAP: LazyLock<HashMap<(&'static str, &'static str), &'static 
     m.insert(("cide_string", "get"), "cide_string_get");
     m.insert(("cide_string", "clear"), "cide_string_clear");
     m.insert(("cide_string", "destroy"), "cide_string_destroy");
+    m.insert(("cide_list_int", "push_back"), "cide_list_push_back_int");
+    m.insert(("cide_list_int", "push_front"), "cide_list_push_front_int");
+    m.insert(("cide_list_int", "pop_back"), "cide_list_pop_back_int");
+    m.insert(("cide_list_int", "size"), "cide_list_size_int");
+    m.insert(("cide_list_int", "get"), "cide_list_get_int");
+    m.insert(("cide_list_int", "destroy"), "cide_list_destroy_int");
     m
 });
 

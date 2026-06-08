@@ -104,6 +104,27 @@ fn builtin_layouts() -> HashMap<String, ClassLayout> {
         },
     );
 
+    // list_int
+    m.insert(
+        "cide_list_int".to_string(),
+        ClassLayout {
+            size: 12,
+            fields: vec![
+                ("head".to_string(), Type::pointer_to(Type::int())),
+                ("tail".to_string(), Type::pointer_to(Type::int())),
+                ("n".to_string(), Type::int()),
+            ],
+            methods: vec![
+                MethodSig { name: "push_back".to_string(), params: vec![Type::int()], ret: Type::void(), is_virtual: false },
+                MethodSig { name: "push_front".to_string(), params: vec![Type::int()], ret: Type::void(), is_virtual: false },
+                MethodSig { name: "pop_back".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
+                MethodSig { name: "size".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
+                MethodSig { name: "get".to_string(), params: vec![Type::int()], ret: Type::int(), is_virtual: false },
+                MethodSig { name: "destroy".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
+            ],
+        },
+    );
+
     m
 }
 

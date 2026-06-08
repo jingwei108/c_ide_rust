@@ -155,6 +155,23 @@ int main() {
 // ============================================================================
 
 #[test]
+fn test_class_template_type_mismatch() {
+    let src = r#"
+template <class T> class Box { public: T value; };
+int main() {
+    Box<int> b;
+    b.value = "hello";
+    return 0;
+}
+"#;
+    let (_, errors) = parse_and_typecheck_cpp(src);
+    assert!(
+        errors.iter().any(|e| e.message.contains("类型不匹配")),
+        "Expected type mismatch error, got: {:?}", errors
+    );
+}
+
+#[test]
 fn test_template_func_monomorph() {
     let src = r#"
 template <typename T> T max(T a, T b) { if (a > b) return a; return b; }

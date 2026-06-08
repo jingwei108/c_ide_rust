@@ -145,3 +145,99 @@ name = "destroy"
 params = []
 ret = "void"
 is_virtual = false
+
+[vector_char]
+size = 12
+[[vector_char.fields]]
+name = "n"
+type = "int"
+[[vector_char.fields]]
+name = "m"
+type = "int"
+[[vector_char.fields]]
+name = "a"
+type = "char*"
+
+[[vector_char.methods]]
+name = "push_back"
+params = ["char"]
+ret = "void"
+is_virtual = false
+
+[[vector_char.methods]]
+name = "pop_back"
+params = []
+ret = "char"
+is_virtual = false
+
+[[vector_char.methods]]
+name = "size"
+params = []
+ret = "int"
+is_virtual = false
+
+[[vector_char.methods]]
+name = "get"
+params = ["int"]
+ret = "char"
+is_virtual = false
+
+[[vector_char.methods]]
+name = "clear"
+params = []
+ret = "void"
+is_virtual = false
+
+[[vector_char.methods]]
+name = "destroy"
+params = []
+ret = "void"
+is_virtual = false
+
+[list_int]
+size = 12
+[[list_int.fields]]
+name = "head"
+type = "int*"
+[[list_int.fields]]
+name = "tail"
+type = "int*"
+[[list_int.fields]]
+name = "n"
+type = "int"
+
+[[list_int.methods]]
+name = "push_back"
+params = ["int"]
+ret = "void"
+is_virtual = false
+
+[[list_int.methods]]
+name = "push_front"
+params = ["int"]
+ret = "void"
+is_virtual = false
+
+[[list_int.methods]]
+name = "pop_back"
+params = []
+ret = "int"
+is_virtual = false
+
+[[list_int.methods]]
+name = "size"
+params = []
+ret = "int"
+is_virtual = false
+
+[[list_int.methods]]
+name = "get"
+params = ["int"]
+ret = "int"
+is_virtual = false
+
+[[list_int.methods]]
+name = "destroy"
+params = []
+ret = "void"
+is_virtual = false

@@ -51,6 +51,7 @@ pub struct Parser {
     tokens: Vec<Token>,
     errors: Vec<ParseError>,
     typedef_names: HashMap<String, Type>,
+    template_names: std::collections::HashSet<String>,
     pos: usize,
     anonymous_structs: Vec<StructDecl>,
     is_cpp_mode: bool,
@@ -76,6 +77,7 @@ impl Parser {
             tokens,
             errors: Vec::new(),
             typedef_names,
+            template_names: std::collections::HashSet::new(),
             pos: 0,
             anonymous_structs: Vec::new(),
             is_cpp_mode,
@@ -767,7 +769,9 @@ impl Parser {
 
         // 模板后面跟着函数或类声明
         let decl = if self.check(TokenType::Class) {
-            Templateable::Class(Box::new(self.parse_class_decl()))
+            let class_decl = self.parse_class_decl();
+            self.template_names.insert(class_decl.name.clone());
+            Templateable::Class(Box::new(class_decl))
         } else {
             Templateable::Func(Box::new(self.parse_func_decl(false, false)))
         };
@@ -951,7 +955,32 @@ impl Parser {
         } else if self.match_token(TokenType::Bool) {
             Type::int()
         } else if self.check(TokenType::Identifier) {
-            if let Some(ty) = self.typedef_names.get(&self.current().text).cloned() {
+            let name = self.current().text.clone();
+            if self.is_cpp_mode && self.template_names.contains(&name) {
+                self.advance();
+                // 检查是否是模板类实例化语法，如 vector<int>
+                if self.check(TokenType::Lt) {
+                    self.advance(); // consume '<'
+                    let mut args = Vec::new();
+                    while !self.check(TokenType::Gt) && !self.is_at_end() {
+                        args.push(self.parse_base_type());
+                        if !self.match_token(TokenType::Comma) {
+                            break;
+                        }
+                    }
+                    self.consume(TokenType::Gt, "预期 '>'");
+                    Type::TemplateId {
+                        base: name,
+                        args,
+                        is_const: false,
+                    }
+                } else {
+                    Type::Class {
+                        name,
+                        is_const: false,
+                    }
+                }
+            } else if let Some(ty) = self.typedef_names.get(&name).cloned() {
                 self.advance();
                 ty
             } else if self.is_cpp_mode {

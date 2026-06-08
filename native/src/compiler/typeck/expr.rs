@@ -730,9 +730,8 @@ impl TypeChecker {
                             ErrorCode::E4024_PrivateMemberAccess,
                         );
                     }
-                    // Check argument count (method sig includes implicit 'this' in TypeChecker registration,
-                    // but MemberCall args are user-provided args only)
-                    let user_param_count = sig.param_types.len().saturating_sub(1);
+                    // Check argument count (MemberCall args are user-provided args only)
+                    let user_param_count = sig.param_types.len();
                     if args.len() != user_param_count {
                         self.report_error(
                             &format!(
@@ -745,7 +744,7 @@ impl TypeChecker {
                             ErrorCode::E3037_FuncArgCount,
                         );
                     } else {
-                        for (i, (arg, expected)) in args.iter_mut().zip(sig.param_types.iter().skip(1)).enumerate() {
+                        for (i, (arg, expected)) in args.iter_mut().zip(sig.param_types.iter()).enumerate() {
                             let arg_type = self.resolve_expr_type(arg);
                             if !self.check_assignable(expected, &arg_type, loc) {
                                 self.report_error(
@@ -792,6 +791,8 @@ impl TypeChecker {
                 loc,
                 ty,
             } => {
+                // Class template instantiation for new
+                *elem_type = self.resolve_template_id(elem_type, loc);
                 if let Some(ref mut se) = size_expr {
                     let size_ty = self.resolve_expr_type(se);
                     if !self.is_int(&size_ty) {

@@ -29,6 +29,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 存根中声明标准库函数符号，Parser/TypeChecker 自动识别，逐步替代硬编码函数名匹配
   - 预定义宏 `NULL`/`EOF`/`stdin`/`stdout`/`stderr` 在 Lexer 中内置，兼容 K&R 早期示例
 
+### Added (C++ 扩展 Stage 1 — 类模板实例化)
+- **Parser 模板 id 类型解析**：新增 `Type::TemplateId { base, args }`，`Parser` 维护 `template_names` 集合，`parse_base_type` 识别 `vector<int>` 语法
+- **TypeChecker 类模板实例化**：`try_monomorphize_class` 镜像函数模板单态化逻辑，支持字段/方法/构造函数/析构函数中的模板参数替换
+  - `resolve_template_id` 递归处理指针/数组/引用等包装器内部的 `TemplateId`
+  - 实例化产物立即注册 `ClassSymbol` 并参与 Pass 3.5 `check_class_methods`
+- **BytecodeGen 非类 new-init 修复**：`gen_new` 补充非 `Class` 类型（如 `new int(5)`）的 init 直接存储路径
+- **MemberCall 参数检查修复**：`user_param_count` 从 `param_types.len() - 1` 修正为 `param_types.len()`（方法签名不含 `this`）
+- **zero-size 类 zero-init 跳过**：`sz == 0` 时不 emit `StoreLocal`，避免 `STACK_START` 边界越界
+- **集成测试 +5**：`Box<int>` 字段访问、`Adder<int>` 方法调用、`Wrapper<int>` 构造函数 + `new`、`Ptr<int>` 指针字段、类型不匹配负向测试
+
+### Added (C++ 扩展 Stage 0.5 — Phase 3 收口)
+- **容器库编译器支持补全**：
+  - `builtin_layout.rs` 新增 `cide_list_int` 布局；`layouts.toml` 新增 `[vector_char]`、`[list_int]`
+  - `type_map.rs` 新增 `cide_list_int` 方法映射（push_back/push_front/pop_back/size/get/destroy）
+  - `list_int.c` / `vec_char.c` / `sort_int.c` 已预编译为 Bytecode Libc（索引 1000~1059）
+- **C++ 容器端到端测试 +3**：`test_cpp_container_vec_char`、`test_cpp_container_list_int`、`test_cpp_sort_int`
+  - 覆盖空容器/越界/重复 destroy 边界；17/17 C++ e2e 测试全绿
+- **C++ 测试防线建设**：
+  - 创建 `native/tests/CPP_FAILURES.md`（当前零已知失败）
+  - `ci_three_tier_check.py` 新增 "C++ Extension" tier，纳入 CI 一致性监控
+
 ### Added (标准库全面拓展 P1 — 2026-06-07)
 - **新增 19 个 Host Func + 7 个存骨头文件**，覆盖 C89/C99 教学高频函数：
   - `ctype.h`：`isgraph`/`ispunct`/`isblank`

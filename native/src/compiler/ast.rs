@@ -17,6 +17,7 @@ pub enum TypeKind {
     Reference,
     RValueRef,
     Auto,
+    TemplateId,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -80,6 +81,11 @@ pub enum Type {
         base: Box<Type>,
     },
     Auto,
+    TemplateId {
+        base: String,
+        args: Vec<Type>,
+        is_const: bool,
+    },
 }
 
 impl PartialEq for Type {
@@ -139,6 +145,10 @@ impl PartialEq for Type {
             }
             (Type::RValueRef { base: a }, Type::RValueRef { base: b }) => a == b,
             (Type::Auto, Type::Auto) => true,
+            (
+                Type::TemplateId { base: a, args: a2, is_const: a3 },
+                Type::TemplateId { base: b, args: b2, is_const: b3 },
+            ) => a == b && a2 == b2 && a3 == b3,
             _ => false,
         }
     }
@@ -285,6 +295,10 @@ impl Type {
             }
             Type::RValueRef { base } => format!("rref_{}", base.mangle_name()),
             Type::Auto => "auto".to_string(),
+            Type::TemplateId { base, args, .. } => {
+                let args_str = args.iter().map(|a| a.mangle_name()).collect::<Vec<_>>().join("__");
+                format!("{}__{}", base, args_str)
+            }
         }
     }
 
@@ -307,6 +321,7 @@ impl Type {
             Type::Reference { .. } => TypeKind::Reference,
             Type::RValueRef { .. } => TypeKind::RValueRef,
             Type::Auto => TypeKind::Auto,
+            Type::TemplateId { .. } => TypeKind::TemplateId,
         }
     }
 
@@ -329,6 +344,7 @@ impl Type {
             Type::Reference { base, .. } => base.name(),
             Type::RValueRef { base, .. } => base.name(),
             Type::Auto => "auto",
+            Type::TemplateId { base, .. } => base.as_str(),
         }
     }
 
@@ -380,6 +396,7 @@ impl Type {
             Type::Reference { is_const, .. } => *is_const,
             Type::RValueRef { .. } => false,
             Type::Auto => false,
+            Type::TemplateId { is_const, .. } => *is_const,
         }
     }
 
@@ -518,6 +535,7 @@ impl Type {
             TypeKind::Struct => Type::Struct { name, is_const: false },
             TypeKind::Union => Type::Union { name, is_const: false },
             TypeKind::Class => Type::Class { name, is_const: false },
+            TypeKind::TemplateId => Type::Class { name, is_const: false },
             TypeKind::Pointer => {
                 let inferred_base = match name.as_str() {
                     "char" => Type::Char {
@@ -615,6 +633,14 @@ impl std::fmt::Display for Type {
             }
             Type::RValueRef { base } => write!(f, "{}&&", base),
             Type::Auto => write!(f, "auto"),
+            Type::TemplateId { base, args, .. } => {
+                write!(f, "{}<", base)?;
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 { write!(f, ", ")?; }
+                    write!(f, "{}", a)?;
+                }
+                write!(f, ">")
+            }
         }
     }
 }
@@ -1197,5 +1223,6 @@ pub fn compute_type_size(
         TypeKind::Class => class_size_map.get(ty.name()).copied().unwrap_or(0),
         TypeKind::Reference | TypeKind::RValueRef => 4, // reference is a pointer under the hood
         TypeKind::Auto => 0,                            // should not appear in codegen before TypeChecker replaces it
+        TypeKind::TemplateId => 0,                      // should be resolved to Class before codegen
     }
 }

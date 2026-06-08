@@ -717,7 +717,7 @@ impl Parser {
                     ty: Type::void(),
                 }));
             } else {
-                let is_class = matches!(elem_type.kind(), TypeKind::Class);
+                let is_class = matches!(elem_type.kind(), TypeKind::Class | TypeKind::TemplateId);
                 if is_class {
                     let ctor_args = self.parse_arg_list();
                     init = Some(Box::new(Expr::Call {
