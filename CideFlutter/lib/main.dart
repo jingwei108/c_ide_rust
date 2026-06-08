@@ -1,12 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/frb_generated.dart';
+import 'package:cide/src/rust/api/cide.dart' as rust;
 import 'providers/theme_provider.dart';
 import 'screens/ide_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await RustLib.init();
+
+  SystemChannels.lifecycle.setMessageHandler((msg) async {
+    if (msg == AppLifecycleState.detached.toString()) {
+      final sessionId = await rust.getCurrentSessionId();
+      if (sessionId != BigInt.zero) {
+        await rust.destroySession(sessionId: sessionId);
+      }
+    }
+    return msg;
+  });
+
   runApp(const ProviderScope(child: MyApp()));
 }
 

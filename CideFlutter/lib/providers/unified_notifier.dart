@@ -15,6 +15,12 @@ class UnifiedNotifier extends Notifier<UnifiedState> {
     return const UnifiedState();
   }
 
+  @override
+  void dispose() {
+    _streamSubscription?.cancel();
+    super.dispose();
+  }
+
   // ========== 编译与启动 ==========
 
   Future<void> compileAndRun(String source) async {

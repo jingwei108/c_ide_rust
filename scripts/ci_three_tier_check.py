@@ -33,6 +33,7 @@ TIER_TESTS = [
     ("Phase B", "bytecode_libc_consistency", "BYTECODE_LIBC_FAILURES.md"),
     ("Phase C", "differential_stress", "DIFFERENTIAL_FAILURES.md"),
     ("Phase E", "fuzz_stress_test", "FUZZ_FAILURES.md"),
+    ("K&R / E2E / LeetCode", "cide_e2e", ["KR_FAILURES.md", "E2E_FAILURES.md", "LEETCODE_FAILURES.md"]),
 ]
 
 # 已知为设计决策、不需要修复的差异（不视为 CI 失败）
@@ -48,7 +49,7 @@ EXPECTED_DIVERGENCES = {
 class TierResult:
     phase: str
     test_file: str
-    failures_md: str
+    failures_md: list
     passed: bool
     tests_run: int = 0
     tests_passed: int = 0
@@ -60,12 +61,24 @@ class TierResult:
     def __post_init__(self):
         if self.failed_tests is None:
             self.failed_tests = []
+        if isinstance(self.failures_md, str):
+            self.failures_md = [self.failures_md]
 
 
 # ─── 测试运行 ─────────────────────────────────────────────────────────────────
 
 
+_test_cache: dict[str, subprocess.CompletedProcess] = {}
+
+
 def run_cargo_test(test_file: str) -> subprocess.CompletedProcess:
+    """运行指定的 cargo integration test（带缓存，避免同一 test_file 重复运行）。"""
+    if test_file not in _test_cache:
+        _test_cache[test_file] = _run_cargo_test_uncached(test_file)
+    return _test_cache[test_file]
+
+
+def _run_cargo_test_uncached(test_file: str) -> subprocess.CompletedProcess:
     """运行指定的 cargo integration test。"""
     cmd = [
         "cargo",
@@ -151,30 +164,31 @@ def extract_md_status(md_path: Path) -> dict:
 def check_consistency(result: TierResult) -> list:
     """检查测试结果与 *_FAILURES.md 的一致性，返回问题列表。"""
     issues = []
-    md_path = TESTS_DIR / result.failures_md
-    md_info = extract_md_status(md_path)
+    for failures_md in result.failures_md:
+        md_path = TESTS_DIR / failures_md
+        md_info = extract_md_status(md_path)
 
-    if md_info["missing"]:
-        issues.append(f"缺少失败记录文件: {result.failures_md}")
-        return issues
+        if md_info["missing"]:
+            issues.append(f"缺少失败记录文件: {failures_md}")
+            continue
 
-    # 检查 KNOWN_FAILURE 是否仍然失败
-    # 简化处理：如果整个测试文件通过了，但文档中仍有未标记为 FIXED 的 KNOWN 条目，提醒更新
-    # 注意：KNOWN_DIVERGENCE（设计决策导致的偏差）不视为需要修复的故障，测试通过是正常的
-    if result.passed:
-        known_entries = [e for e in md_info["entries"] if e["status"] == "KNOWN"]
-        if known_entries:
-            titles = ", ".join(e["title"][:40] for e in known_entries)
+        # 检查 KNOWN_FAILURE 是否仍然失败
+        # 简化处理：如果整个测试文件通过了，但文档中仍有未标记为 FIXED 的 KNOWN 条目，提醒更新
+        # 注意：KNOWN_DIVERGENCE（设计决策导致的偏差）不视为需要修复的故障，测试通过是正常的
+        if result.passed:
+            known_entries = [e for e in md_info["entries"] if e["status"] == "KNOWN"]
+            if known_entries:
+                titles = ", ".join(e["title"][:40] for e in known_entries)
+                issues.append(
+                    f"Tests all passed, but {failures_md} still has {len(known_entries)} un-fixed KNOWN entries: {titles}"
+                )
+        else:
+            # 测试有失败，检查是否都已在文档中记录
+            # 由于文档是自由文本，这里只能做粗略提醒
+            fixed_count = len([e for e in md_info["entries"] if e["status"] == "FIXED"])
             issues.append(
-                f"Tests all passed, but {result.failures_md} still has {len(known_entries)} un-fixed KNOWN entries: {titles}"
+                f"Tests have failures. Ensure all are recorded in {failures_md} (currently {fixed_count} FIXED records)"
             )
-    else:
-        # 测试有失败，检查是否都已在文档中记录
-        # 由于文档是自由文本，这里只能做粗略提醒
-        fixed_count = len([e for e in md_info["entries"] if e["status"] == "FIXED"])
-        issues.append(
-            f"Tests have failures. Ensure all are recorded in {result.failures_md} (currently {fixed_count} FIXED records)"
-        )
 
     return issues
 

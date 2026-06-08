@@ -86,6 +86,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `bytecode_gen` `ptr_step_size` 支持指向数组的指针步长（如 `int (*p)[3]` 步长为数组总大小）
 - **未使用 import 清理**：`e2e_multi_file.rs` 移除 `Type` import
 
+### Fixed (2026-06-08 全面审阅报告修复)
+- **`E3057_ConstViolation` 重命名为 `E3065_ConstViolation`**，消除标签与值不匹配
+- **`opcode.rs` 更新最大 opcode 注释**：`CallPtr = 111` → `Strlen = 126`
+- **`compute_stride` 增加零/负步长 guard**，防止 VLA size 未解析时的静默数据损坏
+- **`codegen/mod.rs` 拆分为 `expr.rs` + `stmt.rs`**，解耦表达式/语句生成逻辑（trait 模块化）
+- **`Stmt`/`FuncDecl`/`ProgramNode` 添加 `serde::Serialize/Deserialize`**，解除 C++ AST 序列化阻塞
+- **C++ 扩展错误码骨架 E4001-E4020 预声明**，防止多人并行开发时编号冲突
+- **Flutter `UnifiedNotifier` 覆盖 `dispose()`**，取消 StreamSubscription 防止内存泄漏
+- **Flutter `main.dart` 添加应用生命周期监听**，桌面端窗口关闭时释放 VM Session
+- **Flutter CI `flutter-action` 启用 `cache: true`**，减少 CI 构建时间
+- **预编译脚本 `precompile_bytecode_libc.py` 适配 `cide/` 目录扫描**
+
 ### Fixed (2026-05-18 审查报告修复)
 - **Rust 后端 P0 Bug（5 个严重问题）**：
   - `call_user_function` 循环次数错误：拆分 `arg_count` 为 `param_count`（参数个数）和 `param_words`（总 word 数）

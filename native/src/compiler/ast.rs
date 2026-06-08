@@ -456,7 +456,7 @@ impl Expr {
 // Statement Nodes
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Stmt {
     Block { stmts: Vec<Stmt>, loc: SourceLoc },
     VarDecl { var_type: Type, name: String, init: Option<Expr>, extra_vars: Vec<(Type, String, Option<Expr>)>, is_static: bool, loc: SourceLoc },
@@ -478,14 +478,14 @@ pub enum Stmt {
 // Declaration Nodes
 // ============================================================================
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Param {
     pub ty: Type,
     pub name: String,
     pub loc: SourceLoc,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FuncDecl {
     pub loc: SourceLoc,
     pub return_type: Type,
@@ -497,20 +497,20 @@ pub struct FuncDecl {
     pub source_file: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StructField {
     pub ty: Type,
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StructDecl {
     pub loc: SourceLoc,
     pub name: String,
     pub fields: Vec<StructField>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GlobalDecl {
     pub loc: SourceLoc,
     pub ty: Type,
@@ -525,7 +525,7 @@ pub struct GlobalDecl {
 // Program Root
 // ============================================================================
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct ProgramNode {
     pub structs: Vec<StructDecl>,
     pub unions: Vec<StructDecl>,

@@ -208,55 +208,10 @@ impl Lexer {
     fn next_token(&mut self) -> Token {
         // 条件编译跳过模式：跳过所有不活跃的代码块
         while self.is_skipping() {
-            // 跳过空白
-            while self.pos < self.chars.len() {
-                let c = self.peek(0);
-                if c.is_ascii_whitespace() {
-                    self.advance();
-                } else {
-                    break;
-                }
-            }
-            if self.pos >= self.chars.len() {
-                return self.make_token(TokenType::Eof, "");
-            }
-            // 跳过块注释
-            if self.peek(0) == '/' && self.peek(1) == '*' {
-                self.advance();
-                self.advance();
-                while self.pos < self.chars.len() {
-                    if self.peek(0) == '*' && self.peek(1) == '/' {
-                        self.advance();
-                        self.advance();
-                        break;
-                    }
-                    self.advance();
-                }
-                continue;
-            }
-            // 跳过行注释
-            if self.peek(0) == '/' && self.peek(1) == '/' {
-                while self.pos < self.chars.len() && self.peek(0) != '\n' {
-                    self.advance();
-                }
-                if self.pos < self.chars.len() {
-                    self.advance();
-                }
-                continue;
-            }
-            if self.peek(0) == '#' {
-                self.skip_preprocessor_directive();
-                if !self.is_skipping() {
-                    break;
-                }
-                continue;
-            }
-            // 不是预处理指令，跳过整行
-            while self.pos < self.chars.len() && self.peek(0) != '\n' {
-                self.advance();
-            }
-            if self.pos < self.chars.len() {
-                self.advance();
+            match self.skip_inactive_line() {
+                None => return self.make_token(TokenType::Eof, ""),
+                Some(false) => break,
+                Some(true) => continue,
             }
         }
 
@@ -796,6 +751,60 @@ impl Lexer {
 
     fn is_skipping(&self) -> bool {
         self.conditional_stack.iter().any(|s| !s.active)
+    }
+
+    /// 在条件编译跳过模式下，跳过一个不活跃的逻辑行（或注释块、预处理指令）。
+    /// 返回 None 表示已到 EOF；Some(false) 表示预处理指令导致 skipping 结束；
+    /// Some(true) 表示仍在 skipping 中，应继续循环。
+    fn skip_inactive_line(&mut self) -> Option<bool> {
+        // 跳过空白
+        while self.pos < self.chars.len() {
+            let c = self.peek(0);
+            if c.is_ascii_whitespace() {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        if self.pos >= self.chars.len() {
+            return None;
+        }
+        // 跳过块注释
+        if self.peek(0) == '/' && self.peek(1) == '*' {
+            self.advance();
+            self.advance();
+            while self.pos < self.chars.len() {
+                if self.peek(0) == '*' && self.peek(1) == '/' {
+                    self.advance();
+                    self.advance();
+                    break;
+                }
+                self.advance();
+            }
+            return Some(true);
+        }
+        // 跳过行注释
+        if self.peek(0) == '/' && self.peek(1) == '/' {
+            while self.pos < self.chars.len() && self.peek(0) != '\n' {
+                self.advance();
+            }
+            if self.pos < self.chars.len() {
+                self.advance();
+            }
+            return Some(true);
+        }
+        if self.peek(0) == '#' {
+            self.skip_preprocessor_directive();
+            return Some(self.is_skipping());
+        }
+        // 不是预处理指令，跳过整行
+        while self.pos < self.chars.len() && self.peek(0) != '\n' {
+            self.advance();
+        }
+        if self.pos < self.chars.len() {
+            self.advance();
+        }
+        Some(true)
     }
 
     fn skip_preprocessor_directive(&mut self) {

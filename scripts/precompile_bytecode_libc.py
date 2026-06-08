@@ -20,7 +20,10 @@ import sys
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NATIVE_DIR = os.path.join(PROJECT_ROOT, "native")
-RUNTIME_LIBC_SRC = os.path.join(NATIVE_DIR, "runtime_libc", "src")
+RUNTIME_LIBC_SRC_DIRS = [
+    os.path.join(NATIVE_DIR, "runtime_libc", "src"),
+    os.path.join(NATIVE_DIR, "runtime_libc", "cide"),
+]
 VM_DIR = os.path.join(NATIVE_DIR, "src", "vm")
 OUTPUT_JSON = os.path.join(VM_DIR, "bytecode_libc_data.json")
 OUTPUT_RS = os.path.join(VM_DIR, "bytecode_libc_index.rs")
@@ -57,12 +60,16 @@ def build_cide_cli() -> str:
 
 def precompile(exe: str) -> dict:
     """调用 cide_cli export 预编译 runtime_libc。"""
-    sources = sorted(
-        f
-        for f in os.listdir(RUNTIME_LIBC_SRC)
-        if f.endswith(".c")
-    )
-    source_paths = [os.path.join(RUNTIME_LIBC_SRC, f) for f in sources]
+    sources = []
+    for src_dir in RUNTIME_LIBC_SRC_DIRS:
+        if os.path.isdir(src_dir):
+            sources.extend(
+                os.path.join(src_dir, f)
+                for f in os.listdir(src_dir)
+                if f.endswith(".c")
+            )
+    sources = sorted(sources)
+    source_paths = sources
 
     print(f"Precompiling {len(source_paths)} files:")
     for p in source_paths:

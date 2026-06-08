@@ -15,7 +15,7 @@ macro_rules! define_opcode {
             }
         }
 
-        // 当前最大 opcode 值为 CallPtr = 111。
+        // 当前最大 opcode 值为 Strlen = 126。
         // OpCode 使用 repr(u8)，若未来需要超过 255 个指令，需改为 repr(u16)。
     };
 }

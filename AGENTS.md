@@ -73,6 +73,9 @@ docs/                   设计文档、事故报告
 | Phase 28 | CLI 调试工具 `cide_cli`：`compile`/`run`/`step`/`unified`，支持 stdin 管道快速测试 | ✅ 完成 |
 | Phase 29 | Bytecode Libc 产品化：构建期预编译 + 固定索引段 + ctype/abs 走 Bytecode 路径 | ✅ 完成 |
 | Phase 30 | P0 语法拓展：通用逗号运算符、Designated Initializer、offsetof + 回归修复 | ✅ 完成 |
+| Phase 31 | C++ 扩展 P0：Lexer/Parser/AST 关键字与节点扩展 | 🔄 进行中 |
+| Phase 32 | C++ 扩展 P1：TypeChecker 类/继承/模板单态化 | ⏳ 待启动 |
+| Phase 33 | C++ 扩展 P2：BytecodeGen 虚函数/this 指针/构造析构 | ⏳ 待启动 |
 
 ## 测试防线
 

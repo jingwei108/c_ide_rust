@@ -364,7 +364,7 @@ impl TypeChecker {
                 if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left.as_ref() {
                     if let Type::Pointer { pointee, .. } = operand.ty() {
                         if pointee.is_const() {
-                            self.report_error("不能通过非 const 指针修改 const 数据", loc, ErrorCode::E3057_ConstViolation);
+                            self.report_error("不能通过非 const 指针修改 const 数据", loc, ErrorCode::E3065_ConstViolation);
                         }
                     }
                 }

@@ -185,13 +185,77 @@ class _ConceptGraphPainter extends CustomPainter {
   final Set<String> activatedIds;
   final Set<String> neighborIds;
 
+  // 预创建的 Paint 对象，避免 paint() 中每帧重复创建
+  final Paint _glowPaint = Paint()
+    ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8);
+  final Paint _borderPaint = Paint()
+    ..style = PaintingStyle.stroke;
+  final Paint _nodePaint = Paint();
+  final Paint _edgePaint = Paint()..strokeCap = StrokeCap.round;
+  final Paint _dashPaint = Paint()
+    ..style = PaintingStyle.stroke;
+  final Paint _legendPaint = Paint();
+
+  // 缓存节点 label 的 TextPainter，避免重复 layout
+  final Map<String, TextPainter> _labelPainterCache = {};
+
+  // 缓存 legend 的 TextPainter（内容固定）
+  final List<_LegendItem> _legendItems;
+
   _ConceptGraphPainter({
     required this.nodes,
     required this.edges,
     required this.layout,
     required this.activatedIds,
     required this.neighborIds,
-  });
+  }) : _legendItems = _buildLegendCache();
+
+  static List<_LegendItem> _buildLegendCache() {
+    final raw = [
+      ("编译概念", _domainColor("Compile")),
+      ("内存概念", _domainColor("Memory")),
+      ("控制流", _domainColor("ControlFlow")),
+    ];
+    double x = 12;
+    const y = 12.0;
+    final List<_LegendItem> result = [];
+    for (final (label, color) in raw) {
+      final tp = TextPainter(
+        text: TextSpan(
+          text: label,
+          style: TextStyle(fontSize: 10, color: Colors.grey[600]),
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      tp.layout();
+      result.add(_LegendItem(label: label, color: color, painter: tp, x: x));
+      x += 14 + tp.width + 20;
+    }
+    return result;
+  }
+
+  TextPainter _getLabelPainter(String text, bool isActivated) {
+    final key = '${text}_${isActivated ? 'a' : 'n'}';
+    final cached = _labelPainterCache[key];
+    if (cached != null) return cached;
+
+    final tp = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: isActivated
+              ? Colors.white
+              : Colors.white.withValues(alpha: 0.7),
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    tp.layout();
+    _labelPainterCache[key] = tp;
+    return tp;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -202,24 +266,23 @@ class _ConceptGraphPainter extends CustomPainter {
       if (fromLayout == null || toLayout == null) continue;
 
       final isActive = activatedIds.contains(edge.from) || activatedIds.contains(edge.to);
-      final paint = Paint()
-        ..strokeWidth = isActive ? 2.0 : 0.8
-        ..color = isActive
-            ? _relationColor(edge.relation).withValues(alpha: 0.6)
-            : Colors.grey.withValues(alpha: 0.2);
+      _edgePaint.strokeWidth = isActive ? 2.0 : 0.8;
+      _edgePaint.color = isActive
+          ? _relationColor(edge.relation).withValues(alpha: 0.6)
+          : Colors.grey.withValues(alpha: 0.2);
 
       if (edge.relation == "CommonMistake") {
-        paint.style = PaintingStyle.stroke;
-        // Dashed line for CommonMistake
+        _dashPaint.strokeWidth = _edgePaint.strokeWidth;
+        _dashPaint.color = _edgePaint.color;
         final path = Path();
         path.moveTo(fromLayout.offset.dx, fromLayout.offset.dy);
         path.lineTo(toLayout.offset.dx, toLayout.offset.dy);
         canvas.drawPath(
           _dashPath(path, dashLength: 6, dashGap: 4),
-          paint,
+          _dashPaint,
         );
       } else {
-        canvas.drawLine(fromLayout.offset, toLayout.offset, paint);
+        canvas.drawLine(fromLayout.offset, toLayout.offset, _edgePaint);
       }
     }
 
@@ -239,46 +302,22 @@ class _ConceptGraphPainter extends CustomPainter {
 
       // Glow for activated.
       if (isActivated) {
-        canvas.drawCircle(
-          l.offset,
-          32,
-          Paint()
-            ..color = baseColor.withValues(alpha: 0.15)
-            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 8),
-        );
+        _glowPaint.color = baseColor.withValues(alpha: 0.15);
+        canvas.drawCircle(l.offset, 32, _glowPaint);
       }
 
       // Node circle.
-      canvas.drawCircle(
-        l.offset,
-        24,
-        Paint()..color = color,
-      );
+      _nodePaint.color = color;
+      canvas.drawCircle(l.offset, 24, _nodePaint);
 
       // Border.
-      canvas.drawCircle(
-        l.offset,
-        24,
-        Paint()
-          ..color = isActivated ? Colors.white : Colors.transparent
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = isActivated ? 3 : 0,
-      );
+      _borderPaint.color = isActivated ? Colors.white : Colors.transparent;
+      _borderPaint.strokeWidth = isActivated ? 3 : 0;
+      canvas.drawCircle(l.offset, 24, _borderPaint);
 
       // Label (first 2 chars).
       final text = node.title.length > 2 ? node.title.substring(0, 2) : node.title;
-      final textPainter = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: TextStyle(
-            color: isActivated ? Colors.white : Colors.white.withValues(alpha: 0.7),
-            fontSize: 11,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
+      final textPainter = _getLabelPainter(text, isActivated);
       textPainter.paint(
         canvas,
         l.offset - Offset(textPainter.width / 2, textPainter.height / 2),
@@ -286,7 +325,7 @@ class _ConceptGraphPainter extends CustomPainter {
     }
 
     // Draw legend.
-    _drawLegend(canvas, size);
+    _drawLegend(canvas);
   }
 
   Path _dashPath(Path source, {required double dashLength, required double dashGap}) {
@@ -304,27 +343,16 @@ class _ConceptGraphPainter extends CustomPainter {
     return dashed;
   }
 
-  void _drawLegend(Canvas canvas, Size size) {
-    final items = [
-      ("编译概念", _domainColor("Compile")),
-      ("内存概念", _domainColor("Memory")),
-      ("控制流", _domainColor("ControlFlow")),
-    ];
-    double x = 12;
+  void _drawLegend(Canvas canvas) {
     const y = 12.0;
-    for (final (label, color) in items) {
+    for (final item in _legendItems) {
       final r = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, y, 10, 10),
+        Rect.fromLTWH(item.x, y, 10, 10),
         const Radius.circular(2),
       );
-      canvas.drawRRect(r, Paint()..color = color);
-      final tp = TextPainter(
-        text: TextSpan(text: label, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
-        textDirection: TextDirection.ltr,
-      );
-      tp.layout();
-      tp.paint(canvas, Offset(x + 14, y - 1));
-      x += 14 + tp.width + 20;
+      _legendPaint.color = item.color;
+      canvas.drawRRect(r, _legendPaint);
+      item.painter.paint(canvas, Offset(item.x + 14, y - 1));
     }
   }
 
@@ -332,6 +360,20 @@ class _ConceptGraphPainter extends CustomPainter {
   bool shouldRepaint(covariant _ConceptGraphPainter oldDelegate) {
     return oldDelegate.activatedIds != activatedIds || oldDelegate.neighborIds != neighborIds;
   }
+}
+
+class _LegendItem {
+  final String label;
+  final Color color;
+  final TextPainter painter;
+  final double x;
+
+  _LegendItem({
+    required this.label,
+    required this.color,
+    required this.painter,
+    required this.x,
+  });
 }
 
 Color _domainColor(String domain) {
