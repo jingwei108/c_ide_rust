@@ -1,8 +1,13 @@
+use cide_native::compiler::ast::{BinaryOp, Expr, Stmt};
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
-use cide_native::compiler::ast::{Expr, Stmt, BinaryOp};
 
-fn parse(src: &str) -> (Option<cide_native::compiler::ast::ProgramNode>, Vec<cide_native::compiler::parser::ParseError>) {
+fn parse(
+    src: &str,
+) -> (
+    Option<cide_native::compiler::ast::ProgramNode>,
+    Vec<cide_native::compiler::parser::ParseError>,
+) {
     let (tokens, _) = Lexer::new(src).tokenize();
     Parser::new(tokens).parse()
 }
@@ -70,7 +75,10 @@ fn test_parser_if_else() {
     let program = program.unwrap();
     let body = program.funcs[0].body.as_ref().unwrap();
     if let Stmt::Block { stmts, .. } = body {
-        if let Stmt::If { cond, then_stmt: _, else_stmt, .. } = &stmts[0] {
+        if let Stmt::If {
+            cond, then_stmt: _, else_stmt, ..
+        } = &stmts[0]
+        {
             assert!(else_stmt.is_some());
             if let Expr::Literal { value, .. } = cond {
                 assert_eq!(*value, 1);
@@ -126,7 +134,11 @@ fn test_parser_binary_precedence() {
     let program = program.unwrap();
     let body = program.funcs[0].body.as_ref().unwrap();
     if let Stmt::Block { stmts, .. } = body {
-        if let Stmt::VarDecl { init: Some(Expr::Binary { op, left, right, .. }), .. } = &stmts[0] {
+        if let Stmt::VarDecl {
+            init: Some(Expr::Binary { op, left, right, .. }),
+            ..
+        } = &stmts[0]
+        {
             assert_eq!(*op, BinaryOp::Add);
             // left should be 1, right should be 2 * 3
             if let Expr::Literal { value, .. } = left.as_ref() {

@@ -27,8 +27,7 @@ fn extract_cide_stdout(session: &Session) -> String {
             cleaned = cleaned[..pos].to_string();
         }
         // 跳过内存泄漏检测报告（若存在）
-        if cleaned.starts_with("===== 内存泄漏检测报告 =====")
-            || cleaned.starts_with("==============================")
+        if cleaned.starts_with("===== 内存泄漏检测报告 =====") || cleaned.starts_with("==============================")
         {
             continue;
         }
@@ -46,15 +45,11 @@ fn extract_cide_stdout(session: &Session) -> String {
 ///       Clang 路径仍需链接 runtime_libc C 源码以生成 golden。
 fn run_consistency_case(driver_name: &str, lib_sources: &[&str]) {
     let driver_path = format!("{}/drivers/{}", BASE_DIR, driver_name);
-    let driver_src = std::fs::read_to_string(&driver_path)
-        .unwrap_or_else(|e| panic!("无法读取驱动文件 {}: {}", driver_path, e));
+    let driver_src =
+        std::fs::read_to_string(&driver_path).unwrap_or_else(|e| panic!("无法读取驱动文件 {}: {}", driver_path, e));
 
     // ── 1. Clang 路径：生成 golden ──────────────────────────────────────
-    let exe_name = format!(
-        "{}_{}_clang.exe",
-        driver_name.replace('.', "_"),
-        std::process::id()
-    );
+    let exe_name = format!("{}_{}_clang.exe", driver_name.replace('.', "_"), std::process::id());
     let exe_path = std::path::Path::new(BASE_DIR).join(&exe_name);
     let mut clang_args: Vec<String> = vec![
         "-std=c99".to_string(),
@@ -110,8 +105,8 @@ fn run_consistency_case(driver_name: &str, lib_sources: &[&str]) {
     }];
     for lib in lib_sources {
         let lib_path = format!("{}/{}", RUNTIME_LIBC_DIR, lib);
-        let lib_src = std::fs::read_to_string(&lib_path)
-            .unwrap_or_else(|e| panic!("无法读取库文件 {}: {}", lib_path, e));
+        let lib_src =
+            std::fs::read_to_string(&lib_path).unwrap_or_else(|e| panic!("无法读取库文件 {}: {}", lib_path, e));
         units.push(CompileUnit {
             filename: lib.to_string(),
             source: lib_src,
@@ -121,7 +116,10 @@ fn run_consistency_case(driver_name: &str, lib_sources: &[&str]) {
     let mut session = Session::default();
     let compile_result = run_multi_file_pipeline(&mut session, units);
     if let Err(e) = compile_result {
-        let diags: Vec<String> = session.compile.diagnostics.iter()
+        let diags: Vec<String> = session
+            .compile
+            .diagnostics
+            .iter()
             .map(|d| format!("{}:{}: {} (E{})", d.filename, d.line, d.message, d.error_code))
             .collect();
         panic!("Cide 编译失败: {}\n诊断:\n{}", e, diags.join("\n"));
@@ -145,9 +143,7 @@ fn run_consistency_case(driver_name: &str, lib_sources: &[&str]) {
 
 /// 规范化输出字符串，消除 \r\n vs \n 的差异，并去除尾部空白。
 fn normalize_output(s: &str) -> String {
-    s.replace("\r\n", "\n")
-        .trim_end()
-        .to_string()
+    s.replace("\r\n", "\n").trim_end().to_string()
 }
 
 #[test]
@@ -213,4 +209,3 @@ fn test_bc_ctype_extra() {
 fn test_bc_rand() {
     run_consistency_case("test_rand.c", &["src/stdlib.c"]);
 }
-

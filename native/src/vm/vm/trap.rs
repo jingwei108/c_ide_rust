@@ -60,30 +60,38 @@ impl CideVM {
 
     pub(crate) fn format_div_zero_error(&self, a: i32, _b: i32) -> String {
         let mut diag = format!("😵 除零错误：你试图用 {} 除以 0。\n\n", a);
-        let zero_vars: Vec<String> = self.symbols.iter().filter_map(|sym| {
-            if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Array) {
-                return None;
-            }
-            let mut vaddr = sym.addr;
-            if sym.is_local {
-                if let Some(frame) = self.call_stack.last() {
-                    vaddr = frame.locals_base + sym.addr;
-                } else {
+        let zero_vars: Vec<String> = self
+            .symbols
+            .iter()
+            .filter_map(|sym| {
+                if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Array) {
                     return None;
                 }
-            }
-            if vaddr + 4 <= MEM_SIZE && vaddr >= NULL_TRAP_SIZE {
-                let val = i32::from_le_bytes([
-                    self.memory[vaddr as usize],
-                    self.memory[vaddr as usize + 1],
-                    self.memory[vaddr as usize + 2],
-                    self.memory[vaddr as usize + 3],
-                ]);
-                if val == 0 { Some(sym.name.clone()) } else { None }
-            } else {
-                None
-            }
-        }).collect();
+                let mut vaddr = sym.addr;
+                if sym.is_local {
+                    if let Some(frame) = self.call_stack.last() {
+                        vaddr = frame.locals_base + sym.addr;
+                    } else {
+                        return None;
+                    }
+                }
+                if vaddr + 4 <= MEM_SIZE && vaddr >= NULL_TRAP_SIZE {
+                    let val = i32::from_le_bytes([
+                        self.memory[vaddr as usize],
+                        self.memory[vaddr as usize + 1],
+                        self.memory[vaddr as usize + 2],
+                        self.memory[vaddr as usize + 3],
+                    ]);
+                    if val == 0 {
+                        Some(sym.name.clone())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
 
         if !zero_vars.is_empty() {
             diag.push_str("🔍 当前作用域内值为 0 的变量：");
@@ -117,14 +125,18 @@ impl CideVM {
             diag.push_str(" 步内没有变化的变量：");
             let shown: Vec<_> = stale_vars.iter().take(6).cloned().collect();
             diag.push_str(&shown.join("，"));
-            if stale_vars.len() > 6 { diag.push_str(" 等"); }
+            if stale_vars.len() > 6 {
+                diag.push_str(" 等");
+            }
             diag.push_str("。\n\n");
         }
         if !changed_vars.is_empty() {
             diag.push_str("🔍 发生变化的变量：");
             let shown: Vec<_> = changed_vars.iter().take(4).cloned().collect();
             diag.push_str(&shown.join("，"));
-            if changed_vars.len() > 4 { diag.push_str(" 等"); }
+            if changed_vars.len() > 4 {
+                diag.push_str(" 等");
+            }
             diag.push_str("。\n\n");
         }
         diag.push_str("💡 原因：程序执行了太多步数但没有结束。常见原因：\n  • 循环条件永远为真（如 while(1)）\n  • 循环变量没有更新（如忘了写 i++）\n  • 递归函数没有正确的终止条件\n✅ 检查方法：确认循环体中有改变循环条件的语句。");

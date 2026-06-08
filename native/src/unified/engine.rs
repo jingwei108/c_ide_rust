@@ -44,12 +44,7 @@ impl UnifiedEngine {
             .compile
             .compile_units
             .first()
-            .and_then(|u| {
-                u.source
-                    .lines()
-                    .nth((code_line - 1) as usize)
-                    .map(|s| s.trim())
-            })
+            .and_then(|u| u.source.lines().nth((code_line - 1) as usize).map(|s| s.trim()))
             .unwrap_or("");
 
         if source_line.starts_with("for ") || source_line.starts_with("while ") {
@@ -82,9 +77,7 @@ impl UnifiedEngine {
             };
             if let Some(paren_pos) = after_assign.find('(') {
                 let name = after_assign[..paren_pos].trim();
-                if !name.is_empty()
-                    && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-                {
+                if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
                     return format!("调用 {}", name);
                 }
             }
@@ -140,11 +133,7 @@ impl UnifiedEngine {
             let semantic_label = Self::quick_semantic_label(vm.get_current_line(), session);
             let meta = StepMeta {
                 code_line: vm.get_current_line(),
-                func_name: vm
-                    .get_call_stack()
-                    .last()
-                    .map(|f| f.func_name.clone())
-                    .unwrap_or_default(),
+                func_name: vm.get_call_stack().last().map(|f| f.func_name.clone()).unwrap_or_default(),
                 loop_depth: 0,
                 semantic_label,
             };
@@ -190,12 +179,7 @@ impl UnifiedEngine {
                     history.push(payload.clone());
                     let trap_step = history.len().saturating_sub(1);
 
-                    if let Some(hint) = TraceAnalyzer::analyze_trap(
-                        &history,
-                        trap_step,
-                        vm.get_error(),
-                        session,
-                    ) {
+                    if let Some(hint) = TraceAnalyzer::analyze_trap(&history, trap_step, vm.get_error(), session) {
                         payload.root_cause_hint = Some(hint);
                     }
 
@@ -207,10 +191,7 @@ impl UnifiedEngine {
             }
 
             if step >= self.max_steps {
-                return Err(format!(
-                    "执行步数超过限制（{} 步），可能存在无限循环。",
-                    self.max_steps
-                ));
+                return Err(format!("执行步数超过限制（{} 步），可能存在无限循环。", self.max_steps));
             }
         }
 
@@ -231,12 +212,7 @@ impl UnifiedEngine {
     ///
     /// 如果目标步已在 `frame_cache` 中，直接返回；
     /// 否则从最近检查点恢复 VM 并正向重放。
-    pub fn seek_to(
-        &mut self,
-        target: i32,
-        vm: &mut CideVM,
-        session: &mut Session,
-    ) -> SeekResult {
+    pub fn seek_to(&mut self, target: i32, vm: &mut CideVM, session: &mut Session) -> SeekResult {
         // 目标已在缓存中
         if let Some(payload) = self.frame_cache.get(target as usize) {
             return SeekResult {

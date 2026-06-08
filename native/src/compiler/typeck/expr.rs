@@ -43,18 +43,34 @@ impl TypeChecker {
                     offset += self.compute_type_size(fty);
                 }
                 if !found {
-                    self.report_error(&format!("结构体 '{}' 没有字段 '{}'", type_name, field_name), &loc_val, ErrorCode::E3042_UnknownMember);
+                    self.report_error(
+                        &format!("结构体 '{}' 没有字段 '{}'", type_name, field_name),
+                        &loc_val,
+                        ErrorCode::E3042_UnknownMember,
+                    );
                 }
             } else if let Some(union_sym) = self.unions.get(&type_name) {
                 // Union: all fields start at offset 0
                 if !union_sym.fields.iter().any(|(_, fname)| *fname == field_name) {
-                    self.report_error(&format!("联合体 '{}' 没有字段 '{}'", type_name, field_name), &loc_val, ErrorCode::E3042_UnknownMember);
+                    self.report_error(
+                        &format!("联合体 '{}' 没有字段 '{}'", type_name, field_name),
+                        &loc_val,
+                        ErrorCode::E3042_UnknownMember,
+                    );
                 }
                 offset = 0;
             } else {
-                self.report_error(&format!("未知的结构体/联合体类型 '{}'", type_name), &loc_val, ErrorCode::E3004_TypeMismatch);
+                self.report_error(
+                    &format!("未知的结构体/联合体类型 '{}'", type_name),
+                    &loc_val,
+                    ErrorCode::E3004_TypeMismatch,
+                );
             }
-            *expr = Expr::Literal { value: offset, loc: loc_val, ty: Type::int() };
+            *expr = Expr::Literal {
+                value: offset,
+                loc: loc_val,
+                ty: Type::int(),
+            };
             return Type::int();
         }
 
@@ -83,19 +99,33 @@ impl TypeChecker {
                         } else if left_is_ptrlike && right_is_ptrlike && matches!(op, BinaryOp::Sub) {
                             Type::int()
                         } else {
-                            self.report_error("算术运算要求两边都是 int 类型，或指针与整数", loc, ErrorCode::E3016_ArithmeticTypeError);
+                            self.report_error(
+                                "算术运算要求两边都是 int 类型，或指针与整数",
+                                loc,
+                                ErrorCode::E3016_ArithmeticTypeError,
+                            );
                             Type::int()
                         }
                     }
                     BinaryOp::Mul | BinaryOp::Div => {
                         if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
-                            self.report_error("乘除运算要求两边都是 int 或 float 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
+                            self.report_error(
+                                "乘除运算要求两边都是 int 或 float 类型",
+                                loc,
+                                ErrorCode::E3016_ArithmeticTypeError,
+                            );
                         }
                         promote_type(&left_type, &right_type)
                     }
                     BinaryOp::Mod => {
-                        if !self.is_int(&left_type) && !matches!(left_type.kind(), TypeKind::LongLong) || !self.is_int(&right_type) && !matches!(right_type.kind(), TypeKind::LongLong) {
-                            self.report_error("取模运算要求两边都是 int 类型", loc, ErrorCode::E3016_ArithmeticTypeError);
+                        if !self.is_int(&left_type) && !matches!(left_type.kind(), TypeKind::LongLong)
+                            || !self.is_int(&right_type) && !matches!(right_type.kind(), TypeKind::LongLong)
+                        {
+                            self.report_error(
+                                "取模运算要求两边都是 int 类型",
+                                loc,
+                                ErrorCode::E3016_ArithmeticTypeError,
+                            );
                         }
                         promote_type(&left_type, &right_type)
                     }
@@ -108,14 +138,24 @@ impl TypeChecker {
                     BinaryOp::Lt | BinaryOp::Le | BinaryOp::Gt | BinaryOp::Ge => {
                         let left_is_ptrlike = matches!(left_type.kind(), TypeKind::Pointer | TypeKind::Array);
                         let right_is_ptrlike = matches!(right_type.kind(), TypeKind::Pointer | TypeKind::Array);
-                        if !(self.is_scalar(&left_type) && self.is_scalar(&right_type) || left_is_ptrlike && right_is_ptrlike) {
-                            self.report_error("关系运算要求两边都是 int/float 类型或同类型指针", loc, ErrorCode::E3018_RelationTypeError);
+                        if !(self.is_scalar(&left_type) && self.is_scalar(&right_type)
+                            || left_is_ptrlike && right_is_ptrlike)
+                        {
+                            self.report_error(
+                                "关系运算要求两边都是 int/float 类型或同类型指针",
+                                loc,
+                                ErrorCode::E3018_RelationTypeError,
+                            );
                         }
                         Type::int()
                     }
                     BinaryOp::And | BinaryOp::Or => {
                         if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
-                            self.report_error("逻辑运算要求两边都是 int 或 float 类型", loc, ErrorCode::E3019_LogicTypeError);
+                            self.report_error(
+                                "逻辑运算要求两边都是 int 或 float 类型",
+                                loc,
+                                ErrorCode::E3019_LogicTypeError,
+                            );
                         }
                         Type::int()
                     }
@@ -131,7 +171,10 @@ impl TypeChecker {
                         }
                         // Result type is the promoted left operand type (C semantics)
                         if left_type.kind() == TypeKind::Char {
-                            Type::Int { is_unsigned: left_type.is_unsigned(), is_const: false }
+                            Type::Int {
+                                is_unsigned: left_type.is_unsigned(),
+                                is_const: false,
+                            }
                         } else {
                             left_type.clone()
                         }
@@ -143,14 +186,27 @@ impl TypeChecker {
                 };
                 ty.clone()
             }
-            Expr::Ternary { cond, then_branch, else_branch, loc, ty } => {
+            Expr::Ternary {
+                cond,
+                then_branch,
+                else_branch,
+                loc,
+                ty,
+            } => {
                 let cond_type = self.resolve_expr_type(cond);
                 if !self.is_scalar(&cond_type) && !matches!(cond_type.kind(), TypeKind::Pointer | TypeKind::Array) {
-                    self.report_error("三目运算符条件必须是 int、float 或指针类型", loc, ErrorCode::E3020_UnaryTypeError);
+                    self.report_error(
+                        "三目运算符条件必须是 int、float 或指针类型",
+                        loc,
+                        ErrorCode::E3020_UnaryTypeError,
+                    );
                 }
                 let then_type = self.resolve_expr_type(then_branch);
                 let else_type = self.resolve_expr_type(else_branch);
-                if then_type.kind() != else_type.kind() || then_type.name() != else_type.name() || then_type != else_type {
+                if then_type.kind() != else_type.kind()
+                    || then_type.name() != else_type.name()
+                    || then_type != else_type
+                {
                     self.report_error("三目运算符分支类型不匹配", loc, ErrorCode::E3004_TypeMismatch);
                 }
                 *ty = then_type;
@@ -161,13 +217,23 @@ impl TypeChecker {
                 *ty = match op {
                     UnaryOp::Neg => {
                         if !self.is_scalar(&operand_type) {
-                            self.report_error("取负运算要求操作数是 int 或 float 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                            self.report_error(
+                                "取负运算要求操作数是 int 或 float 类型",
+                                loc,
+                                ErrorCode::E3020_UnaryTypeError,
+                            );
                         }
-                        if operand_type.kind() == TypeKind::Double { Type::double() }
-                        else if operand_type.kind() == TypeKind::Float { Type::float() }
-                        else if operand_type.kind() == TypeKind::LongLong { Type::long_long() }
-                        else if operand_type.is_unsigned() { Type::unsigned_int() }
-                        else { Type::int() }
+                        if operand_type.kind() == TypeKind::Double {
+                            Type::double()
+                        } else if operand_type.kind() == TypeKind::Float {
+                            Type::float()
+                        } else if operand_type.kind() == TypeKind::LongLong {
+                            Type::long_long()
+                        } else if operand_type.is_unsigned() {
+                            Type::unsigned_int()
+                        } else {
+                            Type::int()
+                        }
                     }
                     UnaryOp::Not => {
                         if !self.is_scalar(&operand_type) && !operand_type.is_pointer() {
@@ -181,28 +247,40 @@ impl TypeChecker {
                         }
                         Type::int()
                     }
-                    UnaryOp::Addr => {
-                        Type::pointer_to(operand_type.clone())
-                    }
+                    UnaryOp::Addr => Type::pointer_to(operand_type.clone()),
                     UnaryOp::Deref => {
                         if !operand_type.is_pointer() && !operand_type.is_array() {
                             self.report_error("解引用要求指针类型", loc, ErrorCode::E3021_DerefNonPointer);
                             Type::int()
                         } else {
                             match operand_type {
-                                Type::Pointer { pointee, .. } | Type::Array { element: pointee, .. } => *pointee.clone(),
+                                Type::Pointer { pointee, .. } | Type::Array { element: pointee, .. } => {
+                                    *pointee.clone()
+                                }
                                 _ => Type::int(),
                             }
                         }
                     }
                     UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
-                        if !self.is_int(&operand_type) && operand_type.kind() != TypeKind::Float && operand_type.kind() != TypeKind::Double && !operand_type.is_pointer() {
-                            self.report_error("自增/自减要求 int 类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
+                        if !self.is_int(&operand_type)
+                            && operand_type.kind() != TypeKind::Float
+                            && operand_type.kind() != TypeKind::Double
+                            && !operand_type.is_pointer()
+                        {
+                            self.report_error(
+                                "自增/自减要求 int 类型或指针类型",
+                                loc,
+                                ErrorCode::E3022_IncDecTypeError,
+                            );
                         }
                         if let Expr::Identifier { name, .. } = operand.as_ref() {
                             if let Some(sym) = self.lookup_var(name) {
                                 if sym.ty.is_const() {
-                                    self.report_error(&format!("不能修改常量变量 '{}'", name), loc, ErrorCode::E3049_AssignToConst);
+                                    self.report_error(
+                                        &format!("不能修改常量变量 '{}'", name),
+                                        loc,
+                                        ErrorCode::E3049_AssignToConst,
+                                    );
                                 }
                             }
                         }
@@ -216,20 +294,35 @@ impl TypeChecker {
                 ty.clone()
             }
             Expr::Literal { ty, .. } => {
-                if ty.is_unsigned() { ty.clone() } else { Type::int() }
+                if ty.is_unsigned() {
+                    ty.clone()
+                } else {
+                    Type::int()
+                }
             }
             Expr::FloatLiteral { .. } => Type::float(),
             Expr::LongLiteral { .. } => Type::long_long(),
             Expr::StringLiteral { value, .. } => {
                 let array_size = value.len() as i32 + 1;
-                Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false, is_vla: false, vla_dims: vec![] }
+                Type::Array {
+                    element: Box::new(Type::char()),
+                    array_size,
+                    dims: vec![array_size],
+                    is_const: false,
+                    is_vla: false,
+                    vla_dims: vec![],
+                }
             }
             Expr::Identifier { name, loc, ty } => {
                 if let Some(sym) = self.lookup_var(name) {
                     if sym.is_static && sym.is_global {
                         if let Some(files) = self.static_global_files.get(name) {
                             if !files.contains(&self.current_file) {
-                                self.report_error(&format!("static 全局变量 '{}' 在其他文件中不可见", name), loc, ErrorCode::E3059_StaticGlobalAccess);
+                                self.report_error(
+                                    &format!("static 全局变量 '{}' 在其他文件中不可见", name),
+                                    loc,
+                                    ErrorCode::E3059_StaticGlobalAccess,
+                                );
                             }
                         }
                     }
@@ -250,7 +343,10 @@ impl TypeChecker {
             Expr::CallPtr { callee, args, loc, ty } => {
                 // Direct named function call: identifier is a known function
                 if let Expr::Identifier { name, .. } = callee.as_ref() {
-                    if self.funcs.contains_key(name) || self.static_func_sigs.contains_key(name) || self.is_builtin_func(name) {
+                    if self.funcs.contains_key(name)
+                        || self.static_func_sigs.contains_key(name)
+                        || self.is_builtin_func(name)
+                    {
                         *ty = self.visit_call(name, args, loc);
                         return ty.clone();
                     }
@@ -261,8 +357,14 @@ impl TypeChecker {
                         Some((param_types.clone(), return_type.as_ref().clone()))
                     } else {
                         // Allow calling through generic pointer (with warning)
-                        self.report_warning("通过通用指针调用函数，建议显式转换为函数指针", loc, ErrorCode::W3055_VoidPointerCast);
-                        for arg in args.iter_mut() { self.resolve_expr_type(arg); }
+                        self.report_warning(
+                            "通过通用指针调用函数，建议显式转换为函数指针",
+                            loc,
+                            ErrorCode::W3055_VoidPointerCast,
+                        );
+                        for arg in args.iter_mut() {
+                            self.resolve_expr_type(arg);
+                        }
                         *ty = Type::int();
                         None
                     }
@@ -271,18 +373,28 @@ impl TypeChecker {
                     Some((param_types.clone(), return_type.as_ref().clone()))
                 } else {
                     self.report_error("不能对非函数指针类型进行调用", loc, ErrorCode::E3045_CompoundAssignType);
-                    for arg in args.iter_mut() { self.resolve_expr_type(arg); }
+                    for arg in args.iter_mut() {
+                        self.resolve_expr_type(arg);
+                    }
                     *ty = Type::int();
                     None
                 };
                 if let Some((param_types, return_type)) = func_info {
                     if args.len() != param_types.len() {
-                        self.report_error(&format!("函数指针调用参数数量不匹配：期望 {}，实际 {}", param_types.len(), args.len()), loc, ErrorCode::E3037_FuncArgCount);
+                        self.report_error(
+                            &format!("函数指针调用参数数量不匹配：期望 {}，实际 {}", param_types.len(), args.len()),
+                            loc,
+                            ErrorCode::E3037_FuncArgCount,
+                        );
                     } else {
                         for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
                             let arg_type = self.resolve_expr_type(arg);
                             if !self.check_assignable(expected, &arg_type, loc) {
-                                self.report_error(&format!("函数指针调用第 {} 个参数类型不匹配", i + 1), loc, ErrorCode::E3038_FuncArgType);
+                                self.report_error(
+                                    &format!("函数指针调用第 {} 个参数类型不匹配", i + 1),
+                                    loc,
+                                    ErrorCode::E3038_FuncArgType,
+                                );
                             } else {
                                 insert_implicit_cast(arg, expected);
                             }
@@ -322,7 +434,11 @@ impl TypeChecker {
                     } else if let Type::Union { name, .. } = pointee.as_ref() {
                         (name.clone(), true)
                     } else {
-                        self.report_error("'.' 和 '->' 只能用于结构体或联合体类型", loc, ErrorCode::E3041_MemberNonStruct);
+                        self.report_error(
+                            "'.' 和 '->' 只能用于结构体或联合体类型",
+                            loc,
+                            ErrorCode::E3041_MemberNonStruct,
+                        );
                         *ty = Type::int();
                         return ty.clone();
                     }
@@ -340,7 +456,11 @@ impl TypeChecker {
                     *ty = ft;
                 } else {
                     let kind_str = if is_union { "联合体" } else { "结构体" };
-                    self.report_error(&format!("{} '{}' 没有成员 '{}'", kind_str, type_name, member), loc, ErrorCode::E3042_UnknownMember);
+                    self.report_error(
+                        &format!("{} '{}' 没有成员 '{}'", kind_str, type_name, member),
+                        loc,
+                        ErrorCode::E3042_UnknownMember,
+                    );
                     *ty = Type::int();
                 }
                 ty.clone()
@@ -348,33 +468,56 @@ impl TypeChecker {
             Expr::Assign { op, left, right, loc, ty } => {
                 let right_type = self.resolve_expr_type(right);
                 let left_type = self.resolve_expr_type(left);
-                let is_lvalue = matches!(left.as_ref(),
-                    Expr::Identifier { .. } | Expr::Index { .. } | Expr::Member { .. } |
-                    Expr::Unary { op: UnaryOp::Deref, .. });
+                let is_lvalue = matches!(
+                    left.as_ref(),
+                    Expr::Identifier { .. }
+                        | Expr::Index { .. }
+                        | Expr::Member { .. }
+                        | Expr::Unary { op: UnaryOp::Deref, .. }
+                );
                 if !is_lvalue {
                     self.report_error("赋值左边必须是可修改的左值", loc, ErrorCode::E3043_AssignToRValue);
                 }
                 if let Expr::Identifier { name, .. } = left.as_ref() {
                     if let Some(sym) = self.lookup_var(name) {
                         if sym.ty.is_const() {
-                            self.report_error(&format!("不能给常量变量 '{}' 赋值", name), loc, ErrorCode::E3049_AssignToConst);
+                            self.report_error(
+                                &format!("不能给常量变量 '{}' 赋值", name),
+                                loc,
+                                ErrorCode::E3049_AssignToConst,
+                            );
                         }
                     }
                 }
-                if let Expr::Unary { op: UnaryOp::Deref, operand, .. } = left.as_ref() {
+                if let Expr::Unary {
+                    op: UnaryOp::Deref, operand, ..
+                } = left.as_ref()
+                {
                     if let Type::Pointer { pointee, .. } = operand.ty() {
                         if pointee.is_const() {
-                            self.report_error("不能通过非 const 指针修改 const 数据", loc, ErrorCode::E3065_ConstViolation);
+                            self.report_error(
+                                "不能通过非 const 指针修改 const 数据",
+                                loc,
+                                ErrorCode::E3065_ConstViolation,
+                            );
                         }
                     }
                 }
                 if !self.check_assignable(&left_type, &right_type, loc) {
-                    self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type), loc, ErrorCode::E3044_AssignTypeMismatch);
+                    self.report_error(
+                        &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type),
+                        loc,
+                        ErrorCode::E3044_AssignTypeMismatch,
+                    );
                 } else {
                     insert_implicit_cast(right, &left_type);
                 }
                 if *op != AssignOp::Assign && (!self.is_scalar(&left_type) || !self.is_scalar(&right_type)) {
-                    self.report_error("复合赋值要求两边都是标量类型（int、float、double 或 long long）", loc, ErrorCode::E3045_CompoundAssignType);
+                    self.report_error(
+                        "复合赋值要求两边都是标量类型（int、float、double 或 long long）",
+                        loc,
+                        ErrorCode::E3045_CompoundAssignType,
+                    );
                 }
                 *ty = left_type.clone();
                 ty.clone()
@@ -386,7 +529,11 @@ impl TypeChecker {
                         if self.current_func_params.contains(name) {
                             if let Some(sym) = self.lookup_var(name) {
                                 if sym.ty.is_pointer() {
-                                    self.report_warning("数组参数已退化为指针，sizeof 结果为指针大小，而非数组总大小。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+                                    self.report_warning(
+                                        "数组参数已退化为指针，sizeof 结果为指针大小，而非数组总大小。",
+                                        loc,
+                                        ErrorCode::W3052_ArrayToPointerDecay,
+                                    );
                                 }
                             }
                         }
@@ -419,6 +566,11 @@ impl TypeChecker {
             }
             Expr::Offsetof { .. } => {
                 // Should have been replaced by Literal above; unreachable
+                Type::int()
+            }
+            // === C++ 新增 (Phase 31 占位) ===
+            _ => {
+                self.report_error("C++ 表达式类型检查尚未实现", expr.loc(), ErrorCode::E4013_NewDeleteNotSupported);
                 Type::int()
             }
         }

@@ -61,11 +61,7 @@ pub unsafe extern "C" fn cide_session_save(s: *mut Session, filepath: *const c_c
         return -1;
     }
     let session = &*s;
-    let vfs_files = session
-        .vm
-        .as_ref()
-        .map(|vm| session.vfs.snapshot_files(vm))
-        .unwrap_or_default();
+    let vfs_files = session.vm.as_ref().map(|vm| session.vfs.snapshot_files(vm)).unwrap_or_default();
     let snapshot = SessionSnapshot {
         compile: session.compile.clone(),
         runtime: session.runtime.clone(),
@@ -93,24 +89,22 @@ pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_c
     let session = &mut *s;
     let path = CStr::from_ptr(filepath).to_string_lossy().into_owned();
     match std::fs::read_to_string(&path) {
-        Ok(json) => {
-            match serde_json::from_str::<SessionSnapshot>(&json) {
-                Ok(snapshot) => {
-                    session.compile = snapshot.compile;
-                    session.runtime = snapshot.runtime;
-                    session.memory = snapshot.memory;
-                    session.vfs = crate::vm::vfs::VirtualFileSystem::new();
-                    let mut vm = CideVM::default();
-                    if session.compile.compiled {
-                        setup_vm(&mut vm, session);
-                        session.vfs.restore_files(&mut vm, &mut session.memory, &snapshot.vfs_files);
-                    }
-                    session.vm = Some(vm);
-                    0
+        Ok(json) => match serde_json::from_str::<SessionSnapshot>(&json) {
+            Ok(snapshot) => {
+                session.compile = snapshot.compile;
+                session.runtime = snapshot.runtime;
+                session.memory = snapshot.memory;
+                session.vfs = crate::vm::vfs::VirtualFileSystem::new();
+                let mut vm = CideVM::default();
+                if session.compile.compiled {
+                    setup_vm(&mut vm, session);
+                    session.vfs.restore_files(&mut vm, &mut session.memory, &snapshot.vfs_files);
                 }
-                Err(_) => -1,
+                session.vm = Some(vm);
+                0
             }
-        }
+            Err(_) => -1,
+        },
         Err(_) => -1,
     }
 }
@@ -134,11 +128,7 @@ pub unsafe extern "C" fn cide_compile(s: *mut Session, source: *const c_char) ->
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_compile_unit(
-    s: *mut Session,
-    filename: *const c_char,
-    source: *const c_char,
-) -> c_int {
+pub unsafe extern "C" fn cide_compile_unit(s: *mut Session, filename: *const c_char, source: *const c_char) -> c_int {
     if s.is_null() || filename.is_null() || source.is_null() {
         return -1;
     }
@@ -173,7 +163,7 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
 }
 
 /// 返回指向编译错误字符串的指针。
-/// 
+///
 /// # 安全性
 /// 返回的指针仅在下次调用 `cide_compile` / `cide_compile_all` 之前有效。
 /// 调用方应立即复制数据，不要长期保存此指针。
@@ -190,11 +180,7 @@ pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_ch
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_get_compile_errors_buf(
-    s: *mut Session,
-    buf: *mut c_char,
-    max_len: c_int,
-) -> c_int {
+pub unsafe extern "C" fn cide_get_compile_errors_buf(s: *mut Session, buf: *mut c_char, max_len: c_int) -> c_int {
     if s.is_null() || buf.is_null() || max_len <= 0 {
         return -1;
     }
@@ -354,16 +340,24 @@ pub unsafe extern "C" fn cide_callstack_get(
         0
     };
     if s.is_null() || index < 0 || index >= stack_len {
-        if !name.is_null() && name_size > 0 { *name = 0; }
-        if !line.is_null() { *line = 0; }
+        if !name.is_null() && name_size > 0 {
+            *name = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
         return;
     }
     let session = &*s;
     let frame = if let Some(ref vm) = session.vm {
         &vm.get_call_stack()[index as usize]
     } else {
-        if !name.is_null() && name_size > 0 { *name = 0; }
-        if !line.is_null() { *line = 0; }
+        if !name.is_null() && name_size > 0 {
+            *name = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
         return;
     };
     write_str(name, name_size, &frame.func_name);
@@ -380,9 +374,13 @@ pub unsafe extern "C" fn cide_callstack_get(
                 break;
             }
         }
-        if let Some(l) = best { best_line = l; }
+        if let Some(l) = best {
+            best_line = l;
+        }
     }
-    if !line.is_null() { *line = best_line; }
+    if !line.is_null() {
+        *line = best_line;
+    }
 }
 
 #[no_mangle]
@@ -431,11 +429,7 @@ pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_cha
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_get_runtime_error_buf(
-    s: *mut Session,
-    buf: *mut c_char,
-    max_len: c_int,
-) -> c_int {
+pub unsafe extern "C" fn cide_get_runtime_error_buf(s: *mut Session, buf: *mut c_char, max_len: c_int) -> c_int {
     if s.is_null() || buf.is_null() || max_len <= 0 {
         return -1;
     }
@@ -549,31 +543,40 @@ pub unsafe extern "C" fn cide_memory_region_get(
     is_heap: *mut c_int,
     is_freed: *mut c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).memory.regions.len() as c_int
-    {
-        if !addr.is_null() { *addr = 0; }
-        if !size.is_null() { *size = 0; }
-        if !is_heap.is_null() { *is_heap = 0; }
-        if !is_freed.is_null() { *is_freed = 0; }
+    if s.is_null() || index < 0 || index >= (*s).memory.regions.len() as c_int {
+        if !addr.is_null() {
+            *addr = 0;
+        }
+        if !size.is_null() {
+            *size = 0;
+        }
+        if !is_heap.is_null() {
+            *is_heap = 0;
+        }
+        if !is_freed.is_null() {
+            *is_freed = 0;
+        }
         return;
     }
     let r = &(&(*s).memory.regions)[index as usize];
-    if !addr.is_null() { *addr = r.addr; }
-    if !size.is_null() { *size = r.size; }
-    if !is_heap.is_null() { *is_heap = if r.is_heap { 1 } else { 0 }; }
-    if !is_freed.is_null() { *is_freed = if r.is_freed { 1 } else { 0 }; }
+    if !addr.is_null() {
+        *addr = r.addr;
+    }
+    if !size.is_null() {
+        *size = r.size;
+    }
+    if !is_heap.is_null() {
+        *is_heap = if r.is_heap { 1 } else { 0 };
+    }
+    if !is_freed.is_null() {
+        *is_freed = if r.is_freed { 1 } else { 0 };
+    }
     write_str(name, name_size, &r.name);
     write_str(ty, type_size, &r.ty);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_memory_get_value(
-    s: *mut Session,
-    addr: u32,
-    out_val: *mut c_int,
-) -> c_int {
+pub unsafe extern "C" fn cide_memory_get_value(s: *mut Session, addr: u32, out_val: *mut c_int) -> c_int {
     if s.is_null() || out_val.is_null() {
         return -1;
     }
@@ -596,11 +599,7 @@ pub unsafe extern "C" fn cide_memory_get_value(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_memory_get_pointer_target(
-    s: *mut Session,
-    addr: u32,
-    out_target: *mut u32,
-) -> c_int {
+pub unsafe extern "C" fn cide_memory_get_pointer_target(s: *mut Session, addr: u32, out_target: *mut u32) -> c_int {
     if s.is_null() || out_target.is_null() {
         return -1;
     }
@@ -645,21 +644,34 @@ pub unsafe extern "C" fn cide_diagnostic_get(
     fix_suggestion: *mut c_char,
     fix_size: c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).compile.diagnostics.len() as c_int
-    {
-        if !line.is_null() { *line = 0; }
-        if !column.is_null() { *column = 0; }
-        if !error_code.is_null() { *error_code = 0; }
-        if !severity.is_null() { *severity = 0; }
+    if s.is_null() || index < 0 || index >= (*s).compile.diagnostics.len() as c_int {
+        if !line.is_null() {
+            *line = 0;
+        }
+        if !column.is_null() {
+            *column = 0;
+        }
+        if !error_code.is_null() {
+            *error_code = 0;
+        }
+        if !severity.is_null() {
+            *severity = 0;
+        }
         return;
     }
     let d = &(&(*s).compile.diagnostics)[index as usize];
-    if !line.is_null() { *line = d.line; }
-    if !column.is_null() { *column = d.column; }
-    if !error_code.is_null() { *error_code = d.error_code; }
-    if !severity.is_null() { *severity = d.severity; }
+    if !line.is_null() {
+        *line = d.line;
+    }
+    if !column.is_null() {
+        *column = d.column;
+    }
+    if !error_code.is_null() {
+        *error_code = d.error_code;
+    }
+    if !severity.is_null() {
+        *severity = d.severity;
+    }
     write_str(message, msg_size, &d.message);
     write_str(fix_suggestion, fix_size, &d.fix_suggestion);
 }
@@ -676,23 +688,40 @@ pub unsafe extern "C" fn cide_diagnostic_get_fix(
     replacement_text: *mut c_char,
     replacement_size: c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).compile.diagnostics.len() as c_int
-    {
-        if !fix_kind.is_null() { *fix_kind = 0; }
-        if !start_line.is_null() { *start_line = 0; }
-        if !start_column.is_null() { *start_column = 0; }
-        if !end_line.is_null() { *end_line = 0; }
-        if !end_column.is_null() { *end_column = 0; }
+    if s.is_null() || index < 0 || index >= (*s).compile.diagnostics.len() as c_int {
+        if !fix_kind.is_null() {
+            *fix_kind = 0;
+        }
+        if !start_line.is_null() {
+            *start_line = 0;
+        }
+        if !start_column.is_null() {
+            *start_column = 0;
+        }
+        if !end_line.is_null() {
+            *end_line = 0;
+        }
+        if !end_column.is_null() {
+            *end_column = 0;
+        }
         return;
     }
     let d = &(&(*s).compile.diagnostics)[index as usize];
-    if !fix_kind.is_null() { *fix_kind = d.fix_kind; }
-    if !start_line.is_null() { *start_line = d.replace_start_line; }
-    if !start_column.is_null() { *start_column = d.replace_start_column; }
-    if !end_line.is_null() { *end_line = d.replace_end_line; }
-    if !end_column.is_null() { *end_column = d.replace_end_column; }
+    if !fix_kind.is_null() {
+        *fix_kind = d.fix_kind;
+    }
+    if !start_line.is_null() {
+        *start_line = d.replace_start_line;
+    }
+    if !start_column.is_null() {
+        *start_column = d.replace_start_column;
+    }
+    if !end_line.is_null() {
+        *end_line = d.replace_end_line;
+    }
+    if !end_column.is_null() {
+        *end_column = d.replace_end_column;
+    }
     write_str(replacement_text, replacement_size, &d.replacement_text);
 }
 
@@ -744,15 +773,16 @@ pub unsafe extern "C" fn cide_trace_get(
     operation: *mut c_char,
     op_size: c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).runtime.trace.len() as c_int
-    {
-        if !line.is_null() { *line = 0; }
+    if s.is_null() || index < 0 || index >= (*s).runtime.trace.len() as c_int {
+        if !line.is_null() {
+            *line = 0;
+        }
         return;
     }
     let t = &(&(*s).runtime.trace)[index as usize];
-    if !line.is_null() { *line = t.line; }
+    if !line.is_null() {
+        *line = t.line;
+    }
     write_str(operation, op_size, &t.operation);
 }
 
@@ -776,26 +806,45 @@ pub unsafe extern "C" fn cide_variable_get(
     array_size: *mut c_int,
     value: *mut c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).runtime.variable_snapshot.len() as c_int
-    {
-        if !name.is_null() && name_size > 0 { *name = 0; }
-        if !addr.is_null() { *addr = 0; }
-        if !is_local.is_null() { *is_local = 0; }
-        if !is_array.is_null() { *is_array = 0; }
-        if !array_size.is_null() { *array_size = 0; }
-        if !value.is_null() { *value = 0; }
+    if s.is_null() || index < 0 || index >= (*s).runtime.variable_snapshot.len() as c_int {
+        if !name.is_null() && name_size > 0 {
+            *name = 0;
+        }
+        if !addr.is_null() {
+            *addr = 0;
+        }
+        if !is_local.is_null() {
+            *is_local = 0;
+        }
+        if !is_array.is_null() {
+            *is_array = 0;
+        }
+        if !array_size.is_null() {
+            *array_size = 0;
+        }
+        if !value.is_null() {
+            *value = 0;
+        }
         return;
     }
     let v = &(&(*s).runtime.variable_snapshot)[index as usize];
     write_str(name, name_size, &v.name);
-    if !addr.is_null() { *addr = v.addr; }
-    if !is_local.is_null() { *is_local = if v.is_local { 1 } else { 0 }; }
+    if !addr.is_null() {
+        *addr = v.addr;
+    }
+    if !is_local.is_null() {
+        *is_local = if v.is_local { 1 } else { 0 };
+    }
     let is_arr = matches!(v.ty.kind(), crate::compiler::ast::TypeKind::Array);
-    if !is_array.is_null() { *is_array = if is_arr { 1 } else { 0 }; }
-    if !array_size.is_null() { *array_size = if is_arr { v.ty.array_size() } else { 0 }; }
-    if !value.is_null() { *value = v.value as c_int; }
+    if !is_array.is_null() {
+        *is_array = if is_arr { 1 } else { 0 };
+    }
+    if !array_size.is_null() {
+        *array_size = if is_arr { v.ty.array_size() } else { 0 };
+    }
+    if !value.is_null() {
+        *value = v.value as c_int;
+    }
 }
 
 #[no_mangle]
@@ -805,11 +854,10 @@ pub unsafe extern "C" fn cide_variable_get_type(
     type_buf: *mut c_char,
     type_buf_size: c_int,
 ) -> c_int {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).runtime.variable_snapshot.len() as c_int
-    {
-        if !type_buf.is_null() && type_buf_size > 0 { *type_buf = 0; }
+    if s.is_null() || index < 0 || index >= (*s).runtime.variable_snapshot.len() as c_int {
+        if !type_buf.is_null() && type_buf_size > 0 {
+            *type_buf = 0;
+        }
         return -1;
     }
     let v = &(&(*s).runtime.variable_snapshot)[index as usize];
@@ -838,12 +886,16 @@ pub unsafe extern "C" fn cide_variable_find_by_addr(
         };
         if addr >= v.addr && addr < v.addr + size {
             write_str(name, name_size, &v.name);
-            if !offset.is_null() { *offset = (addr - v.addr) as c_int; }
+            if !offset.is_null() {
+                *offset = (addr - v.addr) as c_int;
+            }
             return 0;
         }
     }
     *name = 0;
-    if !offset.is_null() { *offset = 0; }
+    if !offset.is_null() {
+        *offset = 0;
+    }
     -1
 }
 
@@ -866,7 +918,9 @@ pub unsafe extern "C" fn cide_variable_get_field(
     let v = &session.runtime.variable_snapshot[var_index as usize];
     let struct_name = match v.ty.kind() {
         crate::compiler::ast::TypeKind::Struct => v.ty.name().to_string(),
-        crate::compiler::ast::TypeKind::Pointer if matches!(v.ty, crate::compiler::ast::Type::Pointer { pointee: ref p, .. } if matches!(p.as_ref(), crate::compiler::ast::Type::Struct { .. })) => v.ty.name().to_string(),
+        crate::compiler::ast::TypeKind::Pointer if matches!(v.ty, crate::compiler::ast::Type::Pointer { pointee: ref p, .. } if matches!(p.as_ref(), crate::compiler::ast::Type::Struct { .. })) => {
+            v.ty.name().to_string()
+        }
         _ => return -1,
     };
     let fields = match session.compile.struct_fields.get(&struct_name) {
@@ -877,7 +931,9 @@ pub unsafe extern "C" fn cide_variable_get_field(
         return -1;
     }
     let (field_name, field_offset) = &fields[field_index as usize];
-    if !out_offset.is_null() { *out_offset = *field_offset; }
+    if !out_offset.is_null() {
+        *out_offset = *field_offset;
+    }
     write_str(name, name_size, field_name);
     0
 }
@@ -891,23 +947,23 @@ pub unsafe extern "C" fn cide_vis_event_count(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_vis_event_get(
-    s: *mut Session,
-    index: c_int,
-    ty: *mut c_int,
-    line: *mut c_int,
-) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).runtime.vis_event_cache.len() as c_int
-    {
-        if !ty.is_null() { *ty = 0; }
-        if !line.is_null() { *line = 0; }
+pub unsafe extern "C" fn cide_vis_event_get(s: *mut Session, index: c_int, ty: *mut c_int, line: *mut c_int) {
+    if s.is_null() || index < 0 || index >= (*s).runtime.vis_event_cache.len() as c_int {
+        if !ty.is_null() {
+            *ty = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
         return;
     }
     let e = &(&(*s).runtime.vis_event_cache)[index as usize];
-    if !ty.is_null() { *ty = e.ty; }
-    if !line.is_null() { *line = e.line; }
+    if !ty.is_null() {
+        *ty = e.ty;
+    }
+    if !line.is_null() {
+        *line = e.line;
+    }
 }
 
 #[no_mangle]
@@ -920,23 +976,40 @@ pub unsafe extern "C" fn cide_vis_event_get_ex(
     extra1: *mut c_int,
     extra2: *mut c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).runtime.vis_event_cache.len() as c_int
-    {
-        if !ty.is_null() { *ty = 0; }
-        if !line.is_null() { *line = 0; }
-        if !extra0.is_null() { *extra0 = 0; }
-        if !extra1.is_null() { *extra1 = 0; }
-        if !extra2.is_null() { *extra2 = 0; }
+    if s.is_null() || index < 0 || index >= (*s).runtime.vis_event_cache.len() as c_int {
+        if !ty.is_null() {
+            *ty = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
+        if !extra0.is_null() {
+            *extra0 = 0;
+        }
+        if !extra1.is_null() {
+            *extra1 = 0;
+        }
+        if !extra2.is_null() {
+            *extra2 = 0;
+        }
         return;
     }
     let e = &(&(*s).runtime.vis_event_cache)[index as usize];
-    if !ty.is_null() { *ty = e.ty; }
-    if !line.is_null() { *line = e.line; }
-    if !extra0.is_null() { *extra0 = e.extra0; }
-    if !extra1.is_null() { *extra1 = e.extra1; }
-    if !extra2.is_null() { *extra2 = e.extra2; }
+    if !ty.is_null() {
+        *ty = e.ty;
+    }
+    if !line.is_null() {
+        *line = e.line;
+    }
+    if !extra0.is_null() {
+        *extra0 = e.extra0;
+    }
+    if !extra1.is_null() {
+        *extra1 = e.extra1;
+    }
+    if !extra2.is_null() {
+        *extra2 = e.extra2;
+    }
 }
 
 #[no_mangle]
@@ -970,41 +1043,46 @@ pub unsafe extern "C" fn cide_algorithm_match_get(
     suggestion_size: c_int,
     line: *mut c_int,
 ) {
-    if s.is_null()
-        || index < 0
-        || index >= (*s).compile.algorithm_matches.len() as c_int
-    {
-        if !name.is_null() && name_size > 0 { *name = 0; }
-        if !display_name.is_null() && display_name_size > 0 { *display_name = 0; }
-        if !func_name.is_null() && func_name_size > 0 { *func_name = 0; }
-        if !confidence.is_null() { *confidence = 0; }
-        if !suggestion.is_null() && suggestion_size > 0 { *suggestion = 0; }
-        if !line.is_null() { *line = 0; }
+    if s.is_null() || index < 0 || index >= (*s).compile.algorithm_matches.len() as c_int {
+        if !name.is_null() && name_size > 0 {
+            *name = 0;
+        }
+        if !display_name.is_null() && display_name_size > 0 {
+            *display_name = 0;
+        }
+        if !func_name.is_null() && func_name_size > 0 {
+            *func_name = 0;
+        }
+        if !confidence.is_null() {
+            *confidence = 0;
+        }
+        if !suggestion.is_null() && suggestion_size > 0 {
+            *suggestion = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
         return;
     }
     let m = &(&(*s).compile.algorithm_matches)[index as usize];
     write_str(name, name_size, &m.name);
     write_str(display_name, display_name_size, &m.display_name);
     write_str(func_name, func_name_size, &m.func_name);
-    if !confidence.is_null() { *confidence = m.confidence; }
+    if !confidence.is_null() {
+        *confidence = m.confidence;
+    }
     write_str(suggestion, suggestion_size, &m.suggestion);
-    if !line.is_null() { *line = m.line; }
+    if !line.is_null() {
+        *line = m.line;
+    }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn cide_algorithm_match_vis_event_count(
-    s: *mut Session,
-    match_index: c_int,
-) -> c_int {
-    if s.is_null()
-        || match_index < 0
-        || match_index >= (*s).compile.algorithm_matches.len() as c_int
-    {
+pub unsafe extern "C" fn cide_algorithm_match_vis_event_count(s: *mut Session, match_index: c_int) -> c_int {
+    if s.is_null() || match_index < 0 || match_index >= (*s).compile.algorithm_matches.len() as c_int {
         return 0;
     }
-    (&(*s).compile.algorithm_matches)[match_index as usize]
-        .vis_events
-        .len() as c_int
+    (&(*s).compile.algorithm_matches)[match_index as usize].vis_events.len() as c_int
 }
 
 #[no_mangle]
@@ -1017,25 +1095,37 @@ pub unsafe extern "C" fn cide_algorithm_match_vis_event_get(
     context: *mut c_char,
     context_size: c_int,
 ) {
-    if s.is_null()
-        || match_index < 0
-        || match_index >= (*s).compile.algorithm_matches.len() as c_int
-    {
-        if !ty.is_null() { *ty = 0; }
-        if !line.is_null() { *line = 0; }
-        if !context.is_null() && context_size > 0 { *context = 0; }
+    if s.is_null() || match_index < 0 || match_index >= (*s).compile.algorithm_matches.len() as c_int {
+        if !ty.is_null() {
+            *ty = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
+        if !context.is_null() && context_size > 0 {
+            *context = 0;
+        }
         return;
     }
     let m = &(&(*s).compile.algorithm_matches)[match_index as usize];
     if event_index < 0 || event_index >= m.vis_events.len() as c_int {
-        if !ty.is_null() { *ty = 0; }
-        if !line.is_null() { *line = 0; }
-        if !context.is_null() && context_size > 0 { *context = 0; }
+        if !ty.is_null() {
+            *ty = 0;
+        }
+        if !line.is_null() {
+            *line = 0;
+        }
+        if !context.is_null() && context_size > 0 {
+            *context = 0;
+        }
         return;
     }
     let ev = &m.vis_events[event_index as usize];
-    if !ty.is_null() { *ty = ev.ty; }
-    if !line.is_null() { *line = ev.line; }
+    if !ty.is_null() {
+        *ty = ev.ty;
+    }
+    if !line.is_null() {
+        *line = ev.line;
+    }
     write_str(context, context_size, &ev.context);
 }
-

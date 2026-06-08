@@ -47,7 +47,9 @@ fn test_lexer_char_literal() {
 #[test]
 fn test_lexer_operators() {
     let tokens = tokenize("+ - * / % == != <= >= && || << >> & | ^ ~");
-    let ops = vec!["+", "-", "*", "/", "%", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "&", "|", "^", "~"];
+    let ops = vec![
+        "+", "-", "*", "/", "%", "==", "!=", "<=", ">=", "&&", "||", "<<", ">>", "&", "|", "^", "~",
+    ];
     for (i, op) in ops.iter().enumerate() {
         assert_eq!(tokens[i].1, op.to_string(), "operator mismatch at index {}", i);
     }
@@ -80,12 +82,30 @@ fn test_lexer_keywords() {
     let src = "if else while for do return break continue switch case default struct typedef enum sizeof const void float int char unsigned signed long short";
     let tokens = tokenize(src);
     let expected = vec![
-        TokenType::If, TokenType::Else, TokenType::While, TokenType::For,
-        TokenType::Do, TokenType::Return, TokenType::Break, TokenType::Continue,
-        TokenType::Switch, TokenType::Case, TokenType::Default, TokenType::Struct,
-        TokenType::Typedef, TokenType::Enum, TokenType::Sizeof, TokenType::Const,
-        TokenType::Void, TokenType::Float, TokenType::Int, TokenType::Char,
-        TokenType::Unsigned, TokenType::Signed, TokenType::Long, TokenType::Short,
+        TokenType::If,
+        TokenType::Else,
+        TokenType::While,
+        TokenType::For,
+        TokenType::Do,
+        TokenType::Return,
+        TokenType::Break,
+        TokenType::Continue,
+        TokenType::Switch,
+        TokenType::Case,
+        TokenType::Default,
+        TokenType::Struct,
+        TokenType::Typedef,
+        TokenType::Enum,
+        TokenType::Sizeof,
+        TokenType::Const,
+        TokenType::Void,
+        TokenType::Float,
+        TokenType::Int,
+        TokenType::Char,
+        TokenType::Unsigned,
+        TokenType::Signed,
+        TokenType::Long,
+        TokenType::Short,
     ];
     for (i, exp) in expected.iter().enumerate() {
         assert_eq!(&tokens[i].0, exp, "keyword mismatch at index {}", i);
@@ -96,7 +116,11 @@ fn test_lexer_keywords() {
 fn test_lexer_error_unknown_char() {
     let (_, errors) = Lexer::new("int @ x;").tokenize();
     assert!(!errors.is_empty(), "Expected lexer error for unknown char @");
-    assert!(errors[0].message.contains("无法识别") || errors[0].message.contains("未知"), "Expected Chinese error message, got: {}", errors[0].message);
+    assert!(
+        errors[0].message.contains("无法识别") || errors[0].message.contains("未知"),
+        "Expected Chinese error message, got: {}",
+        errors[0].message
+    );
 }
 
 #[test]
@@ -118,7 +142,10 @@ fn test_lexer_ifdef_defined() {
     let tokens = tokenize(src);
     // x 应该被编译
     let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
-    assert!(ids.iter().any(|(_, text)| text == "x"), "x should be tokenized when DEBUG is defined");
+    assert!(
+        ids.iter().any(|(_, text)| text == "x"),
+        "x should be tokenized when DEBUG is defined"
+    );
 }
 
 #[test]
@@ -127,7 +154,10 @@ fn test_lexer_ifdef_undefined() {
     let tokens = tokenize(src);
     // y 应该被跳过，z 应该被编译
     let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
-    assert!(!ids.iter().any(|(_, text)| text == "y"), "y should be skipped when UNDEFINED is not defined");
+    assert!(
+        !ids.iter().any(|(_, text)| text == "y"),
+        "y should be skipped when UNDEFINED is not defined"
+    );
     assert!(ids.iter().any(|(_, text)| text == "z"), "z should be tokenized after #endif");
 }
 
@@ -137,7 +167,10 @@ fn test_lexer_ifndef() {
     let tokens = tokenize(src);
     // FLAG 未定义，所以 a 应该被编译
     let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
-    assert!(ids.iter().any(|(_, text)| text == "a"), "a should be tokenized when FLAG is not defined");
+    assert!(
+        ids.iter().any(|(_, text)| text == "a"),
+        "a should be tokenized when FLAG is not defined"
+    );
 }
 
 #[test]
@@ -146,7 +179,10 @@ fn test_lexer_ifndef_defined() {
     let tokens = tokenize(src);
     // FLAG 已定义，所以 b 应该被跳过，c 应该被编译
     let ids: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Identifier).collect();
-    assert!(!ids.iter().any(|(_, text)| text == "b"), "b should be skipped when FLAG is defined");
+    assert!(
+        !ids.iter().any(|(_, text)| text == "b"),
+        "b should be skipped when FLAG is defined"
+    );
     assert!(ids.iter().any(|(_, text)| text == "c"), "c should be tokenized after #endif");
 }
 
@@ -166,7 +202,10 @@ fn test_lexer_conditional_else_undefined() {
     let tokens = tokenize(src);
     // MODE 未定义，所以 a=1 应该被跳过，a=2 应该被编译
     let nums: Vec<_> = tokens.iter().filter(|(t, _)| *t == TokenType::Number).collect();
-    assert!(!nums.iter().any(|(_, text)| text == "1"), "1 should be skipped when MODE is not defined");
+    assert!(
+        !nums.iter().any(|(_, text)| text == "1"),
+        "1 should be skipped when MODE is not defined"
+    );
     assert!(nums.iter().any(|(_, text)| text == "2"), "2 should appear in #else block");
 }
 
@@ -280,6 +319,56 @@ int x = SECRET;
     // 这里主要验证 SECRET 没有被注册为宏
     // 由于 SECRET 未定义，编译时会在 parser/typeck 报错
     // 本测试只验证 lexer 没有产生错误（条件编译本身正确处理）
-    assert!(errors.is_empty() || !errors.iter().any(|e| e.code == 1011 || e.code == 1012 || e.code == 1013),
-        "Should not produce conditional compilation errors");
+    assert!(
+        errors.is_empty() || !errors.iter().any(|e| e.code == 1011 || e.code == 1012 || e.code == 1013),
+        "Should not produce conditional compilation errors"
+    );
+}
+
+#[test]
+fn test_lexer_cpp_keywords() {
+    let src = "class public private protected this using namespace virtual override friend template typename static_cast const_cast reinterpret_cast new delete nullptr";
+    let (tokens, errors) = Lexer::with_mode(src, true).tokenize();
+    assert!(errors.is_empty(), "Lexer errors: {:?}", errors);
+    let tokens: Vec<_> = tokens.into_iter().map(|t| (t.ty, t.text)).collect();
+    let expected = vec![
+        TokenType::Class,
+        TokenType::Public,
+        TokenType::Private,
+        TokenType::Protected,
+        TokenType::This,
+        TokenType::Using,
+        TokenType::Namespace,
+        TokenType::Virtual,
+        TokenType::Override,
+        TokenType::Friend,
+        TokenType::Template,
+        TokenType::Typename,
+        TokenType::StaticCast,
+        TokenType::ConstCast,
+        TokenType::ReinterpretCast,
+        TokenType::New,
+        TokenType::Delete,
+        TokenType::Null,
+    ];
+    for (i, exp) in expected.iter().enumerate() {
+        assert_eq!(&tokens[i].0, exp, "C++ keyword mismatch at index {}: got {:?}", i, tokens[i].1);
+    }
+}
+
+#[test]
+fn test_lexer_cpp_operators() {
+    let tokens = tokenize(":: ->* .*");
+    assert_eq!(tokens[0], (TokenType::ColonColon, "::".to_string()));
+    assert_eq!(tokens[1], (TokenType::ArrowStar, "->*".to_string()));
+    assert_eq!(tokens[2], (TokenType::DotStar, ".*".to_string()));
+}
+
+#[test]
+fn test_lexer_cpp_line_comment() {
+    // C++ // comment should be skipped like C-style block comments
+    let tokens = tokenize("// C++ line comment\nint x;");
+    assert_eq!(tokens[0], (TokenType::Int, "int".to_string()));
+    assert_eq!(tokens[1], (TokenType::Identifier, "x".to_string()));
+    assert_eq!(tokens[2], (TokenType::Semicolon, ";".to_string()));
 }

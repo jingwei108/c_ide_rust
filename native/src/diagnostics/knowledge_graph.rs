@@ -264,34 +264,159 @@ static NODES: LazyLock<Vec<ConceptNode>> = LazyLock::new(|| {
 static EDGES: LazyLock<Vec<ConceptEdge>> = LazyLock::new(|| {
     vec![
         // Compile relationships
-        ConceptEdge { from: String::from("VarDecl"), to: String::from("TypeSystem"), relation: String::from("Prerequisite"), strength: 0.9 },
-        ConceptEdge { from: String::from("TypeSystem"), to: String::from("ImplicitCast"), relation: String::from("LeadsTo"), strength: 0.8 },
-        ConceptEdge { from: String::from("TypeSystem"), to: String::from("PointerType"), relation: String::from("LeadsTo"), strength: 0.8 },
-        ConceptEdge { from: String::from("LogicOp"), to: String::from("BitOp"), relation: String::from("CommonMistake"), strength: 0.9 },
-        ConceptEdge { from: String::from("ArithOp"), to: String::from("PointerType"), relation: String::from("UsedTogether"), strength: 0.6 },
-        ConceptEdge { from: String::from("Scope"), to: String::from("VarDecl"), relation: String::from("UsedTogether"), strength: 0.7 },
+        ConceptEdge {
+            from: String::from("VarDecl"),
+            to: String::from("TypeSystem"),
+            relation: String::from("Prerequisite"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("TypeSystem"),
+            to: String::from("ImplicitCast"),
+            relation: String::from("LeadsTo"),
+            strength: 0.8,
+        },
+        ConceptEdge {
+            from: String::from("TypeSystem"),
+            to: String::from("PointerType"),
+            relation: String::from("LeadsTo"),
+            strength: 0.8,
+        },
+        ConceptEdge {
+            from: String::from("LogicOp"),
+            to: String::from("BitOp"),
+            relation: String::from("CommonMistake"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("ArithOp"),
+            to: String::from("PointerType"),
+            relation: String::from("UsedTogether"),
+            strength: 0.6,
+        },
+        ConceptEdge {
+            from: String::from("Scope"),
+            to: String::from("VarDecl"),
+            relation: String::from("UsedTogether"),
+            strength: 0.7,
+        },
         // Memory relationships
-        ConceptEdge { from: String::from("StackMemory"), to: String::from("HeapMemory"), relation: String::from("Contradicts"), strength: 0.8 },
-        ConceptEdge { from: String::from("Pointer"), to: String::from("AddressOf"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("Pointer"), to: String::from("Dereference"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("Pointer"), to: String::from("PtrArithmetic"), relation: String::from("LeadsTo"), strength: 0.8 },
-        ConceptEdge { from: String::from("Array"), to: String::from("Pointer"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("Array"), to: String::from("ArrayDecay"), relation: String::from("LeadsTo"), strength: 0.8 },
-        ConceptEdge { from: String::from("ArrayDecay"), to: String::from("PointerType"), relation: String::from("CommonMistake"), strength: 0.7 },
-        ConceptEdge { from: String::from("HeapMemory"), to: String::from("Pointer"), relation: String::from("UsedTogether"), strength: 0.9 },
-        ConceptEdge { from: String::from("StructLayout"), to: String::from("Pointer"), relation: String::from("UsedTogether"), strength: 0.6 },
+        ConceptEdge {
+            from: String::from("StackMemory"),
+            to: String::from("HeapMemory"),
+            relation: String::from("Contradicts"),
+            strength: 0.8,
+        },
+        ConceptEdge {
+            from: String::from("Pointer"),
+            to: String::from("AddressOf"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("Pointer"),
+            to: String::from("Dereference"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("Pointer"),
+            to: String::from("PtrArithmetic"),
+            relation: String::from("LeadsTo"),
+            strength: 0.8,
+        },
+        ConceptEdge {
+            from: String::from("Array"),
+            to: String::from("Pointer"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("Array"),
+            to: String::from("ArrayDecay"),
+            relation: String::from("LeadsTo"),
+            strength: 0.8,
+        },
+        ConceptEdge {
+            from: String::from("ArrayDecay"),
+            to: String::from("PointerType"),
+            relation: String::from("CommonMistake"),
+            strength: 0.7,
+        },
+        ConceptEdge {
+            from: String::from("HeapMemory"),
+            to: String::from("Pointer"),
+            relation: String::from("UsedTogether"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("StructLayout"),
+            to: String::from("Pointer"),
+            relation: String::from("UsedTogether"),
+            strength: 0.6,
+        },
         // ControlFlow relationships
-        ConceptEdge { from: String::from("ForLoop"), to: String::from("BoundaryCondition"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("WhileLoop"), to: String::from("BoundaryCondition"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("IfSwitch"), to: String::from("LogicOp"), relation: String::from("UsedTogether"), strength: 0.9 },
-        ConceptEdge { from: String::from("FunctionCall"), to: String::from("ParameterPassing"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("FunctionCall"), to: String::from("ReturnValue"), relation: String::from("LeadsTo"), strength: 0.8 },
-        ConceptEdge { from: String::from("Recursion"), to: String::from("FunctionCall"), relation: String::from("Prerequisite"), strength: 0.9 },
-        ConceptEdge { from: String::from("Recursion"), to: String::from("BoundaryCondition"), relation: String::from("UsedTogether"), strength: 0.9 },
+        ConceptEdge {
+            from: String::from("ForLoop"),
+            to: String::from("BoundaryCondition"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("WhileLoop"),
+            to: String::from("BoundaryCondition"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("IfSwitch"),
+            to: String::from("LogicOp"),
+            relation: String::from("UsedTogether"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("FunctionCall"),
+            to: String::from("ParameterPassing"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("FunctionCall"),
+            to: String::from("ReturnValue"),
+            relation: String::from("LeadsTo"),
+            strength: 0.8,
+        },
+        ConceptEdge {
+            from: String::from("Recursion"),
+            to: String::from("FunctionCall"),
+            relation: String::from("Prerequisite"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("Recursion"),
+            to: String::from("BoundaryCondition"),
+            relation: String::from("UsedTogether"),
+            strength: 0.9,
+        },
         // Cross-domain relationships
-        ConceptEdge { from: String::from("BoundaryCondition"), to: String::from("Array"), relation: String::from("UsedTogether"), strength: 0.9 },
-        ConceptEdge { from: String::from("PointerType"), to: String::from("Pointer"), relation: String::from("LeadsTo"), strength: 0.9 },
-        ConceptEdge { from: String::from("ParameterPassing"), to: String::from("Pointer"), relation: String::from("UsedTogether"), strength: 0.7 },
+        ConceptEdge {
+            from: String::from("BoundaryCondition"),
+            to: String::from("Array"),
+            relation: String::from("UsedTogether"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("PointerType"),
+            to: String::from("Pointer"),
+            relation: String::from("LeadsTo"),
+            strength: 0.9,
+        },
+        ConceptEdge {
+            from: String::from("ParameterPassing"),
+            to: String::from("Pointer"),
+            relation: String::from("UsedTogether"),
+            strength: 0.7,
+        },
     ]
 });
 
@@ -444,10 +569,7 @@ pub fn get_all_concept_edges() -> Vec<ConceptEdge> {
 // Helpers
 // ===================================================================
 
-fn collect_neighbors(
-    node_id: &str,
-    node_map: &HashMap<String, &ConceptNode>,
-) -> Vec<NeighborConcept> {
+fn collect_neighbors(node_id: &str, node_map: &HashMap<String, &ConceptNode>) -> Vec<NeighborConcept> {
     let mut neighbors = Vec::new();
     for edge in EDGES.iter() {
         let (other_id, is_prereq) = if edge.from == node_id {

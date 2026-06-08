@@ -13,28 +13,8 @@ pub const BYTECODE_LIBC_FUNC_COUNT: usize = 22;
 /// 注意：并非所有函数都默认走 Bytecode 路径，
 /// 实际路径由 `host_func_id::BYTECODE_LIBC_PURE_FUNCS` 控制。
 pub const BYTECODE_LIBC_ALL_FUNCS: &[&str] = &[
-    "isdigit",
-    "isalpha",
-    "islower",
-    "isupper",
-    "tolower",
-    "toupper",
-    "isspace",
-    "isalnum",
-    "isprint",
-    "iscntrl",
-    "isxdigit",
-    "abs",
-    "atoi",
-    "srand",
-    "rand",
-    "strlen",
-    "strcmp",
-    "strcpy",
-    "strcat",
-    "strncpy",
-    "memcpy",
-    "memmove",
+    "isdigit", "isalpha", "islower", "isupper", "tolower", "toupper", "isspace", "isalnum", "isprint", "iscntrl",
+    "isxdigit", "abs", "atoi", "srand", "rand", "strlen", "strcmp", "strcpy", "strcat", "strncpy", "memcpy", "memmove",
 ];
 
 /// 将函数名解析为 Bytecode Libc 固定索引。
@@ -70,4 +50,3 @@ pub fn bytecode_libc_index(name: &str) -> Option<i32> {
 pub fn is_bytecode_libc(name: &str) -> bool {
     bytecode_libc_index(name).is_some()
 }
-

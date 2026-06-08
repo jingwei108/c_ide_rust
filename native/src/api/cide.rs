@@ -5,23 +5,19 @@ use flutter_rust_bridge::frb;
 // 与 session.rs 完全一致的类型直接 re-export，消除重复定义
 #[frb]
 pub use crate::session::{
-    AlgorithmMatch, CompileResult, Diagnostic, HeapStats, MemoryFragment, MemoryRegion, RunResult,
-    StepResult, StepStatus, TraceEntry, VisEvent,
+    AlgorithmMatch, CompileResult, Diagnostic, HeapStats, MemoryFragment, MemoryRegion, RunResult, StepResult,
+    StepStatus, TraceEntry, VisEvent,
 };
 
 // 统一模式类型 re-export
 #[frb]
-pub use crate::diagnostics::knowledge_graph::{
-    ActivatedConcept, ConceptEdge, ConceptNode, NeighborConcept,
-};
+pub use crate::diagnostics::knowledge_graph::{ActivatedConcept, ConceptEdge, ConceptNode, NeighborConcept};
 
 #[frb]
 pub use crate::diagnostics::learning_path::{LearningPath, PathStep};
 
 #[frb]
-pub use crate::diagnostics::misconception_patterns::{
-    CompileRecord, DetectedMisconception, MisconceptionPattern,
-};
+pub use crate::diagnostics::misconception_patterns::{CompileRecord, DetectedMisconception, MisconceptionPattern};
 
 #[frb]
 pub fn detect_misconceptions(history: Vec<CompileRecord>) -> Vec<DetectedMisconception> {
@@ -29,9 +25,7 @@ pub fn detect_misconceptions(history: Vec<CompileRecord>) -> Vec<DetectedMisconc
 }
 
 #[frb]
-pub fn recommend_learning_paths(
-    detected: Vec<DetectedMisconception>,
-) -> Vec<LearningPath> {
+pub fn recommend_learning_paths(detected: Vec<DetectedMisconception>) -> Vec<LearningPath> {
     crate::diagnostics::learning_path::recommend_learning_paths(detected)
 }
 
@@ -76,12 +70,7 @@ pub struct CompletionCandidate {
 }
 
 #[frb]
-pub fn get_completion_candidates(
-    source: String,
-    line: i32,
-    column: i32,
-    prefix: String,
-) -> Vec<CompletionCandidate> {
+pub fn get_completion_candidates(source: String, line: i32, column: i32, prefix: String) -> Vec<CompletionCandidate> {
     crate::flutter_bridge::get_completion_candidates(source, line, column, prefix)
         .into_iter()
         .map(|c| CompletionCandidate {
@@ -121,16 +110,15 @@ pub fn infer_intent_from_source(source: String) -> Vec<IntentScore> {
 
 #[frb]
 pub use crate::unified::types::{
-    AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, AutoStepResult, HeatmapData,
-    HeatmapDelta, PointerSnapshot, PointerStatus, SeekResult, StepMeta, StepPayload, UnifiedRunResult,
+    AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, AutoStepResult, HeatmapData, HeatmapDelta,
+    PointerSnapshot, PointerStatus, SeekResult, StepMeta, StepPayload, UnifiedRunResult,
 };
 
 // Stream 批量传输优化类型
 #[frb]
 pub use crate::unified::stream::{
-    StepStreamBatch, StepPayloadRef, StepPayloadDelta, ApiVarSnapshotRef, VarDelta,
-    PointerSnapshotRef, ArraySnapshotRef, AccessedVarRef, ApiFrameInfoRef,
-    AlgorithmStepSnapshotRef,
+    AccessedVarRef, AlgorithmStepSnapshotRef, ApiFrameInfoRef, ApiVarSnapshotRef, ArraySnapshotRef, PointerSnapshotRef,
+    StepPayloadDelta, StepPayloadRef, StepStreamBatch, VarDelta,
 };
 
 #[frb]
@@ -189,19 +177,25 @@ pub struct CodeFile {
 
 #[frb]
 pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
-    let files = files.into_iter().map(|f| crate::session::CodeFile {
-        filename: f.filename,
-        source: f.source,
-    }).collect();
+    let files = files
+        .into_iter()
+        .map(|f| crate::session::CodeFile {
+            filename: f.filename,
+            source: f.source,
+        })
+        .collect();
     crate::flutter_bridge::compile_multi(files)
 }
 
 #[frb]
 pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
-    let files = files.into_iter().map(|f| crate::session::CodeFile {
-        filename: f.filename,
-        source: f.source,
-    }).collect();
+    let files = files
+        .into_iter()
+        .map(|f| crate::session::CodeFile {
+            filename: f.filename,
+            source: f.source,
+        })
+        .collect();
     crate::flutter_bridge::compile_and_run_multi(files)
 }
 

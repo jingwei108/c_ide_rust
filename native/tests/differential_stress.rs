@@ -11,11 +11,9 @@
 use cide_native::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use cide_native::session::{CompileUnit, Session};
 use cide_native::vm::host_funcs::{
-    host_abs, host_atoi, host_strlen, host_strcmp,
-    host_isdigit, host_isalpha, host_islower, host_isupper,
-    host_tolower, host_toupper, host_isspace, host_isalnum,
-    host_isprint, host_iscntrl, host_isxdigit,
-    host_strncpy, host_memcpy, host_memmove,
+    host_abs, host_atoi, host_isalnum, host_isalpha, host_iscntrl, host_isdigit, host_islower, host_isprint,
+    host_isspace, host_isupper, host_isxdigit, host_memcpy, host_memmove, host_strcmp, host_strlen, host_strncpy,
+    host_tolower, host_toupper,
 };
 use cide_native::vm::vm::CideVM;
 
@@ -117,15 +115,7 @@ fn test_diff_atoi() {
     let (mut vm, mut session) = prepare_bc_vm(&[("stdlib.c", BC_STDLIB)]);
     let func_idx = find_func_idx(&vm, "atoi");
 
-    let test_cases = [
-        "42",
-        "  -123abc",
-        "0",
-        "  +99",
-        "abc",
-        "",
-        "  007",
-    ];
+    let test_cases = ["42", "  -123abc", "0", "  +99", "abc", "", "  007"];
     let base_addr = 0x2000u32;
 
     for s in &test_cases {
@@ -199,21 +189,13 @@ fn read_test_string(vm: &CideVM, addr: u32) -> String {
     if start >= mem.len() {
         return String::new();
     }
-    let bytes: Vec<u8> = mem[start..]
-        .iter()
-        .take_while(|&&b| b != 0)
-        .copied()
-        .collect();
+    let bytes: Vec<u8> = mem[start..].iter().take_while(|&&b| b != 0).copied().collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
 // ─── ctype 差分测试（批量） ─────────────────────────────────────────────────
 
-fn diff_ctype_test(
-    func_name: &str,
-    inputs: &[i32],
-    host_fn: fn(&mut CideVM, &mut Session),
-) {
+fn diff_ctype_test(func_name: &str, inputs: &[i32], host_fn: fn(&mut CideVM, &mut Session)) {
     let (mut vm, mut session) = prepare_bc_vm(&[("ctype.c", BC_CTYPE)]);
     let func_idx = find_func_idx(&vm, func_name);
 
@@ -228,7 +210,7 @@ fn diff_ctype_test(
         // Bytecode 路径
         let bc_result = vm
             .call_user_function(&mut session, func_idx, &[c], 10000)
-            .expect(&format!("Bytecode {} 调用失败", func_name));
+            .unwrap_or_else(|| panic!("Bytecode {} 调用失败", func_name));
 
         assert_eq!(
             host_result, bc_result,
@@ -377,28 +359,30 @@ fn test_diff_memmove() {
 
     let buf_addr = 0x2000u32;
 
-    for (init, src_off, dst_off, n, expected) in [
-        ("ABCDEF", 0, 2, 4, "ABABCD"),  // 重叠：向前拷贝
-    ] {
-        vm.write_cstring(buf_addr, init);
+    let (init, src_off, dst_off, n, _expected) = ("ABCDEF", 0, 2, 4, "ABABCD"); // 重叠：向前拷贝
+    vm.write_cstring(buf_addr, init);
 
-        // Host 路径
-        vm.push(n as u64);
-        vm.push((buf_addr + src_off) as u64);
-        vm.push((buf_addr + dst_off) as u64);
-        host_memmove(&mut vm, &mut session);
-        let _ = vm.pop();
-        let host_result = read_test_string(&vm, buf_addr);
+    // Host 路径
+    vm.push(n as u64);
+    vm.push((buf_addr + src_off) as u64);
+    vm.push((buf_addr + dst_off) as u64);
+    host_memmove(&mut vm, &mut session);
+    let _ = vm.pop();
+    let host_result = read_test_string(&vm, buf_addr);
 
-        // Bytecode 路径
-        vm.write_cstring(buf_addr, init);
-        let bc_ret = vm
-            .call_user_function(&mut session, func_idx, &[(buf_addr + dst_off) as i32, (buf_addr + src_off) as i32, n], 10000)
-            .expect("Bytecode memmove 调用失败");
+    // Bytecode 路径
+    vm.write_cstring(buf_addr, init);
+    let bc_ret = vm
+        .call_user_function(
+            &mut session,
+            func_idx,
+            &[(buf_addr + dst_off) as i32, (buf_addr + src_off) as i32, n],
+            10000,
+        )
+        .expect("Bytecode memmove 调用失败");
 
-        let bc_result = read_test_string(&vm, buf_addr);
+    let bc_result = read_test_string(&vm, buf_addr);
 
-        assert_eq!(host_result, bc_result, "memmove 出现分歧");
-        assert_eq!(bc_ret as u32, buf_addr + dst_off, "memmove 应返回 dest 指针");
-    }
+    assert_eq!(host_result, bc_result, "memmove 出现分歧");
+    assert_eq!(bc_ret as u32, buf_addr + dst_off, "memmove 应返回 dest 指针");
 }

@@ -11,6 +11,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 
 use cide_native::flutter_bridge;
+use cide_native::session::CodeFile;
 
 fn print_usage() {
     eprintln!("Cide CLI — C 语言教学 IDE 后端调试工具");
@@ -57,9 +58,17 @@ fn read_input_file(path: &str) -> Vec<String> {
         .collect()
 }
 
-fn compile_file(_path: &str, source: &str) -> bool {
+fn compile_file(path: &str, source: &str) -> bool {
     flutter_bridge::reset_session();
-    let result = flutter_bridge::compile(source.to_string());
+    let filename = if path == "-" {
+        "main.c".to_string()
+    } else {
+        path.to_string()
+    };
+    let result = flutter_bridge::compile_multi(vec![CodeFile {
+        filename,
+        source: source.to_string(),
+    }]);
 
     if !result.diagnostics.is_empty() {
         println!("=== 诊断信息 ===");
@@ -70,10 +79,7 @@ fn compile_file(_path: &str, source: &str) -> bool {
                 3 => "提示",
                 _ => "信息",
             };
-            println!(
-                "[{}] {}:{}  {} (E{})",
-                severity, d.line, d.column, d.message, d.error_code
-            );
+            println!("[{}] {}:{}  {} (E{})", severity, d.line, d.column, d.message, d.error_code);
             if !d.fix_suggestion.is_empty() {
                 println!("    建议: {}", d.fix_suggestion);
             }
@@ -143,11 +149,7 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
     let mut step_count = 0;
     loop {
         let line = flutter_bridge::get_current_line();
-        let source_line = source
-            .lines()
-            .nth((line.saturating_sub(1)) as usize)
-            .unwrap_or("")
-            .trim();
+        let source_line = source.lines().nth((line.saturating_sub(1)) as usize).unwrap_or("").trim();
 
         print!("步 {:4} | 行 {:3}: {}  > ", step_count, line, source_line);
         io::stdout().flush().unwrap();
@@ -230,15 +232,12 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
 
 fn cmd_export(source_paths: &[String], output_path: &str) {
     use cide_native::engine::compile_pipeline::run_multi_file_pipeline;
-    use cide_native::session::{Session, CompileUnit};
+    use cide_native::session::{CompileUnit, Session};
 
     let mut units = Vec::new();
     for path in source_paths {
         let source = read_source(path);
-        units.push(CompileUnit {
-            filename: path.clone(),
-            source,
-        });
+        units.push(CompileUnit { filename: path.clone(), source });
     }
 
     // BytecodeGen 需要 main 函数，添加一个空 stub，导出后过滤掉
@@ -250,7 +249,10 @@ fn cmd_export(source_paths: &[String], output_path: &str) {
     let mut session = Session::default();
     if let Err(e) = run_multi_file_pipeline(&mut session, units) {
         eprintln!("编译失败: {}", e);
-        let diags: Vec<String> = session.compile.diagnostics.iter()
+        let diags: Vec<String> = session
+            .compile
+            .diagnostics
+            .iter()
             .map(|d| format!("{}:{}: {} (E{})", d.filename, d.line, d.message, d.error_code))
             .collect();
         if !diags.is_empty() {
@@ -300,7 +302,10 @@ fn cmd_export(source_paths: &[String], output_path: &str) {
     code.truncate(wrapper_ip);
 
     // 计算全局变量使用的最大偏移
-    let globals_size = session.compile.globals_init.iter()
+    let globals_size = session
+        .compile
+        .globals_init
+        .iter()
         .map(|(offset, _)| *offset)
         .chain(session.compile.globals_init_64.iter().map(|(offset, _)| *offset))
         .max()
@@ -341,10 +346,10 @@ fn cmd_unified(path: &str, input_lines: Vec<String>) {
 
     // 使用底层 API 进行统一模式执行
     use cide_native::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
-    use cide_native::engine::session_ops::{reset_runtime_for_step, inject_preset_files};
-    use cide_native::session::{Session, CompileUnit};
-    use cide_native::vm::vm::CideVM;
+    use cide_native::engine::session_ops::{inject_preset_files, reset_runtime_for_step};
+    use cide_native::session::{CompileUnit, Session};
     use cide_native::unified::engine::UnifiedEngine;
+    use cide_native::vm::vm::CideVM;
 
     let mut session = Session::default();
     session.compile.compile_units.push(CompileUnit {

@@ -528,7 +528,6 @@ int main() {
     assert!(output.contains("4 1 8 20 4 8"), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_char_literal() {
     let src = r#"
@@ -632,7 +631,6 @@ int main() {
     let output = outputs.join(" ");
     assert!(output.contains("13 7 8 12 11 65"), "Outputs: {:?}", outputs);
 }
-
 
 #[test]
 fn test_e2e_compound_assign_array() {
@@ -794,7 +792,6 @@ int main() {
     assert!(output.contains("10 21 11 21 5 9"), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_bitwise_ops() {
     let src = r#"
@@ -837,7 +834,6 @@ int main() {
     assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_ternary() {
     let src = r#"
@@ -859,7 +855,6 @@ int main() {
     let output = outputs.join(" ");
     assert!(output.contains("5 3 1"), "Outputs: {:?}", outputs);
 }
-
 
 #[test]
 fn test_e2e_ptr_inc_dec() {
@@ -906,7 +901,6 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("3")), "Outputs: {:?}", outputs);
 }
-
 
 #[test]
 fn test_e2e_forward_decl() {
@@ -1025,7 +1019,6 @@ int main() {
     assert!(outputs.iter().any(|l| l.contains("1")), "Outputs: {:?}", outputs);
 }
 
-
 // ============================================================================
 // Student classic error cases (compile-time & runtime)
 // ============================================================================
@@ -1043,8 +1036,14 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_err(), "Expected compile error for undeclared variable");
     let err = result.unwrap_err();
-    assert!(err.contains("x") || err.contains("undeclared") || err.contains("not declared") || err.contains("Unknown identifier"),
-        "Error should mention undeclared variable x: {}", err);
+    assert!(
+        err.contains("x")
+            || err.contains("undeclared")
+            || err.contains("not declared")
+            || err.contains("Unknown identifier"),
+        "Error should mention undeclared variable x: {}",
+        err
+    );
 }
 
 #[test]
@@ -1061,8 +1060,11 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_err(), "Expected compile error for scanf without &");
     let err = result.unwrap_err();
-    assert!(err.contains("scanf") || err.contains("type") || err.contains("pointer") || err.contains("int*"),
-        "Error should mention type mismatch in scanf: {}", err);
+    assert!(
+        err.contains("scanf") || err.contains("type") || err.contains("pointer") || err.contains("int*"),
+        "Error should mention type mismatch in scanf: {}",
+        err
+    );
 }
 
 #[test]
@@ -1078,9 +1080,16 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_err(), "Expected runtime error for array out of bounds");
     let err = result.unwrap_err();
-    assert!(err.contains("bounds") || err.contains("out of") || err.contains("overflow") || err.contains("memory")
-        || err.contains("数组越界") || err.contains("越界"),
-        "Error should mention bounds violation: {}", err);
+    assert!(
+        err.contains("bounds")
+            || err.contains("out of")
+            || err.contains("overflow")
+            || err.contains("memory")
+            || err.contains("数组越界")
+            || err.contains("越界"),
+        "Error should mention bounds violation: {}",
+        err
+    );
 }
 
 #[test]
@@ -1097,9 +1106,15 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_err(), "Expected runtime error for divide by zero");
     let err = result.unwrap_err();
-    assert!(err.contains("zero") || err.contains("divide") || err.contains("arithmetic")
-        || err.contains("除零") || err.contains("除以"),
-        "Error should mention division by zero: {}", err);
+    assert!(
+        err.contains("zero")
+            || err.contains("divide")
+            || err.contains("arithmetic")
+            || err.contains("除零")
+            || err.contains("除以"),
+        "Error should mention division by zero: {}",
+        err
+    );
 }
 
 // NOTE: Current TypeChecker does not enforce non-void functions to have a return
@@ -1155,7 +1170,6 @@ int main() {
     assert!(outputs.iter().any(|l| l.contains("10 20")), "Outputs: {:?}", outputs);
 }
 
-
 // ============================================================================
 // P0 Subset Extensions
 // ============================================================================
@@ -1197,7 +1211,8 @@ int main() {
     assert_eq!(ret, 0);
     // Extract first two integers from the output line
     let line = outputs.join("");
-    let nums: Vec<i32> = line.split(|c: char| !c.is_ascii_digit() && c != '-')
+    let nums: Vec<i32> = line
+        .split(|c: char| !c.is_ascii_digit() && c != '-')
         .filter(|s| !s.is_empty())
         .map(|s| s.parse::<i32>().unwrap())
         .collect();
@@ -1301,7 +1316,6 @@ int main() {
     assert!(joined.contains("ABC"), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_const_var() {
     let src = r#"
@@ -1344,7 +1358,6 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_err(), "Expected compile error for incrementing const");
 }
-
 
 // ============================================================================
 // Float / Double
@@ -1488,7 +1501,6 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("5.000000")), "Outputs: {:?}", outputs);
 }
-
 
 #[test]
 fn test_e2e_float_func_arg_implicit_cast() {
@@ -1752,7 +1764,11 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    assert!(outputs.iter().any(|l| l.contains("9223372036854775807")), "Outputs: {:?}", outputs);
+    assert!(
+        outputs.iter().any(|l| l.contains("9223372036854775807")),
+        "Outputs: {:?}",
+        outputs
+    );
 }
 
 #[test]
@@ -1944,7 +1960,6 @@ int main() {
     assert!(joined.contains("1 2 3 4"), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_fprintf() {
     let src = r#"
@@ -2012,7 +2027,6 @@ int main() {
     assert!(joined.contains("1 2 5 8 9"), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_chinese_string() {
     let src = r#"
@@ -2029,7 +2043,6 @@ int main() {
     let joined = outputs.join("");
     assert!(joined.contains("你好世界"), "Outputs: {:?}", outputs);
 }
-
 
 // ============================================================================
 // Medium-difficulty random tests
@@ -2341,7 +2354,6 @@ int main() {
     assert_eq!(out, vec!["3 78", "1 85", "4 88", "2 92"]);
 }
 
-
 // ============================================================================
 // Medium-difficulty random tests (batch 2)
 // ============================================================================
@@ -2547,7 +2559,6 @@ int main() {
     assert_eq!(out, vec!["101", "1101", "0", "11111111"]);
 }
 
-
 // ============================================================================
 // Medium-difficulty random tests (batch 3)
 // ============================================================================
@@ -2710,7 +2721,6 @@ int main() {
     assert_eq!(out, vec!["7", "1 2 3 4 5 6 9 "]);
 }
 
-
 // ============================================================================
 // Medium-difficulty random tests (batch 4)
 // ============================================================================
@@ -2851,7 +2861,6 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out, vec!["18", "12", "45", "5"]);
 }
-
 
 // ============================================================================
 // Medium-difficulty random tests (batch 5)
@@ -3016,7 +3025,6 @@ int main() {
     assert_eq!(out, vec!["12", "10", "1"]);
 }
 
-
 // ============================================================================
 // Built-in template tests
 // ============================================================================
@@ -3095,7 +3103,6 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out, vec!["10 5", "3 2 1"]);
 }
-
 
 // ============================================================================
 // Medium-difficulty random tests (batch 6)
@@ -3259,7 +3266,6 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out, vec!["5 6 1 2 3 4 "]);
 }
-
 
 // ============================================================================
 // Medium-difficulty random tests (batch 7)
@@ -3460,7 +3466,6 @@ int main() {
     assert_eq!(out, vec!["1 2 0", "4 0 1"]);
 }
 
-
 #[test]
 fn test_e2e_struct_array_copy() {
     let src = r#"
@@ -3550,7 +3555,6 @@ int main() {
     assert_eq!(out[0], "10 20 100 200 300");
 }
 
-
 #[test]
 fn test_e2e_realloc_in_place_shrink() {
     let src = r#"
@@ -3573,7 +3577,6 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out[0], "1 1 2 3");
 }
-
 
 #[test]
 fn test_e2e_function_pointer_basic() {
@@ -3635,8 +3638,6 @@ int main() {
     assert_eq!(out[0], "1");
     assert_eq!(out[1], "2");
 }
-
-
 
 // ============================================================================
 // 函数指针高级测试（递归类型系统）
@@ -3894,7 +3895,6 @@ int main() {
     assert!(!joined.contains("内存泄漏检测报告"), "已 free 不应报告泄漏");
 }
 
-
 // ============================================================================
 // Use-After-Free / Double-Free Detection
 // ============================================================================
@@ -3965,8 +3965,6 @@ int main() {
     );
 }
 
-
-
 // ── Float/double epsilon comparison tests ──
 
 #[test]
@@ -4027,7 +4025,11 @@ int main() {
     let (_, output) = result.unwrap();
     let out = filter_outputs(output);
     // With epsilon: <= true, >= true, > false, < false
-    assert_eq!(out.join(""), "1100", "0.1+0.3 relational with epsilon: <= and >= true, > and < false");
+    assert_eq!(
+        out.join(""),
+        "1100",
+        "0.1+0.3 relational with epsilon: <= and >= true, > and < false"
+    );
 }
 
 #[test]
@@ -4110,7 +4112,6 @@ int main() {
     // diff = 1.0 > EPS_F32 => normal comparison
     assert_eq!(out.join(""), "0110", "Far apart floats should compare normally");
 }
-
 
 // ============================================================================
 // 数据结构教材语法拓展测试（参数化宏、static局部变量、fgets/fputs）
@@ -4271,8 +4272,16 @@ int main() {
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
     let out = filter_outputs(output);
-    assert!(out.iter().any(|l| l.contains("hello")), "fgets should read first line: {:?}", out);
-    assert!(out.iter().any(|l| l.contains("world")), "fgets should read second line: {:?}", out);
+    assert!(
+        out.iter().any(|l| l.contains("hello")),
+        "fgets should read first line: {:?}",
+        out
+    );
+    assert!(
+        out.iter().any(|l| l.contains("world")),
+        "fgets should read second line: {:?}",
+        out
+    );
 }
 
 #[test]
@@ -4371,7 +4380,6 @@ int main() {
     assert_eq!(out.join(""), "1020", "Double pointer arithmetic should step by 4 bytes");
 }
 
-
 #[test]
 fn test_e2e_struct_return_by_value_basic() {
     let src = r#"
@@ -4445,7 +4453,6 @@ int main() {
     let out = filter_outputs(output);
     assert_eq!(out.join(""), "12", "Struct return used as function argument should work");
 }
-
 
 #[test]
 fn test_e2e_vla_basic() {
@@ -4687,7 +4694,11 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_err(), "Undefined goto label should produce compile error");
     let err = result.unwrap_err();
-    assert!(err.contains("3071") || err.contains("未定义"), "Expected E3071 undefined label error, got: {}", err);
+    assert!(
+        err.contains("3071") || err.contains("未定义"),
+        "Expected E3071 undefined label error, got: {}",
+        err
+    );
 }
 
 #[test]
@@ -4845,7 +4856,11 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
     let out = filter_outputs(outputs);
-    assert_eq!(out.join(""), "20604040", "sizeof(VLA type) should compute runtime sizes correctly");
+    assert_eq!(
+        out.join(""),
+        "20604040",
+        "sizeof(VLA type) should compute runtime sizes correctly"
+    );
 }
 
 #[test]

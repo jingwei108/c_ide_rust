@@ -171,7 +171,11 @@ int main() {
 
     // 恢复后 VM 应能继续执行而不 trap
     let result = vm.step(&mut session);
-    assert!(!matches!(result, cide_native::vm::vm::StepResult::Trap), "VM should continue after restore, got trap: {}", vm.get_error());
+    assert!(
+        !matches!(result, cide_native::vm::vm::StepResult::Trap),
+        "VM should continue after restore, got trap: {}",
+        vm.get_error()
+    );
 }
 
 #[test]
@@ -265,7 +269,6 @@ int main() {
     );
 }
 
-
 #[test]
 fn test_incremental_snapshot_size() {
     let source = r#"
@@ -313,7 +316,10 @@ int main() {
     vm.restore(&inc, &mut session); // 再应用增量
 
     let mem_after_restore = vm.memory_ref().to_vec();
-    assert_eq!(mem_before_restore, mem_after_restore, "Restore from incremental should match original state");
+    assert_eq!(
+        mem_before_restore, mem_after_restore,
+        "Restore from incremental should match original state"
+    );
 }
 
 #[test]
@@ -344,7 +350,7 @@ int main() {
     }
 
     // 应该保存了 7 个检查点（0,5,10,15,20,25,30）
-    assert!(cp.len() > 0);
+    assert!(!cp.is_empty());
 
     // 验证 nearest 能正确重建增量快照
     let (step, reconstructed) = cp.nearest(28).expect("should find nearest checkpoint");
@@ -365,7 +371,10 @@ int main() {
         }
         steps_after += 1;
     }
-    assert!(steps_after > 0, "VM should be able to continue after restore from reconstructed checkpoint");
+    assert!(
+        steps_after > 0,
+        "VM should be able to continue after restore from reconstructed checkpoint"
+    );
 }
 
 #[test]
@@ -382,45 +391,48 @@ fn test_smart_checkpoint_triggers() {
     assert!(!cp.should_checkpoint(5, &StepMeta::default()));
 
     // 模拟保存步 0 的检查点，使后续智能判断能感知到上一个检查点位置
-    cp.checkpoints.push((0, cide_native::vm::snapshot::VMSnapshot {
-        memory: cide_native::vm::snapshot::MemoryImage::Full(vec![0; 1024 * 1024]),
-        stack: Vec::new(),
-        call_stack: Vec::new(),
-        ip: 0,
-        mem_stack_top: 0,
-        step_count: 0,
-        current_line: 0,
-        finished: false,
-        exit_code: 0,
-        error: String::new(),
-        paused: false,
-        cancelled: false,
-        step_event_hit: false,
-        last_snapshot_step: 0,
-        snapshot_vars: std::collections::HashMap::new(),
-        qsort_depth: 0,
-        vis_event_queue: Vec::new(),
-        breakpoints: std::collections::HashSet::new(),
-        global_count: 0,
-        freed_logs: Vec::new(),
-        runtime: cide_native::vm::snapshot::RuntimeSnapshot {
-            output_lines: Vec::new(),
-            trace: Vec::new(),
+    cp.checkpoints.push((
+        0,
+        cide_native::vm::snapshot::VMSnapshot {
+            memory: cide_native::vm::snapshot::MemoryImage::Full(vec![0; 1024 * 1024]),
+            stack: Vec::new(),
+            call_stack: Vec::new(),
+            ip: 0,
+            mem_stack_top: 0,
+            step_count: 0,
             current_line: 0,
-            input_index: 0,
-            input_char_offset: 0,
-            waiting_input: false,
-            rand_seed: 0,
-            vis_event_cache: Vec::new(),
-            ungetc_char: None,
+            finished: false,
+            exit_code: 0,
+            error: String::new(),
+            paused: false,
+            cancelled: false,
+            step_event_hit: false,
+            last_snapshot_step: 0,
+            snapshot_vars: std::collections::HashMap::new(),
+            qsort_depth: 0,
+            vis_event_queue: Vec::new(),
+            breakpoints: std::collections::HashSet::new(),
+            global_count: 0,
+            freed_logs: Vec::new(),
+            runtime: cide_native::vm::snapshot::RuntimeSnapshot {
+                output_lines: Vec::new(),
+                trace: Vec::new(),
+                current_line: 0,
+                input_index: 0,
+                input_char_offset: 0,
+                waiting_input: false,
+                rand_seed: 0,
+                vis_event_cache: Vec::new(),
+                ungetc_char: None,
+            },
+            memory_state: cide_native::vm::snapshot::MemorySnapshot {
+                regions: Vec::new(),
+                free_list: Vec::new(),
+                heap_offset: 0,
+                alloc_counter: 0,
+            },
         },
-        memory_state: cide_native::vm::snapshot::MemorySnapshot {
-            regions: Vec::new(),
-            free_list: Vec::new(),
-            heap_offset: 0,
-            alloc_counter: 0,
-        },
-    }));
+    ));
 
     // 智能触发：函数调用
     let meta_call = StepMeta {

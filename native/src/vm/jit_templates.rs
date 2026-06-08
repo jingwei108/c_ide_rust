@@ -9,7 +9,7 @@ use crate::session::Session;
 use crate::vm::instruction::SourceLoc;
 use crate::vm::jit_trace::{JitTrace, MAX_TRACE_ITERATIONS};
 use crate::vm::opcode::OpCode;
-use crate::vm::vm::{CideVM, StepResult, NULL_TRAP_SIZE, MEM_SIZE};
+use crate::vm::vm::{CideVM, StepResult, MEM_SIZE, NULL_TRAP_SIZE};
 
 pub type JitFn = fn(&mut CideVM, i32, i32, &SourceLoc, &mut Session) -> Option<StepResult>;
 
@@ -75,7 +75,13 @@ fn tpl_swap(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut S
 
 // --- Local ---
 
-fn tpl_load_local(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_load_local(
+    vm: &mut CideVM,
+    offset: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     if let Some(frame) = vm.get_call_stack().last() {
         let addr = frame.locals_base + offset as u32;
         if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
@@ -91,7 +97,13 @@ fn tpl_load_local(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _sessi
     None
 }
 
-fn tpl_store_local(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_store_local(
+    vm: &mut CideVM,
+    offset: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     if let Some(frame) = vm.get_call_stack().last() {
         let addr = frame.locals_base + offset as u32;
         if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
@@ -107,7 +119,13 @@ fn tpl_store_local(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _sess
     None
 }
 
-fn tpl_get_frame_base(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_get_frame_base(
+    vm: &mut CideVM,
+    _a: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     if let Some(frame) = vm.get_call_stack().last() {
         vm.push(frame.locals_base as u64);
     } else {
@@ -119,7 +137,13 @@ fn tpl_get_frame_base(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _sessi
 
 // --- Global ---
 
-fn tpl_load_global(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_load_global(
+    vm: &mut CideVM,
+    offset: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     let addr = crate::vm::vm::GLOBAL_START + offset as u32;
     if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
         vm.trap("LoadGlobal: 地址越界", loc);
@@ -130,7 +154,13 @@ fn tpl_load_global(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _sess
     None
 }
 
-fn tpl_store_global(vm: &mut CideVM, offset: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_store_global(
+    vm: &mut CideVM,
+    offset: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     let addr = crate::vm::vm::GLOBAL_START + offset as u32;
     if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
         vm.trap("StoreGlobal: 地址越界", loc);
@@ -164,7 +194,13 @@ fn tpl_load_mem_byte(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _sessio
     None
 }
 
-fn tpl_store_mem_byte(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_store_mem_byte(
+    vm: &mut CideVM,
+    _a: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     let addr = vm.pop() as u32;
     let val = vm.pop() as i32;
     vm.store_i8(addr, val, loc);
@@ -416,7 +452,13 @@ fn tpl_jump(vm: &mut CideVM, target: i32, _b: i32, loc: &SourceLoc, _session: &m
     None
 }
 
-fn tpl_jump_if_zero(vm: &mut CideVM, target: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_jump_if_zero(
+    vm: &mut CideVM,
+    target: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     let val = vm.pop();
     if val == 0 {
         let t = target as usize;
@@ -431,7 +473,13 @@ fn tpl_jump_if_zero(vm: &mut CideVM, target: i32, _b: i32, loc: &SourceLoc, _ses
     None
 }
 
-fn tpl_jump_if_not_zero(vm: &mut CideVM, target: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
+fn tpl_jump_if_not_zero(
+    vm: &mut CideVM,
+    target: i32,
+    _b: i32,
+    loc: &SourceLoc,
+    _session: &mut Session,
+) -> Option<StepResult> {
     let val = vm.pop();
     if val != 0 {
         let t = target as usize;
@@ -449,7 +497,13 @@ fn tpl_jump_if_not_zero(vm: &mut CideVM, target: i32, _b: i32, loc: &SourceLoc, 
 // --- Generic fallback ---
 
 /// 对于尚未编写专用模板的 opcode，回退到 VM 的内部分发逻辑。
-fn tpl_generic(vm: &mut CideVM, operand: i32, opcode_val: i32, loc: &SourceLoc, session: &mut Session) -> Option<StepResult> {
+fn tpl_generic(
+    vm: &mut CideVM,
+    operand: i32,
+    opcode_val: i32,
+    loc: &SourceLoc,
+    session: &mut Session,
+) -> Option<StepResult> {
     let op = OpCode::from_u8(opcode_val as u8)?;
     vm.dispatch_single_instruction(op, operand, loc, session)
 }
@@ -568,11 +622,7 @@ pub fn execute_trace_once(vm: &mut CideVM, session: &mut Session, trace: &Compil
 /// 返回值：`(Option<StepResult>, 加速步数)`
 /// 这是 JIT 的核心加速逻辑：一次函数调用执行多轮循环迭代，
 /// 跳过逐步的辅助操作（heatmap、last_accessed_vars、step_count 逐次递增）。
-pub fn execute_trace_bulk(
-    vm: &mut CideVM,
-    session: &mut Session,
-    trace: &CompiledTrace,
-) -> (Option<StepResult>, u64) {
+pub fn execute_trace_bulk(vm: &mut CideVM, session: &mut Session, trace: &CompiledTrace) -> (Option<StepResult>, u64) {
     let start_ip = trace.start_ip;
     let steps_per_iter = trace.entries.len() as u64;
     let entry_steps = trace.entries.len() as i32;

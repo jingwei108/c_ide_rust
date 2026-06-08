@@ -21,7 +21,8 @@ int main() {
     printf("%d", result);
     return 0;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
         CompileUnit {
             filename: "utils.c".to_string(),
@@ -29,7 +30,8 @@ int main() {
 int add(int a, int b) {
     return a + b;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
     ];
 
@@ -51,7 +53,8 @@ int main() {
     printf("%d", result);
     return 0;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
         CompileUnit {
             filename: "utils.c".to_string(),
@@ -59,26 +62,28 @@ int main() {
 static int secret_add(int a, int b) {
     return a + b;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
     ];
 
     let result = run_multi_file_pipeline(&mut session, units);
     assert!(result.is_err(), "static 函数跨文件调用应该编译失败");
 
-    let has_static_error = session.compile.diagnostics.iter().any(|d| {
-        d.error_code == ErrorCode::E3058_StaticFuncAccess as i32
-    });
+    let has_static_error = session
+        .compile
+        .diagnostics
+        .iter()
+        .any(|d| d.error_code == ErrorCode::E3058_StaticFuncAccess as i32);
     assert!(has_static_error, "应报告 E3058 static 函数访问错误");
 }
 
 #[test]
 fn test_same_file_static_func_ok() {
     let mut session = make_session();
-    let units = vec![
-        CompileUnit {
-            filename: "main.c".to_string(),
-            source: r#"
+    let units = vec![CompileUnit {
+        filename: "main.c".to_string(),
+        source: r#"
 #include <stdio.h>
 
 static int helper(int x) {
@@ -90,9 +95,9 @@ int main() {
     printf("%d", result);
     return 0;
 }
-"#.to_string(),
-        },
-    ];
+"#
+        .to_string(),
+    }];
 
     let result = run_multi_file_pipeline(&mut session, units);
     assert!(result.is_ok(), "同一文件内 static 函数调用应成功: {:?}", session.compile.errors);
@@ -116,7 +121,8 @@ int main() {
     printf("%d", a);
     return 0;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
         CompileUnit {
             filename: "utils.c".to_string(),
@@ -128,12 +134,17 @@ static int helper(int x) {
 int use_helper(int x) {
     return helper(x);
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
     ];
 
     let result = run_multi_file_pipeline(&mut session, units);
-    assert!(result.is_ok(), "同名 static 函数在不同文件应互不干扰: {:?}", session.compile.errors);
+    assert!(
+        result.is_ok(),
+        "同名 static 函数在不同文件应互不干扰: {:?}",
+        session.compile.errors
+    );
 }
 
 #[test]
@@ -147,12 +158,14 @@ int main() {
     int x = unknown_var;
     return 0;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
         CompileUnit {
             filename: "utils.c".to_string(),
             source: r#"
-"#.to_string(),
+"#
+            .to_string(),
         },
     ];
 
@@ -162,7 +175,6 @@ int main() {
     let diag = session.compile.diagnostics.first().unwrap();
     assert_eq!(diag.filename, "main.c", "诊断应指向 main.c");
 }
-
 
 #[test]
 fn test_multi_file_static_global_isolation() {
@@ -179,32 +191,35 @@ int main() {
     printf("%d", secret_val);
     return 0;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
         CompileUnit {
             filename: "utils.c".to_string(),
             source: r#"
 static int secret_val = 42;
-"#.to_string(),
+"#
+            .to_string(),
         },
     ];
 
     let result = run_multi_file_pipeline(&mut session, units);
     assert!(result.is_err(), "static 全局变量跨文件访问应该编译失败");
 
-    let has_static_error = session.compile.diagnostics.iter().any(|d| {
-        d.error_code == ErrorCode::E3059_StaticGlobalAccess as i32
-    });
+    let has_static_error = session
+        .compile
+        .diagnostics
+        .iter()
+        .any(|d| d.error_code == ErrorCode::E3059_StaticGlobalAccess as i32);
     assert!(has_static_error, "应报告 E3059 static 全局变量访问错误");
 }
 
 #[test]
 fn test_same_file_static_global_ok() {
     let mut session = make_session();
-    let units = vec![
-        CompileUnit {
-            filename: "main.c".to_string(),
-            source: r#"
+    let units = vec![CompileUnit {
+        filename: "main.c".to_string(),
+        source: r#"
 #include <stdio.h>
 
 static int counter = 0;
@@ -218,12 +233,16 @@ int main() {
     printf("%d", next());
     return 0;
 }
-"#.to_string(),
-        },
-    ];
+"#
+        .to_string(),
+    }];
 
     let result = run_multi_file_pipeline(&mut session, units);
-    assert!(result.is_ok(), "同一文件内 static 全局变量访问应成功: {:?}", session.compile.errors);
+    assert!(
+        result.is_ok(),
+        "同一文件内 static 全局变量访问应成功: {:?}",
+        session.compile.errors
+    );
 }
 
 #[test]
@@ -245,7 +264,8 @@ int main() {
     printf("%d", get_main_val());
     return 0;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
         CompileUnit {
             filename: "utils.c".to_string(),
@@ -255,10 +275,15 @@ static int val = 20;
 int get_utils_val() {
     return val;
 }
-"#.to_string(),
+"#
+            .to_string(),
         },
     ];
 
     let result = run_multi_file_pipeline(&mut session, units);
-    assert!(result.is_ok(), "同名 static 全局变量在不同文件应互不干扰: {:?}", session.compile.errors);
+    assert!(
+        result.is_ok(),
+        "同名 static 全局变量在不同文件应互不干扰: {:?}",
+        session.compile.errors
+    );
 }

@@ -21,9 +21,7 @@ int main() {
     return 0;
 }
 "#;
-    c.bench_function("bubble_sort_100", |b| {
-        b.iter(|| compile_and_run(source))
-    });
+    c.bench_function("bubble_sort_100", |b| b.iter(|| compile_and_run(source)));
 }
 
 fn benchmark_factorial(c: &mut Criterion) {
@@ -36,9 +34,7 @@ int main() {
     return fact(20);
 }
 "#;
-    c.bench_function("factorial_recursive_20", |b| {
-        b.iter(|| compile_and_run(source))
-    });
+    c.bench_function("factorial_recursive_20", |b| b.iter(|| compile_and_run(source)));
 }
 
 criterion_group!(benches, benchmark_bubble_sort, benchmark_factorial);

@@ -56,16 +56,34 @@ fn implicit_cast_target(from: &Type, to: &Type) -> Option<Type> {
     use TypeKind::*;
     match (from.kind(), to.kind()) {
         (Int | Char | Float | LongLong, Double) => Some(Type::double()),
-        (Double, Int) => Some(Type::Int { is_unsigned: to.is_unsigned(), is_const: false }),
+        (Double, Int) => Some(Type::Int {
+            is_unsigned: to.is_unsigned(),
+            is_const: false,
+        }),
         (Double, Char) => Some(Type::char()),
         (Double, Float) => Some(Type::float()),
-        (Double, LongLong) => Some(Type::LongLong { is_unsigned: to.is_unsigned(), is_const: false }),
+        (Double, LongLong) => Some(Type::LongLong {
+            is_unsigned: to.is_unsigned(),
+            is_const: false,
+        }),
         (Int | Char | LongLong, Float) => Some(Type::float()),
-        (Float, Int) => Some(Type::Int { is_unsigned: to.is_unsigned(), is_const: false }),
+        (Float, Int) => Some(Type::Int {
+            is_unsigned: to.is_unsigned(),
+            is_const: false,
+        }),
         (Float, Char) => Some(Type::char()),
-        (Float, LongLong) => Some(Type::LongLong { is_unsigned: to.is_unsigned(), is_const: false }),
-        (Int | Char, LongLong) => Some(Type::LongLong { is_unsigned: to.is_unsigned(), is_const: false }),
-        (LongLong, Int) => Some(Type::Int { is_unsigned: to.is_unsigned(), is_const: false }),
+        (Float, LongLong) => Some(Type::LongLong {
+            is_unsigned: to.is_unsigned(),
+            is_const: false,
+        }),
+        (Int | Char, LongLong) => Some(Type::LongLong {
+            is_unsigned: to.is_unsigned(),
+            is_const: false,
+        }),
+        (LongLong, Int) => Some(Type::Int {
+            is_unsigned: to.is_unsigned(),
+            is_const: false,
+        }),
         (LongLong, Char) => Some(Type::char()),
         _ => None,
     }
@@ -90,21 +108,34 @@ fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
 }
 
 impl TypeChecker {
-
     /// Compute the byte size of a type using the registered struct/union definitions.
     pub fn compute_type_size(&self, ty: &Type) -> i32 {
-        let struct_defs: HashMap<String, Vec<StructField>> = self.structs.iter()
+        let struct_defs: HashMap<String, Vec<StructField>> = self
+            .structs
+            .iter()
             .map(|(name, sym)| {
-                let fields: Vec<StructField> = sym.fields.iter()
-                    .map(|(ty, name)| StructField { ty: ty.clone(), name: name.clone() })
+                let fields: Vec<StructField> = sym
+                    .fields
+                    .iter()
+                    .map(|(ty, name)| StructField {
+                        ty: ty.clone(),
+                        name: name.clone(),
+                    })
                     .collect();
                 (name.clone(), fields)
             })
             .collect();
-        let union_defs: HashMap<String, Vec<StructField>> = self.unions.iter()
+        let union_defs: HashMap<String, Vec<StructField>> = self
+            .unions
+            .iter()
             .map(|(name, sym)| {
-                let fields: Vec<StructField> = sym.fields.iter()
-                    .map(|(ty, name)| StructField { ty: ty.clone(), name: name.clone() })
+                let fields: Vec<StructField> = sym
+                    .fields
+                    .iter()
+                    .map(|(ty, name)| StructField {
+                        ty: ty.clone(),
+                        name: name.clone(),
+                    })
                     .collect();
                 (name.clone(), fields)
             })
@@ -116,18 +147,30 @@ impl TypeChecker {
         // Pass 1: Register structs and unions
         for s in &program.structs {
             if self.structs.contains_key(&s.name) {
-                self.report_error(&format!("结构体 '{}' 重复定义", s.name), &s.loc, ErrorCode::E3002_StructRedeclared);
+                self.report_error(
+                    &format!("结构体 '{}' 重复定义", s.name),
+                    &s.loc,
+                    ErrorCode::E3002_StructRedeclared,
+                );
                 continue;
             }
-            let sym = StructSymbol { fields: s.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect() };
+            let sym = StructSymbol {
+                fields: s.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect(),
+            };
             self.structs.insert(s.name.clone(), sym);
         }
         for u in &program.unions {
             if self.unions.contains_key(&u.name) {
-                self.report_error(&format!("联合体 '{}' 重复定义", u.name), &u.loc, ErrorCode::E3002_StructRedeclared);
+                self.report_error(
+                    &format!("联合体 '{}' 重复定义", u.name),
+                    &u.loc,
+                    ErrorCode::E3002_StructRedeclared,
+                );
                 continue;
             }
-            let sym = StructSymbol { fields: u.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect() };
+            let sym = StructSymbol {
+                fields: u.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect(),
+            };
             self.unions.insert(u.name.clone(), sym);
         }
 
@@ -140,16 +183,27 @@ impl TypeChecker {
             if f.is_static {
                 if let Some(existing) = self.static_func_sigs.get(&f.name) {
                     if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
-                        self.report_error(&format!("函数 '{}' 的声明与之前定义签名不一致", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
+                        self.report_error(
+                            &format!("函数 '{}' 的声明与之前定义签名不一致", f.name),
+                            &f.loc,
+                            ErrorCode::E3003_FuncRedeclared,
+                        );
                     }
                 } else {
                     self.static_func_sigs.insert(f.name.clone(), new_sym);
                 }
-                self.static_func_files.entry(f.name.clone()).or_default().push(f.source_file.clone());
+                self.static_func_files
+                    .entry(f.name.clone())
+                    .or_default()
+                    .push(f.source_file.clone());
             } else {
                 if let Some(existing) = self.funcs.get(&f.name) {
                     if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
-                        self.report_error(&format!("函数 '{}' 的声明与之前定义签名不一致", f.name), &f.loc, ErrorCode::E3003_FuncRedeclared);
+                        self.report_error(
+                            &format!("函数 '{}' 的声明与之前定义签名不一致", f.name),
+                            &f.loc,
+                            ErrorCode::E3003_FuncRedeclared,
+                        );
                     }
                     continue;
                 }
@@ -162,7 +216,10 @@ impl TypeChecker {
         for g in &mut program.globals {
             self.declare_var(&g.name, &g.ty, true, g.is_extern, g.is_static);
             if g.is_static {
-                self.static_global_files.entry(g.name.clone()).or_default().push(g.source_file.clone());
+                self.static_global_files
+                    .entry(g.name.clone())
+                    .or_default()
+                    .push(g.source_file.clone());
             }
         }
         for g in &mut program.globals {
@@ -174,7 +231,11 @@ impl TypeChecker {
                 } else {
                     let init_type = self.resolve_expr_type(init);
                     if !self.check_assignable(&g.ty, &init_type, &g.loc) {
-                        self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, g.ty), &g.loc, ErrorCode::E3004_TypeMismatch);
+                        self.report_error(
+                            &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, g.ty),
+                            &g.loc,
+                            ErrorCode::E3004_TypeMismatch,
+                        );
                     }
                 }
             }
@@ -215,13 +276,29 @@ impl TypeChecker {
             }
             // Non-extern definition can replace an extern declaration
             if existing.is_extern {
-                scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern, is_static });
+                scope.insert(
+                    name.to_string(),
+                    VarSymbol {
+                        ty: ty.clone(),
+                        is_global,
+                        is_extern,
+                        is_static,
+                    },
+                );
                 return;
             }
             // Multiple static globals with the same name in different files are allowed
             // (internal linkage). We keep the latest one; access check is done at use site.
             if existing.is_static && is_static && is_global {
-                scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern, is_static });
+                scope.insert(
+                    name.to_string(),
+                    VarSymbol {
+                        ty: ty.clone(),
+                        is_global,
+                        is_extern,
+                        is_static,
+                    },
+                );
                 return;
             }
             self.report_error(
@@ -231,7 +308,15 @@ impl TypeChecker {
             );
             return;
         }
-        scope.insert(name.to_string(), VarSymbol { ty: ty.clone(), is_global, is_extern, is_static });
+        scope.insert(
+            name.to_string(),
+            VarSymbol {
+                ty: ty.clone(),
+                is_global,
+                is_extern,
+                is_static,
+            },
+        );
     }
 
     pub(crate) fn lookup_var(&self, name: &str) -> Option<VarSymbol> {
@@ -248,50 +333,92 @@ impl TypeChecker {
     // =========================================================================
 
     pub(crate) fn report_error(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
-        self.errors.push(TypeError { message: msg.to_string(), line: loc.line, column: loc.column, code: code as i32 });
+        self.errors.push(TypeError {
+            message: msg.to_string(),
+            line: loc.line,
+            column: loc.column,
+            code: code as i32,
+        });
     }
 
     pub(crate) fn report_warning(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
-        self.warnings.push(TypeError { message: msg.to_string(), line: loc.line, column: loc.column, code: code as i32 });
+        self.warnings.push(TypeError {
+            message: msg.to_string(),
+            line: loc.line,
+            column: loc.column,
+            code: code as i32,
+        });
     }
 
     fn report_hint(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
-        self.hints.push(TypeError { message: msg.to_string(), line: loc.line, column: loc.column, code: code as i32 });
+        self.hints.push(TypeError {
+            message: msg.to_string(),
+            line: loc.line,
+            column: loc.column,
+            code: code as i32,
+        });
     }
 
     pub(crate) fn is_int(&self, t: &Type) -> bool {
         matches!(t.kind(), TypeKind::Int | TypeKind::Char)
     }
     pub(crate) fn is_scalar(&self, t: &Type) -> bool {
-        matches!(t.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
+        matches!(
+            t.kind(),
+            TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+        )
     }
 
     pub(crate) fn is_comparable(&self, a: &Type, b: &Type) -> bool {
-        if matches!(a.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) && matches!(b.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double) { return true; }
-        if matches!(a.kind(), TypeKind::Pointer) && matches!(b.kind(), TypeKind::Pointer) { return true; }
-        if matches!(a.kind(), TypeKind::Pointer) && matches!(b.kind(), TypeKind::Array) { return true; }
-        if matches!(a.kind(), TypeKind::Array) && matches!(b.kind(), TypeKind::Pointer) { return true; }
-        if matches!(a.kind(), TypeKind::Pointer) && matches!(b.kind(), TypeKind::Int) { return true; }
-        if matches!(a.kind(), TypeKind::Int) && matches!(b.kind(), TypeKind::Pointer) { return true; }
+        if matches!(a.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)
+            && matches!(b.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double)
+        {
+            return true;
+        }
+        if matches!(a.kind(), TypeKind::Pointer) && matches!(b.kind(), TypeKind::Pointer) {
+            return true;
+        }
+        if matches!(a.kind(), TypeKind::Pointer) && matches!(b.kind(), TypeKind::Array) {
+            return true;
+        }
+        if matches!(a.kind(), TypeKind::Array) && matches!(b.kind(), TypeKind::Pointer) {
+            return true;
+        }
+        if matches!(a.kind(), TypeKind::Pointer) && matches!(b.kind(), TypeKind::Int) {
+            return true;
+        }
+        if matches!(a.kind(), TypeKind::Int) && matches!(b.kind(), TypeKind::Pointer) {
+            return true;
+        }
         false
     }
 
     fn check_array_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Array) {
-            if let (Type::Pointer { pointee: t_pointee, .. }, Type::Array { element: v_element, .. }) = (target, value) {
+            if let (Type::Pointer { pointee: t_pointee, .. }, Type::Array { element: v_element, .. }) = (target, value)
+            {
                 if t_pointee.as_ref() == v_element.as_ref() {
-                    self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+                    self.report_warning(
+                        "数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。",
+                        loc,
+                        ErrorCode::W3052_ArrayToPointerDecay,
+                    );
                     return true;
                 }
                 // Multidimensional array decay: int arr[3][3] -> int (*)[3]
                 if t_pointee.as_ref() == &value.subscript_type() {
-                    self.report_warning("数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。", loc, ErrorCode::W3052_ArrayToPointerDecay);
+                    self.report_warning(
+                        "数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。",
+                        loc,
+                        ErrorCode::W3052_ArrayToPointerDecay,
+                    );
                     return true;
                 }
             }
         }
         if matches!(target.kind(), TypeKind::Array) && matches!(value.kind(), TypeKind::Pointer) {
-            if let (Type::Array { element: t_element, .. }, Type::Pointer { pointee: v_pointee, .. }) = (target, value) {
+            if let (Type::Array { element: t_element, .. }, Type::Pointer { pointee: v_pointee, .. }) = (target, value)
+            {
                 if t_element == v_pointee {
                     return true;
                 }
@@ -308,7 +435,9 @@ impl TypeChecker {
                             break;
                         }
                     }
-                    if dims_compatible { return true; }
+                    if dims_compatible {
+                        return true;
+                    }
                 }
             }
         }
@@ -317,9 +446,22 @@ impl TypeChecker {
 
     fn check_function_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if target.is_function_pointer() && value.is_function_pointer() {
-            if let (Type::Pointer { pointee: t_pointee, .. }, Type::Pointer { pointee: v_pointee, .. }) = (target, value) {
-                if let (Type::Function { return_type: t_ret, param_types: t_params, .. },
-                        Type::Function { return_type: v_ret, param_types: v_params, .. }) = (t_pointee.as_ref(), v_pointee.as_ref()) {
+            if let (Type::Pointer { pointee: t_pointee, .. }, Type::Pointer { pointee: v_pointee, .. }) =
+                (target, value)
+            {
+                if let (
+                    Type::Function {
+                        return_type: t_ret,
+                        param_types: t_params,
+                        ..
+                    },
+                    Type::Function {
+                        return_type: v_ret,
+                        param_types: v_params,
+                        ..
+                    },
+                ) = (t_pointee.as_ref(), v_pointee.as_ref())
+                {
                     if t_params.len() == v_params.len() {
                         let params_compatible = t_params.iter().zip(v_params.iter()).all(|(a, b)| a == b);
                         if params_compatible && t_ret == v_ret {
@@ -328,7 +470,11 @@ impl TypeChecker {
                     }
                 }
             }
-            self.report_warning("函数指针类型不完全匹配，赋值可能存在风险", loc, ErrorCode::W3053_ImplicitScalarConversion);
+            self.report_warning(
+                "函数指针类型不完全匹配，赋值可能存在风险",
+                loc,
+                ErrorCode::W3053_ImplicitScalarConversion,
+            );
             return true;
         }
         if target.is_pointer() && value.is_function_pointer() {
@@ -342,45 +488,91 @@ impl TypeChecker {
     }
 
     fn check_scalar_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
-        if !matches!(target.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
+        if !matches!(
+            target.kind(),
+            TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+        ) {
             return false;
         }
-        if !matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
+        if !matches!(
+            value.kind(),
+            TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+        ) {
             return false;
         }
         // 警告可能丢失精度的情况
-        if matches!(target.kind(), TypeKind::Char) && matches!(value.kind(), TypeKind::Int | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
-            self.report_warning("被隐式转换为 char，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+        if matches!(target.kind(), TypeKind::Char)
+            && matches!(
+                value.kind(),
+                TypeKind::Int | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+            )
+        {
+            self.report_warning(
+                "被隐式转换为 char，可能会丢失精度。",
+                loc,
+                ErrorCode::W3053_ImplicitScalarConversion,
+            );
         }
-        if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
-            self.report_warning(&format!("{} 被隐式转换为 int，可能会丢失精度。", value), loc, ErrorCode::W3053_ImplicitScalarConversion);
+        if matches!(target.kind(), TypeKind::Int)
+            && matches!(value.kind(), TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
+        {
+            self.report_warning(
+                &format!("{} 被隐式转换为 int，可能会丢失精度。", value),
+                loc,
+                ErrorCode::W3053_ImplicitScalarConversion,
+            );
         }
         if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Double | TypeKind::LongLong) {
-            self.report_warning("double 被隐式转换为 float，可能会丢失精度。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+            self.report_warning(
+                "double 被隐式转换为 float，可能会丢失精度。",
+                loc,
+                ErrorCode::W3053_ImplicitScalarConversion,
+            );
         }
         // 提示安全的隐式提升
         if matches!(target.kind(), TypeKind::Int) && matches!(value.kind(), TypeKind::Char) {
             self.report_hint("char 被隐式提升为 int。", loc, ErrorCode::H3057_ImplicitConversionHint);
         }
         if matches!(target.kind(), TypeKind::Float) && matches!(value.kind(), TypeKind::Int | TypeKind::Char) {
-            let src = if matches!(value.kind(), TypeKind::Char) { "char" } else { "int" };
-            self.report_hint(&format!("{} 被隐式提升为 float。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
+            let src = if matches!(value.kind(), TypeKind::Char) {
+                "char"
+            } else {
+                "int"
+            };
+            self.report_hint(
+                &format!("{} 被隐式提升为 float。", src),
+                loc,
+                ErrorCode::H3057_ImplicitConversionHint,
+            );
         }
-        if matches!(target.kind(), TypeKind::Double) && matches!(value.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong) {
+        if matches!(target.kind(), TypeKind::Double)
+            && matches!(
+                value.kind(),
+                TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::LongLong
+            )
+        {
             let src = match value.kind() {
                 TypeKind::Char => "char",
                 TypeKind::Float => "float",
                 TypeKind::LongLong => "long long",
                 _ => "int",
             };
-            self.report_hint(&format!("{} 被隐式提升为 double。", src), loc, ErrorCode::H3057_ImplicitConversionHint);
+            self.report_hint(
+                &format!("{} 被隐式提升为 double。", src),
+                loc,
+                ErrorCode::H3057_ImplicitConversionHint,
+            );
         }
         true
     }
 
     fn check_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Int) {
-            self.report_warning("整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。", loc, ErrorCode::W3054_IntToPointerCast);
+            self.report_warning(
+                "整数被隐式转换为指针。建议确保这是有意义的地址值（如 NULL = 0）。",
+                loc,
+                ErrorCode::W3054_IntToPointerCast,
+            );
             return true;
         }
         // C 标准：任意指针或数组都可以隐式转换为 void*（Phase D 补齐 Host 函数所需）
@@ -395,12 +587,23 @@ impl TypeChecker {
             }
         }
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Pointer) {
-            if let (Type::Pointer { is_const: t_const, .. }, Type::Pointer { pointee: v_pointee, is_const: v_const }) = (target, value) {
+            if let (
+                Type::Pointer { is_const: t_const, .. },
+                Type::Pointer {
+                    pointee: v_pointee,
+                    is_const: v_const,
+                },
+            ) = (target, value)
+            {
                 if matches!(v_pointee.as_ref(), Type::Void { .. }) {
                     self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
                 }
                 if *v_const && !*t_const {
-                    self.report_warning("将 const 指针赋值给非 const 指针，可能通过后者修改 const 数据。", loc, ErrorCode::W3053_ImplicitScalarConversion);
+                    self.report_warning(
+                        "将 const 指针赋值给非 const 指针，可能通过后者修改 const 数据。",
+                        loc,
+                        ErrorCode::W3053_ImplicitScalarConversion,
+                    );
                 }
             }
             return true;
@@ -409,25 +612,39 @@ impl TypeChecker {
     }
 
     pub(crate) fn check_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
-        if target == value { return true; }
-        if self.check_array_pointer_assignable(target, value, loc) { return true; }
-        if self.check_function_pointer_assignable(target, value, loc) { return true; }
-        if self.check_scalar_assignable(target, value, loc) { return true; }
-        if self.check_pointer_assignable(target, value, loc) { return true; }
+        if target == value {
+            return true;
+        }
+        if self.check_array_pointer_assignable(target, value, loc) {
+            return true;
+        }
+        if self.check_function_pointer_assignable(target, value, loc) {
+            return true;
+        }
+        if self.check_scalar_assignable(target, value, loc) {
+            return true;
+        }
+        if self.check_pointer_assignable(target, value, loc) {
+            return true;
+        }
         false
     }
 
     pub(crate) fn get_struct_field_type(&self, struct_name: &str, field_name: &str) -> Option<Type> {
         let sym = self.structs.get(struct_name)?;
         for (fty, fname) in &sym.fields {
-            if fname == field_name { return Some(fty.clone()); }
+            if fname == field_name {
+                return Some(fty.clone());
+            }
         }
         None
     }
     pub(crate) fn get_union_field_type(&self, union_name: &str, field_name: &str) -> Option<Type> {
         let sym = self.unions.get(union_name)?;
         for (fty, fname) in &sym.fields {
-            if fname == field_name { return Some(fty.clone()); }
+            if fname == field_name {
+                return Some(fty.clone());
+            }
         }
         None
     }
@@ -435,9 +652,10 @@ impl TypeChecker {
     fn expr_involves_array_or_pointer(&self, expr: &Expr) -> bool {
         match expr {
             Expr::Index { .. } => true,
-            Expr::Identifier { name, .. } => {
-                self.lookup_var(name).map(|s| s.ty.is_array() || s.ty.is_pointer()).unwrap_or(false)
-            }
+            Expr::Identifier { name, .. } => self
+                .lookup_var(name)
+                .map(|s| s.ty.is_array() || s.ty.is_pointer())
+                .unwrap_or(false),
             Expr::Binary { left, right, .. } => {
                 self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right)
             }
@@ -445,7 +663,9 @@ impl TypeChecker {
             Expr::Assign { left, right, .. } => {
                 self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right)
             }
-            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            Expr::Ternary {
+                cond, then_branch, else_branch, ..
+            } => {
                 self.expr_involves_array_or_pointer(cond)
                     || self.expr_involves_array_or_pointer(then_branch)
                     || self.expr_involves_array_or_pointer(else_branch)
@@ -462,7 +682,11 @@ impl TypeChecker {
         if !matches!(init, Expr::InitList { .. }) {
             let init_type = self.resolve_expr_type(init);
             if !self.check_assignable(struct_type, &init_type, loc) {
-                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, struct_type), loc, ErrorCode::E3004_TypeMismatch);
+                self.report_error(
+                    &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, struct_type),
+                    loc,
+                    ErrorCode::E3004_TypeMismatch,
+                );
             }
             return;
         }
@@ -473,7 +697,11 @@ impl TypeChecker {
         let fields = match self.structs.get(struct_type.name()) {
             Some(s) => s.fields.clone(),
             None => {
-                self.report_error(&format!("未知的结构体类型 '{}'", struct_type.name()), loc, ErrorCode::E3004_TypeMismatch);
+                self.report_error(
+                    &format!("未知的结构体类型 '{}'", struct_type.name()),
+                    loc,
+                    ErrorCode::E3004_TypeMismatch,
+                );
                 return;
             }
         };
@@ -481,7 +709,11 @@ impl TypeChecker {
         if has_designators {
             for elem in elements.iter_mut() {
                 if elem.designators.is_empty() {
-                    self.report_error("初始化列表中不能混合使用指定初始化和非指定初始化", loc, ErrorCode::E3005_ArrayInitTooMany);
+                    self.report_error(
+                        "初始化列表中不能混合使用指定初始化和非指定初始化",
+                        loc,
+                        ErrorCode::E3005_ArrayInitTooMany,
+                    );
                     continue;
                 }
                 if elem.designators.len() != 1 {
@@ -500,17 +732,32 @@ impl TypeChecker {
                             } else {
                                 let e_type = self.resolve_expr_type(&mut elem.value);
                                 if !self.check_assignable(field_ty, &e_type, loc) {
-                                    self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", field_name, field_ty, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                                    self.report_error(
+                                        &format!(
+                                            "结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'",
+                                            field_name, field_ty, e_type
+                                        ),
+                                        loc,
+                                        ErrorCode::E3006_ArrayInitTypeMismatch,
+                                    );
                                 } else {
                                     insert_implicit_cast(&mut elem.value, field_ty);
                                 }
                             }
                         } else {
-                            self.report_error(&format!("结构体 '{}' 没有字段 '{}'", struct_type.name(), field_name), loc, ErrorCode::E3042_UnknownMember);
+                            self.report_error(
+                                &format!("结构体 '{}' 没有字段 '{}'", struct_type.name(), field_name),
+                                loc,
+                                ErrorCode::E3042_UnknownMember,
+                            );
                         }
                     }
                     _ => {
-                        self.report_error("结构体初始化只能使用 .field 形式的 designator", loc, ErrorCode::E3005_ArrayInitTooMany);
+                        self.report_error(
+                            "结构体初始化只能使用 .field 形式的 designator",
+                            loc,
+                            ErrorCode::E3005_ArrayInitTooMany,
+                        );
                     }
                 }
             }
@@ -520,7 +767,9 @@ impl TypeChecker {
             self.report_error("初始化列表元素数量超过结构体字段数", loc, ErrorCode::E3005_ArrayInitTooMany);
         }
         for (i, elem) in elements.iter_mut().enumerate() {
-            if i >= fields.len() { break; }
+            if i >= fields.len() {
+                break;
+            }
             if fields[i].0.is_struct() && matches!(&elem.value, Expr::InitList { .. }) {
                 self.check_struct_initializer(&fields[i].0, elem, loc);
             } else if fields[i].0.is_array() && matches!(&elem.value, Expr::InitList { .. }) {
@@ -529,13 +778,26 @@ impl TypeChecker {
             } else {
                 let e_type = self.resolve_expr_type(elem);
                 if !self.check_assignable(&fields[i].0, &e_type, loc) {
-                    self.report_error(&format!("结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'", fields[i].1, fields[i].0, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                    self.report_error(
+                        &format!(
+                            "结构体初始化类型不匹配：字段 '{}' 期望 '{}'，实际 '{}'",
+                            fields[i].1, fields[i].0, e_type
+                        ),
+                        loc,
+                        ErrorCode::E3006_ArrayInitTypeMismatch,
+                    );
                 }
             }
         }
     }
 
-    fn validate_nested_init_list(&mut self, dims: &[i32], init: &mut Expr, loc: &SourceLoc, element_type: &Type) -> bool {
+    fn validate_nested_init_list(
+        &mut self,
+        dims: &[i32],
+        init: &mut Expr,
+        loc: &SourceLoc,
+        element_type: &Type,
+    ) -> bool {
         if dims.is_empty() {
             if element_type.is_struct() && matches!(init, Expr::InitList { .. }) {
                 self.check_struct_initializer(element_type, init, loc);
@@ -548,7 +810,11 @@ impl TypeChecker {
             }
             let e_type = self.resolve_expr_type(init);
             if !self.check_assignable(element_type, &e_type, loc) {
-                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", element_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                self.report_error(
+                    &format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", element_type, e_type),
+                    loc,
+                    ErrorCode::E3006_ArrayInitTypeMismatch,
+                );
                 return false;
             }
             insert_implicit_cast(init, element_type);
@@ -581,7 +847,11 @@ impl TypeChecker {
             if let Expr::InitList { elements, .. } = init {
                 let has_designators = elements.iter().any(|e| !e.designators.is_empty());
                 if has_designators {
-                    self.report_error("多维数组暂不支持 designated initializer", loc, ErrorCode::E3009_InvalidArrayInit);
+                    self.report_error(
+                        "多维数组暂不支持 designated initializer",
+                        loc,
+                        ErrorCode::E3009_InvalidArrayInit,
+                    );
                     return;
                 }
                 let total_elems = arr_type.total_elements();
@@ -595,7 +865,11 @@ impl TypeChecker {
                 }
             } else {
                 let init_type = self.resolve_expr_type(init);
-                self.report_error(&format!("多维数组初始化必须使用嵌套初始化列表，不能是 '{}'", init_type), loc, ErrorCode::E3009_InvalidArrayInit);
+                self.report_error(
+                    &format!("多维数组初始化必须使用嵌套初始化列表，不能是 '{}'", init_type),
+                    loc,
+                    ErrorCode::E3009_InvalidArrayInit,
+                );
             }
             return;
         }
@@ -605,11 +879,19 @@ impl TypeChecker {
             if has_designators {
                 for elem in elements.iter_mut() {
                     if elem.designators.is_empty() {
-                        self.report_error("初始化列表中不能混合使用指定初始化和非指定初始化", loc, ErrorCode::E3005_ArrayInitTooMany);
+                        self.report_error(
+                            "初始化列表中不能混合使用指定初始化和非指定初始化",
+                            loc,
+                            ErrorCode::E3005_ArrayInitTooMany,
+                        );
                         continue;
                     }
                     if elem.designators.len() != 1 {
-                        self.report_error("暂不支持多级 designated initializer", loc, ErrorCode::E3005_ArrayInitTooMany);
+                        self.report_error(
+                            "暂不支持多级 designated initializer",
+                            loc,
+                            ErrorCode::E3005_ArrayInitTooMany,
+                        );
                         continue;
                     }
                     match &mut elem.designators[0] {
@@ -620,13 +902,21 @@ impl TypeChecker {
                             }
                             let e_type = self.resolve_expr_type(&mut elem.value);
                             if !self.check_assignable(&elem_type, &e_type, loc) {
-                                self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                                self.report_error(
+                                    &format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type),
+                                    loc,
+                                    ErrorCode::E3006_ArrayInitTypeMismatch,
+                                );
                             } else {
                                 insert_implicit_cast(&mut elem.value, &elem_type);
                             }
                         }
                         _ => {
-                            self.report_error("数组初始化只能使用 [index] 形式的 designator", loc, ErrorCode::E3005_ArrayInitTooMany);
+                            self.report_error(
+                                "数组初始化只能使用 [index] 形式的 designator",
+                                loc,
+                                ErrorCode::E3005_ArrayInitTooMany,
+                            );
                         }
                     }
                 }
@@ -651,7 +941,11 @@ impl TypeChecker {
                 } else {
                     let e_type = self.resolve_expr_type(elem);
                     if !self.check_assignable(&elem_type, &e_type, loc) {
-                        self.report_error(&format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type), loc, ErrorCode::E3006_ArrayInitTypeMismatch);
+                        self.report_error(
+                            &format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type),
+                            loc,
+                            ErrorCode::E3006_ArrayInitTypeMismatch,
+                        );
                     } else {
                         insert_implicit_cast(elem, &elem_type);
                     }
@@ -659,23 +953,32 @@ impl TypeChecker {
             }
         } else if let Expr::StringLiteral { value, .. } = init {
             if elem_type.kind() != TypeKind::Char {
-                self.report_error("字符串字面量只能用于初始化 char 数组", loc, ErrorCode::E3007_StringInitNonCharArray);
+                self.report_error(
+                    "字符串字面量只能用于初始化 char 数组",
+                    loc,
+                    ErrorCode::E3007_StringInitNonCharArray,
+                );
                 return;
             }
             let str_len = value.len() as i32;
             if arr_type.array_size() <= 0 {
-                if let Type::Array { array_size, .. } = arr_type { *array_size = str_len + 1; }
+                if let Type::Array { array_size, .. } = arr_type {
+                    *array_size = str_len + 1;
+                }
             } else if str_len + 1 > arr_type.array_size() {
                 self.report_error("字符串字面量长度超过数组大小", loc, ErrorCode::E3008_StringTooLong);
             }
         } else {
             let init_type = self.resolve_expr_type(init);
-            self.report_error(&format!("数组初始化必须使用初始化列表或字符串字面量，不能是 '{}'", init_type), loc, ErrorCode::E3009_InvalidArrayInit);
+            self.report_error(
+                &format!("数组初始化必须使用初始化列表或字符串字面量，不能是 '{}'", init_type),
+                loc,
+                ErrorCode::E3009_InvalidArrayInit,
+            );
         }
     }
-
 }
 
 mod builtin;
-mod expr;
 mod decl;
+mod expr;

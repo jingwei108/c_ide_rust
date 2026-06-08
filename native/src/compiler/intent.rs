@@ -6,9 +6,9 @@
 //! - Control flow structure (CFG features)
 //! - Data flow patterns
 
-use flutter_rust_bridge::frb;
 use crate::compiler::ast::{FuncDecl, Stmt};
 use crate::compiler::cfg::ControlFlowGraph;
+use flutter_rust_bridge::frb;
 
 /// High-level code intent categories.
 #[frb]
@@ -59,11 +59,31 @@ pub struct IntentScore {
 /// Returns a sorted list (highest score first).
 pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
     let mut scores = vec![
-        IntentScore { intent: CodeIntent::Sort, score: 0, reasons: vec![] },
-        IntentScore { intent: CodeIntent::Search, score: 0, reasons: vec![] },
-        IntentScore { intent: CodeIntent::Traverse, score: 0, reasons: vec![] },
-        IntentScore { intent: CodeIntent::Compute, score: 0, reasons: vec![] },
-        IntentScore { intent: CodeIntent::Transform, score: 0, reasons: vec![] },
+        IntentScore {
+            intent: CodeIntent::Sort,
+            score: 0,
+            reasons: vec![],
+        },
+        IntentScore {
+            intent: CodeIntent::Search,
+            score: 0,
+            reasons: vec![],
+        },
+        IntentScore {
+            intent: CodeIntent::Traverse,
+            score: 0,
+            reasons: vec![],
+        },
+        IntentScore {
+            intent: CodeIntent::Compute,
+            score: 0,
+            reasons: vec![],
+        },
+        IntentScore {
+            intent: CodeIntent::Transform,
+            score: 0,
+            reasons: vec![],
+        },
     ];
 
     let name_lower = func.name.to_lowercase();
@@ -72,9 +92,7 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
     for s in &mut scores {
         match &s.intent {
             CodeIntent::Sort
-                if name_lower.contains("sort")
-                    || name_lower.contains("bubble")
-                    || name_lower.contains("order") =>
+                if name_lower.contains("sort") || name_lower.contains("bubble") || name_lower.contains("order") =>
             {
                 s.score += 50;
                 s.reasons.push("函数名包含排序关键词".to_string());
@@ -108,9 +126,7 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
                 s.reasons.push("函数名包含计算关键词".to_string());
             }
             CodeIntent::Transform
-                if name_lower.contains("convert")
-                    || name_lower.contains("revers")
-                    || name_lower.contains("rotat") =>
+                if name_lower.contains("convert") || name_lower.contains("revers") || name_lower.contains("rotat") =>
             {
                 s.score += 40;
                 s.reasons.push("函数名包含转换关键词".to_string());
@@ -307,9 +323,7 @@ fn has_recursive_call(stmt: &Stmt, func_name: &str) -> bool {
                     .iter()
                     .any(|(_, _, e)| e.as_ref().is_some_and(|x| expr_has_call(x, func_name)))
         }
-        Stmt::Return { value, .. } => {
-            value.as_ref().is_some_and(|e| expr_has_call(e, func_name))
-        }
+        Stmt::Return { value, .. } => value.as_ref().is_some_and(|e| expr_has_call(e, func_name)),
         Stmt::Switch { body, .. } => has_recursive_call(body, func_name),
         Stmt::Case { stmt: s, .. } => has_recursive_call(s, func_name),
         _ => false,
@@ -320,21 +334,17 @@ fn expr_has_call(expr: &crate::compiler::ast::Expr, func_name: &str) -> bool {
     use crate::compiler::ast::Expr;
     match expr {
         Expr::Call { name, .. } => name == func_name,
-        Expr::Binary { left, right, .. } => {
-            expr_has_call(left, func_name) || expr_has_call(right, func_name)
-        }
+        Expr::Binary { left, right, .. } => expr_has_call(left, func_name) || expr_has_call(right, func_name),
         Expr::Unary { operand, .. } => expr_has_call(operand, func_name),
-        Expr::Assign { left, right, .. } => {
-            expr_has_call(left, func_name) || expr_has_call(right, func_name)
-        }
+        Expr::Assign { left, right, .. } => expr_has_call(left, func_name) || expr_has_call(right, func_name),
         Expr::CallPtr { callee, args, .. } => {
             expr_has_call(callee, func_name) || args.iter().any(|a| expr_has_call(a, func_name))
         }
-        Expr::Index { array, index, .. } => {
-            expr_has_call(array, func_name) || expr_has_call(index, func_name)
-        }
+        Expr::Index { array, index, .. } => expr_has_call(array, func_name) || expr_has_call(index, func_name),
         Expr::Member { object, .. } => expr_has_call(object, func_name),
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+        Expr::Ternary {
+            cond, then_branch, else_branch, ..
+        } => {
             expr_has_call(cond, func_name)
                 || expr_has_call(then_branch, func_name)
                 || expr_has_call(else_branch, func_name)
@@ -374,7 +384,8 @@ mod tests {
 
     #[test]
     fn test_intent_compute() {
-        let func = parse_func("int sum(int a[], int n) { int total=0; for(int i=0;i<n;i++) total+=a[i]; return total; }");
+        let func =
+            parse_func("int sum(int a[], int n) { int total=0; for(int i=0;i<n;i++) total+=a[i]; return total; }");
         let intents = infer_intent(&func);
         assert!(!intents.is_empty());
         assert_eq!(intents[0].intent, CodeIntent::Compute);

@@ -16,10 +16,7 @@ fn compile_and_run(source: &str, input: Option<&str>, input_mode: InputMode) -> 
         if let Some(input_str) = input {
             // 保留换行符以模拟真实 stdin 字节流（getchar 需要读到 \n）
             let normalized = input_str.replace("\r\n", "\n");
-            (*session).runtime.input_lines = normalized
-                .split_inclusive('\n')
-                .map(|l| l.to_string())
-                .collect();
+            (*session).runtime.input_lines = normalized.split_inclusive('\n').map(|l| l.to_string()).collect();
         }
 
         let src = CString::new(source).map_err(|e| e.to_string())?;
@@ -122,9 +119,7 @@ fn load_cases(dir: &Path) -> Vec<(String, String, Option<String>)> {
 }
 
 fn load_golden(case_name: &str, subdir: &str) -> Option<Vec<String>> {
-    let path = Path::new("tests/cases_golden")
-        .join(subdir)
-        .join(format!("{}.out", case_name));
+    let path = Path::new("tests/cases_golden").join(subdir).join(format!("{}.out", case_name));
     let content = std::fs::read_to_string(&path).ok()?;
     let lines: Vec<String> = content
         .lines()
@@ -134,7 +129,13 @@ fn load_golden(case_name: &str, subdir: &str) -> Option<Vec<String>> {
     Some(lines)
 }
 
-fn run_case(name: &str, source: &str, input: Option<&str>, golden_subdir: &str, input_mode: InputMode) -> Result<(), String> {
+fn run_case(
+    name: &str,
+    source: &str,
+    input: Option<&str>,
+    golden_subdir: &str,
+    input_mode: InputMode,
+) -> Result<(), String> {
     let result = compile_and_run(source, input, input_mode);
     match result {
         Ok((ret, outputs)) => {
@@ -205,8 +206,7 @@ const KNOWN_KR_FAILURES: &[&str] = &[
     "kr_5_10",
     // kr_5_11 已修复 (char*[] 指针数组 elem_type_size / 初始化路径)
     // kr_5_13 已修复 (getchar Batch 模式多行输入)
-    "kr_5_14",
-    "kr_5_16",
+    "kr_5_14", "kr_5_16",
     "kr_6_1",
     // kr_6_2 已修复 (Parser 指针无名参数 + ungetc)
     // kr_6_3 已修复 (Parser 指针无名参数 + ungetc)
@@ -224,8 +224,7 @@ const KNOWN_LEETCODE_FAILURES: &[&str] = &[
 #[test]
 fn test_cide_e2e_template_generated() {
     let cases = load_cases(Path::new("tests/cases_template_generated"));
-    let known: std::collections::HashSet<&str> =
-        KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
+    let known: std::collections::HashSet<&str> = KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
 
     let mut failures = Vec::new();
     for (name, source, input) in &cases {
@@ -251,8 +250,7 @@ fn test_cide_e2e_template_generated() {
 #[test]
 fn test_cide_e2e_knr() {
     let cases = load_cases(Path::new("tests/cases/knr"));
-    let known: std::collections::HashSet<&str> =
-        KNOWN_KR_FAILURES.iter().copied().collect();
+    let known: std::collections::HashSet<&str> = KNOWN_KR_FAILURES.iter().copied().collect();
 
     let mut failures = Vec::new();
     for (name, source, input) in &cases {
@@ -284,8 +282,7 @@ fn test_cide_e2e_knr() {
 #[test]
 fn test_cide_e2e_leetcode() {
     let cases = load_cases(Path::new("tests/cases/leetcode"));
-    let known: std::collections::HashSet<&str> =
-        KNOWN_LEETCODE_FAILURES.iter().copied().collect();
+    let known: std::collections::HashSet<&str> = KNOWN_LEETCODE_FAILURES.iter().copied().collect();
 
     let mut failures = Vec::new();
     for (name, source, input) in &cases {
@@ -317,7 +314,11 @@ fn test_cide_e2e_template_known_failures() {
         let path = Path::new("tests/cases_template_generated").join(format!("{}.c", name));
         let source = std::fs::read_to_string(&path).unwrap_or_default();
         let input_path = path.with_extension("in");
-        let input = if input_path.exists() { Some(std::fs::read_to_string(&input_path).unwrap_or_default()) } else { None };
+        let input = if input_path.exists() {
+            Some(std::fs::read_to_string(&input_path).unwrap_or_default())
+        } else {
+            None
+        };
         if run_case(name, &source, input.as_deref(), "", InputMode::Interactive).is_ok() {
             passed_unexpectedly.push(name.to_string());
         }
@@ -339,7 +340,11 @@ fn test_cide_e2e_knr_known_failures() {
         let path = Path::new("tests/cases/knr").join(format!("{}.c", name));
         let source = std::fs::read_to_string(&path).unwrap_or_default();
         let input_path = path.with_extension("in");
-        let input = if input_path.exists() { Some(std::fs::read_to_string(&input_path).unwrap_or_default()) } else { None };
+        let input = if input_path.exists() {
+            Some(std::fs::read_to_string(&input_path).unwrap_or_default())
+        } else {
+            None
+        };
         let mode = if source.contains("getchar()") {
             InputMode::Batch
         } else {
@@ -366,7 +371,11 @@ fn test_cide_e2e_leetcode_known_failures() {
         let path = Path::new("tests/cases/leetcode").join(format!("{}.c", name));
         let source = std::fs::read_to_string(&path).unwrap_or_default();
         let input_path = path.with_extension("in");
-        let input = if input_path.exists() { Some(std::fs::read_to_string(&input_path).unwrap_or_default()) } else { None };
+        let input = if input_path.exists() {
+            Some(std::fs::read_to_string(&input_path).unwrap_or_default())
+        } else {
+            None
+        };
         if run_case(name, &source, input.as_deref(), "leetcode", InputMode::Interactive).is_ok() {
             passed_unexpectedly.push(name.to_string());
         }
@@ -388,12 +397,9 @@ fn test_cide_e2e_generate_report() {
     let knr_cases = load_cases(Path::new("tests/cases/knr"));
     let leetcode_cases = load_cases(Path::new("tests/cases/leetcode"));
 
-    let known_template: std::collections::HashSet<&str> =
-        KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
-    let known_kr: std::collections::HashSet<&str> =
-        KNOWN_KR_FAILURES.iter().copied().collect();
-    let known_leetcode: std::collections::HashSet<&str> =
-        KNOWN_LEETCODE_FAILURES.iter().copied().collect();
+    let known_template: std::collections::HashSet<&str> = KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
+    let known_kr: std::collections::HashSet<&str> = KNOWN_KR_FAILURES.iter().copied().collect();
+    let known_leetcode: std::collections::HashSet<&str> = KNOWN_LEETCODE_FAILURES.iter().copied().collect();
 
     let mut report = String::new();
     report.push_str("# Cide E2E 测试报告\n\n");
@@ -428,7 +434,7 @@ fn test_cide_e2e_generate_report() {
         leetcode_cases.len().saturating_sub(known_leetcode.len()),
         known_leetcode.len()
     ));
-    report.push_str("\n");
+    report.push('\n');
 
     if !KNOWN_TEMPLATE_FAILURES.is_empty() {
         report.push_str("## 已知失败详情（Template Generated）\n\n");
@@ -437,7 +443,7 @@ fn test_cide_e2e_generate_report() {
         for name in KNOWN_TEMPLATE_FAILURES {
             report.push_str(&format!("| {} | E2E_FAILURES.md |\n", name));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     if !KNOWN_KR_FAILURES.is_empty() {
@@ -447,7 +453,7 @@ fn test_cide_e2e_generate_report() {
         for name in KNOWN_KR_FAILURES {
             report.push_str(&format!("| {} | KR_FAILURES.md |\n", name));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     if !KNOWN_LEETCODE_FAILURES.is_empty() {
@@ -457,7 +463,7 @@ fn test_cide_e2e_generate_report() {
         for name in KNOWN_LEETCODE_FAILURES {
             report.push_str(&format!("| {} | LEETCODE_FAILURES.md |\n", name));
         }
-        report.push_str("\n");
+        report.push('\n');
     }
 
     report.push_str("## Golden 生成失败\n\n");

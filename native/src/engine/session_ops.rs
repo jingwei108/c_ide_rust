@@ -35,7 +35,10 @@ pub fn append_leak_report(session: &mut Session) {
     for r in &sorted {
         let by = if r.alloc_by.is_empty() { "malloc" } else { &r.alloc_by };
         if r.alloc_line > 0 {
-            lines.push(format!("  • 第 {} 行的 {} 分配了 {} 字节 (addr=0x{:04X})，未被 free", r.alloc_line, by, r.size, r.addr));
+            lines.push(format!(
+                "  • 第 {} 行的 {} 分配了 {} 字节 (addr=0x{:04X})，未被 free",
+                r.alloc_line, by, r.size, r.addr
+            ));
         } else {
             lines.push(format!("  • {} 分配了 {} 字节 (addr=0x{:04X})，未被 free", by, r.size, r.addr));
         }
@@ -113,8 +116,7 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
         if jit_stats.traces_compiled > 0 {
             session.runtime.output_lines.push(format!(
                 "[JIT] 已编译 {} 条 trace，加速执行 {} 步",
-                jit_stats.traces_compiled,
-                jit_stats.steps_accelerated
+                jit_stats.traces_compiled, jit_stats.steps_accelerated
             ));
         }
         session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));

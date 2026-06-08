@@ -183,7 +183,9 @@ fn collect_expr_vars(expr: &Expr, out: &mut Vec<String>, read: bool) {
         Expr::Member { object, .. } => {
             collect_expr_vars(object, out, read);
         }
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+        Expr::Ternary {
+            cond, then_branch, else_branch, ..
+        } => {
             collect_expr_vars(cond, out, read);
             collect_expr_vars(then_branch, out, read);
             collect_expr_vars(else_branch, out, read);
@@ -262,7 +264,11 @@ mod tests {
 
     #[test]
     fn test_constant_condition_true() {
-        let e = Expr::Literal { value: 5, loc: crate::compiler::ast::SourceLoc::default(), ty: crate::compiler::ast::Type::int() };
+        let e = Expr::Literal {
+            value: 5,
+            loc: crate::compiler::ast::SourceLoc::default(),
+            ty: crate::compiler::ast::Type::int(),
+        };
         assert_eq!(evaluate_constant_condition(&e), Some(true));
     }
 
@@ -271,8 +277,16 @@ mod tests {
         use crate::compiler::ast::{BinaryOp, SourceLoc, Type};
         let e = Expr::Binary {
             op: BinaryOp::Lt,
-            left: Box::new(Expr::Literal { value: 3, loc: SourceLoc::default(), ty: Type::int() }),
-            right: Box::new(Expr::Literal { value: 5, loc: SourceLoc::default(), ty: Type::int() }),
+            left: Box::new(Expr::Literal {
+                value: 3,
+                loc: SourceLoc::default(),
+                ty: Type::int(),
+            }),
+            right: Box::new(Expr::Literal {
+                value: 5,
+                loc: SourceLoc::default(),
+                ty: Type::int(),
+            }),
             loc: SourceLoc::default(),
             ty: Type::int(),
         };

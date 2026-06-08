@@ -546,7 +546,10 @@ pub fn generate_fix(
             (
                 "建议将复杂声明拆分为 typedef 链：\n1. 先定义函数指针类型\n2. 用类型别名声明变量".to_string(),
                 4,
-                0, 0, 0, 0,
+                0,
+                0,
+                0,
+                0,
                 String::new(),
             )
         }
@@ -587,7 +590,11 @@ pub fn generate_fix(
             }
             if let Some(pos) = found_pos {
                 (
-                    format!("位运算符 '{}' 在条件中很少使用，建议改为逻辑运算符 '{}'", if replacement == "||" { "|" } else { "&" }, replacement),
+                    format!(
+                        "位运算符 '{}' 在条件中很少使用，建议改为逻辑运算符 '{}'",
+                        if replacement == "||" { "|" } else { "&" },
+                        replacement
+                    ),
                     1,
                     line,
                     pos as i32,
@@ -609,85 +616,63 @@ pub fn generate_fix(
         }
 
         // ---- Parser fixes ----
-        2005 => {
-            (
-                "语句末尾缺少分号，建议添加 ';'".to_string(),
-                2,
-                line,
-                trimmed_len,
-                line,
-                trimmed_len,
-                ";".to_string(),
-            )
-        }
-        2006 => {
-            (
-                "代码块缺少右花括号，建议添加 '}'".to_string(),
-                2,
-                line,
-                trimmed_len,
-                line,
-                trimmed_len,
-                "}".to_string(),
-            )
-        }
-        2007 => {
-            (
-                "缺少右圆括号，建议添加 ')'".to_string(),
-                2,
-                line,
-                trimmed_len,
-                line,
-                trimmed_len,
-                ")".to_string(),
-            )
-        }
-        2008 => {
-            (
-                "缺少右方括号，建议添加 ']'".to_string(),
-                2,
-                line,
-                trimmed_len,
-                line,
-                trimmed_len,
-                "]".to_string(),
-            )
-        }
+        2005 => (
+            "语句末尾缺少分号，建议添加 ';'".to_string(),
+            2,
+            line,
+            trimmed_len,
+            line,
+            trimmed_len,
+            ";".to_string(),
+        ),
+        2006 => (
+            "代码块缺少右花括号，建议添加 '}'".to_string(),
+            2,
+            line,
+            trimmed_len,
+            line,
+            trimmed_len,
+            "}".to_string(),
+        ),
+        2007 => (
+            "缺少右圆括号，建议添加 ')'".to_string(),
+            2,
+            line,
+            trimmed_len,
+            line,
+            trimmed_len,
+            ")".to_string(),
+        ),
+        2008 => (
+            "缺少右方括号，建议添加 ']'".to_string(),
+            2,
+            line,
+            trimmed_len,
+            line,
+            trimmed_len,
+            "]".to_string(),
+        ),
 
         // ---- TypeChecker fixes ----
-        3013 => {
-            (
-                "非 void 函数缺少返回值，建议在函数末尾添加 'return 0;'".to_string(),
-                2,
-                line,
-                trimmed_len,
-                line,
-                trimmed_len,
-                "return 0;".to_string(),
-            )
-        }
-        3023 => {
-            (
-                "变量未声明，建议先声明变量再使用".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3015 => {
-            (
-                "条件表达式不合法，建议检查是否误用 '=' 代替 '=='".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
+        3013 => (
+            "非 void 函数缺少返回值，建议在函数末尾添加 'return 0;'".to_string(),
+            2,
+            line,
+            trimmed_len,
+            line,
+            trimmed_len,
+            "return 0;".to_string(),
+        ),
+        3023 => ("变量未声明，建议先声明变量再使用".to_string(), 4, 0, 0, 0, 0, String::new()),
+        3015 => (
+            "条件表达式不合法，建议检查是否误用 '=' 代替 '=='".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
         3035 => {
             // Scanf arg type: likely missing &
             if message.contains("&") || message.contains("指针") {
@@ -712,17 +697,15 @@ pub fn generate_fix(
                 )
             }
         }
-        3036 => {
-            (
-                "函数未声明，建议在调用前添加函数原型声明".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
+        3036 => (
+            "函数未声明，建议在调用前添加函数原型声明".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
         3041 => {
             // Member access on non-struct: suggest . <-> -> swap if applicable
             if message.contains("->") {
@@ -747,28 +730,24 @@ pub fn generate_fix(
                 )
             }
         }
-        3043 => {
-            (
-                "不能给表达式或常量赋值，请确认左侧是可修改的变量".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3044 => {
-            (
-                "赋值两边类型不匹配，建议检查类型或使用强制类型转换".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
+        3043 => (
+            "不能给表达式或常量赋值，请确认左侧是可修改的变量".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
+        3044 => (
+            "赋值两边类型不匹配，建议检查类型或使用强制类型转换".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
 
         // ---- Warning fixes ----
         3050 => {
@@ -820,72 +799,60 @@ pub fn generate_fix(
                 )
             }
         }
-        3053 => {
-            (
-                "隐式类型转换可能导致数据截断，建议显式强制转换".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3054 => {
-            (
-                "整数直接转指针可能不安全，请确保地址有效".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3055 => {
-            (
-                "void* 转换是允许的，但建议显式写 (int*)malloc(...) 以增强可读性".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3056 => {
-            (
-                "unsigned 类型暂映射为 int，请确保数值在有符号范围内".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3057 => {
-            (
-                "隐式类型提升是安全的，如需更明确可添加显式强制转换".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
-        3060 | 3061 => {
-            (
-                "free(p) 后建议立即执行 p = NULL;，并检查是否还有其他指针指向这块内存。".to_string(),
-                4,
-                0,
-                0,
-                0,
-                0,
-                String::new(),
-            )
-        }
+        3053 => (
+            "隐式类型转换可能导致数据截断，建议显式强制转换".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
+        3054 => (
+            "整数直接转指针可能不安全，请确保地址有效".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
+        3055 => (
+            "void* 转换是允许的，但建议显式写 (int*)malloc(...) 以增强可读性".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
+        3056 => (
+            "unsigned 类型暂映射为 int，请确保数值在有符号范围内".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
+        3057 => (
+            "隐式类型提升是安全的，如需更明确可添加显式强制转换".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
+        3060 | 3061 => (
+            "free(p) 后建议立即执行 p = NULL;，并检查是否还有其他指针指向这块内存。".to_string(),
+            4,
+            0,
+            0,
+            0,
+            0,
+            String::new(),
+        ),
 
         // Default: no fix
         _ => (String::new(), 0, 0, 0, 0, 0, String::new()),

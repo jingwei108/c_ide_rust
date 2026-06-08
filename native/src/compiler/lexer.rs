@@ -3,24 +3,116 @@ use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
-    Int, Void, Char, If, Else, While, Do, For, Return, Break, Continue,
-    Struct, Union, Sizeof, Offsetof, Switch, Case, Default, Typedef, Enum, Unsigned, Long, Short, Signed, Const, Extern, Float, Double,
+    Int,
+    Void,
+    Char,
+    If,
+    Else,
+    While,
+    Do,
+    For,
+    Return,
+    Break,
+    Continue,
+    Struct,
+    Union,
+    Sizeof,
+    Offsetof,
+    Switch,
+    Case,
+    Default,
+    Typedef,
+    Enum,
+    Unsigned,
+    Long,
+    Short,
+    Signed,
+    Const,
+    Extern,
+    Float,
+    Double,
     Volatile,
-    Inline, Restrict, Register, Auto, Bool,
+    Inline,
+    Restrict,
+    Register,
+    Auto,
+    Bool,
     Goto,
     Null,
-    Identifier, Number, UnsignedLiteral, FloatLiteral, LongLiteral, CharLiteral, String,
-    Plus, Minus, Star, Slash, Percent,
-    Eq, Ne, Lt, Le, Gt, Ge,
-    AndAnd, OrOr, Not,
-    Assign, PlusAssign, MinusAssign, StarAssign, SlashAssign, PercentAssign,
-    AndAssign, OrAssign, XorAssign, ShlAssign, ShrAssign,
-    Ampersand, BitOr, BitXor, BitNot, Shl, Shr,
-    Increment, Decrement,
-    Semicolon, Comma,
-    LParen, RParen, LBrace, RBrace, LBracket, RBracket,
-    Dot, Arrow,
-    Colon, Question,
+    // === C++ 新增关键字 ===
+    Class,
+    Public,
+    Private,
+    Protected,
+    This,
+    Using,
+    Namespace,
+    Virtual,
+    Override,
+    Friend,
+    Template,
+    Typename,
+    StaticCast,
+    ConstCast,
+    ReinterpretCast,
+    New,
+    Delete,
+    // === C++ 新增标点 ===
+    ColonColon,
+    ArrowStar,
+    DotStar,
+    Identifier,
+    Number,
+    UnsignedLiteral,
+    FloatLiteral,
+    LongLiteral,
+    CharLiteral,
+    String,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Percent,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    AndAnd,
+    OrOr,
+    Not,
+    Assign,
+    PlusAssign,
+    MinusAssign,
+    StarAssign,
+    SlashAssign,
+    PercentAssign,
+    AndAssign,
+    OrAssign,
+    XorAssign,
+    ShlAssign,
+    ShrAssign,
+    Ampersand,
+    BitOr,
+    BitXor,
+    BitNot,
+    Shl,
+    Shr,
+    Increment,
+    Decrement,
+    Semicolon,
+    Comma,
+    LParen,
+    RParen,
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    Dot,
+    Arrow,
+    Colon,
+    Question,
     Eof,
     Unknown,
 }
@@ -61,113 +153,237 @@ pub struct Lexer {
     column: i32,
     macros: HashMap<String, MacroDef>,
     conditional_stack: Vec<ConditionalState>,
+    is_cpp_mode: bool,
 }
 
 impl Lexer {
     pub fn new(source: &str) -> Self {
+        Self::with_mode(source, false)
+    }
+
+    pub fn with_mode(source: &str, is_cpp_mode: bool) -> Self {
         let mut macros = HashMap::new();
         // Predefine common stdio macros for fprintf compatibility
-        macros.insert("stdout".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token {
-                ty: TokenType::Number,
-                text: "1".to_string(),
-                line: 0,
-                column: 0,
-            }],
-        });
-        macros.insert("stderr".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token {
-                ty: TokenType::Number,
-                text: "2".to_string(),
-                line: 0,
-                column: 0,
-            }],
-        });
-        macros.insert("NULL".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token {
-                ty: TokenType::Number,
-                text: "0".to_string(),
-                line: 0,
-                column: 0,
-            }],
-        });
-        macros.insert("EOF".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token {
-                ty: TokenType::Number,
-                text: "-1".to_string(),
-                line: 0,
-                column: 0,
-            }],
-        });
-        macros.insert("stdin".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token {
-                ty: TokenType::Number,
-                text: "0".to_string(),
-                line: 0,
-                column: 0,
-            }],
-        });
+        macros.insert(
+            "stdout".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "1".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "stderr".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "2".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "NULL".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "0".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "EOF".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "-1".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "stdin".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "0".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
         // stdlib.h macros
-        macros.insert("EXIT_SUCCESS".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "0".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("EXIT_FAILURE".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "1".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("RAND_MAX".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "32767".to_string(), line: 0, column: 0 }],
-        });
+        macros.insert(
+            "EXIT_SUCCESS".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "0".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "EXIT_FAILURE".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "1".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "RAND_MAX".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "32767".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
         // stdio.h macros
-        macros.insert("SEEK_SET".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "0".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("SEEK_CUR".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "1".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("SEEK_END".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "2".to_string(), line: 0, column: 0 }],
-        });
+        macros.insert(
+            "SEEK_SET".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "0".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "SEEK_CUR".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "1".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "SEEK_END".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "2".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
         // limits.h macros
-        macros.insert("INT_MAX".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "2147483647".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("INT_MIN".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "-2147483648".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("LONG_MAX".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "2147483647".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("LONG_MIN".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "-2147483648".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("CHAR_BIT".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "8".to_string(), line: 0, column: 0 }],
-        });
+        macros.insert(
+            "INT_MAX".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "2147483647".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "INT_MIN".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "-2147483648".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "LONG_MAX".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "2147483647".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "LONG_MIN".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "-2147483648".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "CHAR_BIT".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "8".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
         // stdbool.h macros
-        macros.insert("true".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "1".to_string(), line: 0, column: 0 }],
-        });
-        macros.insert("false".to_string(), MacroDef {
-            params: vec![],
-            body: vec![Token { ty: TokenType::Number, text: "0".to_string(), line: 0, column: 0 }],
-        });
+        macros.insert(
+            "true".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "1".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+        macros.insert(
+            "false".to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty: TokenType::Number,
+                    text: "0".to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
         Self {
             chars: source.chars().collect(),
             errors: Vec::new(),
@@ -176,6 +392,7 @@ impl Lexer {
             column: 1,
             macros,
             conditional_stack: Vec::new(),
+            is_cpp_mode,
         }
     }
 
@@ -256,58 +473,92 @@ impl Lexer {
 
         match c {
             '+' => {
-                if self.match_char('+') { return self.make_token(TokenType::Increment, "++"); }
-                if self.match_char('=') { return self.make_token(TokenType::PlusAssign, "+="); }
+                if self.match_char('+') {
+                    return self.make_token(TokenType::Increment, "++");
+                }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::PlusAssign, "+=");
+                }
                 self.advance();
                 self.make_token(TokenType::Plus, "+")
             }
             '-' => {
-                if self.match_char('>') { return self.make_token(TokenType::Arrow, "->"); }
-                if self.match_char('-') { return self.make_token(TokenType::Decrement, "--"); }
-                if self.match_char('=') { return self.make_token(TokenType::MinusAssign, "-="); }
+                if self.match_char('>') {
+                    if self.peek(0) == '*' {
+                        self.advance();
+                        return self.make_token(TokenType::ArrowStar, "->*");
+                    }
+                    return self.make_token(TokenType::Arrow, "->");
+                }
+                if self.match_char('-') {
+                    return self.make_token(TokenType::Decrement, "--");
+                }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::MinusAssign, "-=");
+                }
                 self.advance();
                 self.make_token(TokenType::Minus, "-")
             }
             '*' => {
-                if self.match_char('=') { return self.make_token(TokenType::StarAssign, "*="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::StarAssign, "*=");
+                }
                 self.advance();
                 self.make_token(TokenType::Star, "*")
             }
             '/' => {
-                if self.match_char('=') { return self.make_token(TokenType::SlashAssign, "/="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::SlashAssign, "/=");
+                }
                 self.advance();
                 self.make_token(TokenType::Slash, "/")
             }
             '%' => {
-                if self.match_char('=') { return self.make_token(TokenType::PercentAssign, "%="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::PercentAssign, "%=");
+                }
                 self.advance();
                 self.make_token(TokenType::Percent, "%")
             }
             '=' => {
-                if self.match_char('=') { return self.make_token(TokenType::Eq, "=="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::Eq, "==");
+                }
                 self.advance();
                 self.make_token(TokenType::Assign, "=")
             }
             '!' => {
-                if self.match_char('=') { return self.make_token(TokenType::Ne, "!="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::Ne, "!=");
+                }
                 self.advance();
                 self.make_token(TokenType::Not, "!")
             }
 
             '&' => {
-                if self.match_char('&') { return self.make_token(TokenType::AndAnd, "&&"); }
-                if self.match_char('=') { return self.make_token(TokenType::AndAssign, "&="); }
+                if self.match_char('&') {
+                    return self.make_token(TokenType::AndAnd, "&&");
+                }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::AndAssign, "&=");
+                }
                 self.advance();
                 self.make_token(TokenType::Ampersand, "&")
             }
             '|' => {
-                if self.match_char('|') { return self.make_token(TokenType::OrOr, "||"); }
-                if self.match_char('=') { return self.make_token(TokenType::OrAssign, "|="); }
+                if self.match_char('|') {
+                    return self.make_token(TokenType::OrOr, "||");
+                }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::OrAssign, "|=");
+                }
                 self.advance();
                 self.make_token(TokenType::BitOr, "|")
             }
             '^' => {
-                if self.match_char('=') { return self.make_token(TokenType::XorAssign, "^="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::XorAssign, "^=");
+                }
                 self.advance();
                 self.make_token(TokenType::BitXor, "^")
             }
@@ -323,7 +574,9 @@ impl Lexer {
                     }
                     return self.make_token(TokenType::Shl, "<<");
                 }
-                if self.match_char('=') { return self.make_token(TokenType::Le, "<="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::Le, "<=");
+                }
                 self.advance();
                 self.make_token(TokenType::Lt, "<")
             }
@@ -335,21 +588,62 @@ impl Lexer {
                     }
                     return self.make_token(TokenType::Shr, ">>");
                 }
-                if self.match_char('=') { return self.make_token(TokenType::Ge, ">="); }
+                if self.match_char('=') {
+                    return self.make_token(TokenType::Ge, ">=");
+                }
                 self.advance();
                 self.make_token(TokenType::Gt, ">")
             }
-            ';' => { self.advance(); self.make_token(TokenType::Semicolon, ";") }
-            ',' => { self.advance(); self.make_token(TokenType::Comma, ",") }
-            '(' => { self.advance(); self.make_token(TokenType::LParen, "(") }
-            ')' => { self.advance(); self.make_token(TokenType::RParen, ")") }
-            '{' => { self.advance(); self.make_token(TokenType::LBrace, "{") }
-            '}' => { self.advance(); self.make_token(TokenType::RBrace, "}") }
-            '[' => { self.advance(); self.make_token(TokenType::LBracket, "[") }
-            ']' => { self.advance(); self.make_token(TokenType::RBracket, "]") }
-            '.' => { self.advance(); self.make_token(TokenType::Dot, ".") }
-            ':' => { self.advance(); self.make_token(TokenType::Colon, ":") }
-            '?' => { self.advance(); self.make_token(TokenType::Question, "?") }
+            ';' => {
+                self.advance();
+                self.make_token(TokenType::Semicolon, ";")
+            }
+            ',' => {
+                self.advance();
+                self.make_token(TokenType::Comma, ",")
+            }
+            '(' => {
+                self.advance();
+                self.make_token(TokenType::LParen, "(")
+            }
+            ')' => {
+                self.advance();
+                self.make_token(TokenType::RParen, ")")
+            }
+            '{' => {
+                self.advance();
+                self.make_token(TokenType::LBrace, "{")
+            }
+            '}' => {
+                self.advance();
+                self.make_token(TokenType::RBrace, "}")
+            }
+            '[' => {
+                self.advance();
+                self.make_token(TokenType::LBracket, "[")
+            }
+            ']' => {
+                self.advance();
+                self.make_token(TokenType::RBracket, "]")
+            }
+            '.' => {
+                if self.match_char('*') {
+                    return self.make_token(TokenType::DotStar, ".*");
+                }
+                self.advance();
+                self.make_token(TokenType::Dot, ".")
+            }
+            ':' => {
+                if self.match_char(':') {
+                    return self.make_token(TokenType::ColonColon, "::");
+                }
+                self.advance();
+                self.make_token(TokenType::Colon, ":")
+            }
+            '?' => {
+                self.advance();
+                self.make_token(TokenType::Question, "?")
+            }
             _ => {
                 self.advance();
                 self.errors.push(LexerError {
@@ -374,7 +668,15 @@ impl Lexer {
             }
         }
         let text: String = self.chars[start..self.pos].iter().collect();
-        let ty = keyword_type(&text).unwrap_or(TokenType::Identifier);
+        let ty = keyword_type(&text)
+            .or_else(|| {
+                if self.is_cpp_mode {
+                    cpp_keyword_type(&text)
+                } else {
+                    None
+                }
+            })
+            .unwrap_or(TokenType::Identifier);
         self.make_token(ty, &text)
     }
 
@@ -897,13 +1199,14 @@ impl Lexer {
             false
         } else {
             let defined = self.macros.contains_key(&_ident);
-            if is_ifdef { defined } else { !defined }
+            if is_ifdef {
+                defined
+            } else {
+                !defined
+            }
         };
 
-        self.conditional_stack.push(ConditionalState {
-            active,
-            has_else: false,
-        });
+        self.conditional_stack.push(ConditionalState { active, has_else: false });
     }
 
     fn handle_else_directive(&mut self) {
@@ -1226,47 +1529,70 @@ impl Lexer {
     }
 }
 
-fn keyword_type(text: &str) -> Option<TokenType> {
+fn cpp_keyword_type(text: &str) -> Option<TokenType> {
     match text {
-        "int"      => Some(TokenType::Int),
-        "void"     => Some(TokenType::Void),
-        "char"     => Some(TokenType::Char),
-        "if"       => Some(TokenType::If),
-        "else"     => Some(TokenType::Else),
-        "while"    => Some(TokenType::While),
-        "do"       => Some(TokenType::Do),
-        "for"      => Some(TokenType::For),
-        "return"   => Some(TokenType::Return),
-        "break"    => Some(TokenType::Break),
-        "continue" => Some(TokenType::Continue),
-        "struct"   => Some(TokenType::Struct),
-        "union"    => Some(TokenType::Union),
-        "sizeof"   => Some(TokenType::Sizeof),
-        "offsetof" => Some(TokenType::Offsetof),
-        "switch"   => Some(TokenType::Switch),
-        "case"     => Some(TokenType::Case),
-        "default"  => Some(TokenType::Default),
-        "typedef"  => Some(TokenType::Typedef),
-        "enum"     => Some(TokenType::Enum),
-        "unsigned" => Some(TokenType::Unsigned),
-        "long"     => Some(TokenType::Long),
-        "short"    => Some(TokenType::Short),
-        "signed"   => Some(TokenType::Signed),
-        "const"    => Some(TokenType::Const),
-        "extern"   => Some(TokenType::Extern),
-        "volatile" => Some(TokenType::Volatile),
-        "inline"   => Some(TokenType::Inline),
-        "restrict" => Some(TokenType::Restrict),
-        "register" => Some(TokenType::Register),
-        "auto"     => Some(TokenType::Auto),
-        "_Bool"    => Some(TokenType::Bool),
-        "bool"     => Some(TokenType::Bool),
-        "float"    => Some(TokenType::Float),
-        "double"   => Some(TokenType::Double),
-        "goto"     => Some(TokenType::Goto),
-        "NULL"     => Some(TokenType::Null),
-        "null"     => Some(TokenType::Null),
-        _          => None,
+        "class" => Some(TokenType::Class),
+        "public" => Some(TokenType::Public),
+        "private" => Some(TokenType::Private),
+        "protected" => Some(TokenType::Protected),
+        "this" => Some(TokenType::This),
+        "using" => Some(TokenType::Using),
+        "namespace" => Some(TokenType::Namespace),
+        "virtual" => Some(TokenType::Virtual),
+        "override" => Some(TokenType::Override),
+        "friend" => Some(TokenType::Friend),
+        "template" => Some(TokenType::Template),
+        "typename" => Some(TokenType::Typename),
+        "static_cast" => Some(TokenType::StaticCast),
+        "const_cast" => Some(TokenType::ConstCast),
+        "reinterpret_cast" => Some(TokenType::ReinterpretCast),
+        "new" => Some(TokenType::New),
+        "delete" => Some(TokenType::Delete),
+        "nullptr" => Some(TokenType::Null),
+        _ => None,
     }
 }
 
+fn keyword_type(text: &str) -> Option<TokenType> {
+    match text {
+        "int" => Some(TokenType::Int),
+        "void" => Some(TokenType::Void),
+        "char" => Some(TokenType::Char),
+        "if" => Some(TokenType::If),
+        "else" => Some(TokenType::Else),
+        "while" => Some(TokenType::While),
+        "do" => Some(TokenType::Do),
+        "for" => Some(TokenType::For),
+        "return" => Some(TokenType::Return),
+        "break" => Some(TokenType::Break),
+        "continue" => Some(TokenType::Continue),
+        "struct" => Some(TokenType::Struct),
+        "union" => Some(TokenType::Union),
+        "sizeof" => Some(TokenType::Sizeof),
+        "offsetof" => Some(TokenType::Offsetof),
+        "switch" => Some(TokenType::Switch),
+        "case" => Some(TokenType::Case),
+        "default" => Some(TokenType::Default),
+        "typedef" => Some(TokenType::Typedef),
+        "enum" => Some(TokenType::Enum),
+        "unsigned" => Some(TokenType::Unsigned),
+        "long" => Some(TokenType::Long),
+        "short" => Some(TokenType::Short),
+        "signed" => Some(TokenType::Signed),
+        "const" => Some(TokenType::Const),
+        "extern" => Some(TokenType::Extern),
+        "volatile" => Some(TokenType::Volatile),
+        "inline" => Some(TokenType::Inline),
+        "restrict" => Some(TokenType::Restrict),
+        "register" => Some(TokenType::Register),
+        "auto" => Some(TokenType::Auto),
+        "_Bool" => Some(TokenType::Bool),
+        "bool" => Some(TokenType::Bool),
+        "float" => Some(TokenType::Float),
+        "double" => Some(TokenType::Double),
+        "goto" => Some(TokenType::Goto),
+        "NULL" => Some(TokenType::Null),
+        "null" => Some(TokenType::Null),
+        _ => None,
+    }
+}

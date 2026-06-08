@@ -1,6 +1,8 @@
 use crate::session::Session;
 use crate::unified::algorithm_steps::infer_algorithm_step;
-use crate::unified::types::{AccessedVar, ApiFrameInfo, ApiVariableSnapshot, PointerSnapshot, PointerStatus, StepPayload};
+use crate::unified::types::{
+    AccessedVar, ApiFrameInfo, ApiVariableSnapshot, PointerSnapshot, PointerStatus, StepPayload,
+};
 use crate::vm::vm::CideVM;
 
 /// 每步数据收集器：从 VM 和 Session 中提取轻量 `StepPayload`。
@@ -9,11 +11,7 @@ pub struct StepCollector;
 impl StepCollector {
     pub fn collect(vm: &mut CideVM, session: &Session, step_index: i32) -> StepPayload {
         let code_line = vm.get_current_line();
-        let func_name = vm
-            .get_call_stack()
-            .last()
-            .map(|f| f.func_name.clone())
-            .unwrap_or_default();
+        let func_name = vm.get_call_stack().last().map(|f| f.func_name.clone()).unwrap_or_default();
 
         let local_vars: Vec<ApiVariableSnapshot> = vm
             .get_variable_snapshot()
@@ -43,13 +41,7 @@ impl StepCollector {
         let vis_events = vm.take_vis_events();
 
         let heatmap_line = code_line;
-        let heatmap_count = session
-            .runtime
-            .heatmap
-            .line_counts
-            .get(&code_line)
-            .copied()
-            .unwrap_or(0);
+        let heatmap_count = session.runtime.heatmap.line_counts.get(&code_line).copied().unwrap_or(0);
 
         let semantic_label = infer_semantic_label(code_line, &local_vars, &func_name, session);
         let algorithm_step = infer_algorithm_step(code_line, &local_vars, &func_name, session);
@@ -106,9 +98,7 @@ fn collect_pointer_snapshots(
 
         let status = if target_addr == 0 {
             PointerStatus::Null
-        } else if !(crate::vm::vm::NULL_TRAP_SIZE..crate::vm::vm::MEM_SIZE)
-            .contains(&target_addr)
-        {
+        } else if !(crate::vm::vm::NULL_TRAP_SIZE..crate::vm::vm::MEM_SIZE).contains(&target_addr) {
             PointerStatus::Dangling
         } else if is_freed_heap(&session.memory.regions, target_addr) {
             PointerStatus::Freed
@@ -139,7 +129,10 @@ fn parse_addr(value: &str) -> Option<u32> {
     if value.starts_with("0x") || value.starts_with("0X") {
         u32::from_str_radix(&value[2..], 16).ok()
     } else {
-        value.parse::<i64>().ok().and_then(|n| if n >= 0 { Some(n as u32) } else { None })
+        value
+            .parse::<i64>()
+            .ok()
+            .and_then(|n| if n >= 0 { Some(n as u32) } else { None })
     }
 }
 
@@ -162,18 +155,12 @@ fn format_value(v: &crate::session::VariableSnapshot) -> String {
         TypeKind::Double => {
             let bits = v.value as u64;
             let f = f64::from_bits(bits);
-            format!("{:.15}", f)
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .to_string()
+            format!("{:.15}", f).trim_end_matches('0').trim_end_matches('.').to_string()
         }
         TypeKind::Float => {
             let bits = v.value as u32;
             let f = f32::from_bits(bits);
-            format!("{:.7}", f)
-                .trim_end_matches('0')
-                .trim_end_matches('.')
-                .to_string()
+            format!("{:.7}", f).trim_end_matches('0').trim_end_matches('.').to_string()
         }
         _ => v.value.to_string(),
     }
@@ -195,19 +182,29 @@ fn infer_semantic_label(
         .compile
         .compile_units
         .first()
-        .and_then(|u| {
-            u.source
-                .lines()
-                .nth((code_line - 1) as usize)
-                .map(|s| s.trim())
-        })
+        .and_then(|u| u.source.lines().nth((code_line - 1) as usize).map(|s| s.trim()))
         .unwrap_or("");
 
     // 提取循环变量（i, j, k, idx, index, m, n, left, right, mid, low, high, pivot）
     let loop_vars: Vec<(String, i32)> = local_vars
         .iter()
         .filter_map(|v| {
-            if matches!(v.name.as_str(), "i" | "j" | "k" | "idx" | "index" | "m" | "n" | "left" | "right" | "mid" | "low" | "high" | "pivot" | "gap") {
+            if matches!(
+                v.name.as_str(),
+                "i" | "j"
+                    | "k"
+                    | "idx"
+                    | "index"
+                    | "m"
+                    | "n"
+                    | "left"
+                    | "right"
+                    | "mid"
+                    | "low"
+                    | "high"
+                    | "pivot"
+                    | "gap"
+            ) {
                 v.value.parse::<i32>().ok().map(|val| (v.name.clone(), val))
             } else {
                 None
@@ -223,9 +220,7 @@ fn infer_semantic_label(
         && source_line.contains("=");
 
     // 检测递归调用
-    let is_recursive = !func_name.is_empty()
-        && func_name != "main"
-        && source_line.contains(&format!("{}(", func_name));
+    let is_recursive = !func_name.is_empty() && func_name != "main" && source_line.contains(&format!("{}(", func_name));
 
     // 检测普通函数调用（排除控制流关键字）
     let is_func_call = source_line.contains('(')
@@ -251,7 +246,11 @@ fn infer_semantic_label(
     } else if is_recursive {
         format!("递归调用 {}", func_name)
     } else if source_line.starts_with("printf") || source_line.starts_with("scanf") {
-        let func = if source_line.starts_with("printf") { "printf" } else { "scanf" };
+        let func = if source_line.starts_with("printf") {
+            "printf"
+        } else {
+            "scanf"
+        };
         format!("调用 {}", func)
     } else if source_line.starts_with("return") {
         "返回".to_string()

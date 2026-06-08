@@ -14,8 +14,6 @@ use crate::vm::vm::CideVM;
 
 // ---------- 辅助函数：根据类型定义计算类型大小 ----------
 
-
-
 // ========== 编译错误 trait ==========
 
 pub trait CompileError {
@@ -26,24 +24,48 @@ pub trait CompileError {
 }
 
 impl CompileError for crate::compiler::lexer::LexerError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
+    fn line(&self) -> i32 {
+        self.line
+    }
+    fn column(&self) -> i32 {
+        self.column
+    }
+    fn code(&self) -> i32 {
+        self.code
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 impl CompileError for crate::compiler::parser::ParseError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
+    fn line(&self) -> i32 {
+        self.line
+    }
+    fn column(&self) -> i32 {
+        self.column
+    }
+    fn code(&self) -> i32 {
+        self.code
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 impl CompileError for crate::compiler::typeck::TypeError {
-    fn line(&self) -> i32 { self.line }
-    fn column(&self) -> i32 { self.column }
-    fn code(&self) -> i32 { self.code }
-    fn message(&self) -> &str { &self.message }
+    fn line(&self) -> i32 {
+        self.line
+    }
+    fn column(&self) -> i32 {
+        self.column
+    }
+    fn code(&self) -> i32 {
+        self.code
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
 }
 
 // ========== 多文件行号映射 ==========
@@ -55,19 +77,29 @@ pub struct FileRange {
 }
 
 fn resolve_filename(line: i32, file_ranges: &[FileRange]) -> Option<String> {
-    file_ranges.iter()
+    file_ranges
+        .iter()
         .find(|r| line >= r.start_line && line <= r.end_line)
         .map(|r| r.filename.clone())
 }
 
 // ========== 诊断推送 ==========
 
-fn push_one<T: CompileError>(session: &mut Session, item: &T, severity: i32, source_lines: &[&str], file_ranges: Option<&[FileRange]>) {
+fn push_one<T: CompileError>(
+    session: &mut Session,
+    item: &T,
+    severity: i32,
+    source_lines: &[&str],
+    file_ranges: Option<&[FileRange]>,
+) {
     let info = crate::diagnostics::error_catalog::lookup_error_info(item.code());
-    let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) =
-        crate::diagnostics::error_catalog::generate_fix(
-            item.code(), item.line(), item.column(), item.message(), source_lines,
-        );
+    let (fix_suggestion, fix_kind, rsl, rsc, rel, rec, rt) = crate::diagnostics::error_catalog::generate_fix(
+        item.code(),
+        item.line(),
+        item.column(),
+        item.message(),
+        source_lines,
+    );
 
     let filename = file_ranges
         .and_then(|ranges| resolve_filename(item.line(), ranges))
@@ -94,7 +126,12 @@ fn push_one<T: CompileError>(session: &mut Session, item: &T, severity: i32, sou
     });
 }
 
-pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], source: &str, file_ranges: Option<&[FileRange]>) {
+pub fn push_diagnostics<T: CompileError>(
+    session: &mut Session,
+    errors: &[T],
+    source: &str,
+    file_ranges: Option<&[FileRange]>,
+) {
     let source_lines: Vec<&str> = source.lines().collect();
     let mut err_str = String::new();
     for e in errors {
@@ -102,13 +139,15 @@ pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], so
         let enriched_msg = if let Some(ref i) = info {
             format!(
                 "{} {} — 错误 E{} (第{}行, 第{}列): {}",
-                i.emoji, i.title, e.code(), e.line(), e.column(), e.message()
+                i.emoji,
+                i.title,
+                e.code(),
+                e.line(),
+                e.column(),
+                e.message()
             )
         } else {
-            format!(
-                "错误 E{} (第{}行, 第{}列): {}",
-                e.code(), e.line(), e.column(), e.message()
-            )
+            format!("错误 E{} (第{}行, 第{}列): {}", e.code(), e.line(), e.column(), e.message())
         };
         push_one(session, e, 0, &source_lines, file_ranges);
         err_str.push_str(&enriched_msg);
@@ -117,14 +156,24 @@ pub fn push_diagnostics<T: CompileError>(session: &mut Session, errors: &[T], so
     session.compile.errors = err_str;
 }
 
-pub fn push_warnings<T: CompileError>(session: &mut Session, warnings: &[T], source: &str, file_ranges: Option<&[FileRange]>) {
+pub fn push_warnings<T: CompileError>(
+    session: &mut Session,
+    warnings: &[T],
+    source: &str,
+    file_ranges: Option<&[FileRange]>,
+) {
     let source_lines: Vec<&str> = source.lines().collect();
     for w in warnings {
         push_one(session, w, 1, &source_lines, file_ranges);
     }
 }
 
-pub fn push_hints<T: CompileError>(session: &mut Session, hints: &[T], source: &str, file_ranges: Option<&[FileRange]>) {
+pub fn push_hints<T: CompileError>(
+    session: &mut Session,
+    hints: &[T],
+    source: &str,
+    file_ranges: Option<&[FileRange]>,
+) {
     let source_lines: Vec<&str> = source.lines().collect();
     for h in hints {
         push_one(session, h, 2, &source_lines, file_ranges);
@@ -166,13 +215,16 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     // 4a. 注册原始索引（供 Bytecode Libc 内部调用使用）
     for (name, meta) in &libc.func_table {
         if let Some(&raw_idx) = libc.func_index.get(name) {
-            vm.register_function(raw_idx as u32, FuncMeta {
-                ip: meta.ip,
-                arg_count: meta.arg_count,
-                param_count: meta.param_count,
-                local_count: meta.local_count,
-                param_sizes: meta.param_sizes.clone(),
-            });
+            vm.register_function(
+                raw_idx as u32,
+                FuncMeta {
+                    ip: meta.ip,
+                    arg_count: meta.arg_count,
+                    param_count: meta.param_count,
+                    local_count: meta.local_count,
+                    param_sizes: meta.param_sizes.clone(),
+                },
+            );
             vm.register_function_name(raw_idx as u32, name.clone());
         }
     }
@@ -180,13 +232,16 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     // 4b. 注册固定索引（供用户代码调用使用）
     for (name, meta) in &libc.func_table {
         if let Some(idx) = bytecode_libc_index(name) {
-            vm.register_function(idx as u32, FuncMeta {
-                ip: meta.ip,
-                arg_count: meta.arg_count,
-                param_count: meta.param_count,
-                local_count: meta.local_count,
-                param_sizes: meta.param_sizes.clone(),
-            });
+            vm.register_function(
+                idx as u32,
+                FuncMeta {
+                    ip: meta.ip,
+                    arg_count: meta.arg_count,
+                    param_count: meta.param_count,
+                    local_count: meta.local_count,
+                    param_sizes: meta.param_sizes.clone(),
+                },
+            );
             vm.register_function_name(idx as u32, name.clone());
         }
     }
@@ -194,13 +249,16 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     // ── 5. 注册用户函数（IP 偏移 libc_code_len） ──
     for (name, meta) in &session.compile.func_table {
         if let Some(&idx) = session.compile.func_index.get(name) {
-            vm.register_function(idx as u32, FuncMeta {
-                ip: meta.ip + libc_code_len,
-                arg_count: meta.arg_count,
-                param_count: meta.param_count,
-                local_count: meta.local_count,
-                param_sizes: meta.param_sizes.clone(),
-            });
+            vm.register_function(
+                idx as u32,
+                FuncMeta {
+                    ip: meta.ip + libc_code_len,
+                    arg_count: meta.arg_count,
+                    param_count: meta.param_count,
+                    local_count: meta.local_count,
+                    param_sizes: meta.param_sizes.clone(),
+                },
+            );
             vm.register_function_name(idx as u32, name.clone());
         }
     }
@@ -223,14 +281,19 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     vm.set_max_steps(10_000_000);
 
     // ── 8. 符号表 ──
-    let symbols: Vec<VMSymbol> = session.compile.symbols.iter().map(|s| VMSymbol {
-        name: s.name.clone(),
-        addr: s.addr,
-        is_local: s.is_local,
-        ty: s.ty.clone(),
-        scope_depth: s.scope_depth,
-        func_name: s.func_name.clone(),
-    }).collect();
+    let symbols: Vec<VMSymbol> = session
+        .compile
+        .symbols
+        .iter()
+        .map(|s| VMSymbol {
+            name: s.name.clone(),
+            addr: s.addr,
+            is_local: s.is_local,
+            ty: s.ty.clone(),
+            scope_depth: s.scope_depth,
+            func_name: s.func_name.clone(),
+        })
+        .collect();
     vm.set_symbols(symbols);
 
     // ── 9. 可视化事件 ──
@@ -335,7 +398,15 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.source_map = output
         .source_map
         .into_iter()
-        .map(|(ip, loc)| (ip + libc_code_len, AstSourceLoc { line: loc.line, column: loc.column }))
+        .map(|(ip, loc)| {
+            (
+                ip + libc_code_len,
+                AstSourceLoc {
+                    line: loc.line,
+                    column: loc.column,
+                },
+            )
+        })
         .collect();
     session.compile.func_index = output.func_index;
 
@@ -378,16 +449,12 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         session.compile.struct_fields.insert(name.clone(), converted);
     }
     for (name, fields) in &output.union_defs {
-        let converted: Vec<(String, i32)> = fields
-            .iter()
-            .map(|f| (f.name.clone(), 0))
-            .collect();
+        let converted: Vec<(String, i32)> = fields.iter().map(|f| (f.name.clone(), 0)).collect();
         session.compile.struct_fields.insert(name.clone(), converted);
     }
 
     // 算法模式识别
-    session.compile.algorithm_matches =
-        crate::compiler::algorithm_detector::detect_algorithms(&program);
+    session.compile.algorithm_matches = crate::compiler::algorithm_detector::detect_algorithms(&program);
 
     // 更新智能补全快照
     update_completion_snapshot(session, &program);
@@ -463,15 +530,21 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
 
     let (full_source, file_ranges) = merge_compile_units(&units);
 
+    // 根据文件扩展名检测 C++ 模式
+    let is_cpp_mode = units.iter().any(|u| {
+        let name = u.filename.to_lowercase();
+        name.ends_with(".cpp") || name.ends_with(".cxx") || name.ends_with(".cidecpp")
+    });
+
     // 1. Lexer
-    let (tokens, lex_errors) = Lexer::new(&full_source).tokenize();
+    let (tokens, lex_errors) = Lexer::with_mode(&full_source, is_cpp_mode).tokenize();
     if !lex_errors.is_empty() {
         push_diagnostics(session, &lex_errors, &full_source, Some(&file_ranges));
         return Err("词法错误".to_string());
     }
 
     // 2. Parser
-    let (maybe_program, parse_errors) = Parser::new(tokens).parse();
+    let (maybe_program, parse_errors) = Parser::with_mode(tokens, is_cpp_mode).parse();
     if !parse_errors.is_empty() {
         push_diagnostics(session, &parse_errors, &full_source, Some(&file_ranges));
         return Err("语法错误".to_string());
@@ -487,12 +560,10 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
 
     // 根据行号范围设置 AST 节点的 source_file
     for f in &mut program.funcs {
-        f.source_file = resolve_filename(f.loc.line, &file_ranges)
-            .unwrap_or_else(|| "main.c".to_string());
+        f.source_file = resolve_filename(f.loc.line, &file_ranges).unwrap_or_else(|| "main.c".to_string());
     }
     for g in &mut program.globals {
-        g.source_file = resolve_filename(g.loc.line, &file_ranges)
-            .unwrap_or_else(|| "main.c".to_string());
+        g.source_file = resolve_filename(g.loc.line, &file_ranges).unwrap_or_else(|| "main.c".to_string());
     }
 
     // 3. TypeChecker
@@ -530,7 +601,15 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
     session.compile.source_map = output
         .source_map
         .into_iter()
-        .map(|(ip, loc)| (ip + libc_code_len, AstSourceLoc { line: loc.line, column: loc.column }))
+        .map(|(ip, loc)| {
+            (
+                ip + libc_code_len,
+                AstSourceLoc {
+                    line: loc.line,
+                    column: loc.column,
+                },
+            )
+        })
         .collect();
     session.compile.func_index = output.func_index;
 
@@ -573,16 +652,12 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
         session.compile.struct_fields.insert(name.clone(), converted);
     }
     for (name, fields) in &output.union_defs {
-        let converted: Vec<(String, i32)> = fields
-            .iter()
-            .map(|f| (f.name.clone(), 0))
-            .collect();
+        let converted: Vec<(String, i32)> = fields.iter().map(|f| (f.name.clone(), 0)).collect();
         session.compile.struct_fields.insert(name.clone(), converted);
     }
 
     // 算法模式识别
-    session.compile.algorithm_matches =
-        crate::compiler::algorithm_detector::detect_algorithms(&program);
+    session.compile.algorithm_matches = crate::compiler::algorithm_detector::detect_algorithms(&program);
 
     // 更新智能补全快照
     update_completion_snapshot(session, &program);

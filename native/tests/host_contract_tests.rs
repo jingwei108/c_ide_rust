@@ -8,21 +8,15 @@
 //! - FIX_REAL_BUGS：测试失败时，修 Host Func 的实现，而不是改测试预期值让它通过。
 
 use cide_native::session::Session;
-use cide_native::vm::vm::{CideVM, MEM_SIZE, NULL_TRAP_SIZE};
 use cide_native::vm::host_funcs::{
-    host_malloc, host_free, host_realloc, host_strlen, host_strcpy, host_strcmp,
-    host_strcat, host_memset, host_atoi, host_printf_n, host_scanf_n,
-    host_getchar, host_putchar, host_rand, host_srand,
-    host_sin, host_cos, host_sqrt, host_pow, host_atan, host_log, host_exp,
-    host_puts, host_calloc, host_bsearch, host_sprintf, host_snprintf, host_sscanf,
-    host_isgraph, host_ispunct, host_isblank,
-    host_asin, host_acos, host_atan2, host_sinh, host_cosh, host_tanh,
-    host_llabs, host_abort,
-    host_strtol, host_strtod, host_strerror,
-    host_time, host_clock, host_cide_assert_fail,
-    host_remove, host_rename,
-    host_strpbrk, host_strspn, host_strcspn,
+    host_abort, host_acos, host_asin, host_atan, host_atan2, host_atoi, host_bsearch, host_calloc,
+    host_cide_assert_fail, host_clock, host_cos, host_cosh, host_exp, host_free, host_getchar, host_isblank,
+    host_isgraph, host_ispunct, host_llabs, host_log, host_malloc, host_memset, host_pow, host_printf_n, host_putchar,
+    host_puts, host_rand, host_realloc, host_remove, host_rename, host_scanf_n, host_sin, host_sinh, host_snprintf,
+    host_sprintf, host_sqrt, host_srand, host_sscanf, host_strcat, host_strcmp, host_strcpy, host_strcspn,
+    host_strerror, host_strlen, host_strpbrk, host_strspn, host_strtod, host_strtol, host_tanh, host_time,
 };
+use cide_native::vm::vm::{CideVM, MEM_SIZE, NULL_TRAP_SIZE};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -42,11 +36,7 @@ fn read_test_string(vm: &CideVM, addr: u32) -> String {
     if start >= mem.len() {
         return String::new();
     }
-    let bytes: Vec<u8> = mem[start..]
-        .iter()
-        .take_while(|&&b| b != 0)
-        .copied()
-        .collect();
+    let bytes: Vec<u8> = mem[start..].iter().take_while(|&&b| b != 0).copied().collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
@@ -59,7 +49,10 @@ fn test_malloc_zero_returns_null_with_warning() {
     host_malloc(&mut vm, &mut session);
     let addr = vm.pop() as u32;
     assert_eq!(addr, 0, "malloc(0) 必须返回 NULL（0）");
-    let warns: Vec<_> = session.runtime.output_lines.iter()
+    let warns: Vec<_> = session
+        .runtime
+        .output_lines
+        .iter()
         .filter(|l| l.contains("malloc(0)"))
         .collect();
     assert!(!warns.is_empty(), "malloc(0) 必须输出警告说明其行为是实现定义的");
@@ -91,7 +84,10 @@ fn test_malloc_records_region_metadata() {
     host_malloc(&mut vm, &mut session);
     let addr = vm.pop() as u32;
 
-    let region = session.memory.regions.iter()
+    let region = session
+        .memory
+        .regions
+        .iter()
         .find(|r| r.addr == addr && !r.is_freed)
         .expect("malloc 后必须在 session.memory.regions 中记录未释放的 MemoryRegion");
     assert_eq!(region.size, 100);
@@ -130,7 +126,10 @@ fn test_free_valid_ptr_marks_freed() {
     vm.push(addr as u64);
     host_free(&mut vm, &mut session);
 
-    let region = session.memory.regions.iter()
+    let region = session
+        .memory
+        .regions
+        .iter()
         .find(|r| r.addr == addr)
         .expect("free 后 region 必须仍然存在（用于诊断）");
     assert!(region.is_freed, "free 后 region 必须标记为 is_freed");
@@ -167,10 +166,13 @@ fn test_free_already_freed_traps_double_free() {
 fn test_realloc_null_equivalent_to_malloc() {
     let (mut vm, mut session) = fresh_session();
     vm.push(64); // new_size
-    vm.push(0);  // ptr
+    vm.push(0); // ptr
     host_realloc(&mut vm, &mut session);
     let addr = vm.pop() as u32;
-    assert!(addr >= NULL_TRAP_SIZE, "realloc(NULL, size) 必须等价于 malloc(size)，返回非 NULL");
+    assert!(
+        addr >= NULL_TRAP_SIZE,
+        "realloc(NULL, size) 必须等价于 malloc(size)，返回非 NULL"
+    );
 }
 
 #[test]
@@ -182,7 +184,7 @@ fn test_realloc_zero_equivalent_to_free() {
     let addr = vm.pop() as u32;
 
     // realloc(ptr, 0)
-    vm.push(0);      // new_size
+    vm.push(0); // new_size
     vm.push(addr as u64); // ptr
     host_realloc(&mut vm, &mut session);
     let new_addr = vm.pop() as u32;
@@ -549,14 +551,8 @@ fn test_strcpy_overflow_must_trap() {
     vm.push(src as u64);
     vm.push(dst as u64);
     host_strcpy(&mut vm, &mut session);
-    assert!(
-        vm.has_error(),
-        "strcpy 越界必须触发 trap，而不是静默截断"
-    );
-    assert!(
-        vm.get_error().contains("E3070"),
-        "strcpy 溢出错误信息应包含 E3070"
-    );
+    assert!(vm.has_error(), "strcpy 越界必须触发 trap，而不是静默截断");
+    assert!(vm.get_error().contains("E3070"), "strcpy 溢出错误信息应包含 E3070");
 }
 
 #[test]
@@ -574,14 +570,8 @@ fn test_strcat_overflow_must_trap() {
     vm.push(src as u64);
     vm.push(dest as u64);
     host_strcat(&mut vm, &mut session);
-    assert!(
-        vm.has_error(),
-        "strcat 越界必须触发 trap，而不是静默截断"
-    );
-    assert!(
-        vm.get_error().contains("E3070"),
-        "strcat 溢出错误信息应包含 E3070"
-    );
+    assert!(vm.has_error(), "strcat 越界必须触发 trap，而不是静默截断");
+    assert!(vm.get_error().contains("E3070"), "strcat 溢出错误信息应包含 E3070");
 }
 
 // ─── math.h 契约 ─────────────────────────────────────────────────────────────
@@ -676,9 +666,12 @@ fn test_math_log_zero_returns_neg_inf() {
     vm.push(0.0f64.to_bits());
     host_log(&mut vm, &mut session);
     let result = f64::from_bits(vm.pop());
-    assert!(result.is_infinite() && result.is_sign_negative(), "log(0.0) 应返回 -inf，实际 {}", result);
+    assert!(
+        result.is_infinite() && result.is_sign_negative(),
+        "log(0.0) 应返回 -inf，实际 {}",
+        result
+    );
 }
-
 
 // ─── puts 契约 ───────────────────────────────────────────────────────────────
 
@@ -727,7 +720,10 @@ fn test_calloc_records_region_metadata() {
     vm.push(2);
     host_calloc(&mut vm, &mut session);
     let addr = vm.pop() as u32;
-    let region = session.memory.regions.iter()
+    let region = session
+        .memory
+        .regions
+        .iter()
         .find(|r| r.addr == addr && !r.is_freed)
         .expect("calloc 后必须记录 region");
     assert_eq!(region.size, 16);
@@ -757,11 +753,11 @@ fn test_bsearch_found_existing_element() {
     }
     vm.store_i32(key, 30, &cide_native::vm::instruction::SourceLoc::default());
     // args: key, base, nmemb=5, size=4, compar=0 (default byte comparison)
-    vm.push(0);             // compar
-    vm.push(4);             // size
-    vm.push(5);             // nmemb
-    vm.push(base as u64);   // base
-    vm.push(key as u64);    // key
+    vm.push(0); // compar
+    vm.push(4); // size
+    vm.push(5); // nmemb
+    vm.push(base as u64); // base
+    vm.push(key as u64); // key
     host_bsearch(&mut vm, &mut session);
     let result = vm.pop() as u32;
     assert_eq!(result, base + 8, "bsearch 应找到第 3 个元素（地址 base+8）");
@@ -810,9 +806,9 @@ fn test_sprintf_basic_formatting() {
     let buf = 0x2000;
     let fmt = 0x3000;
     write_test_string(&mut vm, fmt, "value=%d");
-    vm.push(42u64);       // arg
-    vm.push(fmt as u64);  // fmt
-    vm.push(buf as u64);  // buf
+    vm.push(42u64); // arg
+    vm.push(fmt as u64); // fmt
+    vm.push(buf as u64); // buf
     host_sprintf(&mut vm, &mut session);
     let ret = vm.pop() as i32;
     let s = read_test_string(&vm, buf);
@@ -845,7 +841,7 @@ fn test_snprintf_truncates_and_null_terminates() {
     let fmt = 0x3000;
     write_test_string(&mut vm, fmt, "hello world");
     vm.push(fmt as u64);
-    vm.push(6);           // size = 6 (最多写 5 字符 + \0)
+    vm.push(6); // size = 6 (最多写 5 字符 + \0)
     vm.push(buf as u64);
     host_snprintf(&mut vm, &mut session);
     let ret = vm.pop() as i32;
@@ -862,7 +858,7 @@ fn test_snprintf_zero_size_writes_nothing() {
     vm.memory_ref_mut()[buf as usize] = 0xAA;
     write_test_string(&mut vm, fmt, "x");
     vm.push(fmt as u64);
-    vm.push(0);           // size = 0
+    vm.push(0); // size = 0
     vm.push(buf as u64);
     host_snprintf(&mut vm, &mut session);
     let ret = vm.pop() as i32;
@@ -934,7 +930,6 @@ fn test_sscanf_mixed_int_and_string() {
     assert_eq!(v, 42);
     assert_eq!(s, "abc");
 }
-
 
 // ─── ctype 补全契约 ──────────────────────────────────────────────────────────
 
@@ -1065,7 +1060,10 @@ fn test_abort_sets_finished() {
     host_abort(&mut vm, &mut session);
     assert!(vm.is_finished(), "abort 必须设置 finished");
     assert_eq!(vm.exit_code(), 134, "abort 退出码应为 134 (SIGABRT)");
-    assert!(session.runtime.output_lines.iter().any(|l| l.contains("abort")), "abort 必须输出诊断");
+    assert!(
+        session.runtime.output_lines.iter().any(|l| l.contains("abort")),
+        "abort 必须输出诊断"
+    );
 }
 
 // ─── strtol / strtod 契约 ────────────────────────────────────────────────────
@@ -1075,9 +1073,9 @@ fn test_strtol_basic_decimal() {
     let (mut vm, _session) = fresh_session();
     let s = 0x2000;
     write_test_string(&mut vm, s, "12345");
-    vm.push(10);        // base
-    vm.push(0);         // endptr = NULL
-    vm.push(s as u64);  // str
+    vm.push(10); // base
+    vm.push(0); // endptr = NULL
+    vm.push(s as u64); // str
     host_strtol(&mut vm, &mut Session::default());
     assert_eq!(vm.pop() as i64, 12345);
 }
@@ -1144,12 +1142,13 @@ fn test_strtol_empty_sets_errno() {
 }
 
 #[test]
+#[allow(clippy::approx_constant)]
 fn test_strtod_basic() {
     let (mut vm, _session) = fresh_session();
     let s = 0x2000;
     write_test_string(&mut vm, s, "3.14");
-    vm.push(0);         // endptr = NULL
-    vm.push(s as u64);  // str
+    vm.push(0); // endptr = NULL
+    vm.push(s as u64); // str
     host_strtod(&mut vm, &mut Session::default());
     let r = f64::from_bits(vm.pop());
     assert!((r - 3.14).abs() < 1e-6, "strtod(3.14) 应接近 3.14");
@@ -1226,7 +1225,10 @@ fn test_assert_fail_sets_finished() {
     host_cide_assert_fail(&mut vm, &mut session);
     assert!(vm.is_finished(), "assert_fail 必须设置 finished");
     assert_eq!(vm.exit_code(), 1);
-    assert!(session.runtime.output_lines.iter().any(|l| l.contains("断言失败")), "assert_fail 必须输出诊断");
+    assert!(
+        session.runtime.output_lines.iter().any(|l| l.contains("断言失败")),
+        "assert_fail 必须输出诊断"
+    );
 }
 
 // ─── strpbrk / strspn / strcspn 契约 ─────────────────────────────────────────

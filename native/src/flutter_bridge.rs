@@ -37,11 +37,8 @@ static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, &'static Mutex<UnifiedEngine
 fn current_unified_engine() -> std::sync::MutexGuard<'static, UnifiedEngine> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
-    let engine_ref: &'static Mutex<UnifiedEngine> = engines
-        .get(&id)
-        .or_else(|| engines.get(&0))
-        .copied()
-        .unwrap_or_else(|| {
+    let engine_ref: &'static Mutex<UnifiedEngine> =
+        engines.get(&id).or_else(|| engines.get(&0)).copied().unwrap_or_else(|| {
             let e: &'static Mutex<UnifiedEngine> = &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())));
             engines.insert(id, e);
             e
@@ -83,11 +80,8 @@ pub fn get_current_session_id() -> u64 {
 fn current_session() -> std::sync::MutexGuard<'static, Session> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
-    let session_ref: &'static Mutex<Session> = sessions
-        .get(&id)
-        .or_else(|| sessions.get(&0))
-        .copied()
-        .unwrap_or_else(|| {
+    let session_ref: &'static Mutex<Session> =
+        sessions.get(&id).or_else(|| sessions.get(&0)).copied().unwrap_or_else(|| {
             let s: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
             sessions.insert(id, s);
             s
@@ -105,7 +99,10 @@ use crate::engine::session_ops::{execute_run, inject_preset_files, reset_runtime
 
 /// 设置源码并编译（单文件，向后兼容）
 pub fn compile(source: String) -> CompileResult {
-    compile_multi(vec![CodeFile { filename: "main.c".to_string(), source }])
+    compile_multi(vec![CodeFile {
+        filename: "main.c".to_string(),
+        source,
+    }])
 }
 
 /// 多文件编译
@@ -335,10 +332,7 @@ pub fn get_memory_fragments() -> Vec<crate::session::MemoryFragment> {
         .memory
         .free_list
         .iter()
-        .map(|b| crate::session::MemoryFragment {
-            addr: b.addr,
-            size: b.size,
-        })
+        .map(|b| crate::session::MemoryFragment { addr: b.addr, size: b.size })
         .collect()
 }
 
@@ -348,12 +342,7 @@ pub fn get_heap_stats() -> crate::session::HeapStats {
     let mem = &session.memory;
     let heap_start = crate::vm::vm::HEAP_START as i32;
     let total_heap = (mem.heap_offset as i32).saturating_sub(heap_start);
-    let allocated: i32 = mem
-        .regions
-        .iter()
-        .filter(|r| r.is_heap && !r.is_freed)
-        .map(|r| r.size)
-        .sum();
+    let allocated: i32 = mem.regions.iter().filter(|r| r.is_heap && !r.is_freed).map(|r| r.size).sum();
     let fragmented: i32 = mem.free_list.iter().map(|b| b.size).sum();
     let fragmentation_rate = if total_heap > 0 {
         ((fragmented as f64 / total_heap as f64) * 100.0) as i32
@@ -428,10 +417,7 @@ pub fn set_breakpoints(lines: Vec<i32>) {
 /// 设置输入（用于 scanf）
 pub fn set_input(input: String) {
     let mut session = current_session();
-    session.runtime.input_lines = input
-        .lines()
-        .map(|l| l.trim_end_matches('\r').to_string())
-        .collect();
+    session.runtime.input_lines = input.lines().map(|l| l.trim_end_matches('\r').to_string()).collect();
     session.runtime.input_index = 0;
     session.runtime.input_char_offset = 0;
 }
@@ -498,7 +484,10 @@ pub fn reset_session() {
 
 /// 编译并初始化统一模式执行环境（单文件，向后兼容）
 pub fn compile_and_run(source: String) -> UnifiedRunResult {
-    compile_and_run_multi(vec![CodeFile { filename: "main.c".to_string(), source }])
+    compile_and_run_multi(vec![CodeFile {
+        filename: "main.c".to_string(),
+        source,
+    }])
 }
 
 /// 多文件编译并初始化统一模式执行环境
@@ -630,18 +619,9 @@ pub fn resume_execution() {
 /// 获取执行热力图。
 pub fn get_heatmap() -> HeatmapData {
     let session = current_session();
-    let line_counts: Vec<(i32, u64)> = session
-        .runtime
-        .heatmap
-        .line_counts
-        .iter()
-        .map(|(&k, &v)| (k, v))
-        .collect();
+    let line_counts: Vec<(i32, u64)> = session.runtime.heatmap.line_counts.iter().map(|(&k, &v)| (k, v)).collect();
     let max_count = session.runtime.heatmap.max_count();
-    HeatmapData {
-        line_counts,
-        max_count,
-    }
+    HeatmapData { line_counts, max_count }
 }
 
 /// 获取指定范围的 StepPayload。
@@ -651,7 +631,10 @@ pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
 }
 
 /// Stream 模式批量自动执行。
-pub fn run_auto_steps_stream(sink: crate::frb_generated::StreamSink<crate::unified::stream::StepStreamBatch>, batch_size: i32) {
+pub fn run_auto_steps_stream(
+    sink: crate::frb_generated::StreamSink<crate::unified::stream::StepStreamBatch>,
+    batch_size: i32,
+) {
     std::thread::spawn(move || {
         loop {
             let result = run_auto_steps(batch_size);
@@ -710,18 +693,7 @@ pub fn continue_from_step(step: i32) -> UnifiedRunResult {
 use crate::engine::completion::CompletionCandidate;
 
 /// 获取光标位置的语义补全候选
-pub fn get_completion_candidates(
-    source: String,
-    line: i32,
-    column: i32,
-    prefix: String,
-) -> Vec<CompletionCandidate> {
+pub fn get_completion_candidates(source: String, line: i32, column: i32, prefix: String) -> Vec<CompletionCandidate> {
     let session = current_session();
-    crate::engine::completion::get_completion_candidates(
-        &session,
-        &source,
-        line as usize,
-        column as usize,
-        &prefix,
-    )
+    crate::engine::completion::get_completion_candidates(&session, &source, line as usize, column as usize, &prefix)
 }

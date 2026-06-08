@@ -1,5 +1,5 @@
-use flutter_rust_bridge::frb;
 use crate::unified::root_cause::RootCauseHint;
+use flutter_rust_bridge::frb;
 
 /// 算法步骤语义快照（用于前端步骤标注）。
 #[frb]

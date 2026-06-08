@@ -21,7 +21,9 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
 /// 解析一个 printf/scanf 格式说明符（% 之后的内容）。
 /// 返回 (格式字母, 是否 ll, 精度)。
 #[allow(clippy::type_complexity)]
-fn parse_format_spec(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Option<(char, bool, Option<usize>, Option<usize>, String)> {
+fn parse_format_spec(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Option<(char, bool, Option<usize>, Option<usize>, String)> {
     // 收集 flags
     let mut flags = String::new();
     while let Some(&c) = chars.peek() {
@@ -195,23 +197,43 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                     let mut piece = String::new();
                     match spec {
                         'd' | 'i' => {
-                            let val = if is_ll { (arg as i64).to_string() } else { (arg as i32).to_string() };
+                            let val = if is_ll {
+                                (arg as i64).to_string()
+                            } else {
+                                (arg as i32).to_string()
+                            };
                             piece = apply_width(&val, width, &flags);
                         }
                         'u' => {
-                            let val = if is_ll { arg.to_string() } else { (arg as u32).to_string() };
+                            let val = if is_ll {
+                                arg.to_string()
+                            } else {
+                                (arg as u32).to_string()
+                            };
                             piece = apply_width(&val, width, &flags);
                         }
                         'x' => {
-                            let val = if is_ll { format!("{:x}", arg) } else { format!("{:x}", arg as u32) };
+                            let val = if is_ll {
+                                format!("{:x}", arg)
+                            } else {
+                                format!("{:x}", arg as u32)
+                            };
                             piece = apply_width(&val, width, &flags);
                         }
                         'X' => {
-                            let val = if is_ll { format!("{:X}", arg) } else { format!("{:X}", arg as u32) };
+                            let val = if is_ll {
+                                format!("{:X}", arg)
+                            } else {
+                                format!("{:X}", arg as u32)
+                            };
                             piece = apply_width(&val, width, &flags);
                         }
                         'o' => {
-                            let val = if is_ll { format!("{:o}", arg) } else { format!("{:o}", arg as u32) };
+                            let val = if is_ll {
+                                format!("{:o}", arg)
+                            } else {
+                                format!("{:o}", arg as u32)
+                            };
                             piece = apply_width(&val, width, &flags);
                         }
                         'p' => {
@@ -244,7 +266,10 @@ fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> String {
                             let val = (arg as u8 as char).to_string();
                             piece = apply_width(&val, width, &flags);
                         }
-                        _ => { piece.push(ch); piece.push(spec); }
+                        _ => {
+                            piece.push(ch);
+                            piece.push(spec);
+                        }
                     }
                     out.push_str(&piece);
                     used += 1;
@@ -531,13 +556,18 @@ fn parse_scanf_specs(fmt: &str) -> Vec<(char, i32)> {
                             len_mod = 1;
                             chars.next();
                             if let Some(&c2) = chars.peek() {
-                                if c2 == 'l' { len_mod = 2; chars.next(); }
+                                if c2 == 'l' {
+                                    len_mod = 2;
+                                    chars.next();
+                                }
                             }
                         } else if c == 'h' {
                             len_mod = 1;
                             chars.next();
                             if let Some(&c2) = chars.peek() {
-                                if c2 == 'h' { chars.next(); }
+                                if c2 == 'h' {
+                                    chars.next();
+                                }
                             }
                         } else if c == 'L' {
                             chars.next();
@@ -607,7 +637,9 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
                 while pos < chars.len() && chars[pos].is_whitespace() {
                     pos += 1;
                 }
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let start = pos;
                 if chars[pos] == '+' || chars[pos] == '-' {
                     pos += 1;
@@ -629,7 +661,9 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
                 while pos < chars.len() && chars[pos].is_whitespace() {
                     pos += 1;
                 }
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let start = pos;
                 if chars[pos] == '+' {
                     pos += 1;
@@ -649,7 +683,9 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
             'f' => {
                 let (token, new_pos) = read_float_token(&chars, pos);
                 pos = new_pos;
-                if token.is_empty() { break; }
+                if token.is_empty() {
+                    break;
+                }
                 if *len_mod >= 1 {
                     // %lf → double (8 bytes)
                     let value: f64 = token.parse().unwrap_or(0.0);
@@ -662,7 +698,9 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
             }
             'c' => {
                 // 标准 C: %c 不跳过空白
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let ch = chars[pos];
                 vm.store_i8(ptr, ch as i32, &super::instruction::SourceLoc::default());
                 pos += 1;
@@ -794,8 +832,16 @@ pub fn host_strcmp(vm: &mut CideVM, _session: &mut Session) {
     let mem = vm.get_memory_slice();
     let mut i = 0usize;
     let result = loop {
-        let a = if addr1 as usize + i < mem.len() { mem[addr1 as usize + i] } else { 0 };
-        let b = if addr2 as usize + i < mem.len() { mem[addr2 as usize + i] } else { 0 };
+        let a = if addr1 as usize + i < mem.len() {
+            mem[addr1 as usize + i]
+        } else {
+            0
+        };
+        let b = if addr2 as usize + i < mem.len() {
+            mem[addr2 as usize + i]
+        } else {
+            0
+        };
         if a != b {
             break (a as i8).wrapping_sub(b as i8) as i32;
         }
@@ -817,7 +863,6 @@ impl MemorySlice for CideVM {
         self.memory_ref()
     }
 }
-
 
 pub fn host_ungetc(vm: &mut CideVM, session: &mut Session) {
     let ch = vm.pop() as i32;
@@ -1080,7 +1125,13 @@ pub fn host_isdigit(vm: &mut CideVM, _session: &mut Session) {
 
 pub fn host_isalpha(vm: &mut CideVM, _session: &mut Session) {
     let c = vm.pop() as i32;
-    vm.push(if (c >= 'a' as i32 && c <= 'z' as i32) || (c >= 'A' as i32 && c <= 'Z' as i32) { 1 } else { 0 });
+    vm.push(
+        if (c >= 'a' as i32 && c <= 'z' as i32) || (c >= 'A' as i32 && c <= 'Z' as i32) {
+            1
+        } else {
+            0
+        },
+    );
 }
 
 pub fn host_islower(vm: &mut CideVM, _session: &mut Session) {
@@ -1095,17 +1146,37 @@ pub fn host_isupper(vm: &mut CideVM, _session: &mut Session) {
 
 pub fn host_tolower(vm: &mut CideVM, _session: &mut Session) {
     let c = vm.pop() as i32;
-    vm.push(if c >= 'A' as i32 && c <= 'Z' as i32 { c + ('a' as i32 - 'A' as i32) } else { c } as u64);
+    vm.push(if c >= 'A' as i32 && c <= 'Z' as i32 {
+        c + ('a' as i32 - 'A' as i32)
+    } else {
+        c
+    } as u64);
 }
 
 pub fn host_toupper(vm: &mut CideVM, _session: &mut Session) {
     let c = vm.pop() as i32;
-    vm.push(if c >= 'a' as i32 && c <= 'z' as i32 { c + ('A' as i32 - 'a' as i32) } else { c } as u64);
+    vm.push(if c >= 'a' as i32 && c <= 'z' as i32 {
+        c + ('A' as i32 - 'a' as i32)
+    } else {
+        c
+    } as u64);
 }
 
 pub fn host_isspace(vm: &mut CideVM, _session: &mut Session) {
     let c = vm.pop() as i32;
-    vm.push(if c == ' ' as i32 || c == '\t' as i32 || c == '\n' as i32 || c == '\r' as i32 || c == '\x0C' as i32 || c == '\x0B' as i32 { 1 } else { 0 });
+    vm.push(
+        if c == ' ' as i32
+            || c == '\t' as i32
+            || c == '\n' as i32
+            || c == '\r' as i32
+            || c == '\x0C' as i32
+            || c == '\x0B' as i32
+        {
+            1
+        } else {
+            0
+        },
+    );
 }
 
 pub fn host_isalnum(vm: &mut CideVM, _session: &mut Session) {
@@ -1135,7 +1206,7 @@ pub fn host_isxdigit(vm: &mut CideVM, _session: &mut Session) {
 
 pub fn host_isgraph(vm: &mut CideVM, _session: &mut Session) {
     let c = vm.pop() as i32;
-    vm.push(if c >= ' ' as i32 + 1 && c <= '~' as i32 { 1 } else { 0 });
+    vm.push(if c > ' ' as i32 && c <= '~' as i32 { 1 } else { 0 });
 }
 
 pub fn host_ispunct(vm: &mut CideVM, _session: &mut Session) {
@@ -1315,7 +1386,11 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
         mem[old_addr as usize..(old_addr + copy_size) as usize].to_vec()
     };
     for i in 0..copy_size {
-        vm.store_i8(new_addr + i, copy_buf[i as usize] as i32, &super::instruction::SourceLoc::default());
+        vm.store_i8(
+            new_addr + i,
+            copy_buf[i as usize] as i32,
+            &super::instruction::SourceLoc::default(),
+        );
     }
 
     // Zero remaining bytes
@@ -1368,7 +1443,10 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     let compar = vm.pop() as u32;
 
     if vm.qsort_depth() >= MAX_QSORT_DEPTH {
-        session.runtime.output_lines.push("[qsort] 嵌套深度超过限制，防止栈溢出".to_string());
+        session
+            .runtime
+            .output_lines
+            .push("[qsort] 嵌套深度超过限制，防止栈溢出".to_string());
         return;
     }
 
@@ -1422,7 +1500,11 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
         let src_start = i * size;
         let dst_start = (base as usize) + i * size;
         for j in 0..size {
-            vm.store_i8((dst_start + j) as u32, temp[src_start + j] as i32, &super::instruction::SourceLoc::default());
+            vm.store_i8(
+                (dst_start + j) as u32,
+                temp[src_start + j] as i32,
+                &super::instruction::SourceLoc::default(),
+            );
         }
     }
     vm.set_qsort_depth(vm.qsort_depth() - 1);
@@ -1558,7 +1640,6 @@ fn read_fd_from_stream(vm: &CideVM, stream: u32) -> u32 {
     i32::from_le_bytes([mem[start], mem[start + 1], mem[start + 2], mem[start + 3]]) as u32
 }
 
-
 // ========== Phase A libc extensions ==========
 
 pub fn host_puts(vm: &mut CideVM, session: &mut Session) {
@@ -1618,7 +1699,10 @@ pub fn host_bsearch(vm: &mut CideVM, session: &mut Session) {
     let compar = vm.pop() as u32;
 
     if vm.qsort_depth() >= MAX_BSEARCH_DEPTH {
-        session.runtime.output_lines.push("[bsearch] 嵌套深度超过限制，防止栈溢出".to_string());
+        session
+            .runtime
+            .output_lines
+            .push("[bsearch] 嵌套深度超过限制，防止栈溢出".to_string());
         vm.push(0);
         return;
     }
@@ -1650,9 +1734,16 @@ pub fn host_bsearch(vm: &mut CideVM, session: &mut Session) {
             let a = &mem[a_start..a_start + size];
             let b = &mem[b_start..b_start + size];
             match a.cmp(b) {
-                std::cmp::Ordering::Less => { lo = mid + 1; }
-                std::cmp::Ordering::Greater => { hi = mid; }
-                std::cmp::Ordering::Equal => { result_ptr = b_start as u32; break; }
+                std::cmp::Ordering::Less => {
+                    lo = mid + 1;
+                }
+                std::cmp::Ordering::Greater => {
+                    hi = mid;
+                }
+                std::cmp::Ordering::Equal => {
+                    result_ptr = b_start as u32;
+                    break;
+                }
             }
         }
     } else {
@@ -1662,10 +1753,19 @@ pub fn host_bsearch(vm: &mut CideVM, session: &mut Session) {
             let addr_mid = (base as i32) + (mid as i32) * (size as i32);
             let cmp_result = vm.call_user_function(session, compar, &[addr_key, addr_mid], MAX_COMPARE_STEPS);
             match cmp_result {
-                Some(v) if v < 0 => { hi = mid; }
-                Some(v) if v > 0 => { lo = mid + 1; }
-                Some(_) => { result_ptr = addr_mid as u32; break; }
-                None => { break; }
+                Some(v) if v < 0 => {
+                    hi = mid;
+                }
+                Some(v) if v > 0 => {
+                    lo = mid + 1;
+                }
+                Some(_) => {
+                    result_ptr = addr_mid as u32;
+                    break;
+                }
+                None => {
+                    break;
+                }
             }
         }
     }
@@ -1706,8 +1806,8 @@ pub fn host_snprintf(vm: &mut CideVM, _session: &mut Session) {
     let bytes = out.as_bytes();
     if size > 0 {
         let n = std::cmp::min(bytes.len(), (size as usize).saturating_sub(1));
-        for i in 0..n {
-            vm.store_i8(buf_addr + i as u32, bytes[i] as i32, &super::instruction::SourceLoc::default());
+        for (i, &byte) in bytes.iter().enumerate().take(n) {
+            vm.store_i8(buf_addr + i as u32, byte as i32, &super::instruction::SourceLoc::default());
         }
         vm.store_i8(buf_addr + n as u32, 0, &super::instruction::SourceLoc::default());
     }
@@ -1734,7 +1834,9 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
                 while pos < chars.len() && chars[pos].is_whitespace() {
                     pos += 1;
                 }
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let start = pos;
                 if chars[pos] == '+' || chars[pos] == '-' {
                     pos += 1;
@@ -1756,7 +1858,9 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
                 while pos < chars.len() && chars[pos].is_whitespace() {
                     pos += 1;
                 }
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let start = pos;
                 if chars[pos] == '+' {
                     pos += 1;
@@ -1777,7 +1881,9 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
             'f' => {
                 let (token, new_pos) = read_float_token(&chars, pos);
                 pos = new_pos;
-                if token.is_empty() { break; }
+                if token.is_empty() {
+                    break;
+                }
                 if *len_mod >= 1 {
                     let value: f64 = token.parse().unwrap_or(0.0);
                     vm.store_i64(ptr, value.to_bits(), &super::instruction::SourceLoc::default());
@@ -1788,7 +1894,9 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
                 matched += 1;
             }
             'c' => {
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let ch = chars[pos];
                 vm.store_i8(ptr, ch as i32, &super::instruction::SourceLoc::default());
                 pos += 1;
@@ -1798,7 +1906,9 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
                 while pos < chars.len() && chars[pos].is_whitespace() {
                     pos += 1;
                 }
-                if pos >= chars.len() { break; }
+                if pos >= chars.len() {
+                    break;
+                }
                 let start = pos;
                 while pos < chars.len() && !chars[pos].is_whitespace() {
                     pos += 1;
@@ -1902,8 +2012,16 @@ pub fn host_strncmp(vm: &mut CideVM, _session: &mut Session) {
         if i >= n {
             break 0;
         }
-        let a = if addr1 as usize + i < mem.len() { mem[addr1 as usize + i] } else { 0 };
-        let b = if addr2 as usize + i < mem.len() { mem[addr2 as usize + i] } else { 0 };
+        let a = if addr1 as usize + i < mem.len() {
+            mem[addr1 as usize + i]
+        } else {
+            0
+        };
+        let b = if addr2 as usize + i < mem.len() {
+            mem[addr2 as usize + i]
+        } else {
+            0
+        };
         if a != b {
             break (a as i8).wrapping_sub(b as i8) as i32;
         }
@@ -1922,8 +2040,16 @@ pub fn host_memcmp(vm: &mut CideVM, _session: &mut Session) {
     let mem = vm.get_memory_slice();
     let mut result = 0i32;
     for i in 0..n {
-        let a = if addr1 as usize + i < mem.len() { mem[addr1 as usize + i] } else { 0 };
-        let b = if addr2 as usize + i < mem.len() { mem[addr2 as usize + i] } else { 0 };
+        let a = if addr1 as usize + i < mem.len() {
+            mem[addr1 as usize + i]
+        } else {
+            0
+        };
+        let b = if addr2 as usize + i < mem.len() {
+            mem[addr2 as usize + i]
+        } else {
+            0
+        };
         if a != b {
             result = (a as i8).wrapping_sub(b as i8) as i32;
             break;
@@ -1938,7 +2064,11 @@ pub fn host_strchr(vm: &mut CideVM, _session: &mut Session) {
     let mem = vm.get_memory_slice();
     let mut i = 0usize;
     let result = loop {
-        let b = if addr as usize + i < mem.len() { mem[addr as usize + i] } else { 0 };
+        let b = if addr as usize + i < mem.len() {
+            mem[addr as usize + i]
+        } else {
+            0
+        };
         if b as i32 == c {
             break addr + i as u32;
         }
@@ -1978,7 +2108,9 @@ pub fn host_strstr(vm: &mut CideVM, _session: &mut Session) {
         vm.push(haystack as u64);
         return;
     }
-    let result = haystack_bytes.windows(needle_bytes.len()).position(|window| window == needle_bytes);
+    let result = haystack_bytes
+        .windows(needle_bytes.len())
+        .position(|window| window == needle_bytes);
     vm.push(match result {
         Some(pos) => (haystack + pos as u32) as u64,
         None => 0,

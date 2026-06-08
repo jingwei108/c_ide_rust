@@ -9,59 +9,137 @@ impl Parser {
         let mut left = self.parse_assign();
         while self.match_token(TokenType::Comma) {
             let right = self.parse_assign();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            left = Expr::Binary { op: BinaryOp::Comma, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            left = Expr::Binary {
+                op: BinaryOp::Comma,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         left
     }
 
     pub(crate) fn parse_assign(&mut self) -> Expr {
         let left = self.parse_ternary();
-        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+        let loc = SourceLoc {
+            line: self.previous().line,
+            column: self.previous().column,
+        };
 
         if self.match_token(TokenType::Assign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::Assign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::Assign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::PlusAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::AddAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::AddAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::MinusAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::SubAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::SubAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::StarAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::MulAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::MulAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::SlashAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::DivAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::DivAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::PercentAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::ModAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::ModAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::AndAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::AndAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::AndAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::OrAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::OrAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::OrAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::XorAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::XorAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::XorAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::ShlAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::ShlAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::ShlAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::ShrAssign) {
             let right = self.parse_assign();
-            return Expr::Assign { op: AssignOp::ShrAssign, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            return Expr::Assign {
+                op: AssignOp::ShrAssign,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
 
         left
@@ -73,8 +151,17 @@ impl Parser {
             let then_branch = self.parse_ternary();
             self.consume(TokenType::Colon, "预期 ':'");
             let else_branch = self.parse_ternary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Ternary { cond: Box::new(cond), then_branch: Box::new(then_branch), else_branch: Box::new(else_branch), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Ternary {
+                cond: Box::new(cond),
+                then_branch: Box::new(then_branch),
+                else_branch: Box::new(else_branch),
+                loc,
+                ty: Type::default(),
+            };
         }
         cond
     }
@@ -83,8 +170,17 @@ impl Parser {
         let mut left = self.parse_and();
         while self.match_token(TokenType::OrOr) {
             let right = self.parse_and();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            left = Expr::Binary { op: BinaryOp::Or, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            left = Expr::Binary {
+                op: BinaryOp::Or,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         left
     }
@@ -93,8 +189,17 @@ impl Parser {
         let mut left = self.parse_bit_or();
         while self.match_token(TokenType::AndAnd) {
             let right = self.parse_bit_or();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            left = Expr::Binary { op: BinaryOp::And, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            left = Expr::Binary {
+                op: BinaryOp::And,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         left
     }
@@ -103,8 +208,17 @@ impl Parser {
         let mut left = self.parse_bit_xor();
         while self.match_token(TokenType::BitOr) {
             let right = self.parse_bit_xor();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            left = Expr::Binary { op: BinaryOp::BitOr, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            left = Expr::Binary {
+                op: BinaryOp::BitOr,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         left
     }
@@ -113,8 +227,17 @@ impl Parser {
         let mut left = self.parse_bit_and();
         while self.match_token(TokenType::BitXor) {
             let right = self.parse_bit_and();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            left = Expr::Binary { op: BinaryOp::BitXor, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            left = Expr::Binary {
+                op: BinaryOp::BitXor,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         left
     }
@@ -123,8 +246,17 @@ impl Parser {
         let mut left = self.parse_equality();
         while self.match_token(TokenType::Ampersand) {
             let right = self.parse_equality();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            left = Expr::Binary { op: BinaryOp::BitAnd, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            left = Expr::Binary {
+                op: BinaryOp::BitAnd,
+                left: Box::new(left),
+                right: Box::new(right),
+                loc,
+                ty: Type::default(),
+            };
         }
         left
     }
@@ -134,13 +266,33 @@ impl Parser {
         loop {
             if self.match_token(TokenType::Eq) {
                 let right = self.parse_relational();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Eq, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Eq,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Ne) {
                 let right = self.parse_relational();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Ne, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
-            } else { break; }
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Ne,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
+            } else {
+                break;
+            }
         }
         left
     }
@@ -150,21 +302,59 @@ impl Parser {
         loop {
             if self.match_token(TokenType::Lt) {
                 let right = self.parse_shift();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Lt, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Lt,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Le) {
                 let right = self.parse_shift();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Le, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Le,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Gt) {
                 let right = self.parse_shift();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Gt, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Gt,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Ge) {
                 let right = self.parse_shift();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Ge, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
-            } else { break; }
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Ge,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
+            } else {
+                break;
+            }
         }
         left
     }
@@ -174,13 +364,33 @@ impl Parser {
         loop {
             if self.match_token(TokenType::Shl) {
                 let right = self.parse_additive();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Shl, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Shl,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Shr) {
                 let right = self.parse_additive();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Shr, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
-            } else { break; }
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Shr,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
+            } else {
+                break;
+            }
         }
         left
     }
@@ -190,13 +400,33 @@ impl Parser {
         loop {
             if self.match_token(TokenType::Plus) {
                 let right = self.parse_multiplicative();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Add, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Minus) {
                 let right = self.parse_multiplicative();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Sub, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
-            } else { break; }
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Sub,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
+            } else {
+                break;
+            }
         }
         left
     }
@@ -206,17 +436,46 @@ impl Parser {
         loop {
             if self.match_token(TokenType::Star) {
                 let right = self.parse_unary();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Mul, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Mul,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Slash) {
                 let right = self.parse_unary();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Div, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Div,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Percent) {
                 let right = self.parse_unary();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                left = Expr::Binary { op: BinaryOp::Mod, left: Box::new(left), right: Box::new(right), loc, ty: Type::default() };
-            } else { break; }
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                left = Expr::Binary {
+                    op: BinaryOp::Mod,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                    loc,
+                    ty: Type::default(),
+                };
+            } else {
+                break;
+            }
         }
         left
     }
@@ -228,6 +487,12 @@ impl Parser {
         if self.match_token(TokenType::Offsetof) {
             return self.parse_offsetof();
         }
+        if self.is_cpp_mode && self.match_token(TokenType::New) {
+            return self.parse_new_expr();
+        }
+        if self.is_cpp_mode && self.match_token(TokenType::Delete) {
+            return self.parse_delete_expr();
+        }
         if self.check(TokenType::LParen) {
             let checkpoint = self.pos;
             let typedef_snapshot = self.typedef_names.clone();
@@ -236,8 +501,16 @@ impl Parser {
                 let t = self.parse_type_only();
                 if self.match_token(TokenType::RParen) {
                     let operand = self.parse_unary();
-                    let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                    return Expr::Cast { expr: Box::new(operand), target_type: t.clone(), loc, ty: t };
+                    let loc = SourceLoc {
+                        line: self.previous().line,
+                        column: self.previous().column,
+                    };
+                    return Expr::Cast {
+                        expr: Box::new(operand),
+                        target_type: t.clone(),
+                        loc,
+                        ty: t,
+                    };
                 }
             }
             self.pos = checkpoint;
@@ -245,38 +518,94 @@ impl Parser {
         }
         if self.match_token(TokenType::Minus) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::Neg, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::Neg,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::Not) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::Not, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::Not,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::BitNot) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::BitNot, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::BitNot,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::Ampersand) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::Addr, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::Addr,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::Star) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::Deref, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::Deref,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::Increment) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::PreInc, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::PreInc,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::Decrement) {
             let operand = self.parse_unary();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Unary { op: UnaryOp::PreDec, operand: Box::new(operand), loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Unary {
+                op: UnaryOp::PreDec,
+                operand: Box::new(operand),
+                loc,
+                ty: Type::default(),
+            };
         }
         self.parse_postfix()
     }
@@ -292,7 +621,10 @@ impl Parser {
     }
 
     pub(crate) fn parse_sizeof(&mut self) -> Expr {
-        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+        let loc = SourceLoc {
+            line: self.previous().line,
+            column: self.previous().column,
+        };
         if self.match_token(TokenType::LParen) {
             let checkpoint = self.pos;
             let mut is_type = false;
@@ -308,25 +640,159 @@ impl Parser {
             }
             if is_type {
                 self.consume(TokenType::RParen, "sizeof(type) 后预期 ')'");
-                return Expr::Sizeof { target_type: Some(t), operand: None, loc, ty: Type::int() };
+                return Expr::Sizeof {
+                    target_type: Some(t),
+                    operand: None,
+                    loc,
+                    ty: Type::int(),
+                };
             }
             self.pos = checkpoint;
             let expr = self.parse_expression();
             self.consume(TokenType::RParen, "sizeof(expr) 后预期 ')'");
-            return Expr::Sizeof { target_type: None, operand: Some(Box::new(expr)), loc, ty: Type::int() };
+            return Expr::Sizeof {
+                target_type: None,
+                operand: Some(Box::new(expr)),
+                loc,
+                ty: Type::int(),
+            };
         }
         let expr = self.parse_unary();
-        Expr::Sizeof { target_type: None, operand: Some(Box::new(expr)), loc, ty: Type::int() }
+        Expr::Sizeof {
+            target_type: None,
+            operand: Some(Box::new(expr)),
+            loc,
+            ty: Type::int(),
+        }
     }
 
     pub(crate) fn parse_offsetof(&mut self) -> Expr {
-        let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+        let loc = SourceLoc {
+            line: self.previous().line,
+            column: self.previous().column,
+        };
         self.consume(TokenType::LParen, "offsetof 后预期 '('");
         let target_type = self.parse_base_type();
         self.consume(TokenType::Comma, "offsetof 参数之间预期 ','");
         let field_tok = self.consume(TokenType::Identifier, "offsetof 预期字段名").clone();
         self.consume(TokenType::RParen, "offsetof 后预期 ')'");
-        Expr::Offsetof { target_type, field: field_tok.text, loc, ty: Type::int() }
+        Expr::Offsetof {
+            target_type,
+            field: field_tok.text,
+            loc,
+            ty: Type::int(),
+        }
+    }
+
+    // =========================================================================
+    // C++ Expression Parsers (Phase 31)
+    // =========================================================================
+
+    fn parse_new_expr(&mut self) -> Expr {
+        let loc = SourceLoc {
+            line: self.previous().line,
+            column: self.previous().column,
+        };
+        let elem_type = self.parse_base_type();
+        let mut final_type = elem_type.clone();
+        while self.match_token(TokenType::Star) {
+            final_type = Type::pointer_to(final_type);
+        }
+
+        let mut size_expr = None;
+        let mut init = None;
+
+        if self.match_token(TokenType::LBracket) {
+            size_expr = Some(Box::new(self.parse_expression()));
+            self.consume(TokenType::RBracket, "new[] 预期 ']'");
+        }
+
+        if self.match_token(TokenType::LParen) {
+            init = Some(Box::new(self.parse_expression()));
+            self.consume(TokenType::RParen, "new 初始化预期 ')'");
+        }
+
+        Expr::New {
+            elem_type: final_type,
+            size_expr,
+            init,
+            loc,
+            ty: Type::pointer_to(elem_type),
+        }
+    }
+
+    fn parse_delete_expr(&mut self) -> Expr {
+        let loc = SourceLoc {
+            line: self.previous().line,
+            column: self.previous().column,
+        };
+        let mut is_array = false;
+        if self.check(TokenType::LBracket) {
+            self.advance(); // [
+            if self.check(TokenType::RBracket) {
+                self.advance(); // ]
+                is_array = true;
+            } else {
+                // 回退，当作普通表达式中的 [ 处理
+                // 但这里不太可能，因为 delete [ 后面应该总是 ]
+            }
+        }
+        let expr = Box::new(self.parse_unary());
+        Expr::Delete {
+            expr,
+            is_array,
+            loc,
+            ty: Type::void(),
+        }
+    }
+
+    fn parse_lambda_expr(&mut self) -> Expr {
+        let loc = SourceLoc {
+            line: self.current().line,
+            column: self.current().column,
+        };
+        self.consume(TokenType::LBracket, "Lambda 预期 '['");
+        let mut capture = Vec::new();
+        // 简化：支持 []、[x]、[&x]、[=]、[&]
+        if !self.check(TokenType::RBracket) {
+            if self.check(TokenType::Assign) {
+                self.advance(); // =
+                capture.push(CaptureMode::Implicit);
+            } else if self.check(TokenType::Ampersand) {
+                self.advance(); // &
+                if self.check(TokenType::Identifier) {
+                    capture.push(CaptureMode::ByReference);
+                    self.advance();
+                } else {
+                    capture.push(CaptureMode::Implicit);
+                }
+            } else if self.check(TokenType::Identifier) {
+                capture.push(CaptureMode::ByValue);
+                self.advance();
+            }
+        }
+        self.consume(TokenType::RBracket, "Lambda 预期 ']'");
+        self.consume(TokenType::LParen, "Lambda 预期 '('");
+        let params = self.parse_param_list();
+        self.consume(TokenType::RParen, "Lambda 预期 ')'");
+
+        // 可选的返回类型 -> Type
+        if self.check(TokenType::Minus) && self.peek(1).ty == TokenType::Gt {
+            self.advance(); // -
+            self.advance(); // >
+            let _ret_type = self.parse_base_type();
+            // 简化：忽略显式返回类型，由 TypeChecker 推断
+        }
+
+        let body = Box::new(self.parse_statement());
+        Expr::Lambda {
+            capture,
+            params,
+            body,
+            unique_id: 0,
+            loc,
+            ty: Type::default(),
+        }
     }
 
     pub(crate) fn parse_type_only(&mut self) -> Type {
@@ -343,24 +809,79 @@ impl Parser {
             if self.match_token(TokenType::LBracket) {
                 let index = self.parse_expression();
                 self.consume(TokenType::RBracket, "预期 ']'");
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                expr = Expr::Index { array: Box::new(expr), index: Box::new(index), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                expr = Expr::Index {
+                    array: Box::new(expr),
+                    index: Box::new(index),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::LParen) {
                 // Function call: direct named call or function pointer call
                 let args = self.parse_arg_list();
                 self.consume(TokenType::RParen, "预期 ')'");
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                expr = Expr::CallPtr { callee: Box::new(expr), args, loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                expr = Expr::CallPtr {
+                    callee: Box::new(expr),
+                    args,
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Dot) || self.match_token(TokenType::Arrow) {
                 let member_tok = self.consume(TokenType::Identifier, "预期成员名称").clone();
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                expr = Expr::Member { object: Box::new(expr), member: member_tok.text, loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                // C++ 模式下检查是否是方法调用：obj.method(args)
+                if self.is_cpp_mode && self.check(TokenType::LParen) {
+                    self.advance(); // consume '('
+                    let args = self.parse_arg_list();
+                    self.consume(TokenType::RParen, "预期 ')'");
+                    expr = Expr::MemberCall {
+                        object: Box::new(expr),
+                        method: member_tok.text,
+                        args,
+                        is_virtual: false,
+                        loc,
+                        ty: Type::default(),
+                    };
+                } else {
+                    expr = Expr::Member {
+                        object: Box::new(expr),
+                        member: member_tok.text,
+                        loc,
+                        ty: Type::default(),
+                    };
+                }
             } else if self.match_token(TokenType::Increment) {
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                expr = Expr::Unary { op: UnaryOp::PostInc, operand: Box::new(expr), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                expr = Expr::Unary {
+                    op: UnaryOp::PostInc,
+                    operand: Box::new(expr),
+                    loc,
+                    ty: Type::default(),
+                };
             } else if self.match_token(TokenType::Decrement) {
-                let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-                expr = Expr::Unary { op: UnaryOp::PostDec, operand: Box::new(expr), loc, ty: Type::default() };
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                expr = Expr::Unary {
+                    op: UnaryOp::PostDec,
+                    operand: Box::new(expr),
+                    loc,
+                    ty: Type::default(),
+                };
             } else {
                 break;
             }
@@ -392,11 +913,20 @@ impl Parser {
                     self.parse_assign()
                 };
                 elements.push(InitElement { designators, value });
-                if !self.match_token(TokenType::Comma) { break; }
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                }
             }
         }
         self.consume(TokenType::RBrace, "初始化列表预期 '}'");
-        Expr::InitList { elements, loc: SourceLoc { line: loc.line, column: loc.column }, ty: Type::default() }
+        Expr::InitList {
+            elements,
+            loc: SourceLoc {
+                line: loc.line,
+                column: loc.column,
+            },
+            ty: Type::default(),
+        }
     }
 
     pub(crate) fn parse_primary(&mut self) -> Expr {
@@ -411,7 +941,10 @@ impl Parser {
                 });
                 0
             });
-            let loc = SourceLoc { line: prev.line, column: prev.column };
+            let loc = SourceLoc {
+                line: prev.line,
+                column: prev.column,
+            };
             return Expr::Literal { value, loc, ty: Type::int() };
         }
         if self.match_token(TokenType::UnsignedLiteral) {
@@ -425,8 +958,15 @@ impl Parser {
                 });
                 0
             }) as i32;
-            let loc = SourceLoc { line: prev.line, column: prev.column };
-            return Expr::Literal { value, loc, ty: Type::unsigned_int() };
+            let loc = SourceLoc {
+                line: prev.line,
+                column: prev.column,
+            };
+            return Expr::Literal {
+                value,
+                loc,
+                ty: Type::unsigned_int(),
+            };
         }
         if self.match_token(TokenType::LongLiteral) {
             let prev = self.previous().clone();
@@ -439,8 +979,15 @@ impl Parser {
                 });
                 0
             });
-            let loc = SourceLoc { line: prev.line, column: prev.column };
-            return Expr::LongLiteral { value, loc, ty: Type::long_long() };
+            let loc = SourceLoc {
+                line: prev.line,
+                column: prev.column,
+            };
+            return Expr::LongLiteral {
+                value,
+                loc,
+                ty: Type::long_long(),
+            };
         }
         if self.match_token(TokenType::FloatLiteral) {
             let prev = self.previous().clone();
@@ -453,7 +1000,10 @@ impl Parser {
                 });
                 0.0
             });
-            let loc = SourceLoc { line: prev.line, column: prev.column };
+            let loc = SourceLoc {
+                line: prev.line,
+                column: prev.column,
+            };
             return Expr::FloatLiteral { value, loc, ty: Type::float() };
         }
         if self.match_token(TokenType::CharLiteral) {
@@ -467,23 +1017,64 @@ impl Parser {
                 });
                 0
             });
-            let loc = SourceLoc { line: prev.line, column: prev.column };
+            let loc = SourceLoc {
+                line: prev.line,
+                column: prev.column,
+            };
             return Expr::Literal { value, loc, ty: Type::char() };
         }
         if self.match_token(TokenType::String) {
             let value = self.previous().text.clone();
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
             let array_size = value.len() as i32 + 1; // including null terminator
-            return Expr::StringLiteral { value, loc, ty: Type::Array { element: Box::new(Type::char()), array_size, dims: vec![array_size], is_const: false, is_vla: false, vla_dims: vec![] } };
+            return Expr::StringLiteral {
+                value,
+                loc,
+                ty: Type::Array {
+                    element: Box::new(Type::char()),
+                    array_size,
+                    dims: vec![array_size],
+                    is_const: false,
+                    is_vla: false,
+                    vla_dims: vec![],
+                },
+            };
         }
         if self.match_token(TokenType::Null) {
-            let loc = SourceLoc { line: self.previous().line, column: self.previous().column };
-            return Expr::Literal { value: 0, loc, ty: Type::pointer_to(Type::void()) };
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::Literal {
+                value: 0,
+                loc,
+                ty: Type::pointer_to(Type::void()),
+            };
+        }
+        if self.is_cpp_mode && self.match_token(TokenType::This) {
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+            };
+            return Expr::This { loc, ty: Type::default() };
+        }
+        if self.is_cpp_mode && self.check(TokenType::LBracket) {
+            return self.parse_lambda_expr();
         }
         if self.check(TokenType::Identifier) {
             let name_tok = self.advance().clone();
-            let loc = SourceLoc { line: name_tok.line, column: name_tok.column };
-            return Expr::Identifier { name: name_tok.text, loc, ty: Type::default() };
+            let loc = SourceLoc {
+                line: name_tok.line,
+                column: name_tok.column,
+            };
+            return Expr::Identifier {
+                name: name_tok.text,
+                loc,
+                ty: Type::default(),
+            };
         }
         if self.match_token(TokenType::LParen) {
             let expr = self.parse_expression();
@@ -496,8 +1087,10 @@ impl Parser {
             column: self.current().column,
             code: ErrorCode::E2003_ExpectedExpr as i32,
         });
-        let loc = SourceLoc { line: self.current().line, column: self.current().column };
+        let loc = SourceLoc {
+            line: self.current().line,
+            column: self.current().column,
+        };
         Expr::Literal { value: 0, loc, ty: Type::int() }
     }
-
 }

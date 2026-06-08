@@ -1,10 +1,10 @@
 //! CompletionEngine 单元测试
 
+use cide_native::compiler::lexer::Lexer;
+use cide_native::compiler::parser::Parser;
 use cide_native::engine::completion::{
     build_snapshot, build_snapshot_from_source, get_completion_candidates, CompletionKind,
 };
-use cide_native::compiler::lexer::Lexer;
-use cide_native::compiler::parser::Parser;
 use cide_native::session::Session;
 
 fn parse(source: &str) -> Option<cide_native::compiler::ast::ProgramNode> {
@@ -116,8 +116,16 @@ fn test_completion_member_access_struct() {
     let candidates = get_completion_candidates(&session, source, 7, 14, "");
 
     let labels: Vec<String> = candidates.iter().map(|c| c.label.clone()).collect();
-    assert!(labels.contains(&"x".to_string()), "should suggest struct field x, got: {:?}", labels);
-    assert!(labels.contains(&"y".to_string()), "should suggest struct field y, got: {:?}", labels);
+    assert!(
+        labels.contains(&"x".to_string()),
+        "should suggest struct field x, got: {:?}",
+        labels
+    );
+    assert!(
+        labels.contains(&"y".to_string()),
+        "should suggest struct field y, got: {:?}",
+        labels
+    );
 }
 
 #[test]
@@ -208,11 +216,13 @@ fn test_completion_function_insert_text() {
 
     // line 3 = `            ` (空行 inside foo)
     let candidates = get_completion_candidates(&session, source, 3, 12, "bar");
-    let bar = candidates.iter().find(|c| c.label == "bar" && c.kind == CompletionKind::Function).unwrap();
+    let bar = candidates
+        .iter()
+        .find(|c| c.label == "bar" && c.kind == CompletionKind::Function)
+        .unwrap();
     assert_eq!(bar.insert_text, "bar()");
     assert!(bar.detail.contains("void"));
 }
-
 
 // ============================================================================
 // 实时解析补全测试（利用自研 Parser 错误恢复能力）
@@ -246,28 +256,16 @@ fn test_build_snapshot_from_source_with_incomplete_code() {
     let snapshot = build_snapshot_from_source(source);
 
     // 即使代码不完整，Parser 的错误恢复仍能提取已成功解析的符号
-    assert!(
-        snapshot.structs.iter().any(|s| s.name == "Point"),
-        "应提取 struct Point"
-    );
+    assert!(snapshot.structs.iter().any(|s| s.name == "Point"), "应提取 struct Point");
     let pt = snapshot.structs.iter().find(|s| s.name == "Point").unwrap();
     assert_eq!(pt.fields.len(), 2);
     assert_eq!(pt.fields[0].0, "x");
 
-    assert!(
-        snapshot.unions.iter().any(|u| u.name == "Data"),
-        "应提取 union Data"
-    );
+    assert!(snapshot.unions.iter().any(|u| u.name == "Data"), "应提取 union Data");
 
-    assert!(
-        snapshot.globals.iter().any(|g| g.name == "global_a"),
-        "应提取全局变量 global_a"
-    );
+    assert!(snapshot.globals.iter().any(|g| g.name == "global_a"), "应提取全局变量 global_a");
 
-    assert!(
-        snapshot.functions.iter().any(|f| f.name == "add"),
-        "应提取函数 add"
-    );
+    assert!(snapshot.functions.iter().any(|f| f.name == "add"), "应提取函数 add");
     let add = snapshot.functions.iter().find(|f| f.name == "add").unwrap();
     assert_eq!(add.params.len(), 2);
 }

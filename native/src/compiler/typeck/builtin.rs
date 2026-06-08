@@ -9,9 +9,7 @@ impl TypeChecker {
         match name {
             "malloc" => self.check_builtin_malloc(args, loc),
             "free" => self.check_builtin_free(args, loc),
-            "print_int" | "__cide_output" | "__cide_step" => {
-                self.check_builtin_print_int(args, loc, name)
-            }
+            "print_int" | "__cide_output" | "__cide_step" => self.check_builtin_print_int(args, loc, name),
             "printf" => self.check_builtin_printf(args, loc),
             "scanf" => self.check_builtin_scanf(args, loc),
             "strlen" => self.check_builtin_strlen(args, loc),
@@ -79,7 +77,11 @@ impl TypeChecker {
 
     fn builtin_check_count(&mut self, args: &[Expr], expected: usize, name: &str, loc: &SourceLoc) -> bool {
         if args.len() != expected {
-            self.report_error(&format!("{} 需要{}个参数", name, expected), loc, ErrorCode::E3028_BuiltInArgCount);
+            self.report_error(
+                &format!("{} 需要{}个参数", name, expected),
+                loc,
+                ErrorCode::E3028_BuiltInArgCount,
+            );
             false
         } else {
             true
@@ -89,7 +91,11 @@ impl TypeChecker {
     fn builtin_check_pointer(&mut self, arg: &mut Expr, idx: usize, name: &str, loc: &SourceLoc) {
         let arg_type = self.resolve_expr_type(arg);
         if !arg_type.is_pointer() && !arg_type.is_array() {
-            self.report_error(&format!("{} 的第 {} 个参数必须是指针或数组", name, idx + 1), loc, ErrorCode::E3029_BuiltInArgType);
+            self.report_error(
+                &format!("{} 的第 {} 个参数必须是指针或数组", name, idx + 1),
+                loc,
+                ErrorCode::E3029_BuiltInArgType,
+            );
         }
     }
 
@@ -97,7 +103,11 @@ impl TypeChecker {
         let expected = Type::int();
         let arg_type = self.resolve_expr_type(arg);
         if !self.check_assignable(&expected, &arg_type, loc) {
-            self.report_error(&format!("{} 的第 {} 个参数必须是 int", name, idx + 1), loc, ErrorCode::E3029_BuiltInArgType);
+            self.report_error(
+                &format!("{} 的第 {} 个参数必须是 int", name, idx + 1),
+                loc,
+                ErrorCode::E3029_BuiltInArgType,
+            );
         } else {
             insert_implicit_cast(arg, &expected);
         }
@@ -127,27 +137,14 @@ impl TypeChecker {
         Type::void()
     }
 
-    fn check_builtin_print_int(
-        &mut self,
-        args: &mut [Expr],
-        loc: &SourceLoc,
-        name: &str,
-    ) -> Type {
+    fn check_builtin_print_int(&mut self, args: &mut [Expr], loc: &SourceLoc, name: &str) -> Type {
         if args.len() != 1 {
-            self.report_error(
-                &format!("{} 需要一个参数", name),
-                loc,
-                ErrorCode::E3028_BuiltInArgCount,
-            );
+            self.report_error(&format!("{} 需要一个参数", name), loc, ErrorCode::E3028_BuiltInArgCount);
         } else {
             let expected = Type::int();
             let arg_type = self.resolve_expr_type(&mut args[0]);
             if !self.check_assignable(&expected, &arg_type, loc) {
-                self.report_error(
-                    &format!("{} 参数必须是 int", name),
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error(&format!("{} 参数必须是 int", name), loc, ErrorCode::E3029_BuiltInArgType);
             } else {
                 insert_implicit_cast(&mut args[0], &expected);
             }
@@ -172,17 +169,27 @@ impl TypeChecker {
                 while let Some(&c) = chars.peek() {
                     if c == '-' || c == '+' || c == ' ' || c == '#' || c == '0' {
                         chars.next();
-                    } else { break; }
+                    } else {
+                        break;
+                    }
                 }
                 // skip width
                 while let Some(&c) = chars.peek() {
-                    if c.is_ascii_digit() || c == '*' { chars.next(); } else { break; }
+                    if c.is_ascii_digit() || c == '*' {
+                        chars.next();
+                    } else {
+                        break;
+                    }
                 }
                 // skip precision
                 if let Some(&'.') = chars.peek() {
                     chars.next();
                     while let Some(&c) = chars.peek() {
-                        if c.is_ascii_digit() || c == '*' { chars.next(); } else { break; }
+                        if c.is_ascii_digit() || c == '*' {
+                            chars.next();
+                        } else {
+                            break;
+                        }
                     }
                 }
                 // length modifier
@@ -237,12 +244,8 @@ impl TypeChecker {
                 ('c', "") => {
                     matches!(arg_type.kind(), TypeKind::Int | TypeKind::Char)
                 }
-                ('s', "") => {
-                    arg_type.is_pointer() || arg_type.is_array()
-                }
-                ('p', "") => {
-                    arg_type.is_pointer() || arg_type.is_array()
-                }
+                ('s', "") => arg_type.is_pointer() || arg_type.is_array(),
+                ('p', "") => arg_type.is_pointer() || arg_type.is_array(),
                 _ => true, // unknown spec, be permissive
             };
             if !ok {
@@ -275,27 +278,23 @@ impl TypeChecker {
                 None
             };
             let ok = match (*spec, len_mod.as_str()) {
-                ('d' | 'i' | 'u' | 'x' | 'X' | 'o' | 'n', "") => {
-                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Int | TypeKind::Char))
-                }
-                ('d' | 'i' | 'u' | 'x' | 'X' | 'o', "l" | "ll") => {
-                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::LongLong | TypeKind::Int))
-                }
-                ('f' | 'e' | 'g' | 'E' | 'G', "") => {
-                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Float | TypeKind::Int))
-                }
-                ('f' | 'e' | 'g' | 'E' | 'G', "l") | ('F', "") => {
-                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Double | TypeKind::Float | TypeKind::Int))
-                }
-                ('c', "") => {
-                    pointee.as_ref().is_some_and(|t| matches!(t.kind(), TypeKind::Char | TypeKind::Int))
-                }
-                ('s', "") => {
-                    arg_type.is_pointer() || arg_type.is_array()
-                }
-                ('p', "") => {
-                    arg_type.is_pointer() || arg_type.is_array()
-                }
+                ('d' | 'i' | 'u' | 'x' | 'X' | 'o' | 'n', "") => pointee
+                    .as_ref()
+                    .is_some_and(|t| matches!(t.kind(), TypeKind::Int | TypeKind::Char)),
+                ('d' | 'i' | 'u' | 'x' | 'X' | 'o', "l" | "ll") => pointee
+                    .as_ref()
+                    .is_some_and(|t| matches!(t.kind(), TypeKind::LongLong | TypeKind::Int)),
+                ('f' | 'e' | 'g' | 'E' | 'G', "") => pointee
+                    .as_ref()
+                    .is_some_and(|t| matches!(t.kind(), TypeKind::Float | TypeKind::Int)),
+                ('f' | 'e' | 'g' | 'E' | 'G', "l") | ('F', "") => pointee
+                    .as_ref()
+                    .is_some_and(|t| matches!(t.kind(), TypeKind::Double | TypeKind::Float | TypeKind::Int)),
+                ('c', "") => pointee
+                    .as_ref()
+                    .is_some_and(|t| matches!(t.kind(), TypeKind::Char | TypeKind::Int)),
+                ('s', "") => arg_type.is_pointer() || arg_type.is_array(),
+                ('p', "") => arg_type.is_pointer() || arg_type.is_array(),
                 _ => true,
             };
             if !ok {
@@ -310,19 +309,11 @@ impl TypeChecker {
 
     fn check_builtin_printf(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if args.is_empty() {
-            self.report_error(
-                "printf 至少需要 1 个参数（格式字符串）",
-                loc,
-                ErrorCode::E3030_PrintfArgCount,
-            );
+            self.report_error("printf 至少需要 1 个参数（格式字符串）", loc, ErrorCode::E3030_PrintfArgCount);
         } else {
             let fmt_type = self.resolve_expr_type(&mut args[0]);
             if !fmt_type.is_pointer() && !fmt_type.is_array() {
-                self.report_error(
-                    "printf 的第一个参数必须是字符串",
-                    loc,
-                    ErrorCode::E3031_PrintfFirstArg,
-                );
+                self.report_error("printf 的第一个参数必须是字符串", loc, ErrorCode::E3031_PrintfFirstArg);
             }
             // 如果格式字符串是字面量，进行格式-参数类型匹配检查
             let fmt_str = if let Expr::StringLiteral { ref value, .. } = args[0] {
@@ -359,11 +350,7 @@ impl TypeChecker {
         } else {
             let fmt_type = self.resolve_expr_type(&mut args[0]);
             if !fmt_type.is_pointer() && !fmt_type.is_array() {
-                self.report_error(
-                    "scanf 的第一个参数必须是字符串",
-                    loc,
-                    ErrorCode::E3034_ScanfFirstArg,
-                );
+                self.report_error("scanf 的第一个参数必须是字符串", loc, ErrorCode::E3034_ScanfFirstArg);
             }
             let fmt_str = if let Expr::StringLiteral { ref value, .. } = args[0] {
                 Some(value.clone())
@@ -456,11 +443,7 @@ impl TypeChecker {
         } else {
             let ptr_type = self.resolve_expr_type(&mut args[0]);
             if !ptr_type.is_pointer() && !ptr_type.is_array() {
-                self.report_error(
-                    "memset 第一个参数必须是指针",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error("memset 第一个参数必须是指针", loc, ErrorCode::E3029_BuiltInArgType);
             }
             for i in 1..3 {
                 let expected = Type::int();
@@ -511,19 +494,11 @@ impl TypeChecker {
         } else {
             let stream_type = self.resolve_expr_type(&mut args[0]);
             if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
-                self.report_error(
-                    "fprintf 的第一个参数必须是文件指针或整数",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error("fprintf 的第一个参数必须是文件指针或整数", loc, ErrorCode::E3029_BuiltInArgType);
             }
             let fmt_type = self.resolve_expr_type(&mut args[1]);
             if !fmt_type.is_pointer() && !fmt_type.is_array() {
-                self.report_error(
-                    "fprintf 的第二个参数必须是字符串",
-                    loc,
-                    ErrorCode::E3031_PrintfFirstArg,
-                );
+                self.report_error("fprintf 的第二个参数必须是字符串", loc, ErrorCode::E3031_PrintfFirstArg);
             }
             for (i, arg) in args.iter_mut().enumerate().skip(2) {
                 let arg_type = self.resolve_expr_type(arg);
@@ -545,19 +520,11 @@ impl TypeChecker {
         } else {
             let ptr_type = self.resolve_expr_type(&mut args[0]);
             if !ptr_type.is_pointer() && !matches!(ptr_type.kind(), TypeKind::Int) {
-                self.report_error(
-                    "realloc 第一个参数必须是指针",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error("realloc 第一个参数必须是指针", loc, ErrorCode::E3029_BuiltInArgType);
             }
             let size_type = self.resolve_expr_type(&mut args[1]);
             if !self.check_assignable(&Type::int(), &size_type, loc) {
-                self.report_error(
-                    "realloc 第二个参数必须是 int",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error("realloc 第二个参数必须是 int", loc, ErrorCode::E3029_BuiltInArgType);
             } else {
                 insert_implicit_cast(&mut args[1], &Type::int());
             }
@@ -571,11 +538,7 @@ impl TypeChecker {
         } else {
             let base_type = self.resolve_expr_type(&mut args[0]);
             if !base_type.is_pointer() && !base_type.is_array() {
-                self.report_error(
-                    "qsort 第一个参数必须是指针或数组",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error("qsort 第一个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
             }
             for i in 1..3 {
                 let t = self.resolve_expr_type(&mut args[i]);
@@ -591,11 +554,7 @@ impl TypeChecker {
             }
             let compar_type = self.resolve_expr_type(&mut args[3]);
             if !matches!(compar_type.kind(), TypeKind::Int) && !compar_type.is_pointer() {
-                self.report_error(
-                    "qsort 第四个参数必须是函数指针",
-                    loc,
-                    ErrorCode::E3029_BuiltInArgType,
-                );
+                self.report_error("qsort 第四个参数必须是函数指针", loc, ErrorCode::E3029_BuiltInArgType);
             }
         }
         Type::void()
@@ -612,8 +571,8 @@ impl TypeChecker {
         if args.len() != 2 {
             self.report_error("calloc 需要两个参数", loc, ErrorCode::E3028_BuiltInArgCount);
         } else {
-            for i in 0..2 {
-                self.builtin_check_int(&mut args[i], i, "calloc", loc);
+            for (i, arg) in args.iter_mut().enumerate().take(2) {
+                self.builtin_check_int(arg, i, "calloc", loc);
             }
         }
         Type::pointer_to(Type::void())
@@ -631,8 +590,8 @@ impl TypeChecker {
             if !base_type.is_pointer() && !base_type.is_array() {
                 self.report_error("bsearch 第二个参数必须是指针或数组", loc, ErrorCode::E3029_BuiltInArgType);
             }
-            for i in 2..4 {
-                self.builtin_check_int(&mut args[i], i, "bsearch", loc);
+            for (i, arg) in args.iter_mut().enumerate().take(4).skip(2) {
+                self.builtin_check_int(arg, i, "bsearch", loc);
             }
             let compar_type = self.resolve_expr_type(&mut args[4]);
             if !matches!(compar_type.kind(), TypeKind::Int) && !compar_type.is_pointer() {
@@ -693,7 +652,11 @@ impl TypeChecker {
 
     fn check_builtin_fread(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if args.len() != 4 {
-            self.report_error("fread 需要四个参数（缓冲区、元素大小、元素数量、文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+            self.report_error(
+                "fread 需要四个参数（缓冲区、元素大小、元素数量、文件指针）",
+                loc,
+                ErrorCode::E3028_BuiltInArgCount,
+            );
         } else {
             let buf_type = self.resolve_expr_type(&mut args[0]);
             if !buf_type.is_pointer() && !buf_type.is_array() {
@@ -702,7 +665,11 @@ impl TypeChecker {
             for i in 1..3 {
                 let t = self.resolve_expr_type(&mut args[i]);
                 if !self.check_assignable(&Type::int(), &t, loc) {
-                    self.report_error(&format!("fread 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                    self.report_error(
+                        &format!("fread 第 {} 个参数必须是 int", i + 1),
+                        loc,
+                        ErrorCode::E3029_BuiltInArgType,
+                    );
                 } else {
                     insert_implicit_cast(&mut args[i], &Type::int());
                 }
@@ -717,7 +684,11 @@ impl TypeChecker {
 
     fn check_builtin_fwrite(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if args.len() != 4 {
-            self.report_error("fwrite 需要四个参数（缓冲区、元素大小、元素数量、文件指针）", loc, ErrorCode::E3028_BuiltInArgCount);
+            self.report_error(
+                "fwrite 需要四个参数（缓冲区、元素大小、元素数量、文件指针）",
+                loc,
+                ErrorCode::E3028_BuiltInArgCount,
+            );
         } else {
             let buf_type = self.resolve_expr_type(&mut args[0]);
             if !buf_type.is_pointer() && !buf_type.is_array() {
@@ -726,7 +697,11 @@ impl TypeChecker {
             for i in 1..3 {
                 let t = self.resolve_expr_type(&mut args[i]);
                 if !self.check_assignable(&Type::int(), &t, loc) {
-                    self.report_error(&format!("fwrite 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                    self.report_error(
+                        &format!("fwrite 第 {} 个参数必须是 int", i + 1),
+                        loc,
+                        ErrorCode::E3029_BuiltInArgType,
+                    );
                 } else {
                     insert_implicit_cast(&mut args[i], &Type::int());
                 }
@@ -823,7 +798,11 @@ impl TypeChecker {
 
     fn check_builtin_fseek(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {
         if args.len() != 3 {
-            self.report_error("fseek 需要三个参数（文件指针、偏移量、起始位置）", loc, ErrorCode::E3028_BuiltInArgCount);
+            self.report_error(
+                "fseek 需要三个参数（文件指针、偏移量、起始位置）",
+                loc,
+                ErrorCode::E3028_BuiltInArgCount,
+            );
         } else {
             let stream_type = self.resolve_expr_type(&mut args[0]);
             if !stream_type.is_pointer() && !matches!(stream_type.kind(), TypeKind::Int) {
@@ -832,7 +811,11 @@ impl TypeChecker {
             for i in 1..3 {
                 let t = self.resolve_expr_type(&mut args[i]);
                 if !self.check_assignable(&Type::int(), &t, loc) {
-                    self.report_error(&format!("fseek 第 {} 个参数必须是 int", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                    self.report_error(
+                        &format!("fseek 第 {} 个参数必须是 int", i + 1),
+                        loc,
+                        ErrorCode::E3029_BuiltInArgType,
+                    );
                 } else {
                     insert_implicit_cast(&mut args[i], &Type::int());
                 }
@@ -1027,7 +1010,11 @@ impl TypeChecker {
             for i in 0..2 {
                 let t = self.resolve_expr_type(&mut args[i]);
                 if !self.check_assignable(&Type::double(), &t, loc) {
-                    self.report_error(&format!("fmod 第 {} 个参数必须是 double", i + 1), loc, ErrorCode::E3029_BuiltInArgType);
+                    self.report_error(
+                        &format!("fmod 第 {} 个参数必须是 double", i + 1),
+                        loc,
+                        ErrorCode::E3029_BuiltInArgType,
+                    );
                 } else {
                     insert_implicit_cast(&mut args[i], &Type::double());
                 }

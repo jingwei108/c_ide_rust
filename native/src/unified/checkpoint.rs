@@ -75,8 +75,7 @@ impl CheckpointManager {
     ///
     /// 调用者负责在保存前通过 `should_checkpoint` 判断是否需要保存。
     pub fn save(&mut self, step: i32, vm: &mut CideVM, session: &Session) {
-        let is_full = self.checkpoints.is_empty()
-            || self.checkpoints.len().is_multiple_of(self.full_every);
+        let is_full = self.checkpoints.is_empty() || self.checkpoints.len().is_multiple_of(self.full_every);
 
         let snap = if is_full {
             vm.clear_dirty_pages();
@@ -97,16 +96,12 @@ impl CheckpointManager {
         // 移除最旧检查点；如果移除的是全量基准，需要把下一个全量之前的增量全删掉，
         // 否则增量会 dangling。简化处理：一直删到第一个是全量为止。
         while self.checkpoints.len() > self.max_checkpoints {
-            let removed_is_full =
-                matches!(self.checkpoints[0].1.memory, crate::vm::snapshot::MemoryImage::Full(_));
+            let removed_is_full = matches!(self.checkpoints[0].1.memory, crate::vm::snapshot::MemoryImage::Full(_));
             self.checkpoints.remove(0);
             if !removed_is_full {
                 // 如果删掉的是增量，继续删到下一个全量，保证链头是全量基准
                 while !self.checkpoints.is_empty()
-                    && !matches!(
-                        self.checkpoints[0].1.memory,
-                        crate::vm::snapshot::MemoryImage::Full(_)
-                    )
+                    && !matches!(self.checkpoints[0].1.memory, crate::vm::snapshot::MemoryImage::Full(_))
                 {
                     self.checkpoints.remove(0);
                 }
@@ -116,26 +111,16 @@ impl CheckpointManager {
 
     /// 找到不超过 target 的最近检查点，并重建为可直接恢复的全量快照。
     pub fn nearest(&self, target: i32) -> Option<(i32, VMSnapshot)> {
-        let idx = self
-            .checkpoints
-            .iter()
-            .rposition(|(s, _)| *s <= target)?;
+        let idx = self.checkpoints.iter().rposition(|(s, _)| *s <= target)?;
         let (step, snap) = &self.checkpoints[idx];
 
         match &snap.memory {
             crate::vm::snapshot::MemoryImage::Full(_) => Some((*step, snap.clone())),
             crate::vm::snapshot::MemoryImage::Delta { base_step, .. } => {
                 // 找到基础全量检查点
-                let base_idx = self
-                    .checkpoints
-                    .iter()
-                    .rposition(|(s, snap)| {
-                        *s <= *base_step
-                            && matches!(
-                                snap.memory,
-                                crate::vm::snapshot::MemoryImage::Full(_)
-                            )
-                    })?;
+                let base_idx = self.checkpoints.iter().rposition(|(s, snap)| {
+                    *s <= *base_step && matches!(snap.memory, crate::vm::snapshot::MemoryImage::Full(_))
+                })?;
                 let base_snap = &self.checkpoints[base_idx].1;
 
                 // 从 base 到 target 之间的所有增量应用到基础内存

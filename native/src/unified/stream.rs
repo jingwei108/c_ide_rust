@@ -5,8 +5,8 @@ use flutter_rust_bridge::frb;
 use crate::session::VisEvent;
 use crate::unified::root_cause::RootCauseHint;
 use crate::unified::types::{
-    AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, ArraySnapshot, PointerSnapshot,
-    PointerStatus, StepPayload,
+    AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, ArraySnapshot, PointerSnapshot, PointerStatus,
+    StepPayload,
 };
 
 /// 符号表索引。
@@ -217,7 +217,9 @@ pub fn encode_payloads(payloads: &[StepPayload]) -> StepStreamBatch {
         for v in &delta.new_vars {
             current_full_ref.local_vars.push(v.clone());
         }
-        current_full_ref.local_vars.retain(|v| !delta.removed_var_name_indices.contains(&v.name_idx));
+        current_full_ref
+            .local_vars
+            .retain(|v| !delta.removed_var_name_indices.contains(&v.name_idx));
 
         prev_vars.clear();
         for v in &current_full_ref.local_vars {
@@ -313,13 +315,9 @@ fn encode_step_delta(
     sym: &mut SymbolTable,
     prev_vars: &HashMap<SymIdx, String>,
 ) -> StepPayloadDelta {
-    let curr_vars: HashMap<String, &ApiVariableSnapshot> = curr
-        .local_vars
-        .iter()
-        .map(|v| (v.name.clone(), v))
-        .collect();
-    let _prev_var_names: std::collections::HashSet<String> =
-        prev.local_vars.iter().map(|v| v.name.clone()).collect();
+    let curr_vars: HashMap<String, &ApiVariableSnapshot> =
+        curr.local_vars.iter().map(|v| (v.name.clone(), v)).collect();
+    let _prev_var_names: std::collections::HashSet<String> = prev.local_vars.iter().map(|v| v.name.clone()).collect();
 
     let mut var_deltas = Vec::new();
     let mut new_vars = Vec::new();
@@ -473,10 +471,8 @@ pub fn decode_batch(batch: &StepStreamBatch) -> Vec<StepPayload> {
         }
 
         // 按 var_order 构建 local_vars
-        let local_vars: Vec<ApiVariableSnapshot> = var_order
-            .iter()
-            .filter_map(|idx| current_vars.get(idx).cloned())
-            .collect();
+        let local_vars: Vec<ApiVariableSnapshot> =
+            var_order.iter().filter_map(|idx| current_vars.get(idx).cloned()).collect();
 
         result.push(StepPayload {
             step_index: delta.step_index,
@@ -621,7 +617,10 @@ mod tests {
             semantic_label: format!("step {}", step),
             algorithm_step: None,
             local_vars: vars,
-            call_stack: vec![ApiFrameInfo { func_name: "main".to_string(), return_line: 0 }],
+            call_stack: vec![ApiFrameInfo {
+                func_name: "main".to_string(),
+                return_line: 0,
+            }],
             vis_events: Vec::new(),
             heatmap_line: step + 1,
             heatmap_count: 1,
@@ -720,5 +719,3 @@ mod tests {
         assert_eq!(sym_set.len(), batch.symbol_table.len()); // 无重复
     }
 }
-
-

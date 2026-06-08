@@ -12,16 +12,36 @@ pub enum TypeKind {
     Struct,
     Union,
     Function,
+    // === C++ 新增 ===
+    Class,
+    Reference,
+    RValueRef,
+    Auto,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Type {
-    Void { is_const: bool },
-    Int { is_unsigned: bool, is_const: bool },
-    Char { is_unsigned: bool, is_const: bool },
-    Float { is_const: bool },
-    Double { is_const: bool },
-    LongLong { is_unsigned: bool, is_const: bool },
+    Void {
+        is_const: bool,
+    },
+    Int {
+        is_unsigned: bool,
+        is_const: bool,
+    },
+    Char {
+        is_unsigned: bool,
+        is_const: bool,
+    },
+    Float {
+        is_const: bool,
+    },
+    Double {
+        is_const: bool,
+    },
+    LongLong {
+        is_unsigned: bool,
+        is_const: bool,
+    },
     Pointer {
         pointee: Box<Type>,
         is_const: bool,
@@ -39,29 +59,86 @@ pub enum Type {
         param_types: Vec<Type>,
         is_const: bool,
     },
-    Struct { name: String, is_const: bool },
-    Union { name: String, is_const: bool },
+    Struct {
+        name: String,
+        is_const: bool,
+    },
+    Union {
+        name: String,
+        is_const: bool,
+    },
+    // === C++ 新增 ===
+    Class {
+        name: String,
+        is_const: bool,
+    },
+    Reference {
+        base: Box<Type>,
+        is_const: bool,
+    },
+    RValueRef {
+        base: Box<Type>,
+    },
+    Auto,
 }
 
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (Type::Void { is_const: a }, Type::Void { is_const: b }) => a == b,
-            (Type::Int { is_unsigned: a1, is_const: a2 }, Type::Int { is_unsigned: b1, is_const: b2 }) => a1 == b1 && a2 == b2,
-            (Type::Char { is_unsigned: a1, is_const: a2 }, Type::Char { is_unsigned: b1, is_const: b2 }) => a1 == b1 && a2 == b2,
+            (Type::Int { is_unsigned: a1, is_const: a2 }, Type::Int { is_unsigned: b1, is_const: b2 }) => {
+                a1 == b1 && a2 == b2
+            }
+            (Type::Char { is_unsigned: a1, is_const: a2 }, Type::Char { is_unsigned: b1, is_const: b2 }) => {
+                a1 == b1 && a2 == b2
+            }
             (Type::Float { is_const: a }, Type::Float { is_const: b }) => a == b,
             (Type::Double { is_const: a }, Type::Double { is_const: b }) => a == b,
-            (Type::LongLong { is_unsigned: a1, is_const: a2 }, Type::LongLong { is_unsigned: b1, is_const: b2 }) => a1 == b1 && a2 == b2,
-            (Type::Pointer { pointee: a, is_const: a2 }, Type::Pointer { pointee: b, is_const: b2 }) => a == b && a2 == b2,
-            (
-                Type::Array { element: a, array_size: a2, dims: a3, is_const: a4, is_vla: a5, .. },
-                Type::Array { element: b, array_size: b2, dims: b3, is_const: b4, is_vla: b5, .. },
-            ) => a == b && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5,
-            (Type::Function { return_type: a, param_types: a2, is_const: a3 }, Type::Function { return_type: b, param_types: b2, is_const: b3 }) => {
-                a == b && a2 == b2 && a3 == b3
+            (Type::LongLong { is_unsigned: a1, is_const: a2 }, Type::LongLong { is_unsigned: b1, is_const: b2 }) => {
+                a1 == b1 && a2 == b2
             }
+            (Type::Pointer { pointee: a, is_const: a2 }, Type::Pointer { pointee: b, is_const: b2 }) => {
+                a == b && a2 == b2
+            }
+            (
+                Type::Array {
+                    element: a,
+                    array_size: a2,
+                    dims: a3,
+                    is_const: a4,
+                    is_vla: a5,
+                    ..
+                },
+                Type::Array {
+                    element: b,
+                    array_size: b2,
+                    dims: b3,
+                    is_const: b4,
+                    is_vla: b5,
+                    ..
+                },
+            ) => a == b && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5,
+            (
+                Type::Function {
+                    return_type: a,
+                    param_types: a2,
+                    is_const: a3,
+                },
+                Type::Function {
+                    return_type: b,
+                    param_types: b2,
+                    is_const: b3,
+                },
+            ) => a == b && a2 == b2 && a3 == b3,
             (Type::Struct { name: a, is_const: a2 }, Type::Struct { name: b, is_const: b2 }) => a == b && a2 == b2,
             (Type::Union { name: a, is_const: a2 }, Type::Union { name: b, is_const: b2 }) => a == b && a2 == b2,
+            // === C++ 新增 ===
+            (Type::Class { name: a, is_const: a2 }, Type::Class { name: b, is_const: b2 }) => a == b && a2 == b2,
+            (Type::Reference { base: a, is_const: a2 }, Type::Reference { base: b, is_const: b2 }) => {
+                a == b && a2 == b2
+            }
+            (Type::RValueRef { base: a }, Type::RValueRef { base: b }) => a == b,
+            (Type::Auto, Type::Auto) => true,
             _ => false,
         }
     }
@@ -77,13 +154,22 @@ impl Default for Type {
 
 impl Type {
     pub fn int() -> Self {
-        Type::Int { is_unsigned: false, is_const: false }
+        Type::Int {
+            is_unsigned: false,
+            is_const: false,
+        }
     }
     pub fn unsigned_int() -> Self {
-        Type::Int { is_unsigned: true, is_const: false }
+        Type::Int {
+            is_unsigned: true,
+            is_const: false,
+        }
     }
     pub fn char() -> Self {
-        Type::Char { is_unsigned: false, is_const: false }
+        Type::Char {
+            is_unsigned: false,
+            is_const: false,
+        }
     }
     pub fn float() -> Self {
         Type::Float { is_const: false }
@@ -92,29 +178,63 @@ impl Type {
         Type::Double { is_const: false }
     }
     pub fn long_long() -> Self {
-        Type::LongLong { is_unsigned: false, is_const: false }
+        Type::LongLong {
+            is_unsigned: false,
+            is_const: false,
+        }
     }
     pub fn void() -> Self {
         Type::Void { is_const: false }
     }
     pub fn pointer_to(pointee: Type) -> Self {
-        Type::Pointer { pointee: Box::new(pointee), is_const: false }
+        Type::Pointer {
+            pointee: Box::new(pointee),
+            is_const: false,
+        }
     }
     pub fn array_of(element: Type, dims: Vec<i32>) -> Self {
-        let array_size = if dims.is_empty() { 0 } else { dims.iter().map(|&d| if d > 0 { d } else { 1 }).product() };
-        Type::Array { element: Box::new(element), array_size, dims, is_const: false, is_vla: false, vla_dims: vec![] }
+        let array_size = if dims.is_empty() {
+            0
+        } else {
+            dims.iter().map(|&d| if d > 0 { d } else { 1 }).product()
+        };
+        Type::Array {
+            element: Box::new(element),
+            array_size,
+            dims,
+            is_const: false,
+            is_vla: false,
+            vla_dims: vec![],
+        }
     }
     pub fn struct_type(name: impl Into<String>) -> Self {
-        Type::Struct { name: name.into(), is_const: false }
+        Type::Struct {
+            name: name.into(),
+            is_const: false,
+        }
     }
     pub fn union_type(name: impl Into<String>) -> Self {
-        Type::Union { name: name.into(), is_const: false }
+        Type::Union {
+            name: name.into(),
+            is_const: false,
+        }
     }
     pub fn function(return_type: Type, param_types: Vec<Type>) -> Self {
-        Type::Function { return_type: Box::new(return_type), param_types, is_const: false }
+        Type::Function {
+            return_type: Box::new(return_type),
+            param_types,
+            is_const: false,
+        }
     }
     pub fn function_pointer(return_type: Type, param_types: Vec<Type>) -> Self {
-        Type::Pointer { pointee: Box::new(Type::Function { return_type: Box::new(return_type), param_types, is_const: false }), is_const: false }
+        Type::Pointer {
+            pointee: Box::new(Type::Function {
+                return_type: Box::new(return_type),
+                param_types,
+                is_const: false,
+            }),
+            is_const: false,
+        }
     }
 
     // 兼容访问器
@@ -131,6 +251,11 @@ impl Type {
             Type::Function { .. } => TypeKind::Function,
             Type::Struct { .. } => TypeKind::Struct,
             Type::Union { .. } => TypeKind::Union,
+            // === C++ 新增 ===
+            Type::Class { .. } => TypeKind::Class,
+            Type::Reference { .. } => TypeKind::Reference,
+            Type::RValueRef { .. } => TypeKind::RValueRef,
+            Type::Auto => TypeKind::Auto,
         }
     }
 
@@ -148,24 +273,40 @@ impl Type {
             Type::Double { .. } => "double",
             Type::LongLong { .. } => "long long",
             Type::Function { .. } => "fn",
+            // === C++ 新增 ===
+            Type::Class { name, .. } => name.as_str(),
+            Type::Reference { base, .. } => base.name(),
+            Type::RValueRef { base, .. } => base.name(),
+            Type::Auto => "auto",
         }
     }
 
     pub fn array_size(&self) -> i32 {
-        match self { Type::Array { array_size, .. } => *array_size, _ => 0 }
+        match self {
+            Type::Array { array_size, .. } => *array_size,
+            _ => 0,
+        }
     }
 
     pub fn dims(&self) -> &[i32] {
-        match self { Type::Array { dims, .. } => dims.as_slice(), _ => &[] }
+        match self {
+            Type::Array { dims, .. } => dims.as_slice(),
+            _ => &[],
+        }
     }
 
     pub fn is_vla(&self) -> bool {
-        match self { Type::Array { is_vla, .. } => *is_vla, _ => false }
+        match self {
+            Type::Array { is_vla, .. } => *is_vla,
+            _ => false,
+        }
     }
 
     pub fn is_unsigned(&self) -> bool {
         match self {
-            Type::Int { is_unsigned, .. } | Type::Char { is_unsigned, .. } | Type::LongLong { is_unsigned, .. } => *is_unsigned,
+            Type::Int { is_unsigned, .. } | Type::Char { is_unsigned, .. } | Type::LongLong { is_unsigned, .. } => {
+                *is_unsigned
+            }
             _ => false,
         }
     }
@@ -183,6 +324,11 @@ impl Type {
             Type::Function { is_const, .. } => *is_const,
             Type::Struct { is_const, .. } => *is_const,
             Type::Union { is_const, .. } => *is_const,
+            // === C++ 新增 ===
+            Type::Class { is_const, .. } => *is_const,
+            Type::Reference { is_const, .. } => *is_const,
+            Type::RValueRef { .. } => false,
+            Type::Auto => false,
         }
     }
 
@@ -199,11 +345,18 @@ impl Type {
             Type::Function { is_const, .. } => *is_const = value,
             Type::Struct { is_const, .. } => *is_const = value,
             Type::Union { is_const, .. } => *is_const = value,
+            // === C++ 新增 ===
+            Type::Class { is_const, .. } => *is_const = value,
+            Type::Reference { is_const, .. } => *is_const = value,
+            _ => {}
         }
     }
 
     pub fn is_scalar(&self) -> bool {
-        matches!(self.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong)
+        matches!(
+            self.kind(),
+            TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+        )
     }
     pub fn is_pointer(&self) -> bool {
         matches!(self.kind(), TypeKind::Pointer)
@@ -220,8 +373,14 @@ impl Type {
     pub fn is_union(&self) -> bool {
         matches!(self.kind(), TypeKind::Union)
     }
+    pub fn is_class(&self) -> bool {
+        matches!(self.kind(), TypeKind::Class)
+    }
     pub fn is_void(&self) -> bool {
         matches!(self.kind(), TypeKind::Void)
+    }
+    pub fn is_auto(&self) -> bool {
+        matches!(self, Type::Auto)
     }
 
     /// 递归获取数组的最内层元素类型。对非数组类型返回自身克隆。
@@ -233,7 +392,9 @@ impl Type {
     }
 
     pub fn total_elements(&self) -> i32 {
-        if !self.is_array() { return 1; }
+        if !self.is_array() {
+            return 1;
+        }
         let dims = self.dims();
         if !dims.is_empty() {
             let has_negative = dims.iter().any(|&d| d < 0);
@@ -249,9 +410,18 @@ impl Type {
     }
 
     pub fn subscript_type(&self) -> Self {
-        if !self.is_array() { return self.clone(); }
+        if !self.is_array() {
+            return self.clone();
+        }
         match self {
-            Type::Array { element, dims, is_const, is_vla, vla_dims, .. } => {
+            Type::Array {
+                element,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+                ..
+            } => {
                 if dims.len() <= 1 {
                     *element.clone()
                 } else {
@@ -259,8 +429,17 @@ impl Type {
                     new_dims.remove(0);
                     let new_array_size = new_dims.iter().map(|&d| if d > 0 { d } else { 1 }).product();
                     let mut new_vla_dims = vla_dims.clone();
-                    if !new_vla_dims.is_empty() { new_vla_dims.remove(0); }
-                    Type::Array { element: element.clone(), array_size: new_array_size, dims: new_dims, is_const: *is_const, is_vla: *is_vla, vla_dims: new_vla_dims }
+                    if !new_vla_dims.is_empty() {
+                        new_vla_dims.remove(0);
+                    }
+                    Type::Array {
+                        element: element.clone(),
+                        array_size: new_array_size,
+                        dims: new_dims,
+                        is_const: *is_const,
+                        is_vla: *is_vla,
+                        vla_dims: new_vla_dims,
+                    }
                 }
             }
             _ => self.clone(),
@@ -271,24 +450,60 @@ impl Type {
     pub fn from_base_kind(base_kind: TypeKind, name: String) -> Self {
         match base_kind {
             TypeKind::Void => Type::Void { is_const: false },
-            TypeKind::Int => Type::Int { is_unsigned: false, is_const: false },
-            TypeKind::Char => Type::Char { is_unsigned: false, is_const: false },
+            TypeKind::Int => Type::Int {
+                is_unsigned: false,
+                is_const: false,
+            },
+            TypeKind::Char => Type::Char {
+                is_unsigned: false,
+                is_const: false,
+            },
             TypeKind::Float => Type::Float { is_const: false },
             TypeKind::Double => Type::Double { is_const: false },
-            TypeKind::LongLong => Type::LongLong { is_unsigned: false, is_const: false },
+            TypeKind::LongLong => Type::LongLong {
+                is_unsigned: false,
+                is_const: false,
+            },
             TypeKind::Struct => Type::Struct { name, is_const: false },
             TypeKind::Union => Type::Union { name, is_const: false },
+            TypeKind::Class => Type::Class { name, is_const: false },
             TypeKind::Pointer => {
                 let inferred_base = match name.as_str() {
-                    "char" => Type::Char { is_unsigned: false, is_const: false },
+                    "char" => Type::Char {
+                        is_unsigned: false,
+                        is_const: false,
+                    },
                     "float" => Type::Float { is_const: false },
                     "void" => Type::Void { is_const: false },
-                    _ => Type::Int { is_unsigned: false, is_const: false },
+                    _ => Type::Int {
+                        is_unsigned: false,
+                        is_const: false,
+                    },
                 };
-                Type::Pointer { pointee: Box::new(inferred_base), is_const: false }
+                Type::Pointer {
+                    pointee: Box::new(inferred_base),
+                    is_const: false,
+                }
             }
-            TypeKind::Array => Type::Array { element: Box::new(Type::Void { is_const: false }), array_size: 0, dims: vec![], is_const: false, is_vla: false, vla_dims: vec![] },
-            TypeKind::Function => Type::Function { return_type: Box::new(Type::int()), param_types: vec![], is_const: false },
+            TypeKind::Array => Type::Array {
+                element: Box::new(Type::Void { is_const: false }),
+                array_size: 0,
+                dims: vec![],
+                is_const: false,
+                is_vla: false,
+                vla_dims: vec![],
+            },
+            TypeKind::Function => Type::Function {
+                return_type: Box::new(Type::int()),
+                param_types: vec![],
+                is_const: false,
+            },
+            TypeKind::Reference => Type::Reference {
+                base: Box::new(Type::int()),
+                is_const: false,
+            },
+            TypeKind::RValueRef => Type::RValueRef { base: Box::new(Type::int()) },
+            TypeKind::Auto => Type::Auto,
         }
     }
 }
@@ -305,7 +520,13 @@ impl std::fmt::Display for Type {
             Type::Struct { name, .. } => write!(f, "struct {}", name),
             Type::Union { name, .. } => write!(f, "union {}", name),
             Type::Pointer { pointee, .. } => write!(f, "{}*", pointee),
-            Type::Array { element, dims, array_size, is_vla, .. } => {
+            Type::Array {
+                element,
+                dims,
+                array_size,
+                is_vla,
+                ..
+            } => {
                 write!(f, "{}", element)?;
                 if *is_vla {
                     for _ in dims {
@@ -326,11 +547,23 @@ impl std::fmt::Display for Type {
             Type::Function { return_type, param_types, .. } => {
                 write!(f, "{} (*)(", return_type)?;
                 for (i, p) in param_types.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", p)?;
                 }
                 write!(f, ")")
             }
+            // === C++ 新增 ===
+            Type::Class { name, .. } => write!(f, "class {}", name),
+            Type::Reference { base, is_const } => {
+                if *is_const {
+                    write!(f, "const ")?;
+                }
+                write!(f, "{}&", base)
+            }
+            Type::RValueRef { base } => write!(f, "{}&&", base),
+            Type::Auto => write!(f, "auto"),
         }
     }
 }
@@ -350,22 +583,53 @@ pub struct SourceLoc {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum BinaryOp {
-    Add, Sub, Mul, Div, Mod,
-    Eq, Ne, Lt, Le, Gt, Ge,
-    And, Or,
-    BitAnd, BitOr, BitXor, Shl, Shr,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Mod,
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    And,
+    Or,
+    BitAnd,
+    BitOr,
+    BitXor,
+    Shl,
+    Shr,
     Comma,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum UnaryOp {
-    Neg, Not, BitNot, Addr, Deref, PreInc, PreDec, PostInc, PostDec,
+    Neg,
+    Not,
+    BitNot,
+    Addr,
+    Deref,
+    PreInc,
+    PreDec,
+    PostInc,
+    PostDec,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AssignOp {
-    Assign, AddAssign, SubAssign, MulAssign, DivAssign, ModAssign,
-    AndAssign, OrAssign, XorAssign, ShlAssign, ShrAssign,
+    Assign,
+    AddAssign,
+    SubAssign,
+    MulAssign,
+    DivAssign,
+    ModAssign,
+    AndAssign,
+    OrAssign,
+    XorAssign,
+    ShlAssign,
+    ShrAssign,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -382,37 +646,166 @@ pub struct InitElement {
 
 impl std::ops::Deref for InitElement {
     type Target = Expr;
-    fn deref(&self) -> &Expr { &self.value }
+    fn deref(&self) -> &Expr {
+        &self.value
+    }
 }
 
 impl std::ops::DerefMut for InitElement {
-    fn deref_mut(&mut self) -> &mut Expr { &mut self.value }
+    fn deref_mut(&mut self) -> &mut Expr {
+        &mut self.value
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Expr {
-    Binary { op: BinaryOp, left: Box<Expr>, right: Box<Expr>, loc: SourceLoc, ty: Type },
-    Unary { op: UnaryOp, operand: Box<Expr>, loc: SourceLoc, ty: Type },
-    Literal { value: i32, loc: SourceLoc, ty: Type },
-    FloatLiteral { value: f64, loc: SourceLoc, ty: Type },
-    LongLiteral { value: i64, loc: SourceLoc, ty: Type },
-    StringLiteral { value: String, loc: SourceLoc, ty: Type },
-    Identifier { name: String, loc: SourceLoc, ty: Type },
-    Call { name: String, args: Vec<Expr>, loc: SourceLoc, ty: Type },
-    CallPtr { callee: Box<Expr>, args: Vec<Expr>, loc: SourceLoc, ty: Type },
-    Index { array: Box<Expr>, index: Box<Expr>, loc: SourceLoc, ty: Type },
-    Member { object: Box<Expr>, member: String, loc: SourceLoc, ty: Type },
-    Assign { op: AssignOp, left: Box<Expr>, right: Box<Expr>, loc: SourceLoc, ty: Type },
-    Ternary { cond: Box<Expr>, then_branch: Box<Expr>, else_branch: Box<Expr>, loc: SourceLoc, ty: Type },
-    Sizeof { target_type: Option<Type>, operand: Option<Box<Expr>>, loc: SourceLoc, ty: Type },
-    Cast { expr: Box<Expr>, target_type: Type, loc: SourceLoc, ty: Type },
-    InitList { elements: Vec<InitElement>, loc: SourceLoc, ty: Type },
-    Offsetof { target_type: Type, field: String, loc: SourceLoc, ty: Type },
+    Binary {
+        op: BinaryOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Unary {
+        op: UnaryOp,
+        operand: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Literal {
+        value: i32,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    FloatLiteral {
+        value: f64,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    LongLiteral {
+        value: i64,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    StringLiteral {
+        value: String,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Identifier {
+        name: String,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Call {
+        name: String,
+        args: Vec<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    CallPtr {
+        callee: Box<Expr>,
+        args: Vec<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Index {
+        array: Box<Expr>,
+        index: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Member {
+        object: Box<Expr>,
+        member: String,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Assign {
+        op: AssignOp,
+        left: Box<Expr>,
+        right: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Ternary {
+        cond: Box<Expr>,
+        then_branch: Box<Expr>,
+        else_branch: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Sizeof {
+        target_type: Option<Type>,
+        operand: Option<Box<Expr>>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Cast {
+        expr: Box<Expr>,
+        target_type: Type,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    InitList {
+        elements: Vec<InitElement>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Offsetof {
+        target_type: Type,
+        field: String,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    // === C++ 新增 ===
+    This {
+        loc: SourceLoc,
+        ty: Type,
+    },
+    MemberCall {
+        object: Box<Expr>,
+        method: String,
+        args: Vec<Expr>,
+        is_virtual: bool,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    New {
+        elem_type: Type,
+        size_expr: Option<Box<Expr>>,
+        init: Option<Box<Expr>>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Delete {
+        expr: Box<Expr>,
+        is_array: bool,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Lambda {
+        capture: Vec<CaptureMode>,
+        params: Vec<Param>,
+        body: Box<Stmt>,
+        unique_id: u64,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    Move {
+        expr: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
 }
 
 impl Default for Expr {
     fn default() -> Self {
-        Expr::Literal { value: 0, loc: SourceLoc::default(), ty: Type::default() }
+        Expr::Literal {
+            value: 0,
+            loc: SourceLoc::default(),
+            ty: Type::default(),
+        }
     }
 }
 
@@ -436,6 +829,13 @@ macro_rules! expr_field {
             Expr::Cast { $field, .. } => $field,
             Expr::InitList { $field, .. } => $field,
             Expr::Offsetof { $field, .. } => $field,
+            // === C++ 新增 ===
+            Expr::This { $field, .. } => $field,
+            Expr::MemberCall { $field, .. } => $field,
+            Expr::New { $field, .. } => $field,
+            Expr::Delete { $field, .. } => $field,
+            Expr::Lambda { $field, .. } => $field,
+            Expr::Move { $field, .. } => $field,
         }
     };
 }
@@ -458,20 +858,87 @@ impl Expr {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Stmt {
-    Block { stmts: Vec<Stmt>, loc: SourceLoc },
-    VarDecl { var_type: Type, name: String, init: Option<Expr>, extra_vars: Vec<(Type, String, Option<Expr>)>, is_static: bool, loc: SourceLoc },
-    Expr { expr: Expr, loc: SourceLoc },
-    If { cond: Expr, then_stmt: Box<Stmt>, else_stmt: Option<Box<Stmt>>, loc: SourceLoc },
-    While { cond: Expr, body: Box<Stmt>, loc: SourceLoc },
-    DoWhile { body: Box<Stmt>, cond: Expr, loc: SourceLoc },
-    For { init: Option<Box<Stmt>>, cond: Option<Expr>, step: Vec<Expr>, body: Box<Stmt>, loc: SourceLoc },
-    Return { value: Option<Expr>, loc: SourceLoc },
-    Break { loc: SourceLoc },
-    Continue { loc: SourceLoc },
-    Switch { cond: Expr, body: Box<Stmt>, loc: SourceLoc },
-    Case { label: Option<Expr>, stmt: Box<Stmt>, loc: SourceLoc },
-    Goto { label: String, loc: SourceLoc },
-    Label { label: String, stmt: Box<Stmt>, loc: SourceLoc },
+    Block {
+        stmts: Vec<Stmt>,
+        loc: SourceLoc,
+    },
+    VarDecl {
+        var_type: Type,
+        name: String,
+        init: Option<Expr>,
+        extra_vars: Vec<(Type, String, Option<Expr>)>,
+        is_static: bool,
+        loc: SourceLoc,
+    },
+    Expr {
+        expr: Expr,
+        loc: SourceLoc,
+    },
+    If {
+        cond: Expr,
+        then_stmt: Box<Stmt>,
+        else_stmt: Option<Box<Stmt>>,
+        loc: SourceLoc,
+    },
+    While {
+        cond: Expr,
+        body: Box<Stmt>,
+        loc: SourceLoc,
+    },
+    DoWhile {
+        body: Box<Stmt>,
+        cond: Expr,
+        loc: SourceLoc,
+    },
+    For {
+        init: Option<Box<Stmt>>,
+        cond: Option<Expr>,
+        step: Vec<Expr>,
+        body: Box<Stmt>,
+        loc: SourceLoc,
+    },
+    Return {
+        value: Option<Expr>,
+        loc: SourceLoc,
+    },
+    Break {
+        loc: SourceLoc,
+    },
+    Continue {
+        loc: SourceLoc,
+    },
+    Switch {
+        cond: Expr,
+        body: Box<Stmt>,
+        loc: SourceLoc,
+    },
+    Case {
+        label: Option<Expr>,
+        stmt: Box<Stmt>,
+        loc: SourceLoc,
+    },
+    Goto {
+        label: String,
+        loc: SourceLoc,
+    },
+    Label {
+        label: String,
+        stmt: Box<Stmt>,
+        loc: SourceLoc,
+    },
+    // === C++ 新增 ===
+    RangeFor {
+        var: String,
+        var_type: Type,
+        iter: Box<Expr>,
+        body: Box<Stmt>,
+        loc: SourceLoc,
+    },
+    Try {
+        body: Box<Stmt>,
+        catches: Vec<CatchClause>,
+        loc: SourceLoc,
+    },
 }
 
 // ============================================================================
@@ -522,6 +989,94 @@ pub struct GlobalDecl {
 }
 
 // ============================================================================
+// C++ Declaration Nodes
+// ============================================================================
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum AccessSpec {
+    Public,
+    Private,
+    Protected,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum ClassMember {
+    Field {
+        name: String,
+        ty: Type,
+        access: AccessSpec,
+    },
+    Method {
+        name: String,
+        ret: Type,
+        params: Vec<Param>,
+        body: Option<Stmt>,
+        is_virtual: bool,
+        access: AccessSpec,
+        is_static: bool,
+    },
+    Constructor {
+        params: Vec<Param>,
+        body: Option<Stmt>,
+        is_default: bool,
+        access: AccessSpec,
+    },
+    Destructor {
+        body: Option<Stmt>,
+        access: AccessSpec,
+        is_virtual: bool,
+    },
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct VTable {
+    pub entries: Vec<(String, Type)>, // (method_name, function_type)
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClassDecl {
+    pub loc: SourceLoc,
+    pub name: String,
+    pub base: Option<String>,
+    pub members: Vec<ClassMember>,
+    pub vtable: Option<VTable>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TemplateParam {
+    pub name: String,
+    pub loc: SourceLoc,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum Templateable {
+    Func(Box<FuncDecl>),
+    Class(Box<ClassDecl>),
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TemplateDecl {
+    pub loc: SourceLoc,
+    pub params: Vec<TemplateParam>,
+    pub decl: Templateable,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum CaptureMode {
+    ByValue,
+    ByReference,
+    Implicit,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CatchClause {
+    pub param_type: Type,
+    pub param_name: Option<String>,
+    pub body: Stmt,
+    pub loc: SourceLoc,
+}
+
+// ============================================================================
 // Program Root
 // ============================================================================
 
@@ -531,6 +1086,9 @@ pub struct ProgramNode {
     pub unions: Vec<StructDecl>,
     pub globals: Vec<GlobalDecl>,
     pub funcs: Vec<FuncDecl>,
+    // === C++ 新增 ===
+    pub classes: Vec<ClassDecl>,
+    pub templates: Vec<TemplateDecl>,
 }
 
 use std::collections::HashMap;
@@ -567,15 +1125,35 @@ pub fn compute_type_size(
             let elem_size = compute_type_size(base_elem, struct_defs, union_defs);
             elem_count * elem_size
         }
-        TypeKind::Struct => {
-            struct_defs.get(ty.name()).map(|f| {
-                f.iter().map(|field| compute_type_size(&field.ty, struct_defs, union_defs)).sum()
-            }).unwrap_or(0)
+        TypeKind::Struct => struct_defs
+            .get(ty.name())
+            .map(|f| {
+                f.iter()
+                    .map(|field| compute_type_size(&field.ty, struct_defs, union_defs))
+                    .sum()
+            })
+            .unwrap_or(0),
+        TypeKind::Union => union_defs
+            .get(ty.name())
+            .map(|f| {
+                f.iter()
+                    .map(|field| compute_type_size(&field.ty, struct_defs, union_defs))
+                    .max()
+                    .unwrap_or(0)
+            })
+            .unwrap_or(0),
+        TypeKind::Class => {
+            // C++ class layout: same as struct for Phase 31 (no vptr in size yet)
+            struct_defs
+                .get(ty.name())
+                .map(|f| {
+                    f.iter()
+                        .map(|field| compute_type_size(&field.ty, struct_defs, union_defs))
+                        .sum()
+                })
+                .unwrap_or(0)
         }
-        TypeKind::Union => {
-            union_defs.get(ty.name()).map(|f| {
-                f.iter().map(|field| compute_type_size(&field.ty, struct_defs, union_defs)).max().unwrap_or(0)
-            }).unwrap_or(0)
-        }
+        TypeKind::Reference | TypeKind::RValueRef => 4, // reference is a pointer under the hood
+        TypeKind::Auto => 0,                            // should not appear in codegen before TypeChecker replaces it
     }
 }

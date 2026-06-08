@@ -280,7 +280,6 @@ int main() {
     assert!(outputs.iter().any(|l| l.contains("100")), "Outputs: {:?}", outputs);
 }
 
-
 #[test]
 fn test_e2e_pointer_deref() {
     let src = r#"
@@ -405,7 +404,8 @@ fn test_e2e_interactive_scanf() {
         let session = cide_native::capi::cide_session_create();
         assert!(!session.is_null());
 
-        let src = CString::new(r#"
+        let src = CString::new(
+            r#"
 #include <stdio.h>
 int main() {
     int a, b;
@@ -413,7 +413,9 @@ int main() {
     printf("sum = %d", a + b);
     return 0;
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
         assert_eq!(compile_ret, 0);
@@ -451,14 +453,17 @@ fn test_e2e_interactive_getchar() {
         let session = cide_native::capi::cide_session_create();
         assert!(!session.is_null());
 
-        let src = CString::new(r#"
+        let src = CString::new(
+            r#"
 #include <stdio.h>
 int main() {
     char c = getchar();
     printf("char = %c", c);
     return 0;
 }
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
         assert_eq!(compile_ret, 0);
@@ -484,7 +489,6 @@ int main() {
         cide_native::capi::cide_session_destroy(session);
     }
 }
-
 
 // ========== VFS File I/O Tests ==========
 
@@ -877,7 +881,6 @@ int main() {
     assert_eq!(ret, 0);
     assert!(outputs.iter().any(|l| l.contains("42")), "Outputs: {:?}", outputs);
 }
-
 
 // P0: comma operator
 #[test]

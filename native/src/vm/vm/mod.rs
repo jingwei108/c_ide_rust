@@ -1,12 +1,12 @@
 use super::host_funcs::execute_host_func;
 use super::instruction::{Instruction, SourceLoc};
-use super::jit_templates::{CompiledTrace, execute_trace_bulk};
-use std::sync::Arc;
-use super::jit_trace::{JIT_THRESHOLD, JitStats, TraceRecorder};
+use super::jit_templates::{execute_trace_bulk, CompiledTrace};
+use super::jit_trace::{JitStats, TraceRecorder, JIT_THRESHOLD};
 use super::opcode::OpCode;
 use crate::compiler::ast::Type;
 use crate::session::{Session, VisEvent};
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 pub const MEM_SIZE: u32 = 1024 * 1024;
 pub const NULL_TRAP_SIZE: u32 = 0x1000;
@@ -359,11 +359,7 @@ impl CideVM {
     }
 
     /// 基于脏页生成增量快照。
-    pub fn snapshot_incremental(
-        &self,
-        session: &Session,
-        base_step: i32,
-    ) -> super::snapshot::VMSnapshot {
+    pub fn snapshot_incremental(&self, session: &Session, base_step: i32) -> super::snapshot::VMSnapshot {
         let mut pages = Vec::new();
         for word in 0..4 {
             let mut bitmap = self.dirty_pages[word];
@@ -462,7 +458,13 @@ impl CideVM {
     /// Call a user-defined function from a host function context.
     /// Used by host_qsort to invoke the user-supplied comparison function.
     /// Returns the return value on success, or None if the function trapped.
-    pub fn call_user_function(&mut self, session: &mut Session, func_idx: u32, args: &[i32], max_steps: i32) -> Option<i32> {
+    pub fn call_user_function(
+        &mut self,
+        session: &mut Session,
+        func_idx: u32,
+        args: &[i32],
+        max_steps: i32,
+    ) -> Option<i32> {
         let idx = func_idx as usize;
         if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
             return None;
@@ -614,7 +616,9 @@ impl CideVM {
         &self.jit_stats
     }
 
-    pub fn jit_traces_mut(&mut self) -> &mut std::collections::HashMap<usize, std::sync::Arc<crate::vm::jit_templates::CompiledTrace>> {
+    pub fn jit_traces_mut(
+        &mut self,
+    ) -> &mut std::collections::HashMap<usize, std::sync::Arc<crate::vm::jit_templates::CompiledTrace>> {
         &mut self.jit_traces
     }
 
@@ -649,7 +653,7 @@ impl CideVM {
 
     /// 将 C 风格字符串安全写入 VM 内存的指定地址（含 null 终止符）。
     /// 若目标地址超出边界则静默跳过。
-    /// 
+    ///
     /// 注意：边界检查 `a + bytes.len() < len` 已隐含为末尾的 null 终止符预留了 1 字节空间，
     /// 因此当 `addr + bytes.len() == MEM_SIZE` 时会正确拒绝写入，避免越界。
     pub fn write_cstring(&mut self, addr: u32, s: &str) {
@@ -729,11 +733,7 @@ impl CideVM {
     pub fn copy_memory(&mut self, dst: u32, src: u32, len: usize) -> bool {
         let dst_end = dst as usize + len;
         let src_end = src as usize + len;
-        if dst < NULL_TRAP_SIZE
-            || src < NULL_TRAP_SIZE
-            || dst_end > self.memory.len()
-            || src_end > self.memory.len()
-        {
+        if dst < NULL_TRAP_SIZE || src < NULL_TRAP_SIZE || dst_end > self.memory.len() || src_end > self.memory.len() {
             return false;
         }
         let len_u32 = len as u32;
@@ -799,7 +799,10 @@ impl CideVM {
 
     pub fn push(&mut self, val: u64) {
         if self.stack.len() >= MAX_STACK_DEPTH {
-            self.trap("值栈溢出：栈深度超过限制。请检查是否有无限递归或过多嵌套表达式。", &SourceLoc::default());
+            self.trap(
+                "值栈溢出：栈深度超过限制。请检查是否有无限递归或过多嵌套表达式。",
+                &SourceLoc::default(),
+            );
             return;
         }
         self.stack.push(val);
@@ -826,7 +829,10 @@ impl CideVM {
             let msg = if is_write {
                 format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", addr)
             } else {
-                format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr)
+                format!(
+                    "访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。",
+                    addr
+                )
             };
             self.trap(&msg, loc);
             return false;
@@ -924,7 +930,6 @@ impl CideVM {
 
     // --- Error formatting ---
 
-
     fn read_variable(&self, sym: &VMSymbol) -> i64 {
         let vaddr = if sym.is_local {
             if let Some(frame) = self.call_stack.last() {
@@ -938,7 +943,10 @@ impl CideVM {
         if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
             return 0;
         }
-        if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Double | crate::compiler::ast::TypeKind::LongLong) {
+        if matches!(
+            sym.ty.kind(),
+            crate::compiler::ast::TypeKind::Double | crate::compiler::ast::TypeKind::LongLong
+        ) {
             if vaddr + 8 > MEM_SIZE {
                 return 0;
             }
@@ -956,42 +964,45 @@ impl CideVM {
     }
 
     pub fn get_variable_snapshot(&self) -> Vec<crate::session::VariableSnapshot> {
-        self.symbols.iter().filter_map(|sym| {
-            let vaddr = if sym.is_local {
-                if let Some(frame) = self.call_stack.last() {
-                    frame.locals_base + sym.addr
+        self.symbols
+            .iter()
+            .filter_map(|sym| {
+                let vaddr = if sym.is_local {
+                    if let Some(frame) = self.call_stack.last() {
+                        frame.locals_base + sym.addr
+                    } else {
+                        return None;
+                    }
                 } else {
+                    GLOBAL_START + sym.addr
+                };
+                if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
                     return None;
                 }
-            } else {
-                GLOBAL_START + sym.addr
-            };
-            if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
-                return None;
-            }
-            let val = if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Double) {
-                if vaddr + 8 > MEM_SIZE {
-                    return None;
-                }
-                let mut bytes = [0u8; 8];
-                bytes.copy_from_slice(&self.memory[vaddr as usize..vaddr as usize + 8]);
-                u64::from_le_bytes(bytes) as i64
-            } else {
-                i32::from_le_bytes([
-                    self.memory[vaddr as usize],
-                    self.memory[vaddr as usize + 1],
-                    self.memory[vaddr as usize + 2],
-                    self.memory[vaddr as usize + 3],
-                ]) as i64
-            };
-            Some(crate::session::VariableSnapshot {
-                name: sym.name.clone(),
-                addr: vaddr,
-                is_local: sym.is_local,
-                ty: sym.ty.clone(),
-                value: val,
+                let val = if matches!(sym.ty.kind(), crate::compiler::ast::TypeKind::Double) {
+                    if vaddr + 8 > MEM_SIZE {
+                        return None;
+                    }
+                    let mut bytes = [0u8; 8];
+                    bytes.copy_from_slice(&self.memory[vaddr as usize..vaddr as usize + 8]);
+                    u64::from_le_bytes(bytes) as i64
+                } else {
+                    i32::from_le_bytes([
+                        self.memory[vaddr as usize],
+                        self.memory[vaddr as usize + 1],
+                        self.memory[vaddr as usize + 2],
+                        self.memory[vaddr as usize + 3],
+                    ]) as i64
+                };
+                Some(crate::session::VariableSnapshot {
+                    name: sym.name.clone(),
+                    addr: vaddr,
+                    is_local: sym.is_local,
+                    ty: sym.ty.clone(),
+                    value: val,
+                })
             })
-        }).collect()
+            .collect()
     }
 
     /// 获取所有数组变量的元素快照（用于算法可视化条形图）。
@@ -1096,5 +1107,5 @@ impl CideVM {
     }
 }
 
-mod trap;
 mod executor;
+mod trap;

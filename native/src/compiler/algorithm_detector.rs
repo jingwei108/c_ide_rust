@@ -33,7 +33,12 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
         features.cfg_has_back_edge = cfg.edges.iter().any(|(a, b)| *a >= *b);
         features.cfg_num_blocks = cfg.blocks.len();
         features.cfg_has_unreachable = !cfg.find_unreachable_blocks().is_empty();
-        features.cfg_has_early_return = cfg.blocks.iter().filter(|b| matches!(b.terminator, crate::compiler::cfg::Terminator::Return)).count() > 1;
+        features.cfg_has_early_return = cfg
+            .blocks
+            .iter()
+            .filter(|b| matches!(b.terminator, crate::compiler::cfg::Terminator::Return))
+            .count()
+            > 1;
     }
 
     // 基于函数名和结构特征进行匹配（收集所有匹配）
@@ -76,10 +81,7 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
 
     // 插入排序
     if name_lower.contains("insert")
-        || (features.has_nested_loops
-            && features.has_shift_pattern
-            && features.loop_depth >= 2
-            && !features.has_swap)
+        || (features.has_nested_loops && features.has_shift_pattern && features.loop_depth >= 2 && !features.has_swap)
     {
         matches.push(build_match(
             "insertion_sort",
@@ -92,9 +94,7 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
 
     // 快速排序
     if name_lower.contains("quick")
-        || (features.is_recursive
-            && features.has_partition_pattern
-            && features.has_nested_loops)
+        || (features.is_recursive && features.has_partition_pattern && features.has_nested_loops)
     {
         matches.push(build_match(
             "quick_sort",
@@ -107,9 +107,7 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
 
     // 归并排序
     if name_lower.contains("merge")
-        || (features.is_recursive
-            && features.has_merge_pattern
-            && !features.has_partition_pattern)
+        || (features.is_recursive && features.has_merge_pattern && !features.has_partition_pattern)
     {
         matches.push(build_match(
             "merge_sort",
@@ -123,9 +121,7 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
     // 二分查找
     if name_lower.contains("binary")
         || name_lower.contains("bsearch")
-        || (features.has_single_loop
-            && features.has_mid_calculation
-            && features.has_left_right_update)
+        || (features.has_single_loop && features.has_mid_calculation && features.has_left_right_update)
     {
         matches.push(build_match(
             "binary_search",
@@ -138,10 +134,7 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
 
     // 堆排序
     if name_lower.contains("heap")
-        || (features.is_recursive
-            && features.has_array_compare
-            && features.has_swap
-            && name_lower.contains("sort"))
+        || (features.is_recursive && features.has_array_compare && features.has_swap && name_lower.contains("sort"))
     {
         matches.push(build_match(
             "heap_sort",
@@ -184,10 +177,7 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
     }
 
     // DP 动态规划（斐波那契 / 背包 等）
-    if name_lower.contains("dp")
-        || name_lower.contains("knapsack")
-        || name_lower.contains("dynamic")
-    {
+    if name_lower.contains("dp") || name_lower.contains("knapsack") || name_lower.contains("dynamic") {
         matches.push(build_match(
             "dp",
             "动态规划",
@@ -231,7 +221,9 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
     }
 
     // 二叉搜索树
-    if name_lower.contains("bst") || name_lower.contains("insert") && features.is_recursive && features.cfg_has_back_edge {
+    if name_lower.contains("bst")
+        || name_lower.contains("insert") && features.is_recursive && features.cfg_has_back_edge
+    {
         matches.push(build_match(
             "bst_insert",
             "BST 插入",
@@ -724,7 +716,9 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
                 f.has_shift_pattern = true;
             }
         }
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+        Expr::Ternary {
+            cond, then_branch, else_branch, ..
+        } => {
             walk_expr(cond, f, loop_depth, func_name, depth + 1);
             walk_expr(then_branch, f, loop_depth, func_name, depth + 1);
             walk_expr(else_branch, f, loop_depth, func_name, depth + 1);
@@ -780,7 +774,9 @@ fn check_compare_expr(expr: &Expr, f: &mut FuncFeatures, _loop_depth: i32) {
         Expr::Member { object, .. } => {
             check_compare_expr(object, f, _loop_depth);
         }
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+        Expr::Ternary {
+            cond, then_branch, else_branch, ..
+        } => {
             check_compare_expr(cond, f, _loop_depth);
             check_compare_expr(then_branch, f, _loop_depth);
             check_compare_expr(else_branch, f, _loop_depth);
@@ -796,7 +792,10 @@ fn check_compare_expr(expr: &Expr, f: &mut FuncFeatures, _loop_depth: i32) {
 }
 
 fn is_comparison_op(op: &BinaryOp) -> bool {
-    matches!(op, BinaryOp::Lt | BinaryOp::Gt | BinaryOp::Le | BinaryOp::Ge | BinaryOp::Eq | BinaryOp::Ne)
+    matches!(
+        op,
+        BinaryOp::Lt | BinaryOp::Gt | BinaryOp::Le | BinaryOp::Ge | BinaryOp::Eq | BinaryOp::Ne
+    )
 }
 
 fn is_comparison_expr(expr: &Expr) -> bool {
@@ -813,7 +812,9 @@ fn stmt_has_min_max_assign(stmt: &Stmt) -> bool {
         Stmt::Expr { expr, .. } => expr_has_min_max_assign(expr),
         Stmt::VarDecl { init, extra_vars, .. } => {
             init.as_ref().is_some_and(expr_has_min_max_assign)
-                || extra_vars.iter().any(|(_, _, e)| e.as_ref().is_some_and(expr_has_min_max_assign))
+                || extra_vars
+                    .iter()
+                    .any(|(_, _, e)| e.as_ref().is_some_and(expr_has_min_max_assign))
         }
         _ => false,
     }
@@ -830,11 +831,17 @@ fn expr_has_min_max_assign(expr: &Expr) -> bool {
         }
         Expr::Binary { left, right, .. } => expr_has_min_max_assign(left) || expr_has_min_max_assign(right),
         Expr::Unary { operand, .. } => expr_has_min_max_assign(operand),
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
-            expr_has_min_max_assign(cond) || expr_has_min_max_assign(then_branch) || expr_has_min_max_assign(else_branch)
+        Expr::Ternary {
+            cond, then_branch, else_branch, ..
+        } => {
+            expr_has_min_max_assign(cond)
+                || expr_has_min_max_assign(then_branch)
+                || expr_has_min_max_assign(else_branch)
         }
         Expr::Call { args, .. } => args.iter().any(expr_has_min_max_assign),
-        Expr::CallPtr { callee, args, .. } => expr_has_min_max_assign(callee) || args.iter().any(expr_has_min_max_assign),
+        Expr::CallPtr { callee, args, .. } => {
+            expr_has_min_max_assign(callee) || args.iter().any(expr_has_min_max_assign)
+        }
         Expr::Index { array, index, .. } => expr_has_min_max_assign(array) || expr_has_min_max_assign(index),
         Expr::Member { object, .. } => expr_has_min_max_assign(object),
         Expr::Cast { expr: e, .. } => expr_has_min_max_assign(e),
@@ -858,7 +865,10 @@ fn is_adjacent_compare(a: &Expr, b: &Expr) -> bool {
         if let Expr::Index { array: arr_b, index: idx_b, .. } = b {
             if expr_to_string(arr_a) == expr_to_string(arr_b) {
                 // 检查 idx_b 是否是 idx_a + 1
-                if let Expr::Binary { op: BinaryOp::Add, left, right, .. } = idx_b.as_ref() {
+                if let Expr::Binary {
+                    op: BinaryOp::Add, left, right, ..
+                } = idx_b.as_ref()
+                {
                     if expr_to_string(left) == expr_to_string(idx_a) && is_literal_int(right, 1) {
                         return true;
                     }
@@ -871,7 +881,10 @@ fn is_adjacent_compare(a: &Expr, b: &Expr) -> bool {
 
 fn is_mid_calculation(expr: &Expr) -> bool {
     // 模式1: (a + b) / 2
-    if let Expr::Binary { op: BinaryOp::Div, left, right, .. } = expr {
+    if let Expr::Binary {
+        op: BinaryOp::Div, left, right, ..
+    } = expr
+    {
         if is_literal_int(right, 2) {
             if let Expr::Binary { op: BinaryOp::Add, .. } = left.as_ref() {
                 return true;
@@ -879,10 +892,25 @@ fn is_mid_calculation(expr: &Expr) -> bool {
         }
     }
     // 模式2: a + (b - a) / 2
-    if let Expr::Binary { op: BinaryOp::Add, left, right, .. } = expr {
-        if let Expr::Binary { op: BinaryOp::Div, left: div_left, right: div_right, .. } = right.as_ref() {
+    if let Expr::Binary {
+        op: BinaryOp::Add, left, right, ..
+    } = expr
+    {
+        if let Expr::Binary {
+            op: BinaryOp::Div,
+            left: div_left,
+            right: div_right,
+            ..
+        } = right.as_ref()
+        {
             if is_literal_int(div_right, 2) {
-                if let Expr::Binary { op: BinaryOp::Sub, left: _, right: sub_right, .. } = div_left.as_ref() {
+                if let Expr::Binary {
+                    op: BinaryOp::Sub,
+                    left: _,
+                    right: sub_right,
+                    ..
+                } = div_left.as_ref()
+                {
                     if expr_to_string(sub_right) == expr_to_string(left) {
                         return true;
                     }
@@ -899,7 +927,13 @@ fn is_shift_pattern(left: &Expr, right: &Expr) -> bool {
         if let Expr::Index { array: arr_r, index: idx_r, .. } = right {
             if expr_to_string(arr_l) == expr_to_string(arr_r) {
                 // 检查 idx_l 是否为 idx_r + 1
-                if let Expr::Binary { op: BinaryOp::Add, left: add_left, right: add_right, .. } = idx_l.as_ref() {
+                if let Expr::Binary {
+                    op: BinaryOp::Add,
+                    left: add_left,
+                    right: add_right,
+                    ..
+                } = idx_l.as_ref()
+                {
                     if expr_to_string(add_left) == expr_to_string(idx_r) && is_literal_int(add_right, 1) {
                         return true;
                     }
@@ -985,7 +1019,9 @@ fn expr_to_string(expr: &Expr) -> String {
             };
             format!("{} {} {}", expr_to_string(left), op_str, expr_to_string(right))
         }
-        Expr::Ternary { cond, then_branch, else_branch, .. } => {
+        Expr::Ternary {
+            cond, then_branch, else_branch, ..
+        } => {
             format!(
                 "{} ? {} : {}",
                 expr_to_string(cond),
@@ -1013,6 +1049,8 @@ fn expr_to_string(expr: &Expr) -> String {
         Expr::Offsetof { target_type, field, .. } => {
             format!("offsetof({}, {})", target_type, field)
         }
+        // === C++ 新增 (Phase 31 占位) ===
+        _ => "<cpp-expr>".to_string(),
     }
 }
 
@@ -1024,24 +1062,39 @@ fn build_match(
     compare_lines: &[(i32, i32, String)],
 ) -> AlgorithmMatch {
     let suggestion = match name {
-        "bubble_sort" => "冒泡排序：通过相邻元素两两比较并交换，将最大元素逐步「冒泡」到数组末尾。时间复杂度 O(n²)。".to_string(),
-        "selection_sort" => "选择排序：每次从未排序部分选择最小元素，放到已排序部分末尾。时间复杂度 O(n²)。".to_string(),
-        "insertion_sort" => "插入排序：将元素逐个插入到已排序部分的正确位置。时间复杂度 O(n²)，对近乎有序的数组效率很高。".to_string(),
-        "quick_sort" => "快速排序：通过分治法，选取枢轴将数组分区，再递归排序子数组。平均时间复杂度 O(n log n)。".to_string(),
+        "bubble_sort" => {
+            "冒泡排序：通过相邻元素两两比较并交换，将最大元素逐步「冒泡」到数组末尾。时间复杂度 O(n²)。".to_string()
+        }
+        "selection_sort" => {
+            "选择排序：每次从未排序部分选择最小元素，放到已排序部分末尾。时间复杂度 O(n²)。".to_string()
+        }
+        "insertion_sort" => {
+            "插入排序：将元素逐个插入到已排序部分的正确位置。时间复杂度 O(n²)，对近乎有序的数组效率很高。".to_string()
+        }
+        "quick_sort" => {
+            "快速排序：通过分治法，选取枢轴将数组分区，再递归排序子数组。平均时间复杂度 O(n log n)。".to_string()
+        }
         "merge_sort" => "归并排序：将数组递归分成两半，排序后合并。时间复杂度稳定为 O(n log n)。".to_string(),
         "binary_search" => "二分查找：在有序数组中每次将搜索范围减半。时间复杂度 O(log n)。".to_string(),
         "heap_sort" => "堆排序：利用堆数据结构进行排序。先建堆再反复取出堆顶元素。时间复杂度 O(n log n)。".to_string(),
         "bfs" => "BFS 广度优先搜索：从起点出发，逐层扩展访问邻居。适合求最短路径。".to_string(),
         "dfs" => "DFS 深度优先搜索：从起点出发，沿着一条路径走到尽头再回溯。适合连通性判断。".to_string(),
         "dp" => "动态规划：将复杂问题分解为子问题，保存子问题答案避免重复计算。".to_string(),
-        "shell_sort" => "希尔排序：通过增量分组进行插入排序，逐步缩小增量至 1。时间复杂度介于 O(n log n) 和 O(n²) 之间。".to_string(),
-        "counting_sort" => "计数排序：用统计数组记录元素出现次数，适合数据范围小的场景。时间复杂度 O(n+k)。".to_string(),
+        "shell_sort" => {
+            "希尔排序：通过增量分组进行插入排序，逐步缩小增量至 1。时间复杂度介于 O(n log n) 和 O(n²) 之间。"
+                .to_string()
+        }
+        "counting_sort" => {
+            "计数排序：用统计数组记录元素出现次数，适合数据范围小的场景。时间复杂度 O(n+k)。".to_string()
+        }
         "linked_list_delete" => "链表删除：遍历链表找到目标节点，调整指针并释放内存。".to_string(),
         "bst_insert" => "BST 插入：利用二叉搜索树性质，递归找到正确位置插入新节点。".to_string(),
         "string_reverse" => "字符串反转：利用双指针从两端向中间交换字符。".to_string(),
         "gcd" => "辗转相除法：gcd(a,b) = gcd(b, a mod b)，直到余数为 0。".to_string(),
         "is_prime" => "素数判断：试除法，只需检查 2 到 sqrt(n) 是否能整除。".to_string(),
-        "hanoi" => "汉诺塔：经典递归问题，将 n 个盘子分解为移动 n-1 个盘子 + 移动最底下盘子 + 再移动 n-1 个盘子。".to_string(),
+        "hanoi" => {
+            "汉诺塔：经典递归问题，将 n 个盘子分解为移动 n-1 个盘子 + 移动最底下盘子 + 再移动 n-1 个盘子。".to_string()
+        }
         "seq_list" => "顺序表：用连续数组存储数据，支持按位置插入、删除和查找。".to_string(),
         "linked_list_append" => "链表尾插法：将新节点追加到链表末尾，保持插入顺序。".to_string(),
         "circular_queue" => "循环队列：用数组实现队列，front/rear 指针循环移动，牺牲一个单元区分空和满。".to_string(),
@@ -1053,7 +1106,9 @@ fn build_match(
         "josephus" => "约瑟夫环：经典的循环报数淘汰问题，可用数组模拟圆圈解决。".to_string(),
         "circular_linked_list" => "循环链表：尾节点 next 回指头节点，遍历时需用 do-while 判断终止。".to_string(),
         "static_linked_list" => "静态链表：用数组游标模拟指针，下标 0 作为备用链表头。".to_string(),
-        "string_match_bf" => "朴素模式匹配：双指针逐位比较，失配后主串回溯、模式串归零。时间复杂度 O(m·n)。".to_string(),
+        "string_match_bf" => {
+            "朴素模式匹配：双指针逐位比较，失配后主串回溯、模式串归零。时间复杂度 O(m·n)。".to_string()
+        }
         "string_match_kmp" => "KMP 模式匹配：利用 next 数组避免主串回溯，时间复杂度 O(m+n)。".to_string(),
         "threaded_binary_tree" => "线索二叉树：利用空指针域存储中序前驱和后继，实现无栈遍历。".to_string(),
         "huffman_tree" => "哈夫曼树：每次选两个最小权值节点合并，构造带权路径长度最小的二叉树。".to_string(),

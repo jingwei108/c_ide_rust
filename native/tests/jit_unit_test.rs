@@ -87,7 +87,11 @@ int main() {
     assert_eq!(ret, 0);
     let output = outputs.join("\n");
     assert!(output.contains("hello"), "Output should contain hello, got: {}", output);
-    assert!(!output.contains("[JIT]"), "JIT should not trigger without loop, got: {}", output);
+    assert!(
+        !output.contains("[JIT]"),
+        "JIT should not trigger without loop, got: {}",
+        output
+    );
 }
 
 #[test]
@@ -109,7 +113,11 @@ int main() {
     let output = outputs.join("\n");
     assert!(output.contains("55"), "Output should contain 55, got: {}", output);
     // 循环只有 10 次，小于阈值 100，不应触发 JIT
-    assert!(!output.contains("[JIT]"), "JIT should not trigger for short loop, got: {}", output);
+    assert!(
+        !output.contains("[JIT]"),
+        "JIT should not trigger for short loop, got: {}",
+        output
+    );
 }
 
 // 嵌套循环 trace 录制优化：确保只捕获以 start_ip 为目标的 backward jump，

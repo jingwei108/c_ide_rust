@@ -78,11 +78,7 @@ fn get_source_line(session: &Session, code_line: i32) -> Option<String> {
 }
 
 fn find_algorithm_for_func<'a>(session: &'a Session, func_name: &str) -> Option<&'a AlgorithmMatch> {
-    session
-        .compile
-        .algorithm_matches
-        .iter()
-        .find(|m| m.func_name == func_name)
+    session.compile.algorithm_matches.iter().find(|m| m.func_name == func_name)
 }
 
 struct VarMap<'a> {
@@ -111,10 +107,7 @@ impl<'a> VarMap<'a> {
     }
 
     fn get_str(&self, name: &str) -> Option<String> {
-        self.vars
-            .iter()
-            .find(|v| v.name == name)
-            .map(|v| v.value.clone())
+        self.vars.iter().find(|v| v.name == name).map(|v| v.value.clone())
     }
 }
 
@@ -135,11 +128,7 @@ fn build_step(algorithm: &AlgorithmMatch, phase: &str, description: &str) -> Alg
 // 冒泡排序
 // ============================================================================
 
-fn infer_bubble_sort(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_bubble_sort(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let i = vars.get_int("i").unwrap_or(-1);
     let j = vars.get_int("j").unwrap_or(-1);
@@ -147,11 +136,7 @@ fn infer_bubble_sort(
 
     if line_lower.starts_with("for ") || line_lower.starts_with("while ") {
         if line_lower.contains('i') && !line_lower.contains('j') {
-            let pass = if i >= 0 {
-                (i + 1).to_string()
-            } else {
-                "?".to_string()
-            };
+            let pass = if i >= 0 { (i + 1).to_string() } else { "?".to_string() };
             let kth = if n > 0 && i >= 0 {
                 (n - i).to_string()
             } else {
@@ -164,11 +149,7 @@ fn infer_bubble_sort(
             ));
         }
         if line_lower.contains('j') {
-            let j_str = if j >= 0 {
-                j.to_string()
-            } else {
-                "?".to_string()
-            };
+            let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
             return Some(build_step(
                 algorithm,
                 "inner_loop",
@@ -178,34 +159,14 @@ fn infer_bubble_sort(
     }
 
     if line_lower.starts_with("if ") && is_comparison_line(&line_lower) {
-        let j_str = if j >= 0 {
-            j.to_string()
-        } else {
-            "?".to_string()
-        };
-        let j1 = if j >= 0 {
-            (j + 1).to_string()
-        } else {
-            "?".to_string()
-        };
-        return Some(build_step(
-            algorithm,
-            "compare",
-            &format!("比较 arr[{}] 与 arr[{}]", j_str, j1),
-        ));
+        let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
+        let j1 = if j >= 0 { (j + 1).to_string() } else { "?".to_string() };
+        return Some(build_step(algorithm, "compare", &format!("比较 arr[{}] 与 arr[{}]", j_str, j1)));
     }
 
     if source_line.contains("temp") && source_line.contains('=') {
-        let j_str = if j >= 0 {
-            j.to_string()
-        } else {
-            "?".to_string()
-        };
-        let j1 = if j >= 0 {
-            (j + 1).to_string()
-        } else {
-            "?".to_string()
-        };
+        let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
+        let j1 = if j >= 0 { (j + 1).to_string() } else { "?".to_string() };
         return Some(build_step(
             algorithm,
             "swap",
@@ -224,25 +185,15 @@ fn infer_bubble_sort(
 // 选择排序
 // ============================================================================
 
-fn infer_selection_sort(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_selection_sort(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let i = vars.get_int("i").unwrap_or(-1);
     let j = vars.get_int("j").unwrap_or(-1);
-    let min_idx = vars
-        .get_int_any(&["min_idx", "minIndex", "min", "minindex"])
-        .unwrap_or(-1);
+    let min_idx = vars.get_int_any(&["min_idx", "minIndex", "min", "minindex"]).unwrap_or(-1);
 
     if line_lower.starts_with("for ") || line_lower.starts_with("while ") {
         if line_lower.contains('i') && !line_lower.contains('j') {
-            let pass = if i >= 0 {
-                i.to_string()
-            } else {
-                "?".to_string()
-            };
+            let pass = if i >= 0 { i.to_string() } else { "?".to_string() };
             return Some(build_step(
                 algorithm,
                 "outer_loop",
@@ -250,11 +201,7 @@ fn infer_selection_sort(
             ));
         }
         if line_lower.contains('j') {
-            let j_str = if j >= 0 {
-                j.to_string()
-            } else {
-                "?".to_string()
-            };
+            let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
             let min_str = if min_idx >= 0 {
                 min_idx.to_string()
             } else {
@@ -269,11 +216,7 @@ fn infer_selection_sort(
     }
 
     if line_lower.starts_with("if ") && is_comparison_line(&line_lower) {
-        let j_str = if j >= 0 {
-            j.to_string()
-        } else {
-            "?".to_string()
-        };
+        let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
         let min_str = if min_idx >= 0 {
             min_idx.to_string()
         } else {
@@ -287,16 +230,8 @@ fn infer_selection_sort(
     }
 
     if source_line.contains("temp") && source_line.contains('=') {
-        let i_str = if i >= 0 {
-            i.to_string()
-        } else {
-            "?".to_string()
-        };
-        return Some(build_step(
-            algorithm,
-            "swap",
-            &format!("将最小元素交换到位置 {}", i_str),
-        ));
+        let i_str = if i >= 0 { i.to_string() } else { "?".to_string() };
+        return Some(build_step(algorithm, "swap", &format!("将最小元素交换到位置 {}", i_str)));
     }
 
     if line_lower.starts_with("return") {
@@ -310,11 +245,7 @@ fn infer_selection_sort(
 // 插入排序
 // ============================================================================
 
-fn infer_insertion_sort(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_insertion_sort(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let i = vars.get_int("i").unwrap_or(-1);
     let j = vars.get_int("j").unwrap_or(-1);
@@ -322,11 +253,7 @@ fn infer_insertion_sort(
 
     if line_lower.starts_with("for ") || line_lower.starts_with("while ") {
         if line_lower.contains('i') && !line_lower.contains('j') {
-            let pass = if i >= 0 {
-                i.to_string()
-            } else {
-                "?".to_string()
-            };
+            let pass = if i >= 0 { i.to_string() } else { "?".to_string() };
             return Some(build_step(
                 algorithm,
                 "outer_loop",
@@ -334,11 +261,7 @@ fn infer_insertion_sort(
             ));
         }
         if line_lower.contains('j') && line_lower.contains('[') {
-            let j_str = if j >= 0 {
-                j.to_string()
-            } else {
-                "?".to_string()
-            };
+            let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
             return Some(build_step(
                 algorithm,
                 "inner_loop",
@@ -348,16 +271,8 @@ fn infer_insertion_sort(
     }
 
     if line_lower.starts_with("if ") && is_comparison_line(&line_lower) {
-        let j_str = if j >= 0 {
-            j.to_string()
-        } else {
-            "?".to_string()
-        };
-        return Some(build_step(
-            algorithm,
-            "compare",
-            &format!("比较 arr[{}] 与 key={}", j_str, key),
-        ));
+        let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
+        return Some(build_step(algorithm, "compare", &format!("比较 arr[{}] 与 key={}", j_str, key)));
     }
 
     if (source_line.contains("arr[") || source_line.contains("a["))
@@ -365,11 +280,7 @@ fn infer_insertion_sort(
         && !line_lower.starts_with("for ")
         && !line_lower.starts_with("while ")
     {
-        let pos = if j >= 0 {
-            (j + 1).to_string()
-        } else {
-            "?".to_string()
-        };
+        let pos = if j >= 0 { (j + 1).to_string() } else { "?".to_string() };
         return Some(build_step(
             algorithm,
             "insert",
@@ -414,19 +325,12 @@ fn infer_quick_sort(
         return Some(build_step(
             algorithm,
             "recursive",
-            &format!(
-                "递归调用 {}，处理{}子数组 [left={}, right={}]",
-                func_name, side, left, right
-            ),
+            &format!("递归调用 {}，处理{}子数组 [left={}, right={}]", func_name, side, left, right),
         ));
     }
 
     if line_lower.contains("pivot") && line_lower.contains('=') && !line_lower.starts_with("for ") {
-        let p_str = if pivot >= 0 {
-            pivot.to_string()
-        } else {
-            "?".to_string()
-        };
+        let p_str = if pivot >= 0 { pivot.to_string() } else { "?".to_string() };
         return Some(build_step(
             algorithm,
             "partition_init",
@@ -437,19 +341,11 @@ fn infer_quick_sort(
     if (line_lower.starts_with("while ") || line_lower.starts_with("for "))
         && (line_lower.contains('i') || line_lower.contains('j'))
     {
-        return Some(build_step(
-            algorithm,
-            "partition_scan",
-            "分区扫描：将小于枢轴的元素放到左侧",
-        ));
+        return Some(build_step(algorithm, "partition_scan", "分区扫描：将小于枢轴的元素放到左侧"));
     }
 
     if source_line.contains("temp") && source_line.contains('=') {
-        return Some(build_step(
-            algorithm,
-            "partition_swap",
-            "交换元素，调整分区位置",
-        ));
+        return Some(build_step(algorithm, "partition_swap", "交换元素，调整分区位置"));
     }
 
     if line_lower.starts_with("return") {
@@ -486,9 +382,7 @@ fn infer_merge_sort(
     }
 
     if (line_lower.starts_with("while ") || line_lower.starts_with("for "))
-        && (line_lower.contains('i')
-            || line_lower.contains('j')
-            || line_lower.contains('k'))
+        && (line_lower.contains('i') || line_lower.contains('j') || line_lower.contains('k'))
     {
         return Some(build_step(algorithm, "merge", "合并两个有序子数组"));
     }
@@ -542,11 +436,7 @@ fn infer_heap_sort(
 // BFS
 // ============================================================================
 
-fn infer_bfs(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_bfs(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let u = vars.get_int_any(&["u", "front", "start"]).unwrap_or(-1);
     let front = vars.get_int("front").unwrap_or(-1);
@@ -619,11 +509,7 @@ fn infer_dfs(
 // 动态规划
 // ============================================================================
 
-fn infer_dp(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_dp(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let i = vars.get_int_any(&["i", "n"]).unwrap_or(-1);
     let w = vars.get_int_any(&["w", "j", "capacity"]).unwrap_or(-1);
@@ -652,11 +538,7 @@ fn infer_dp(
 // 二分查找
 // ============================================================================
 
-fn infer_binary_search(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_binary_search(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let left = vars.get_int_any(&["left", "low", "l"]).unwrap_or(-1);
     let right = vars.get_int_any(&["right", "high", "r"]).unwrap_or(-1);
@@ -667,45 +549,21 @@ fn infer_binary_search(
         .unwrap_or_else(|| "?".to_string());
 
     if line_lower.starts_with("while ") {
-        let l = if left >= 0 {
-            left.to_string()
-        } else {
-            "?".to_string()
-        };
-        let r = if right >= 0 {
-            right.to_string()
-        } else {
-            "?".to_string()
-        };
-        return Some(build_step(
-            algorithm,
-            "loop",
-            &format!("搜索范围 [{}, {}]", l, r),
-        ));
+        let l = if left >= 0 { left.to_string() } else { "?".to_string() };
+        let r = if right >= 0 { right.to_string() } else { "?".to_string() };
+        return Some(build_step(algorithm, "loop", &format!("搜索范围 [{}, {}]", l, r)));
     }
 
     if line_lower.contains("mid") && (line_lower.contains('=') || line_lower.contains('/')) {
-        let m = if mid >= 0 {
-            mid.to_string()
-        } else {
-            "?".to_string()
-        };
-        return Some(build_step(
-            algorithm,
-            "mid_calc",
-            &format!("计算中点 mid={}", m),
-        ));
+        let m = if mid >= 0 { mid.to_string() } else { "?".to_string() };
+        return Some(build_step(algorithm, "mid_calc", &format!("计算中点 mid={}", m)));
     }
 
     if line_lower.starts_with("if ")
         && is_comparison_line(&line_lower)
         && (line_lower.contains("arr[") || line_lower.contains("a["))
     {
-        let m = if mid >= 0 {
-            mid.to_string()
-        } else {
-            "?".to_string()
-        };
+        let m = if mid >= 0 { mid.to_string() } else { "?".to_string() };
         return Some(build_step(
             algorithm,
             "compare",
@@ -714,11 +572,7 @@ fn infer_binary_search(
     }
 
     if line_lower.contains("right") && line_lower.contains('=') && line_lower.contains("mid") {
-        let m = if mid >= 0 {
-            mid.to_string()
-        } else {
-            "?".to_string()
-        };
+        let m = if mid >= 0 { mid.to_string() } else { "?".to_string() };
         return Some(build_step(
             algorithm,
             "narrow_left",
@@ -740,25 +594,12 @@ fn infer_binary_search(
     }
 
     if line_lower.starts_with("return ") && line_lower.contains("mid") {
-        let m = if mid >= 0 {
-            mid.to_string()
-        } else {
-            "?".to_string()
-        };
-        return Some(build_step(
-            algorithm,
-            "found",
-            &format!("找到目标值，返回索引 {}", m),
-        ));
+        let m = if mid >= 0 { mid.to_string() } else { "?".to_string() };
+        return Some(build_step(algorithm, "found", &format!("找到目标值，返回索引 {}", m)));
     }
 
-    if line_lower.starts_with("return ") && (line_lower.contains("-1") || line_lower.contains("0"))
-    {
-        return Some(build_step(
-            algorithm,
-            "not_found",
-            "搜索结束，未找到目标值",
-        ));
+    if line_lower.starts_with("return ") && (line_lower.contains("-1") || line_lower.contains("0")) {
+        return Some(build_step(algorithm, "not_found", "搜索结束，未找到目标值"));
     }
 
     None
@@ -768,11 +609,7 @@ fn infer_binary_search(
 // 希尔排序
 // ============================================================================
 
-fn infer_shell_sort(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_shell_sort(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let gap = vars.get_int_any(&["gap"]).unwrap_or(-1);
 
@@ -803,11 +640,7 @@ fn infer_shell_sort(
 // 计数排序
 // ============================================================================
 
-fn infer_counting_sort(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_counting_sort(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.starts_with("for ") && line_lower.contains("count") && line_lower.contains("++") {
@@ -898,11 +731,7 @@ fn infer_bst_insert(
 // 字符串反转
 // ============================================================================
 
-fn infer_string_reverse(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_string_reverse(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let len = vars.get_int_any(&["len", "length"]).unwrap_or(-1);
     let i = vars.get_int("i").unwrap_or(-1);
@@ -930,11 +759,7 @@ fn infer_string_reverse(
 // 最大公约数
 // ============================================================================
 
-fn infer_gcd(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_gcd(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let a = vars.get_int_any(&["a"]).unwrap_or(-1);
     let b = vars.get_int_any(&["b"]).unwrap_or(-1);
@@ -944,7 +769,11 @@ fn infer_gcd(
     }
 
     if line_lower.contains("a % b") || line_lower.contains("mod") {
-        return Some(build_step(algorithm, "mod", &format!("计算 {} % {} = {}", a, b, if b != 0 { a % b } else { 0 })));
+        return Some(build_step(
+            algorithm,
+            "mod",
+            &format!("计算 {} % {} = {}", a, b, if b != 0 { a % b } else { 0 }),
+        ));
     }
 
     if line_lower.starts_with("return") {
@@ -958,11 +787,7 @@ fn infer_gcd(
 // 素数判断
 // ============================================================================
 
-fn infer_is_prime(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_is_prime(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let n = vars.get_int_any(&["n"]).unwrap_or(-1);
     let i = vars.get_int("i").unwrap_or(-1);
@@ -972,11 +797,19 @@ fn infer_is_prime(
     }
 
     if line_lower.starts_with("for ") {
-        return Some(build_step(algorithm, "test_divisor", &format!("试除 i={}，检查 {} % {} == 0", i, n, i)));
+        return Some(build_step(
+            algorithm,
+            "test_divisor",
+            &format!("试除 i={}，检查 {} % {} == 0", i, n, i),
+        ));
     }
 
     if line_lower.contains("n % i") && line_lower.contains("== 0") {
-        return Some(build_step(algorithm, "found_factor", &format!("发现因子 {}，{} 不是素数", i, n)));
+        return Some(build_step(
+            algorithm,
+            "found_factor",
+            &format!("发现因子 {}，{} 不是素数", i, n),
+        ));
     }
 
     if line_lower.starts_with("return") {
@@ -1022,11 +855,7 @@ fn infer_hanoi(
 // 顺序表
 // ============================================================================
 
-fn infer_seq_list(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_seq_list(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("length") && line_lower.contains("maxsize") && line_lower.contains("||") {
@@ -1108,14 +937,14 @@ fn infer_circular_queue(
 // 链栈
 // ============================================================================
 
-fn infer_linked_stack(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_linked_stack(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
-    if line_lower.contains("next") && line_lower.contains("top") && line_lower.contains('=') && line_lower.contains("malloc") {
+    if line_lower.contains("next")
+        && line_lower.contains("top")
+        && line_lower.contains('=')
+        && line_lower.contains("malloc")
+    {
         return Some(build_step(algorithm, "push", "新节点入栈"));
     }
 
@@ -1130,11 +959,7 @@ fn infer_linked_stack(
 // 链队列
 // ============================================================================
 
-fn infer_linked_queue(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_linked_queue(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("rear") && line_lower.contains("next") && line_lower.contains('=') {
@@ -1156,11 +981,7 @@ fn infer_linked_queue(
 // 层序遍历
 // ============================================================================
 
-fn infer_level_order(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_level_order(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("queue") && line_lower.contains("[") && line_lower.contains("root") {
@@ -1217,11 +1038,7 @@ fn infer_bst_search(
 // 哈希表
 // ============================================================================
 
-fn infer_hash_table(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_hash_table(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("key") && line_lower.contains('%') {
@@ -1243,11 +1060,7 @@ fn infer_hash_table(
 // 约瑟夫环
 // ============================================================================
 
-fn infer_josephus(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_josephus(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let m = vars.get_int_any(&["m"]).unwrap_or(-1);
     let remain = vars.get_int_any(&["remain"]).unwrap_or(-1);
@@ -1257,7 +1070,11 @@ fn infer_josephus(
     }
 
     if line_lower.contains("alive") && line_lower.contains("0") && line_lower.contains('=') {
-        return Some(build_step(algorithm, "eliminate", &format!("报到 {} 的人被淘汰，剩余 {} 人", m, remain)));
+        return Some(build_step(
+            algorithm,
+            "eliminate",
+            &format!("报到 {} 的人被淘汰，剩余 {} 人", m, remain),
+        ));
     }
 
     if line_lower.contains('%') && line_lower.contains("+ 1") {
@@ -1365,7 +1182,11 @@ fn infer_string_match_kmp(
     let k = vars.get_int_any(&["k"]).unwrap_or(-1);
 
     if line_lower.contains("getnext") || (line_lower.contains("next[") && line_lower.contains('=')) {
-        return Some(build_step(algorithm, "build_next", &format!("构建 next 数组，next[{}]={}", j, k)));
+        return Some(build_step(
+            algorithm,
+            "build_next",
+            &format!("构建 next 数组，next[{}]={}", j, k),
+        ));
     }
 
     if line_lower.contains("s[") && line_lower.contains("t[") && line_lower.contains("==") {
@@ -1413,11 +1234,7 @@ fn infer_threaded_binary_tree(
 // 哈夫曼树
 // ============================================================================
 
-fn infer_huffman_tree(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_huffman_tree(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("parent") && line_lower.contains("-1") && line_lower.contains("weight") {
@@ -1435,11 +1252,7 @@ fn infer_huffman_tree(
 // 并查集
 // ============================================================================
 
-fn infer_union_find(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_union_find(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let x = vars.get_int_any(&["x"]).unwrap_or(-1);
 
@@ -1462,11 +1275,7 @@ fn infer_union_find(
 // AVL 树
 // ============================================================================
 
-fn infer_avl_tree(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_avl_tree(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("r_rotate") || line_lower.contains("l_rotate") {
@@ -1488,11 +1297,7 @@ fn infer_avl_tree(
 // Prim 最小生成树
 // ============================================================================
 
-fn infer_prim_mst(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_prim_mst(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let k = vars.get_int_any(&["k"]).unwrap_or(-1);
 
@@ -1500,7 +1305,11 @@ fn infer_prim_mst(
         return Some(build_step(algorithm, "select_min", &format!("选择最小边，顶点 k={}", k)));
     }
 
-    if line_lower.contains("lowcost") && line_lower.contains('0') && line_lower.contains('=') && !line_lower.contains("!=") {
+    if line_lower.contains("lowcost")
+        && line_lower.contains('0')
+        && line_lower.contains('=')
+        && !line_lower.contains("!=")
+    {
         return Some(build_step(algorithm, "add_vertex", &format!("顶点 {} 加入生成树", k)));
     }
 
@@ -1515,11 +1324,7 @@ fn infer_prim_mst(
 // Kruskal 最小生成树
 // ============================================================================
 
-fn infer_kruskal_mst(
-    source_line: &str,
-    _vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_kruskal_mst(source_line: &str, _vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
 
     if line_lower.contains("edges") && line_lower.contains("w") && line_lower.contains('<') {
@@ -1541,11 +1346,7 @@ fn infer_kruskal_mst(
 // Dijkstra 最短路径
 // ============================================================================
 
-fn infer_dijkstra(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_dijkstra(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let u = vars.get_int_any(&["u"]).unwrap_or(-1);
 
@@ -1568,11 +1369,7 @@ fn infer_dijkstra(
 // Floyd 最短路径
 // ============================================================================
 
-fn infer_floyd(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_floyd(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let k = vars.get_int_any(&["k"]).unwrap_or(-1);
 
@@ -1618,11 +1415,7 @@ fn infer_topological_sort(
 // 基数排序
 // ============================================================================
 
-fn infer_radix_sort(
-    source_line: &str,
-    vars: &VarMap,
-    algorithm: &AlgorithmMatch,
-) -> Option<AlgorithmStepSnapshot> {
+fn infer_radix_sort(source_line: &str, vars: &VarMap, algorithm: &AlgorithmMatch) -> Option<AlgorithmStepSnapshot> {
     let line_lower = source_line.to_lowercase();
     let exp = vars.get_int_any(&["exp"]).unwrap_or(-1);
 

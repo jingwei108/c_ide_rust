@@ -170,26 +170,12 @@ fn build_snapshot_impl(program: &ProgramNode) -> CompletionSnapshot {
 
     // 结构体 / 联合体
     for s in &program.structs {
-        let fields: Vec<(String, String)> = s
-            .fields
-            .iter()
-            .map(|f| (f.name.clone(), f.ty.to_string()))
-            .collect();
-        snapshot.structs.push(SnapshotStruct {
-            name: s.name.clone(),
-            fields,
-        });
+        let fields: Vec<(String, String)> = s.fields.iter().map(|f| (f.name.clone(), f.ty.to_string())).collect();
+        snapshot.structs.push(SnapshotStruct { name: s.name.clone(), fields });
     }
     for u in &program.unions {
-        let fields: Vec<(String, String)> = u
-            .fields
-            .iter()
-            .map(|f| (f.name.clone(), f.ty.to_string()))
-            .collect();
-        snapshot.unions.push(SnapshotStruct {
-            name: u.name.clone(),
-            fields,
-        });
+        let fields: Vec<(String, String)> = u.fields.iter().map(|f| (f.name.clone(), f.ty.to_string())).collect();
+        snapshot.unions.push(SnapshotStruct { name: u.name.clone(), fields });
     }
 
     // 全局变量
@@ -202,11 +188,7 @@ fn build_snapshot_impl(program: &ProgramNode) -> CompletionSnapshot {
 
     // 函数（含参数签名）
     for f in &program.funcs {
-        let params: Vec<String> = f
-            .params
-            .iter()
-            .map(|p| format!("{} {}", p.ty, p.name))
-            .collect();
+        let params: Vec<String> = f.params.iter().map(|p| format!("{} {}", p.ty, p.name)).collect();
         snapshot.functions.push(SnapshotFunc {
             name: f.name.clone(),
             return_type: f.return_type.to_string(),
@@ -225,39 +207,32 @@ fn build_snapshot_impl(program: &ProgramNode) -> CompletionSnapshot {
 }
 
 /// 合并两个快照：以 `compiled` 为优先，`live` 补充缺失的符号
-fn merge_snapshots(
-    compiled: &CompletionSnapshot,
-    live: &CompletionSnapshot,
-) -> CompletionSnapshot {
+fn merge_snapshots(compiled: &CompletionSnapshot, live: &CompletionSnapshot) -> CompletionSnapshot {
     let mut merged = compiled.clone();
 
     // 用 HashSet 去重（基于名称）
-    let mut func_names: std::collections::HashSet<String> =
-        merged.functions.iter().map(|f| f.name.clone()).collect();
+    let mut func_names: std::collections::HashSet<String> = merged.functions.iter().map(|f| f.name.clone()).collect();
     for f in &live.functions {
         if func_names.insert(f.name.clone()) {
             merged.functions.push(f.clone());
         }
     }
 
-    let mut global_names: std::collections::HashSet<String> =
-        merged.globals.iter().map(|g| g.name.clone()).collect();
+    let mut global_names: std::collections::HashSet<String> = merged.globals.iter().map(|g| g.name.clone()).collect();
     for g in &live.globals {
         if global_names.insert(g.name.clone()) {
             merged.globals.push(g.clone());
         }
     }
 
-    let mut struct_names: std::collections::HashSet<String> =
-        merged.structs.iter().map(|s| s.name.clone()).collect();
+    let mut struct_names: std::collections::HashSet<String> = merged.structs.iter().map(|s| s.name.clone()).collect();
     for s in &live.structs {
         if struct_names.insert(s.name.clone()) {
             merged.structs.push(s.clone());
         }
     }
 
-    let mut union_names: std::collections::HashSet<String> =
-        merged.unions.iter().map(|u| u.name.clone()).collect();
+    let mut union_names: std::collections::HashSet<String> = merged.unions.iter().map(|u| u.name.clone()).collect();
     for u in &live.unions {
         if union_names.insert(u.name.clone()) {
             merged.unions.push(u.clone());
@@ -265,24 +240,21 @@ fn merge_snapshots(
     }
 
     // typedef / enum / macros：同样 live 补充
-    let mut typedef_names: std::collections::HashSet<String> =
-        merged.typedefs.iter().map(|t| t.name.clone()).collect();
+    let mut typedef_names: std::collections::HashSet<String> = merged.typedefs.iter().map(|t| t.name.clone()).collect();
     for t in &live.typedefs {
         if typedef_names.insert(t.name.clone()) {
             merged.typedefs.push(t.clone());
         }
     }
 
-    let mut enum_names: std::collections::HashSet<String> =
-        merged.enums.iter().map(|e| e.name.clone()).collect();
+    let mut enum_names: std::collections::HashSet<String> = merged.enums.iter().map(|e| e.name.clone()).collect();
     for e in &live.enums {
         if enum_names.insert(e.name.clone()) {
             merged.enums.push(e.clone());
         }
     }
 
-    let mut macro_names: std::collections::HashSet<String> =
-        merged.macros.iter().cloned().collect();
+    let mut macro_names: std::collections::HashSet<String> = merged.macros.iter().cloned().collect();
     for m in &live.macros {
         if macro_names.insert(m.clone()) {
             merged.macros.push(m.clone());
@@ -317,17 +289,12 @@ pub fn get_completion_candidates(
     let context = detect_context(source, line, column);
 
     let mut candidates: Vec<CompletionCandidate> = match &context {
-        CompletionContext::MemberAccess {
-            expr,
-            is_pointer,
-        } => {
+        CompletionContext::MemberAccess { expr, is_pointer } => {
             complete_members(session, &snapshot, source, line, column, expr, *is_pointer)
         }
         CompletionContext::TypePosition => complete_types(&snapshot, prefix),
         CompletionContext::Preprocessor => complete_preprocessor(prefix),
-        CompletionContext::FormatString { func_name } => {
-            complete_format_string(func_name, prefix)
-        }
+        CompletionContext::FormatString { func_name } => complete_format_string(func_name, prefix),
         CompletionContext::Expression { hint } => {
             complete_expression(session, &snapshot, source, line, column, prefix, *hint)
         }
@@ -392,9 +359,7 @@ fn scan_local_symbols(source: &str, target_line: usize, _target_column: usize) -
             | TokenType::Union
             | TokenType::Enum => {
                 // 尝试解析类型 + 变量名 模式
-                if let Some((ty_str, names, new_i, is_param)) =
-                    try_parse_declaration(&tokens, i, scope_depth)
-                {
+                if let Some((ty_str, names, new_i, is_param)) = try_parse_declaration(&tokens, i, scope_depth) {
                     for (name, _init) in names {
                         locals.push(LocalSymbol {
                             name,
@@ -439,8 +404,7 @@ fn try_parse_declaration(
             | TokenType::Short
             | TokenType::Signed
             | TokenType::Unsigned
-            | TokenType::Const
-            => {
+            | TokenType::Const => {
                 type_parts.push(tokens[i].text.clone());
                 i += 1;
             }
@@ -503,8 +467,7 @@ fn try_parse_declaration(
         }
 
         // 检查是否有初始化 = ...
-        let has_init =
-            i < tokens.len() && (tokens[i].ty == TokenType::Assign || tokens[i].ty == TokenType::LParen);
+        let has_init = i < tokens.len() && (tokens[i].ty == TokenType::Assign || tokens[i].ty == TokenType::LParen);
 
         names.push((name, has_init));
 
@@ -539,12 +502,11 @@ fn try_parse_declaration(
 // 补全生成器
 // ============================================================================
 
-
 pub fn update_completion_snapshot(session: &mut Session, program: &ProgramNode) {
     session.compile.completion_snapshot = build_snapshot(program);
 }
 
-mod context;
 mod candidates;
-pub use context::*;
+mod context;
 pub use candidates::*;
+pub use context::*;

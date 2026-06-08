@@ -1,7 +1,7 @@
+use cide_native::compiler::codegen::BytecodeGen;
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 use cide_native::compiler::typeck::TypeChecker;
-use cide_native::compiler::codegen::BytecodeGen;
 use cide_native::vm::opcode::OpCode;
 
 fn generate(src: &str) -> cide_native::compiler::codegen::CompileOutput {
@@ -34,7 +34,10 @@ fn test_bytecode_gen_return_const() {
         let instr = &output.code[i];
         match instr.op {
             OpCode::PushConst if instr.operand == 42 => found_push = true,
-            OpCode::Ret => { found_return = true; break; }
+            OpCode::Ret => {
+                found_return = true;
+                break;
+            }
             _ => {}
         }
     }

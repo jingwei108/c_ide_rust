@@ -83,8 +83,7 @@ impl Default for BytecodeGen {
 impl BytecodeGen {
     pub fn new() -> Self {
         use crate::vm::bytecode_libc_index::{
-            BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT, BYTECODE_LIBC_GLOBALS_RESERVED,
-            bytecode_libc_index,
+            bytecode_libc_index, BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT, BYTECODE_LIBC_GLOBALS_RESERVED,
         };
         use crate::vm::host_func_id::BYTECODE_LIBC_PURE_FUNCS;
         use crate::vm::vm::GLOBAL_START;
@@ -151,7 +150,9 @@ impl BytecodeGen {
 
         // Pre-fill func_index so global initializers can resolve function names
         for f in &program.funcs {
-            if f.body.is_none() { continue; }
+            if f.body.is_none() {
+                continue;
+            }
             self.func_index.insert(f.name.clone(), self.next_func_idx);
             self.next_func_idx += 1;
         }
@@ -159,7 +160,9 @@ impl BytecodeGen {
         // Pass 1: Register globals (byte offsets)
         // First: non-extern definitions
         for g in &program.globals {
-            if g.is_extern { continue; }
+            if g.is_extern {
+                continue;
+            }
             if g.ty.is_vla() {
                 self.errors.push(format!("全局作用域不支持变长数组(VLA) '{}'", g.name));
                 continue;
@@ -184,9 +187,12 @@ impl BytecodeGen {
                         if is_char_array {
                             let values = flatten_init_list(elements, &mut self.errors);
                             for i in 0..sz as usize {
-                                self.globals_init_32.push((offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
+                                self.globals_init_32
+                                    .push((offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
                             }
-                        } else if g.ty.is_struct() || (g.ty.is_array() && elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. }))) {
+                        } else if g.ty.is_struct()
+                            || (g.ty.is_array() && elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. })))
+                        {
                             // Struct or nested array init: use recursive expansion
                             self.flatten_global_init(&g.ty, init, offset as u32);
                         } else {
@@ -300,21 +306,28 @@ impl BytecodeGen {
 
         // Pass 2: Register function metadata (func_index already filled above)
         for f in &program.funcs {
-            if f.body.is_none() { continue; }
+            if f.body.is_none() {
+                continue;
+            }
             let param_sizes: Vec<i32> = f.params.iter().map(|p| self.type_size(&p.ty)).collect();
-            self.func_table.insert(f.name.clone(), FuncMeta {
-                ip: 0,
-                arg_count: f.params.len() as i32,
-                param_count: f.params.len() as i32,
-                local_count: 0,
-                param_sizes: param_sizes.clone(),
-                return_type: f.return_type.clone(),
-            });
+            self.func_table.insert(
+                f.name.clone(),
+                FuncMeta {
+                    ip: 0,
+                    arg_count: f.params.len() as i32,
+                    param_count: f.params.len() as i32,
+                    local_count: 0,
+                    param_sizes: param_sizes.clone(),
+                    return_type: f.return_type.clone(),
+                },
+            );
         }
 
         // Pass 3: Generate function bodies
         for f in &mut program.funcs {
-            if f.body.is_none() { continue; }
+            if f.body.is_none() {
+                continue;
+            }
             let func_ip = self.current_ip();
             if let Some(meta) = self.func_table.get_mut(&f.name) {
                 meta.ip = func_ip;
@@ -363,14 +376,19 @@ impl BytecodeGen {
 
     fn emit(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
         let ip = self.code.len() as u32;
-        let vm_loc = VMSourceLoc { line: loc.line, column: loc.column };
+        let vm_loc = VMSourceLoc {
+            line: loc.line,
+            column: loc.column,
+        };
         self.code.push(Instruction::new(op, operand, vm_loc));
         if loc.line > 0 {
             self.source_map.push((ip, vm_loc));
         }
     }
 
-    fn current_ip(&self) -> usize { self.code.len() }
+    fn current_ip(&self) -> usize {
+        self.code.len()
+    }
 
     fn patch_jump(&mut self, ip: usize, target: usize) {
         if ip < self.code.len() {
@@ -392,9 +410,7 @@ impl BytecodeGen {
         self.next_local_offset = 0;
         let mut offset = 0;
         let mut param_sizes = Vec::new();
-        let returns_struct = self.func_table.get(name)
-            .map(|m| m.return_type.is_struct())
-            .unwrap_or(false);
+        let returns_struct = self.func_table.get(name).map(|m| m.return_type.is_struct()).unwrap_or(false);
         if returns_struct {
             param_sizes.push(1);
             self.local_indices.insert("__ret_ptr".to_string(), offset);
@@ -591,16 +607,16 @@ impl BytecodeGen {
             TypeKind::Char => 1,
             TypeKind::Int | TypeKind::Pointer | TypeKind::Float => 4,
             TypeKind::Double | TypeKind::LongLong => 8,
-            TypeKind::Struct => {
-                self.struct_defs.get(elem_type.name()).map(|f| {
-                    f.iter().map(|field| self.type_size(&field.ty)).sum()
-                }).unwrap_or(4)
-            }
-            TypeKind::Union => {
-                self.union_defs.get(elem_type.name()).map(|f| {
-                    f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0)
-                }).unwrap_or(4)
-            }
+            TypeKind::Struct => self
+                .struct_defs
+                .get(elem_type.name())
+                .map(|f| f.iter().map(|field| self.type_size(&field.ty)).sum())
+                .unwrap_or(4),
+            TypeKind::Union => self
+                .union_defs
+                .get(elem_type.name())
+                .map(|f| f.iter().map(|field| self.type_size(&field.ty)).max().unwrap_or(0))
+                .unwrap_or(4),
             _ => 4,
         }
     }
@@ -624,7 +640,9 @@ impl BytecodeGen {
                 if target_ty.is_struct() {
                     let fields = self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default();
                     for (i, elem) in elements.iter().enumerate() {
-                        if i >= fields.len() { break; }
+                        if i >= fields.len() {
+                            break;
+                        }
                         let field_offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>() as u32;
                         self.flatten_global_init(&fields[i].ty, elem, base_offset + field_offset);
                     }
@@ -642,7 +660,11 @@ impl BytecodeGen {
                 }
             }
             Expr::FloatLiteral { value, ty, .. } => {
-                let val64 = if ty.kind() == TypeKind::Double { value.to_bits() } else { (*value).to_bits() };
+                let val64 = if ty.kind() == TypeKind::Double {
+                    value.to_bits()
+                } else {
+                    (*value).to_bits()
+                };
                 self.globals_init_64.push((base_offset, val64));
             }
             Expr::LongLiteral { value, .. } => {
@@ -655,25 +677,23 @@ impl BytecodeGen {
                     self.globals_init_32.push((base_offset, *value));
                 }
             }
-            Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
-                match operand.as_ref() {
-                    Expr::FloatLiteral { value, .. } => {
-                        let val64 = (-*value).to_bits();
-                        self.globals_init_64.push((base_offset, val64));
-                    }
-                    Expr::LongLiteral { value, .. } => {
-                        self.globals_init_64.push((base_offset, (-(*value as f64)).to_bits()));
-                    }
-                    Expr::Literal { value, .. } => {
-                        if target_ty.kind() == TypeKind::Double || target_ty.kind() == TypeKind::LongLong {
-                            self.globals_init_64.push((base_offset, (-(*value as f64)).to_bits()));
-                        } else {
-                            self.globals_init_32.push((base_offset, -*value));
-                        }
-                    }
-                    _ => {}
+            Expr::Unary { op: UnaryOp::Neg, operand, .. } => match operand.as_ref() {
+                Expr::FloatLiteral { value, .. } => {
+                    let val64 = (-*value).to_bits();
+                    self.globals_init_64.push((base_offset, val64));
                 }
-            }
+                Expr::LongLiteral { value, .. } => {
+                    self.globals_init_64.push((base_offset, (-(*value as f64)).to_bits()));
+                }
+                Expr::Literal { value, .. } => {
+                    if target_ty.kind() == TypeKind::Double || target_ty.kind() == TypeKind::LongLong {
+                        self.globals_init_64.push((base_offset, (-(*value as f64)).to_bits()));
+                    } else {
+                        self.globals_init_32.push((base_offset, -*value));
+                    }
+                }
+                _ => {}
+            },
             Expr::Identifier { name, .. } => {
                 if let Some(&idx) = self.func_index.get(name) {
                     self.globals_init_32.push((base_offset, idx));
@@ -710,6 +730,8 @@ fn stmt_loc(stmt: &Stmt) -> SourceLoc {
         Stmt::Case { loc, .. } => *loc,
         Stmt::Goto { loc, .. } => *loc,
         Stmt::Label { loc, .. } => *loc,
+        // === C++ 新增 (Phase 31 占位) ===
+        _ => SourceLoc::default(),
     }
 }
 
@@ -725,7 +747,10 @@ fn flatten_init_list(elements: &[InitElement], errors: &mut Vec<String>) -> Vec<
             Expr::Literal { value, .. } => result.push(value),
             Expr::LongLiteral { value, .. } => {
                 if value < i32::MIN as i64 || value > i32::MAX as i64 {
-                    errors.push(format!("初始化列表中的 long long 常量 {} 超出 int 范围，无法用于此上下文", value));
+                    errors.push(format!(
+                        "初始化列表中的 long long 常量 {} 超出 int 范围，无法用于此上下文",
+                        value
+                    ));
                     result.push(0);
                 } else {
                     result.push(value as i32);
@@ -733,12 +758,17 @@ fn flatten_init_list(elements: &[InitElement], errors: &mut Vec<String>) -> Vec<
             }
             Expr::FloatLiteral { value, .. } => result.push((value as f32).to_bits() as i32),
             Expr::InitList { ref elements, .. } => result.extend(flatten_init_list(elements, errors)),
-            Expr::Unary { op: UnaryOp::Neg, ref operand, .. } => {
+            Expr::Unary {
+                op: UnaryOp::Neg, ref operand, ..
+            } => {
                 if let Expr::Literal { value, .. } = operand.as_ref() {
                     result.push(-*value);
                 } else if let Expr::LongLiteral { value, .. } = operand.as_ref() {
                     if *value < i32::MIN as i64 || *value > i32::MAX as i64 {
-                        errors.push(format!("初始化列表中的 long long 常量 {} 超出 int 范围，无法用于此上下文", value));
+                        errors.push(format!(
+                            "初始化列表中的 long long 常量 {} 超出 int 范围，无法用于此上下文",
+                            value
+                        ));
                         result.push(0);
                     } else {
                         result.push(-*value as i32);

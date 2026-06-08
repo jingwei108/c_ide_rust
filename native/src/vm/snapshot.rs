@@ -10,10 +10,7 @@ pub enum MemoryImage {
     Full(Vec<u8>),
     /// 相对于某全量检查点的脏页集合。
     /// 页索引 0..255，每页 4096 字节。
-    Delta {
-        base_step: i32,
-        pages: Vec<(u16, Vec<u8>)>,
-    },
+    Delta { base_step: i32, pages: Vec<(u16, Vec<u8>)> },
 }
 
 impl MemoryImage {

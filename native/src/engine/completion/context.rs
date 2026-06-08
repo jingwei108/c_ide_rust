@@ -5,7 +5,6 @@ pub fn detect_context(source: &str, line: usize, column: usize) -> CompletionCon
     let before = text_before_cursor(source, line, column);
     let trimmed = before.trim();
 
-
     // 1. 预处理上下文
     if trimmed.starts_with('#') || trimmed.ends_with('#') {
         return CompletionContext::Preprocessor;
@@ -18,10 +17,7 @@ pub fn detect_context(source: &str, line: usize, column: usize) -> CompletionCon
 
     // 3. 成员访问上下文：识别 `expr.` 或 `expr->`（支持链式如 `a.b.c.`）
     if let Some((expr, is_pointer)) = detect_member_access(&before) {
-        return CompletionContext::MemberAccess {
-            expr,
-            is_pointer,
-        };
+        return CompletionContext::MemberAccess { expr, is_pointer };
     }
 
     // 4. 类型上下文
@@ -38,8 +34,21 @@ pub fn detect_context(source: &str, line: usize, column: usize) -> CompletionCon
 pub fn is_likely_loop_var(name: &str) -> bool {
     matches!(
         name,
-        "i" | "j" | "k" | "idx" | "index" | "m" | "n" | "left" | "right" | "mid" | "low"
-            | "high" | "pivot" | "gap" | "l" | "r"
+        "i" | "j"
+            | "k"
+            | "idx"
+            | "index"
+            | "m"
+            | "n"
+            | "left"
+            | "right"
+            | "mid"
+            | "low"
+            | "high"
+            | "pivot"
+            | "gap"
+            | "l"
+            | "r"
     )
 }
 
@@ -62,10 +71,7 @@ pub fn detect_expression_hint(before: &str) -> ExprHint {
         }
     }
     // Malloc arg: 最近未闭合的 `malloc(` / `calloc(` / `realloc(`
-    if trimmed.rfind("malloc(").is_some()
-        || trimmed.rfind("calloc(").is_some()
-        || trimmed.rfind("realloc(").is_some()
-    {
+    if trimmed.rfind("malloc(").is_some() || trimmed.rfind("calloc(").is_some() || trimmed.rfind("realloc(").is_some() {
         return ExprHint::MallocArg;
     }
     ExprHint::General
@@ -215,8 +221,8 @@ pub fn detect_type_position(before: &str) -> bool {
     let trimmed = before.trim();
     // 以类型关键字结尾
     let type_keywords = [
-        "int", "char", "float", "double", "void", "long", "short", "signed", "unsigned",
-        "struct", "union", "enum", "const", "static", "extern", "typedef",
+        "int", "char", "float", "double", "void", "long", "short", "signed", "unsigned", "struct", "union", "enum",
+        "const", "static", "extern", "typedef",
     ];
     for kw in &type_keywords {
         if trimmed.ends_with(kw) {
@@ -225,4 +231,3 @@ pub fn detect_type_position(before: &str) -> bool {
     }
     false
 }
-

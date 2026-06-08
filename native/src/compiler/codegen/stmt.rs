@@ -1,5 +1,5 @@
-use super::*;
 use super::expr::ExprGen;
+use super::*;
 
 pub(crate) trait StmtGen {
     fn gen_stmt(&mut self, stmt: &mut Stmt);
@@ -15,10 +15,19 @@ impl StmtGen for BytecodeGen {
         match stmt {
             Stmt::Block { stmts, .. } => {
                 self.enter_scope();
-                for s in stmts { self.gen_stmt(s); }
+                for s in stmts {
+                    self.gen_stmt(s);
+                }
                 self.exit_scope();
             }
-            Stmt::VarDecl { var_type, name, init, extra_vars, is_static, loc } => {
+            Stmt::VarDecl {
+                var_type,
+                name,
+                init,
+                extra_vars,
+                is_static,
+                loc,
+            } => {
                 let mut emit_one = |vty: &Type, n: &str, init: &mut Option<Expr>, loc: &SourceLoc, is_static: bool| {
                     if is_static {
                         if vty.is_vla() {
@@ -52,14 +61,17 @@ impl StmtGen for BytecodeGen {
                                         return;
                                     }
                                     let is_char_array = if let Type::Array { element, .. } = vty {
-                                    element.kind() == TypeKind::Char
-                                } else {
-                                    false
-                                };
-                                if is_char_array {
+                                        element.kind() == TypeKind::Char
+                                    } else {
+                                        false
+                                    };
+                                    if is_char_array {
                                         let values = super::flatten_init_list(elements, &mut self.errors);
                                         for i in 0..sz as usize {
-                                            self.globals_init_32.push((global_offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
+                                            self.globals_init_32.push((
+                                                global_offset as u32 + i as u32,
+                                                values.get(i).copied().unwrap_or(0),
+                                            ));
                                         }
                                     } else {
                                         let elem_size = self.elem_type_size(vty);
@@ -72,7 +84,13 @@ impl StmtGen for BytecodeGen {
                                                 } else if let Expr::LongLiteral { value, .. } = &elem.value {
                                                     self.globals_init_64.push((addr, *value as u64));
                                                 } else {
-                                                    let val = super::flatten_init_list(std::slice::from_ref(elem), &mut self.errors).first().copied().unwrap_or(0);
+                                                    let val = super::flatten_init_list(
+                                                        std::slice::from_ref(elem),
+                                                        &mut self.errors,
+                                                    )
+                                                    .first()
+                                                    .copied()
+                                                    .unwrap_or(0);
                                                     self.globals_init_32.push((addr, val));
                                                 }
                                             }
@@ -87,7 +105,8 @@ impl StmtGen for BytecodeGen {
                                                         self.globals_init_32.push((addr, str_addr as i32));
                                                     }
                                                     Expr::FloatLiteral { value, .. } => {
-                                                        self.globals_init_32.push((addr, (*value as f32).to_bits() as i32));
+                                                        self.globals_init_32
+                                                            .push((addr, (*value as f32).to_bits() as i32));
                                                     }
                                                     Expr::LongLiteral { value, .. } => {
                                                         self.globals_init_32.push((addr, *value as i32));
@@ -103,7 +122,13 @@ impl StmtGen for BytecodeGen {
                                                         }
                                                     }
                                                     _ => {
-                                                        let val = super::flatten_init_list(std::slice::from_ref(elem), &mut self.errors).first().copied().unwrap_or(0);
+                                                        let val = super::flatten_init_list(
+                                                            std::slice::from_ref(elem),
+                                                            &mut self.errors,
+                                                        )
+                                                        .first()
+                                                        .copied()
+                                                        .unwrap_or(0);
                                                         self.globals_init_32.push((addr, val));
                                                     }
                                                 }
@@ -131,7 +156,8 @@ impl StmtGen for BytecodeGen {
                                     if vty.kind() == TypeKind::Double {
                                         self.globals_init_64.push((global_offset as u32, value.to_bits()));
                                     } else {
-                                        self.globals_init_32.push((global_offset as u32, (*value as f32).to_bits() as i32));
+                                        self.globals_init_32
+                                            .push((global_offset as u32, (*value as f32).to_bits() as i32));
                                     }
                                 }
                                 Expr::Identifier { name: id_name, .. } => {
@@ -235,7 +261,8 @@ impl StmtGen for BytecodeGen {
                                     self.emit(OpCode::Add, 0, loc);
                                     self.emit(OpCode::StoreLocal, base_temp, loc);
                                     let inner_ty = vty.subscript_type();
-                                    let has_nested_init = elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. }));
+                                    let has_nested_init =
+                                        elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. }));
                                     if has_nested_init && (inner_ty.is_struct() || inner_ty.is_array()) {
                                         // Nested struct/array init: each element is an inner_ty value
                                         let elem_stride = self.type_size(&inner_ty);
@@ -278,18 +305,29 @@ impl StmtGen for BytecodeGen {
                                             self.emit(OpCode::LoadLocal, base_temp, loc);
                                             self.emit(OpCode::Memset, 0, loc);
                                             for elem in elements.iter_mut() {
-                                                if elem.designators.is_empty() { continue; }
+                                                if elem.designators.is_empty() {
+                                                    continue;
+                                                }
                                                 let idx = match &elem.designators[0] {
                                                     Designator::Index(idx_expr) => {
                                                         // Evaluate index expression at compile time if possible
                                                         if let Expr::Literal { value, .. } = idx_expr.as_ref() {
                                                             *value
                                                         } else {
-                                                            self.report_error("数组 designated initializer 的索引必须是编译期常量", loc);
+                                                            self.report_error(
+                                                                "数组 designated initializer 的索引必须是编译期常量",
+                                                                loc,
+                                                            );
                                                             continue;
                                                         }
                                                     }
-                                                    _ => { self.report_error("数组初始化只能使用 [index] 形式的 designator", loc); continue; }
+                                                    _ => {
+                                                        self.report_error(
+                                                            "数组初始化只能使用 [index] 形式的 designator",
+                                                            loc,
+                                                        );
+                                                        continue;
+                                                    }
                                                 };
                                                 if idx < 0 || idx >= count {
                                                     self.report_error("数组 designated initializer 索引超出范围", loc);
@@ -322,7 +360,10 @@ impl StmtGen for BytecodeGen {
                                                     if elem_size == 8 {
                                                         self.gen_expr(elem);
                                                         self.emit(OpCode::StoreMemD, 0, loc);
-                                                    } else if matches!(&elem.value, Expr::Identifier { .. } | Expr::StringLiteral { .. }) {
+                                                    } else if matches!(
+                                                        &elem.value,
+                                                        Expr::Identifier { .. } | Expr::StringLiteral { .. }
+                                                    ) {
                                                         self.gen_expr(elem);
                                                         self.emit(OpCode::StoreMem, 0, loc);
                                                     } else {
@@ -362,18 +403,32 @@ impl StmtGen for BytecodeGen {
                                     self.emit(OpCode::LoadLocal, base_temp, loc);
                                     self.emit(OpCode::Memset, 0, loc);
                                     for elem in elements.iter_mut() {
-                                        if elem.designators.is_empty() { continue; }
+                                        if elem.designators.is_empty() {
+                                            continue;
+                                        }
                                         let field_idx = match &elem.designators[0] {
                                             Designator::Field(name) => fields.iter().position(|f| &f.name == name),
-                                            _ => { self.report_error("结构体初始化只能使用 .field 形式的 designator", loc); None }
+                                            _ => {
+                                                self.report_error("结构体初始化只能使用 .field 形式的 designator", loc);
+                                                None
+                                            }
                                         };
                                         let field_idx = match field_idx {
                                             Some(i) if i < fields.len() => i,
                                             _ => continue,
                                         };
-                                        let offset = fields.iter().take(field_idx).map(|f| self.type_size(&f.ty)).sum::<i32>();
-                                        if matches!(&elem.value, Expr::InitList { .. }) && (fields[field_idx].ty.is_struct() || fields[field_idx].ty.is_array()) {
-                                            self.gen_nested_init(base_temp, offset, &fields[field_idx].ty, &mut elem.value, loc);
+                                        let offset =
+                                            fields.iter().take(field_idx).map(|f| self.type_size(&f.ty)).sum::<i32>();
+                                        if matches!(&elem.value, Expr::InitList { .. })
+                                            && (fields[field_idx].ty.is_struct() || fields[field_idx].ty.is_array())
+                                        {
+                                            self.gen_nested_init(
+                                                base_temp,
+                                                offset,
+                                                &fields[field_idx].ty,
+                                                &mut elem.value,
+                                                loc,
+                                            );
                                         } else {
                                             self.emit(OpCode::LoadLocal, base_temp, loc);
                                             if offset > 0 {
@@ -392,9 +447,13 @@ impl StmtGen for BytecodeGen {
                                     }
                                 } else {
                                     for (i, elem) in elements.iter_mut().enumerate() {
-                                        if i >= fields.len() { break; }
+                                        if i >= fields.len() {
+                                            break;
+                                        }
                                         let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
-                                        if matches!(&elem.value, Expr::InitList { .. }) && (fields[i].ty.is_struct() || fields[i].ty.is_array()) {
+                                        if matches!(&elem.value, Expr::InitList { .. })
+                                            && (fields[i].ty.is_struct() || fields[i].ty.is_array())
+                                        {
                                             self.gen_nested_init(base_temp, offset, &fields[i].ty, elem, loc);
                                         } else {
                                             self.emit(OpCode::LoadLocal, base_temp, loc);
@@ -435,13 +494,25 @@ impl StmtGen for BytecodeGen {
                             }
                         } else {
                             self.gen_expr(e);
-                            if vty.kind() == TypeKind::Float && e.ty().kind() != TypeKind::Float && e.ty().kind() != TypeKind::Double && e.ty().kind() != TypeKind::LongLong {
+                            if vty.kind() == TypeKind::Float
+                                && e.ty().kind() != TypeKind::Float
+                                && e.ty().kind() != TypeKind::Double
+                                && e.ty().kind() != TypeKind::LongLong
+                            {
                                 self.emit(OpCode::CastI2F, 0, loc);
                             }
-                            if vty.kind() == TypeKind::Double && e.ty().kind() != TypeKind::Float && e.ty().kind() != TypeKind::Double && e.ty().kind() != TypeKind::LongLong {
+                            if vty.kind() == TypeKind::Double
+                                && e.ty().kind() != TypeKind::Float
+                                && e.ty().kind() != TypeKind::Double
+                                && e.ty().kind() != TypeKind::LongLong
+                            {
                                 self.emit(OpCode::CastI2D, 0, loc);
                             }
-                            if vty.kind() == TypeKind::LongLong && e.ty().kind() != TypeKind::LongLong && e.ty().kind() != TypeKind::Double && e.ty().kind() != TypeKind::Float {
+                            if vty.kind() == TypeKind::LongLong
+                                && e.ty().kind() != TypeKind::LongLong
+                                && e.ty().kind() != TypeKind::Double
+                                && e.ty().kind() != TypeKind::Float
+                            {
                                 self.emit(OpCode::CastI2Q, 0, loc);
                             }
                             if vty.kind() == TypeKind::Double {
@@ -488,7 +559,12 @@ impl StmtGen for BytecodeGen {
                     self.emit(OpCode::Pop, 0, &loc);
                 }
             }
-            Stmt::If { cond, then_stmt, else_stmt, loc } => {
+            Stmt::If {
+                cond,
+                then_stmt,
+                else_stmt,
+                loc,
+            } => {
                 self.gen_expr(cond);
                 let else_jump = self.current_ip();
                 self.emit(OpCode::JumpIfZero, 0, loc);
@@ -547,7 +623,9 @@ impl StmtGen for BytecodeGen {
             }
             Stmt::For { init, cond, step, body, loc } => {
                 self.enter_scope();
-                if let Some(ref mut i) = init { self.gen_stmt(i); }
+                if let Some(ref mut i) = init {
+                    self.gen_stmt(i);
+                }
                 let start_ip = self.current_ip();
                 let mut cond_jump = 0;
                 if let Some(ref mut c) = cond {
@@ -582,7 +660,11 @@ impl StmtGen for BytecodeGen {
             }
             Stmt::Return { value, loc } => {
                 if let Some(ref mut v) = value {
-                    let ret_is_struct = self.func_table.get(&self.current_func).map(|m| m.return_type.is_struct()).unwrap_or(false);
+                    let ret_is_struct = self
+                        .func_table
+                        .get(&self.current_func)
+                        .map(|m| m.return_type.is_struct())
+                        .unwrap_or(false);
                     if ret_is_struct {
                         let ret_ptr_offset = self.resolve_local("__ret_ptr");
                         let size = self.type_size(v.ty());
@@ -608,10 +690,18 @@ impl StmtGen for BytecodeGen {
                         self.emit(OpCode::RetVoid, 0, loc);
                     } else {
                         self.gen_expr(v);
-                        let ret_is_float = self.func_table.get(&self.current_func).map(|m| m.return_type.kind() == TypeKind::Float || m.return_type.kind() == TypeKind::Double).unwrap_or(false);
+                        let ret_is_float = self
+                            .func_table
+                            .get(&self.current_func)
+                            .map(|m| {
+                                m.return_type.kind() == TypeKind::Float || m.return_type.kind() == TypeKind::Double
+                            })
+                            .unwrap_or(false);
                         if ret_is_float && v.ty().kind() != TypeKind::Float && v.ty().kind() != TypeKind::Double {
                             self.emit(OpCode::CastI2F, 0, loc);
-                        } else if !ret_is_float && (v.ty().kind() == TypeKind::Float || v.ty().kind() == TypeKind::Double) {
+                        } else if !ret_is_float
+                            && (v.ty().kind() == TypeKind::Float || v.ty().kind() == TypeKind::Double)
+                        {
                             self.emit(OpCode::CastF2I, 0, loc);
                         }
                         self.emit(OpCode::Ret, 0, loc);
@@ -654,6 +744,8 @@ impl StmtGen for BytecodeGen {
                 }
                 self.gen_stmt(stmt);
             }
+            // === C++ 新增 (Phase 31 占位) ===
+            _ => self.report_error("C++ 语句尚未支持代码生成", &loc),
         }
     }
 
@@ -664,7 +756,9 @@ impl StmtGen for BytecodeGen {
         fn collect_cases(stmt: &mut Stmt, cases: &mut Vec<(Option<Expr>, Box<Stmt>)>, default: &mut Option<Box<Stmt>>) {
             match stmt {
                 Stmt::Block { stmts, .. } => {
-                    for s in stmts { collect_cases(s, cases, default); }
+                    for s in stmts {
+                        collect_cases(s, cases, default);
+                    }
                 }
                 Stmt::Case { label, stmt, .. } => {
                     if label.is_some() {
@@ -726,6 +820,4 @@ impl StmtGen for BytecodeGen {
         }
         self.break_patches.resize(break_base, 0);
     }
-
-
 }

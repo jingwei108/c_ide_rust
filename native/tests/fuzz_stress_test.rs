@@ -19,9 +19,9 @@
 use cide_native::engine::session_ops::append_leak_report;
 use cide_native::session::Session;
 use cide_native::vm::host_funcs::{
-    host_atoi, host_free, host_getchar, host_malloc, host_memcpy, host_memmove, host_memset,
-    host_printf_n, host_putchar, host_rand, host_realloc, host_scanf_n, host_srand, host_strcat,
-    host_strcmp, host_strcpy, host_strlen, host_strncpy,
+    host_atoi, host_free, host_getchar, host_malloc, host_memcpy, host_memmove, host_memset, host_printf_n,
+    host_putchar, host_rand, host_realloc, host_scanf_n, host_srand, host_strcat, host_strcmp, host_strcpy,
+    host_strlen, host_strncpy,
 };
 use cide_native::vm::instruction::SourceLoc;
 use cide_native::vm::vm::CideVM;
@@ -90,11 +90,7 @@ fn read_test_string(vm: &CideVM, addr: u32) -> String {
     if start >= mem.len() {
         return String::new();
     }
-    let bytes: Vec<u8> = mem[start..]
-        .iter()
-        .take_while(|&&b| b != 0)
-        .copied()
-        .collect();
+    let bytes: Vec<u8> = mem[start..].iter().take_while(|&&b| b != 0).copied().collect();
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
@@ -134,11 +130,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
         // 已释放块必须以 vm.freed_logs 为准，因为 session.memory.regions
         // 保留历史记录，可能与当前实际分配状态不一致（如 realloc 后
         // region 地址重叠、malloc 清理 freed_logs 但未清理旧 region）。
-        let freed_addrs: Vec<u32> = vm
-            .get_freed_logs()
-            .iter()
-            .map(|log| log.addr)
-            .collect();
+        let freed_addrs: Vec<u32> = vm.get_freed_logs().iter().map(|log| log.addr).collect();
 
         let op = rng.range_i32(0, 12);
         match op {
@@ -204,15 +196,9 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(addr as u64);
                     host_free(&mut vm, &mut session);
                     if !vm.has_error() {
-                        issues.push(format!(
-                            "op {}: Double-Free 未检测: addr=0x{:x}",
-                            op_idx, addr
-                        ));
+                        issues.push(format!("op {}: Double-Free 未检测: addr=0x{:x}", op_idx, addr));
                     } else if !vm.get_error().contains("E3061") {
-                        issues.push(format!(
-                            "op {}: Double-Free 触发但不含 E3061: {}",
-                            op_idx, vm.get_error()
-                        ));
+                        issues.push(format!("op {}: Double-Free 触发但不含 E3061: {}", op_idx, vm.get_error()));
                     }
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -225,15 +211,9 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     let loc = SourceLoc::default();
                     vm.store_i8(addr, 0x42, &loc);
                     if !vm.has_error() {
-                        issues.push(format!(
-                            "op {}: UAF 写未检测: addr=0x{:x}",
-                            op_idx, addr
-                        ));
+                        issues.push(format!("op {}: UAF 写未检测: addr=0x{:x}", op_idx, addr));
                     } else if !vm.get_error().contains("E3060") {
-                        issues.push(format!(
-                            "op {}: UAF 写触发但不含 E3060: {}",
-                            op_idx, vm.get_error()
-                        ));
+                        issues.push(format!("op {}: UAF 写触发但不含 E3060: {}", op_idx, vm.get_error()));
                     }
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -246,15 +226,9 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     let loc = SourceLoc::default();
                     let _ = vm.load_i8(addr, &loc);
                     if !vm.has_error() {
-                        issues.push(format!(
-                            "op {}: UAF 读未检测: addr=0x{:x}",
-                            op_idx, addr
-                        ));
+                        issues.push(format!("op {}: UAF 读未检测: addr=0x{:x}", op_idx, addr));
                     } else if !vm.get_error().contains("E3060") {
-                        issues.push(format!(
-                            "op {}: UAF 读触发但不含 E3060: {}",
-                            op_idx, vm.get_error()
-                        ));
+                        issues.push(format!("op {}: UAF 读触发但不含 E3060: {}", op_idx, vm.get_error()));
                     }
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -266,10 +240,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 vm.push(0u64);
                 host_free(&mut vm, &mut session);
                 if vm.has_error() {
-                    issues.push(format!(
-                        "op {}: free(NULL) 意外触发 trap: {}",
-                        op_idx, vm.get_error()
-                    ));
+                    issues.push(format!("op {}: free(NULL) 意外触发 trap: {}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
                     vm = nv;
                     session = ns;
@@ -349,10 +320,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                                 op_idx, size, src_len
                             ));
                         } else if !vm.get_error().contains("E3070") {
-                            issues.push(format!(
-                                "op {}: strcpy 溢出触发但不含 E3070: {}",
-                                op_idx, vm.get_error()
-                            ));
+                            issues.push(format!("op {}: strcpy 溢出触发但不含 E3070: {}", op_idx, vm.get_error()));
                         }
                         let (nv, ns) = fresh_session();
                         vm = nv;
@@ -370,10 +338,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(addr as u64);
                     host_strcat(&mut vm, &mut session);
                     if vm.has_error() && !vm.get_error().contains("E3070") {
-                        issues.push(format!(
-                            "op {}: strcat 溢出触发但不含 E3070: {}",
-                            op_idx, vm.get_error()
-                        ));
+                        issues.push(format!("op {}: strcat 溢出触发但不含 E3070: {}", op_idx, vm.get_error()));
                         let (nv, ns) = fresh_session();
                         vm = nv;
                         session = ns;
@@ -420,10 +385,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(addr as u64);
                     host_strncpy(&mut vm, &mut session);
                     if vm.has_error() {
-                        issues.push(format!(
-                            "op {}: strncpy 意外触发 trap: n={} err={}",
-                            op_idx, n, vm.get_error()
-                        ));
+                        issues.push(format!("op {}: strncpy 意外触发 trap: n={} err={}", op_idx, n, vm.get_error()));
                         let (nv, ns) = fresh_session();
                         vm = nv;
                         session = ns;
@@ -442,10 +404,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(addr as u64);
                     host_memcpy(&mut vm, &mut session);
                     if vm.has_error() {
-                        issues.push(format!(
-                            "op {}: memcpy 意外触发 trap: n={} err={}",
-                            op_idx, n, vm.get_error()
-                        ));
+                        issues.push(format!("op {}: memcpy 意外触发 trap: n={} err={}", op_idx, n, vm.get_error()));
                         let (nv, ns) = fresh_session();
                         vm = nv;
                         session = ns;
@@ -465,14 +424,18 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 vm.push((buf_addr + dst_off as u32) as u64);
                 host_memmove(&mut vm, &mut session);
                 if vm.has_error() {
-                        issues.push(format!(
-                            "op {}: memmove 意外触发 trap: src_off={} dst_off={} n={} err={}",
-                            op_idx, src_off, dst_off, n, vm.get_error()
-                        ));
-                        let (nv, ns) = fresh_session();
-                        vm = nv;
-                        session = ns;
-                        bufs.clear();
+                    issues.push(format!(
+                        "op {}: memmove 意外触发 trap: src_off={} dst_off={} n={} err={}",
+                        op_idx,
+                        src_off,
+                        dst_off,
+                        n,
+                        vm.get_error()
+                    ));
+                    let (nv, ns) = fresh_session();
+                    vm = nv;
+                    session = ns;
+                    bufs.clear();
                 }
             }
             11 => {
@@ -485,7 +448,10 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     if vm.has_error() {
                         issues.push(format!(
                             "op {}: memset 意外触发 trap: n={} size={} err={}",
-                            op_idx, n, size, vm.get_error()
+                            op_idx,
+                            n,
+                            size,
+                            vm.get_error()
                         ));
                         let (nv, ns) = fresh_session();
                         vm = nv;
@@ -504,10 +470,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 vm.push(addr as u64);
                 host_strlen(&mut vm, &mut session);
                 if vm.has_error() {
-                    issues.push(format!(
-                        "op {}: strlen 意外触发 trap: err={}",
-                        op_idx, vm.get_error()
-                    ));
+                    issues.push(format!("op {}: strlen 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
                     vm = nv;
                     session = ns;
@@ -525,10 +488,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 vm.push(a as u64);
                 host_strcmp(&mut vm, &mut session);
                 if vm.has_error() {
-                    issues.push(format!(
-                        "op {}: strcmp 意外触发 trap: err={}",
-                        op_idx, vm.get_error()
-                    ));
+                    issues.push(format!("op {}: strcmp 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
                     vm = nv;
                     session = ns;
@@ -541,7 +501,6 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
 
     issues
 }
-
 
 #[test]
 fn test_fuzz_string_ops() {
@@ -579,9 +538,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
         "123 456".to_string(),
     ];
 
-    let fmt_pool = [
-        "%d", "%s", "%c", "%f", "%%", "%d %d", "hello", "%d\n", "%s %d",
-    ];
+    let fmt_pool = ["%d", "%s", "%c", "%f", "%%", "%d %d", "hello", "%d\n", "%s %d"];
 
     for op_idx in 0..max_ops {
         if vm.has_error() {
@@ -606,14 +563,16 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 write_test_string(&mut vm, fmt_addr, fmt);
                 let arg_count = fmt.matches('%').count() - fmt.matches("%%").count();
                 for _ in 0..arg_count {
-                    vm.push(rng.next() as u64);
+                    vm.push(rng.next());
                 }
                 vm.push(fmt_addr as u64);
                 host_printf_n(&mut vm, &mut session);
                 if vm.has_error() {
                     issues.push(format!(
                         "op {}: printf 意外触发 trap: fmt={:?} err={}",
-                        op_idx, fmt, vm.get_error()
+                        op_idx,
+                        fmt,
+                        vm.get_error()
                     ));
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -641,7 +600,9 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 if vm.has_error() {
                     issues.push(format!(
                         "op {}: scanf 意外触发 trap: fmt={:?} err={}",
-                        op_idx, fmt, vm.get_error()
+                        op_idx,
+                        fmt,
+                        vm.get_error()
                     ));
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -658,10 +619,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             6 => {
                 host_getchar(&mut vm, &mut session);
                 if vm.has_error() {
-                    issues.push(format!(
-                        "op {}: getchar 意外触发 trap: err={}",
-                        op_idx, vm.get_error()
-                    ));
+                    issues.push(format!("op {}: getchar 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
                     vm = nv;
                     session = ns;
@@ -678,10 +636,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 vm.push(rng.range_i32(32, 127) as u64);
                 host_putchar(&mut vm, &mut session);
                 if vm.has_error() {
-                    issues.push(format!(
-                        "op {}: putchar 意外触发 trap: err={}",
-                        op_idx, vm.get_error()
-                    ));
+                    issues.push(format!("op {}: putchar 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
                     vm = nv;
                     session = ns;
@@ -759,7 +714,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             4 => {
                 let fmt_addr = 0x2000u32;
                 write_test_string(&mut vm, fmt_addr, "%d");
-                vm.push(rng.next() as u64);
+                vm.push(rng.next());
                 vm.push(fmt_addr as u64);
                 host_printf_n(&mut vm, &mut session);
             }
@@ -811,10 +766,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     let loc = SourceLoc::default();
                     vm.store_i8(addr, 0x42, &loc);
                     if !vm.has_error() {
-                        issues.push(format!(
-                            "op {}: 混合序列中 UAF 写未检测: addr=0x{:x}",
-                            op_idx, addr
-                        ));
+                        issues.push(format!("op {}: 混合序列中 UAF 写未检测: addr=0x{:x}", op_idx, addr));
                     }
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -827,10 +779,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(addr as u64);
                     host_free(&mut vm, &mut session);
                     if !vm.has_error() {
-                        issues.push(format!(
-                            "op {}: 混合序列中 Double-Free 未检测: addr=0x{:x}",
-                            op_idx, addr
-                        ));
+                        issues.push(format!("op {}: 混合序列中 Double-Free 未检测: addr=0x{:x}", op_idx, addr));
                     }
                     let (nv, ns) = fresh_session();
                     vm = nv;
@@ -910,7 +859,8 @@ fn fuzz_round_leak_detection(rng: &mut FuzzRng) -> Vec<String> {
         if vm.has_error() {
             issues.push(format!(
                 "leak fuzz: free 意外触发 trap: addr=0x{:x} err={}",
-                addr, vm.get_error()
+                addr,
+                vm.get_error()
             ));
             return issues;
         }
@@ -924,14 +874,10 @@ fn fuzz_round_leak_detection(rng: &mut FuzzRng) -> Vec<String> {
     let leaked = alloc_addrs.len();
     if leaked > 0 {
         if lines_after == lines_before {
-            issues.push(format!(
-                "leak fuzz: {} 个泄漏块但 append_leak_report 未输出任何内容",
-                leaked
-            ));
+            issues.push(format!("leak fuzz: {} 个泄漏块但 append_leak_report 未输出任何内容", leaked));
         } else {
             // 检查所有新增行中是否包含泄漏数量信息
-            let new_lines: Vec<String> = session.runtime.output_lines[lines_before..lines_after]
-                .to_vec();
+            let new_lines: Vec<String> = session.runtime.output_lines[lines_before..lines_after].to_vec();
             let report_text = new_lines.join("\n");
             let count_in_report = report_text.matches("分配了").count();
             if count_in_report < leaked {

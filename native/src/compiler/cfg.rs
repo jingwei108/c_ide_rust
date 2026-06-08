@@ -65,11 +65,7 @@ impl ControlFlowGraph {
                 }
             }
         }
-        self.blocks
-            .iter()
-            .map(|b| b.id)
-            .filter(|id| !reachable.contains(id))
-            .collect()
+        self.blocks.iter().map(|b| b.id).filter(|id| !reachable.contains(id)).collect()
     }
 
     /// Identify natural loops in the CFG.
@@ -253,18 +249,15 @@ impl CfgBuilder {
             Stmt::Block { stmts, .. } => self.build_seq(stmts),
             Stmt::If { cond, then_stmt, else_stmt, .. } => {
                 let then_entry = self.build_block(then_stmt);
-                let else_entry = else_stmt
-                    .as_ref()
-                    .map(|s| self.build_block(s))
-                    .unwrap_or_else(|| {
-                        let id = self.alloc_id();
-                        self.blocks.push(BasicBlock {
-                            id,
-                            stmts: vec![],
-                            terminator: Terminator::FallThrough(id),
-                        });
-                        id
+                let else_entry = else_stmt.as_ref().map(|s| self.build_block(s)).unwrap_or_else(|| {
+                    let id = self.alloc_id();
+                    self.blocks.push(BasicBlock {
+                        id,
+                        stmts: vec![],
+                        terminator: Terminator::FallThrough(id),
                     });
+                    id
+                });
                 let merge = self.alloc_id();
                 self.blocks.push(BasicBlock {
                     id: merge,
@@ -354,7 +347,11 @@ impl CfgBuilder {
                     terminator: Terminator::FallThrough(exit),
                 });
 
-                let cond_expr = cond.clone().unwrap_or(Expr::Literal { value: 1, loc: SourceLoc::default(), ty: crate::compiler::ast::Type::int() });
+                let cond_expr = cond.clone().unwrap_or(Expr::Literal {
+                    value: 1,
+                    loc: SourceLoc::default(),
+                    ty: crate::compiler::ast::Type::int(),
+                });
                 self.blocks.push(BasicBlock {
                     id: header,
                     stmts: vec![stmt.clone()],
@@ -378,17 +375,12 @@ impl CfgBuilder {
                     stmts: vec![],
                     terminator: Terminator::FallThrough(exit),
                 });
-                let switch_block = self.add_block(
-                    vec![stmt.clone()],
-                    Terminator::Goto(body_entry),
-                );
+                let switch_block = self.add_block(vec![stmt.clone()], Terminator::Goto(body_entry));
                 self.add_edge(switch_block, body_entry);
                 self.add_edge(body_entry, exit);
                 switch_block
             }
-            Stmt::Return { .. } => {
-                self.add_block(vec![stmt.clone()], Terminator::Return)
-            }
+            Stmt::Return { .. } => self.add_block(vec![stmt.clone()], Terminator::Return),
             _ => {
                 let next = self.alloc_id();
                 self.add_block(vec![stmt.clone()], Terminator::FallThrough(next))
@@ -440,7 +432,6 @@ impl CfgBuilder {
 mod tests {
     use super::*;
 
-
     fn parse_func(source: &str) -> FuncDecl {
         let (tokens, _) = crate::compiler::lexer::Lexer::new(source).tokenize();
         let (program, _) = crate::compiler::parser::Parser::new(tokens).parse();
@@ -459,7 +450,11 @@ mod tests {
     fn test_cfg_if_statement() {
         let func = parse_func("int main() { if (1) { return 1; } else { return 0; } }");
         let cfg = ControlFlowGraph::from_func(&func).unwrap();
-        let branches: Vec<_> = cfg.blocks.iter().filter(|b| matches!(b.terminator, Terminator::Branch { .. })).collect();
+        let branches: Vec<_> = cfg
+            .blocks
+            .iter()
+            .filter(|b| matches!(b.terminator, Terminator::Branch { .. }))
+            .collect();
         assert!(!branches.is_empty());
     }
 

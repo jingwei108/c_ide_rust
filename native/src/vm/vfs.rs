@@ -10,8 +10,6 @@ use std::collections::HashMap;
 use crate::session::{FreeBlock, MemoryRegion, MemoryState};
 use crate::vm::vm::CideVM;
 
-
-
 #[derive(Debug, Clone, Default)]
 pub struct VirtualFileSystem {
     files: HashMap<String, VfsFileMeta>,
@@ -48,13 +46,7 @@ impl VirtualFileSystem {
     }
 
     /// 注入预设文件到 VM Heap。通常在 `setup_vm` 之后调用。
-    pub fn inject_preset_file(
-        &mut self,
-        name: &str,
-        data: &[u8],
-        vm: &mut CideVM,
-        memory: &mut MemoryState,
-    ) -> bool {
+    pub fn inject_preset_file(&mut self, name: &str, data: &[u8], vm: &mut CideVM, memory: &mut MemoryState) -> bool {
         if self.files.contains_key(name) {
             return false;
         }
@@ -88,13 +80,7 @@ impl VirtualFileSystem {
     }
 
     /// fopen：打开或创建文件，返回 fd（0 表示失败）
-    pub fn fopen(
-        &mut self,
-        path: &str,
-        mode: &str,
-        vm: &mut CideVM,
-        memory: &mut MemoryState,
-    ) -> u32 {
+    pub fn fopen(&mut self, path: &str, mode: &str, vm: &mut CideVM, memory: &mut MemoryState) -> u32 {
         let mode = match mode {
             "r" | "rb" => VfsMode::Read,
             "w" | "wb" => VfsMode::Write,
@@ -131,9 +117,9 @@ impl VirtualFileSystem {
                         capacity: initial_cap,
                     },
                 );
-        }
+            }
 
-        if mode == VfsMode::Append && !self.files.contains_key(path) {
+            if mode == VfsMode::Append && !self.files.contains_key(path) {
                 let initial_cap = 256usize;
                 let addr = match malloc_raw(memory, initial_cap, vm.get_memory_size()) {
                     Some(a) => a,
@@ -580,12 +566,7 @@ fn free_raw(memory: &mut MemoryState, addr: u32) {
 }
 
 /// 为 VFS 文件扩容（类似 realloc，原地缩容/扩容）
-fn realloc_vfs_file(
-    memory: &mut MemoryState,
-    vm: &mut CideVM,
-    meta: &mut VfsFileMeta,
-    new_cap: usize,
-) -> bool {
+fn realloc_vfs_file(memory: &mut MemoryState, vm: &mut CideVM, meta: &mut VfsFileMeta, new_cap: usize) -> bool {
     if new_cap <= meta.capacity {
         return true;
     }

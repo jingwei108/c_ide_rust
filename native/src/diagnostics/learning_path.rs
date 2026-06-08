@@ -36,13 +36,8 @@ pub struct LearningPath {
 
 /// Recommend learning paths for the given detected misconceptions.
 #[frb]
-pub fn recommend_learning_paths(
-    detected: Vec<DetectedMisconception>,
-) -> Vec<LearningPath> {
-    detected
-        .into_iter()
-        .filter_map(|d| build_path(&d))
-        .collect()
+pub fn recommend_learning_paths(detected: Vec<DetectedMisconception>) -> Vec<LearningPath> {
+    detected.into_iter().filter_map(|d| build_path(&d)).collect()
 }
 
 fn build_path(d: &DetectedMisconception) -> Option<LearningPath> {

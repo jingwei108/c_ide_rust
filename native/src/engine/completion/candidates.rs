@@ -53,11 +53,7 @@ pub fn complete_members(
     }
 
     let type_name = match current_type {
-        Some(ty) => ty
-            .trim_end_matches(" *")
-            .trim_end_matches('*')
-            .trim()
-            .to_string(),
+        Some(ty) => ty.trim_end_matches(" *").trim_end_matches('*').trim().to_string(),
         None => return candidates,
     };
 
@@ -353,10 +349,9 @@ pub fn complete_expression(
 
     // 5. 关键字（补充常用 C 关键字）
     let keywords = [
-        "return", "if", "else", "while", "for", "do", "break", "continue",
-        "switch", "case", "default", "sizeof", "NULL", "struct", "union",
-        "enum", "typedef", "int", "char", "float", "double", "void",
-        "long", "short", "signed", "unsigned", "const", "static", "extern",
+        "return", "if", "else", "while", "for", "do", "break", "continue", "switch", "case", "default", "sizeof",
+        "NULL", "struct", "union", "enum", "typedef", "int", "char", "float", "double", "void", "long", "short",
+        "signed", "unsigned", "const", "static", "extern",
     ];
     for kw in keywords {
         candidates.push(CompletionCandidate {
@@ -395,9 +390,7 @@ pub fn complete_preprocessor(prefix: &str) -> Vec<CompletionCandidate> {
         .collect();
 
     // 标准头文件
-    let headers = [
-        "stdio.h", "stdlib.h", "string.h", "math.h", "ctype.h", "time.h",
-    ];
+    let headers = ["stdio.h", "stdlib.h", "string.h", "math.h", "ctype.h", "time.h"];
     for h in headers {
         candidates.push(CompletionCandidate {
             label: h.to_string(),

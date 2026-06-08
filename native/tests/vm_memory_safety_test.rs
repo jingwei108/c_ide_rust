@@ -32,7 +32,7 @@ fn test_write_cstring_boundary_rejected() {
     let addr = (vm.get_memory_size() - 2) as usize; // 只剩 2 字节空间
     let before = vm.memory_ref()[addr..].to_vec();
     vm.write_cstring(addr as u32, "hello"); // 5+1=6 字节，超出边界
-    // 不应写入
+                                            // 不应写入
     assert_eq!(vm.memory_ref()[addr..], before);
 }
 

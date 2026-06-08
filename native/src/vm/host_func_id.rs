@@ -136,10 +136,8 @@ pub const STRCSPN: u32 = 130;
 /// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
 /// 诊断敏感的函数（strcpy、printf、malloc 等）继续保留 Host Func 路径。
 pub const BYTECODE_LIBC_PURE_FUNCS: &[&str] = &[
-    "isdigit", "isalpha", "islower", "isupper",
-    "tolower", "toupper", "isspace", "isalnum",
-    "isprint", "iscntrl", "isxdigit", "abs",
-    "strlen", "strcmp",
+    "isdigit", "isalpha", "islower", "isupper", "tolower", "toupper", "isspace", "isalnum", "isprint", "iscntrl",
+    "isxdigit", "abs", "strlen", "strcmp",
 ];
 
 /// 判断函数是否已由 Bytecode Libc 覆盖（纯计算函数）。

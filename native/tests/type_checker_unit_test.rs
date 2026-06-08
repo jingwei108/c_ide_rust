@@ -2,7 +2,13 @@ use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 use cide_native::compiler::typeck::TypeChecker;
 
-fn type_check(src: &str) -> (Vec<cide_native::compiler::typeck::TypeError>, Vec<cide_native::compiler::typeck::TypeError>, Vec<cide_native::compiler::typeck::TypeError>) {
+fn type_check(
+    src: &str,
+) -> (
+    Vec<cide_native::compiler::typeck::TypeError>,
+    Vec<cide_native::compiler::typeck::TypeError>,
+    Vec<cide_native::compiler::typeck::TypeError>,
+) {
     let (tokens, _) = Lexer::new(src).tokenize();
     let (maybe_program, parse_errors) = Parser::new(tokens).parse();
     assert!(parse_errors.is_empty(), "Parse errors: {:?}", parse_errors);
@@ -104,13 +110,18 @@ fn test_type_checker_duplicate_var() {
     assert!(!errors.is_empty(), "Expected error for duplicate variable");
 }
 
-
 #[test]
 fn test_type_checker_printf_format_mismatch() {
     let src = r#"int main() { printf("%f", 5); return 0; }"#;
     let (errors, _, _) = type_check(src);
     assert!(!errors.is_empty(), "Expected error for printf format mismatch");
-    assert!(errors.iter().any(|e| e.message.contains("格式") || e.message.contains("不匹配")), "Expected format mismatch message, got: {:?}", errors);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("格式") || e.message.contains("不匹配")),
+        "Expected format mismatch message, got: {:?}",
+        errors
+    );
 }
 
 #[test]
@@ -125,7 +136,13 @@ fn test_type_checker_scanf_format_mismatch() {
     let src = r#"int main() { float f; scanf("%d", &f); return 0; }"#;
     let (errors, _, _) = type_check(src);
     assert!(!errors.is_empty(), "Expected error for scanf format mismatch");
-    assert!(errors.iter().any(|e| e.message.contains("格式") || e.message.contains("不匹配")), "Expected format mismatch message, got: {:?}", errors);
+    assert!(
+        errors
+            .iter()
+            .any(|e| e.message.contains("格式") || e.message.contains("不匹配")),
+        "Expected format mismatch message, got: {:?}",
+        errors
+    );
 }
 
 #[test]
@@ -140,9 +157,12 @@ fn test_type_checker_printf_arg_count_mismatch() {
     let src = r#"int main() { printf("%d %d", 5); return 0; }"#;
     let (errors, _, _) = type_check(src);
     assert!(!errors.is_empty(), "Expected error for printf arg count mismatch");
-    assert!(errors.iter().any(|e| e.message.contains("不匹配")), "Expected count mismatch message, got: {:?}", errors);
+    assert!(
+        errors.iter().any(|e| e.message.contains("不匹配")),
+        "Expected count mismatch message, got: {:?}",
+        errors
+    );
 }
-
 
 #[test]
 fn test_type_checker_struct_return_by_value_allowed() {

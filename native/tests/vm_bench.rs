@@ -1,6 +1,6 @@
 use cide_native::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use cide_native::engine::session_ops::{execute_run, reset_runtime};
-use cide_native::session::{Session, CompileUnit};
+use cide_native::session::{CompileUnit, Session};
 use std::time::Instant;
 
 fn bench_source(source: &str) -> (f64, f64, i32) {

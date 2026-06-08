@@ -19,12 +19,18 @@ impl TypeChecker {
         if let Some(ref mut body) = node.body {
             self.dispatch_stmt(body);
         }
-        let unresolved: Vec<(String, SourceLoc)> = self.pending_gotos.iter()
+        let unresolved: Vec<(String, SourceLoc)> = self
+            .pending_gotos
+            .iter()
             .filter(|(label, _)| !self.func_labels.contains_key(label))
             .map(|(label, loc)| (label.clone(), *loc))
             .collect();
         for (label, loc) in unresolved {
-            self.report_error(&format!("goto 目标标签 '{}' 未定义", label), &loc, ErrorCode::E3071_UndefinedLabel);
+            self.report_error(
+                &format!("goto 目标标签 '{}' 未定义", label),
+                &loc,
+                ErrorCode::E3071_UndefinedLabel,
+            );
         }
         self.pending_gotos.clear();
         self.func_labels.clear();
@@ -36,10 +42,20 @@ impl TypeChecker {
         match stmt {
             Stmt::Block { stmts, .. } => {
                 self.enter_scope();
-                for s in stmts { self.dispatch_stmt(s); }
+                for s in stmts {
+                    self.dispatch_stmt(s);
+                }
                 self.exit_scope();
             }
-            Stmt::VarDecl { var_type, name, init, extra_vars, loc, is_static, .. } => {
+            Stmt::VarDecl {
+                var_type,
+                name,
+                init,
+                extra_vars,
+                loc,
+                is_static,
+                ..
+            } => {
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         self.check_array_initializer(var_type, init_expr, loc);
@@ -48,7 +64,11 @@ impl TypeChecker {
                     } else {
                         let init_type = self.resolve_expr_type(init_expr);
                         if !self.check_assignable(var_type, &init_type, loc) {
-                            self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type), loc, ErrorCode::E3004_TypeMismatch);
+                            self.report_error(
+                                &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type),
+                                loc,
+                                ErrorCode::E3004_TypeMismatch,
+                            );
                         } else {
                             insert_implicit_cast(init_expr, var_type);
                         }
@@ -64,7 +84,11 @@ impl TypeChecker {
                         } else {
                             let init_type = self.resolve_expr_type(init_expr);
                             if !self.check_assignable(ety, &init_type, loc) {
-                                self.report_error(&format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, ety), loc, ErrorCode::E3004_TypeMismatch);
+                                self.report_error(
+                                    &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, ety),
+                                    loc,
+                                    ErrorCode::E3004_TypeMismatch,
+                                );
                             } else {
                                 insert_implicit_cast(init_expr, ety);
                             }
@@ -73,11 +97,20 @@ impl TypeChecker {
                     self.declare_var(ename, ety, false, false, false);
                 }
             }
-            Stmt::Expr { expr, .. } => { self.resolve_expr_type(expr); }
-            Stmt::If { cond, then_stmt, else_stmt, loc } => {
+            Stmt::Expr { expr, .. } => {
+                self.resolve_expr_type(expr);
+            }
+            Stmt::If {
+                cond,
+                then_stmt,
+                else_stmt,
+                loc,
+            } => {
                 self.check_condition(cond, "if 条件", loc);
                 self.dispatch_stmt(then_stmt);
-                if let Some(ref mut e) = else_stmt { self.dispatch_stmt(e); }
+                if let Some(ref mut e) = else_stmt {
+                    self.dispatch_stmt(e);
+                }
             }
             Stmt::While { cond, body, loc } => {
                 self.check_condition(cond, "while 条件", loc);
@@ -93,16 +126,23 @@ impl TypeChecker {
             }
             Stmt::For { init, cond, step, body, loc } => {
                 self.enter_scope();
-                if let Some(ref mut i) = init { self.dispatch_stmt(i); }
+                if let Some(ref mut i) = init {
+                    self.dispatch_stmt(i);
+                }
                 if let Some(ref mut c) = cond {
                     self.check_condition(c, "for 条件", loc);
-                    if let Expr::Binary { op: BinaryOp::Le, left, right, .. } = c {
+                    if let Expr::Binary {
+                        op: BinaryOp::Le, left, right, ..
+                    } = c
+                    {
                         if self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right) {
                             self.report_warning("循环条件中使用了 '<='，如果用于数组索引，可能导致越界（off-by-one 错误）。你是否想使用 '<'？", loc, ErrorCode::W3051_ArrayBoundOffByOne);
                         }
                     }
                 }
-                for s in step { self.resolve_expr_type(s); }
+                for s in step {
+                    self.resolve_expr_type(s);
+                }
                 self.loop_depth += 1;
                 self.dispatch_stmt(body);
                 self.loop_depth -= 1;
@@ -118,22 +158,22 @@ impl TypeChecker {
                         let val_type = self.resolve_expr_type(v);
                         let expected = self.current_func_return.clone();
                         if !self.check_assignable(&expected, &val_type, loc) {
-                            self.report_error(&format!("返回类型不匹配：期望 '{}'，实际 '{}'", self.current_func_return, val_type), loc, ErrorCode::E3014_ReturnTypeMismatch);
+                            self.report_error(
+                                &format!("返回类型不匹配：期望 '{}'，实际 '{}'", self.current_func_return, val_type),
+                                loc,
+                                ErrorCode::E3014_ReturnTypeMismatch,
+                            );
                         }
                     } else {
                         self.report_error("非 void 函数必须返回一个值", loc, ErrorCode::E3013_MissingReturnValue);
                     }
                 }
             }
-            Stmt::Break { loc } => {
-                if self.loop_depth <= 0 && self.switch_depth <= 0 {
-                    self.report_error("break 只能在循环或 switch 体内使用", loc, ErrorCode::E3010_BreakOutsideLoop);
-                }
+            Stmt::Break { loc } if self.loop_depth <= 0 && self.switch_depth <= 0 => {
+                self.report_error("break 只能在循环或 switch 体内使用", loc, ErrorCode::E3010_BreakOutsideLoop);
             }
-            Stmt::Continue { loc } => {
-                if self.loop_depth <= 0 {
-                    self.report_error("continue 只能在循环体内使用", loc, ErrorCode::E3011_ContinueOutsideLoop);
-                }
+            Stmt::Continue { loc } if self.loop_depth <= 0 => {
+                self.report_error("continue 只能在循环体内使用", loc, ErrorCode::E3011_ContinueOutsideLoop);
             }
             Stmt::Switch { cond, body, loc } => {
                 self.switch_depth += 1;
@@ -168,20 +208,34 @@ impl TypeChecker {
                 }
                 self.dispatch_stmt(stmt);
             }
+            // === C++ 新增 (Phase 31 占位) ===
+            _ => {}
         }
     }
 
     fn check_condition(&mut self, cond: &mut Expr, ctx: &str, loc: &SourceLoc) {
         let ty = self.resolve_expr_type(cond);
         if !self.is_scalar(&ty) && !matches!(ty.kind(), TypeKind::Pointer | TypeKind::Array) {
-            self.report_error(&format!("{} 必须是整数、浮点数或指针类型", ctx), loc, ErrorCode::E3015_InvalidCondition);
+            self.report_error(
+                &format!("{} 必须是整数、浮点数或指针类型", ctx),
+                loc,
+                ErrorCode::E3015_InvalidCondition,
+            );
         }
         let is_assign_expr = |e: &Expr| matches!(e, Expr::Assign { op: AssignOp::Assign, .. });
         if is_assign_expr(cond) {
-            self.report_warning("条件中使用了赋值运算符 '='，你是否想使用比较运算符 '=='？", loc, ErrorCode::W3050_AssignInCondition);
+            self.report_warning(
+                "条件中使用了赋值运算符 '='，你是否想使用比较运算符 '=='？",
+                loc,
+                ErrorCode::W3050_AssignInCondition,
+            );
         } else if let Expr::Binary { left, right, .. } = cond {
             if is_assign_expr(left) || is_assign_expr(right) {
-                self.report_warning("条件中包含了赋值表达式，你是否想使用比较运算符 '=='？", loc, ErrorCode::W3050_AssignInCondition);
+                self.report_warning(
+                    "条件中包含了赋值表达式，你是否想使用比较运算符 '=='？",
+                    loc,
+                    ErrorCode::W3050_AssignInCondition,
+                );
             }
         }
     }
@@ -201,9 +255,7 @@ impl TypeChecker {
                     ErrorCode::E3037_FuncArgCount,
                 );
             } else {
-                for (i, (arg, expected)) in
-                    args.iter_mut().zip(sym.param_types.iter()).enumerate()
-                {
+                for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
                     let arg_type = self.resolve_expr_type(arg);
                     if !self.check_assignable(expected, &arg_type, loc) {
                         self.report_error(
@@ -242,9 +294,7 @@ impl TypeChecker {
                     ErrorCode::E3037_FuncArgCount,
                 );
             } else {
-                for (i, (arg, expected)) in
-                    args.iter_mut().zip(sym.param_types.iter()).enumerate()
-                {
+                for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
                     let arg_type = self.resolve_expr_type(arg);
                     if !self.check_assignable(expected, &arg_type, loc) {
                         self.report_error(
@@ -260,11 +310,7 @@ impl TypeChecker {
             return sym.return_type.clone();
         }
 
-        self.report_error(
-            &format!("未定义的函数 '{}'", name),
-            loc,
-            ErrorCode::E3036_UndefinedFunc,
-        );
+        self.report_error(&format!("未定义的函数 '{}'", name), loc, ErrorCode::E3036_UndefinedFunc);
         Type::void()
     }
 }

@@ -54,9 +54,7 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
         MisconceptionPattern {
             id: String::from("M01"),
             name: String::from("边界混淆"),
-            description: String::from(
-                "不理解数组“大小为 N”与“索引 0~N-1”的区别，循环条件常写成 <= 导致越界。"
-            ),
+            description: String::from("不理解数组“大小为 N”与“索引 0~N-1”的区别，循环条件常写成 <= 导致越界。"),
             error_codes: vec![3021, 3051], // Bounds + OffByOne warning
             min_occurrences: 3,
             time_window: 10,
@@ -64,9 +62,7 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
         MisconceptionPattern {
             id: String::from("M02"),
             name: String::from("指针生命周期混淆"),
-            description: String::from(
-                "认为指针存的是“变量名”而非地址，导致 free 后继续访问或重复释放。"
-            ),
+            description: String::from("认为指针存的是“变量名”而非地址，导致 free 后继续访问或重复释放。"),
             error_codes: vec![3035, 3060, 3061], // Null deref (TypeChecker) + UAF + Double-Free
             min_occurrences: 2,
             time_window: 10,
@@ -74,9 +70,7 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
         MisconceptionPattern {
             id: String::from("M03"),
             name: String::from("赋值与比较混淆"),
-            description: String::from(
-                "在 if/while 条件中误用 = 代替 ==，不理解两者的语义差异。"
-            ),
+            description: String::from("在 if/while 条件中误用 = 代替 ==，不理解两者的语义差异。"),
             error_codes: vec![3050], // AssignInCondition warning
             min_occurrences: 3,
             time_window: 10,
@@ -84,9 +78,7 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
         MisconceptionPattern {
             id: String::from("M04"),
             name: String::from("数组指针退化误解"),
-            description: String::from(
-                "不知道数组在表达式中会退化为指针，导致 sizeof 或指针算术结果与预期不符。"
-            ),
+            description: String::from("不知道数组在表达式中会退化为指针，导致 sizeof 或指针算术结果与预期不符。"),
             error_codes: vec![3045, 3052], // PtrArithTypeError + ArrayDecay warning
             min_occurrences: 2,
             time_window: 10,
@@ -94,9 +86,7 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
         MisconceptionPattern {
             id: String::from("M05"),
             name: String::from("递归边界遗漏"),
-            description: String::from(
-                "不理解递归必须有终止条件，导致无限递归或栈溢出。"
-            ),
+            description: String::from("不理解递归必须有终止条件，导致无限递归或栈溢出。"),
             error_codes: vec![], // runtime trap keyword matching only
             min_occurrences: 2,
             time_window: 10,
@@ -104,9 +94,7 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
         MisconceptionPattern {
             id: String::from("M06"),
             name: String::from("格式化字符串误用"),
-            description: String::from(
-                "不理解 %d/%f/%s 与变量类型的对应关系，printf/scanf 格式与参数不匹配。"
-            ),
+            description: String::from("不理解 %d/%f/%s 与变量类型的对应关系，printf/scanf 格式与参数不匹配。"),
             error_codes: vec![3030, 3031, 3032, 3033, 3034, 3035], // printf/scanf family
             min_occurrences: 3,
             time_window: 10,
@@ -167,10 +155,7 @@ fn record_matches(rec: &CompileRecord, pat: &MisconceptionPattern) -> bool {
     if pat.id == "M05" {
         if let Some(ref msg) = rec.trap_message {
             let lower = msg.to_lowercase();
-            if lower.contains("stack overflow")
-                || lower.contains("call stack")
-                || lower.contains("栈溢出")
-            {
+            if lower.contains("stack overflow") || lower.contains("call stack") || lower.contains("栈溢出") {
                 return true;
             }
         }
@@ -235,10 +220,7 @@ mod tests {
 
     #[test]
     fn test_no_detection_below_threshold() {
-        let history = vec![
-            make_record(vec![3051], None),
-            make_record(vec![], None),
-        ];
+        let history = vec![make_record(vec![3051], None), make_record(vec![], None)];
         let detected = detect_misconceptions(history);
         assert!(detected.is_empty());
     }

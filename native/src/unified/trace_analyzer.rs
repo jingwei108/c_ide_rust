@@ -83,64 +83,51 @@ impl TraceAnalyzer {
         let suspect_var = trap_payload
             .local_vars
             .iter()
-            .find(|v| {
-                v.value.parse::<i32>().ok() == Some(accessed_index)
-                    && is_likely_loop_var(&v.name)
-            })
+            .find(|v| v.value.parse::<i32>().ok() == Some(accessed_index) && is_likely_loop_var(&v.name))
             .map(|v| v.name.clone());
 
         let mut related_lines = Vec::new();
 
-        let (category, one_liner, fix_kind, fix_line, fix_desc) =
-            if let Some(ref var_name) = suspect_var {
-                // Slice a longer history (up to 20 steps) for pattern inference.
-                let history = slice_variable_history(steps, var_name, trap_step, 20);
-                let hist_vals: Vec<i32> = history
-                    .iter()
-                    .filter_map(|v| v.value.parse::<i32>().ok())
-                    .collect();
+        let (category, one_liner, fix_kind, fix_line, fix_desc) = if let Some(ref var_name) = suspect_var {
+            // Slice a longer history (up to 20 steps) for pattern inference.
+            let history = slice_variable_history(steps, var_name, trap_step, 20);
+            let hist_vals: Vec<i32> = history.iter().filter_map(|v| v.value.parse::<i32>().ok()).collect();
 
-                // Scan surrounding source for loop constructs.
-                let loop_info =
-                    scan_loop_info(session, trap_payload.code_line, var_name, &array_name);
-                related_lines.extend(&loop_info.lines);
-                if !related_lines.contains(&trap_payload.code_line) {
-                    related_lines.push(trap_payload.code_line);
-                }
-                related_lines.sort();
-                related_lines.dedup();
-
-                // Infer fine-grained category from history + source patterns.
-                let category = infer_bounds_category(
-                    &hist_vals,
-                    accessed_index,
-                    array_size,
-                    &loop_info,
-                );
-
-                let (one_liner, fix_kind, fix_line, fix_desc) = build_bounds_hint(
-                    category,
-                    var_name,
-                    &array_name,
-                    accessed_index,
-                    array_size,
-                    &loop_info,
-                    &hist_vals,
-                );
-                (category, one_liner, fix_kind, fix_line, fix_desc)
-            } else {
+            // Scan surrounding source for loop constructs.
+            let loop_info = scan_loop_info(session, trap_payload.code_line, var_name, &array_name);
+            related_lines.extend(&loop_info.lines);
+            if !related_lines.contains(&trap_payload.code_line) {
                 related_lines.push(trap_payload.code_line);
-                (
-                    BoundsCategory::Generic,
-                    format!(
-                        "数组 '{}' 访问了越界索引 {}。请检查数组声明大小和所有使用该数组的循环条件。",
-                        array_name, accessed_index
-                    ),
-                    String::from("None"),
-                    None,
-                    None,
-                )
-            };
+            }
+            related_lines.sort();
+            related_lines.dedup();
+
+            // Infer fine-grained category from history + source patterns.
+            let category = infer_bounds_category(&hist_vals, accessed_index, array_size, &loop_info);
+
+            let (one_liner, fix_kind, fix_line, fix_desc) = build_bounds_hint(
+                category,
+                var_name,
+                &array_name,
+                accessed_index,
+                array_size,
+                &loop_info,
+                &hist_vals,
+            );
+            (category, one_liner, fix_kind, fix_line, fix_desc)
+        } else {
+            related_lines.push(trap_payload.code_line);
+            (
+                BoundsCategory::Generic,
+                format!(
+                    "数组 '{}' 访问了越界索引 {}。请检查数组声明大小和所有使用该数组的循环条件。",
+                    array_name, accessed_index
+                ),
+                String::from("None"),
+                None,
+                None,
+            )
+        };
 
         Some(RootCauseHint {
             category: category.as_str().to_string(),
@@ -156,11 +143,7 @@ impl TraceAnalyzer {
     // Use-After-Free
     // ------------------------------------------------------------------
 
-    fn analyze_use_after_free(
-        trap_message: &str,
-        steps: &[StepPayload],
-        trap_step: usize,
-    ) -> Option<RootCauseHint> {
+    fn analyze_use_after_free(trap_message: &str, steps: &[StepPayload], trap_step: usize) -> Option<RootCauseHint> {
         let (alloc_line, freed_line) = parse_alloc_freed_lines(trap_message)?;
         let trap_payload = steps.get(trap_step)?;
 
@@ -178,10 +161,7 @@ impl TraceAnalyzer {
         );
 
         if !suspect_pointers.is_empty() {
-            one_liner.push_str(&format!(
-                " 相关指针: {}。",
-                suspect_pointers.join(", ")
-            ));
+            one_liner.push_str(&format!(" 相关指针: {}。", suspect_pointers.join(", ")));
         }
 
         let mut related_lines = vec![alloc_line, freed_line, trap_payload.code_line];
@@ -202,11 +182,7 @@ impl TraceAnalyzer {
     // Double-Free
     // ------------------------------------------------------------------
 
-    fn analyze_double_free(
-        trap_message: &str,
-        steps: &[StepPayload],
-        trap_step: usize,
-    ) -> Option<RootCauseHint> {
+    fn analyze_double_free(trap_message: &str, steps: &[StepPayload], trap_step: usize) -> Option<RootCauseHint> {
         let (alloc_line, freed_line) = parse_alloc_freed_lines(trap_message)?;
         let trap_payload = steps.get(trap_step)?;
 
@@ -265,10 +241,7 @@ impl TraceAnalyzer {
                 zero_vars.join(", ")
             ));
         } else if let Some(d) = dividend {
-            one_liner.push_str(&format!(
-                " 被除数是 {}，但除数变成了 0。请确认除法前检查了除数是否为零。",
-                d
-            ));
+            one_liner.push_str(&format!(" 被除数是 {}，但除数变成了 0。请确认除法前检查了除数是否为零。", d));
         }
 
         Some(RootCauseHint {
@@ -285,11 +258,7 @@ impl TraceAnalyzer {
     // NULL pointer dereference
     // ------------------------------------------------------------------
 
-    fn analyze_null_deref(
-        _trap_message: &str,
-        steps: &[StepPayload],
-        trap_step: usize,
-    ) -> Option<RootCauseHint> {
+    fn analyze_null_deref(_trap_message: &str, steps: &[StepPayload], trap_step: usize) -> Option<RootCauseHint> {
         let trap_payload = steps.get(trap_step)?;
 
         // Find null pointers at the trap step.
@@ -300,8 +269,7 @@ impl TraceAnalyzer {
             .map(|p| p.name.clone())
             .collect();
 
-        let mut one_liner =
-            String::from("试图解引用一个 NULL 指针。NULL 指针不指向任何有效内存。");
+        let mut one_liner = String::from("试图解引用一个 NULL 指针。NULL 指针不指向任何有效内存。");
 
         if !null_ptrs.is_empty() {
             one_liner.push_str(&format!(
@@ -317,10 +285,8 @@ impl TraceAnalyzer {
             for h in &history {
                 if h.value != "0" && h.value != "0x0" && h.value != "NULL" {
                     // The pointer was non-null earlier → look for a free or assignment to 0.
-                    one_liner.push_str(&format!(
-                        " 注意：'{}' 之前指向过地址 {}，后来变成了 NULL。",
-                        first_ptr, h.value
-                    ));
+                    one_liner
+                        .push_str(&format!(" 注意：'{}' 之前指向过地址 {}，后来变成了 NULL。", first_ptr, h.value));
                     break;
                 }
             }
@@ -418,12 +384,7 @@ struct LoopInfo {
 
 /// Scan source lines around `trap_line` looking for loop constructs that involve
 /// `var_name` and/or `array_name`.
-fn scan_loop_info(
-    session: &Session,
-    trap_line: i32,
-    var_name: &str,
-    array_name: &str,
-) -> LoopInfo {
+fn scan_loop_info(session: &Session, trap_line: i32, var_name: &str, array_name: &str) -> LoopInfo {
     let mut info = LoopInfo::default();
     // Scan a window of ±6 lines around the trap.
     for offset in -6_i32..=6_i32 {
@@ -528,21 +489,12 @@ fn infer_bounds_category(
     let max_step = diffs.iter().copied().max().unwrap_or(0);
 
     // Off-by-one: monotonic +1, ends exactly at array_size, and source has <=.
-    if accessed_index == array_size
-        && is_monotonic_inc
-        && max_step == 1
-        && start_val == 0
-        && loop_info.has_le
-    {
+    if accessed_index == array_size && is_monotonic_inc && max_step == 1 && start_val == 0 && loop_info.has_le {
         return BoundsCategory::OffByOne;
     }
 
     // Wrong init: starts at >0, monotonic +1, and reaches or exceeds array size.
-    if start_val > 0
-        && is_monotonic_inc
-        && max_step == 1
-        && accessed_index >= array_size
-    {
+    if start_val > 0 && is_monotonic_inc && max_step == 1 && accessed_index >= array_size {
         return BoundsCategory::WrongInit;
     }
 
@@ -583,12 +535,7 @@ fn build_bounds_hint(
                     array_name, array_size, array_size.saturating_sub(1)
                 )
             };
-            (
-                msg,
-                String::from("ChangeLeToLt"),
-                line,
-                Some(String::from("将 <= 改为 <")),
-            )
+            (msg, String::from("ChangeLeToLt"), line, Some(String::from("将 <= 改为 <")))
         }
         BoundsCategory::WrongInit => {
             let start_val = hist_vals.first().copied().unwrap_or(0);
@@ -637,12 +584,7 @@ fn build_bounds_hint(
                 "索引变量 '{}' 的值是 {}，但执行历史太短，可能是变量未初始化或从外部输入读取了非法值。建议在使用前初始化 '{}'。",
                 var_name, accessed_index, var_name
             );
-            (
-                msg,
-                String::from("InitVariable"),
-                None,
-                Some(format!("初始化 '{}'", var_name)),
-            )
+            (msg, String::from("InitVariable"), None, Some(format!("初始化 '{}'", var_name)))
         }
         BoundsCategory::Generic => {
             let msg = if hist_vals.len() >= 2 {
@@ -667,12 +609,13 @@ fn build_bounds_hint(
 /// Format a short variable-history string from raw values.
 fn format_history_vals(vals: &[i32]) -> String {
     if vals.len() <= 4 {
-        vals.iter()
-            .map(|v| v.to_string())
-            .collect::<Vec<_>>()
-            .join(" → ")
+        vals.iter().map(|v| v.to_string()).collect::<Vec<_>>().join(" → ")
     } else {
-        format!("{} → ... → {}", vals.first().copied().unwrap_or(0), vals.last().copied().unwrap_or(0))
+        format!(
+            "{} → ... → {}",
+            vals.first().copied().unwrap_or(0),
+            vals.last().copied().unwrap_or(0)
+        )
     }
 }
 
@@ -685,12 +628,7 @@ fn get_source_line(session: &Session, line: i32) -> String {
         .compile
         .compile_units
         .first()
-        .and_then(|u| {
-            u.source
-                .lines()
-                .nth((line - 1) as usize)
-                .map(|s| s.trim().to_string())
-        })
+        .and_then(|u| u.source.lines().nth((line - 1) as usize).map(|s| s.trim().to_string()))
         .unwrap_or_default()
 }
 
@@ -698,12 +636,23 @@ fn get_source_line(session: &Session, line: i32) -> String {
 fn is_likely_loop_var(name: &str) -> bool {
     matches!(
         name,
-        "i" | "j" | "k" | "idx" | "index" | "m" | "n" | "left" | "right" | "mid" | "low"
-            | "high" | "pivot" | "gap" | "l" | "r"
+        "i" | "j"
+            | "k"
+            | "idx"
+            | "index"
+            | "m"
+            | "n"
+            | "left"
+            | "right"
+            | "mid"
+            | "low"
+            | "high"
+            | "pivot"
+            | "gap"
+            | "l"
+            | "r"
     )
 }
-
-
 
 // ===================================================================
 // Unit tests
