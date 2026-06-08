@@ -267,6 +267,7 @@ impl TypeChecker {
                 } else {
                     var_type.clone()
                 };
+                *var_type = deduced_var_type.clone();
                 self.declare_var(var, &deduced_var_type, false, false, false);
                 self.loop_depth += 1;
                 self.dispatch_stmt(body);

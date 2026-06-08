@@ -985,6 +985,7 @@ impl CideVM {
             local_count: meta.local_count,
             func_name,
             original_stack_top,
+            caller_line: self.current_line,
         });
         self.rebuild_local_sym_map();
         self.ip = meta.ip;
@@ -1077,6 +1078,7 @@ impl CideVM {
                 }
                 self.ip = frame.return_ip;
                 self.mem_stack_top = frame.original_stack_top;
+                self.current_line = frame.caller_line;
                 self.push(ret_val);
                 self.rebuild_local_sym_map();
                 None
@@ -1094,6 +1096,7 @@ impl CideVM {
                 }
                 self.ip = frame.return_ip;
                 self.mem_stack_top = frame.original_stack_top;
+                self.current_line = frame.caller_line;
                 self.rebuild_local_sym_map();
                 None
             }

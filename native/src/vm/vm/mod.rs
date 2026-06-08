@@ -61,6 +61,7 @@ pub struct CallFrame {
     pub local_count: i32,
     pub func_name: String,
     pub original_stack_top: u32,
+    pub caller_line: i32,
 }
 
 #[derive(Debug, Clone)]
@@ -531,6 +532,7 @@ impl CideVM {
             local_count: meta.local_count,
             func_name,
             original_stack_top,
+            caller_line: self.current_line,
         });
         self.rebuild_local_sym_map();
         self.ip = meta.ip;
