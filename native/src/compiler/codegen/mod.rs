@@ -33,7 +33,29 @@ pub struct FuncMeta {
     pub return_type: Type,
 }
 
-type ScopeVarEntry = (String, Option<i32>, Option<Type>, Option<i32>);
+#[derive(Debug, Clone)]
+struct ShadowEntry {
+    name: String,
+    old_offset: Option<i32>,
+    old_type: Option<Type>,
+    old_sym_idx: Option<i32>,
+}
+
+#[derive(Debug, Clone)]
+struct ClassVarEntry {
+    #[allow(dead_code)]
+    name: String,
+    offset: i32,
+    class_name: String,
+}
+
+#[derive(Debug, Clone, Default)]
+struct ScopeFrame {
+    shadows: Vec<ShadowEntry>,
+    /// 在当前 scope 中声明的类类型局部变量，按声明顺序排列。
+    /// 作用域退出时按 LIFO（逆序）调用析构函数。
+    class_vars: Vec<ClassVarEntry>,
+}
 
 pub struct BytecodeGen {
     code: Vec<Instruction>,
@@ -51,10 +73,14 @@ pub struct BytecodeGen {
     static_local_indices: HashMap<String, i32>,
     static_local_types: HashMap<String, Type>,
     next_local_offset: i32,
-    local_scope_stack: Vec<Vec<ScopeVarEntry>>,
+    local_scope_stack: Vec<ScopeFrame>,
+    /// 当前 loop 对应的 scope 深度栈，与 loop_start_ips 同步 push/pop。
+    /// 用于 break/continue 时计算需要析构的 scope 层数。
+    loop_scope_depths: Vec<usize>,
     temp_slot0: i32,
     temp_slot1: i32,
     temp_slot2: i32,
+    temp_slot3: i32,
     globals_init_32: Vec<(u32, i32)>,
     globals_init_64: Vec<(u32, u64)>,
     next_global_offset: i32,
@@ -120,9 +146,11 @@ impl BytecodeGen {
             static_local_types: HashMap::new(),
             next_local_offset: 0,
             local_scope_stack: Vec::new(),
+            loop_scope_depths: Vec::new(),
             temp_slot0: -1,
             temp_slot1: -1,
             temp_slot2: -1,
+            temp_slot3: -1,
             globals_init_32: Vec::new(),
             globals_init_64: Vec::new(),
             next_global_offset: BYTECODE_LIBC_GLOBALS_RESERVED as i32,
@@ -425,8 +453,6 @@ impl BytecodeGen {
                 self.emit(OpCode::Ret, 0, &f.loc);
             }
             self.exit_function();
-            for (i, instr) in self.code.iter().enumerate().skip(func_ip) {
-            }
         }
 
         let wrapper_ip = self.current_ip();
@@ -528,6 +554,7 @@ impl BytecodeGen {
         self.temp_slot0 = -1;
         self.temp_slot1 = -1;
         self.temp_slot2 = -1;
+        self.temp_slot3 = -1;
         if let Some(meta) = self.func_table.get_mut(name) {
             meta.param_sizes = param_sizes;
         }
@@ -550,37 +577,107 @@ impl BytecodeGen {
     }
 
     fn enter_scope(&mut self) {
-        self.local_scope_stack.push(Vec::new());
+        self.local_scope_stack.push(ScopeFrame::default());
     }
 
+    /// 在作用域退出时，先按 LIFO 顺序调用当前 scope 中类类型变量的析构函数，
+    /// 再恢复被 shadow 的外部变量。
     fn exit_scope(&mut self) {
-        if let Some(scope_vars) = self.local_scope_stack.pop() {
-            for (name, old_offset, old_type, old_sym_idx) in scope_vars {
-                if let Some(old) = old_offset {
-                    self.local_indices.insert(name.clone(), old);
+        if let Some(frame) = self.local_scope_stack.pop() {
+            // 逆序调用析构函数（C++ 销毁顺序与构造顺序相反）
+            for cv in frame.class_vars.iter().rev() {
+                self.emit_class_dtor(&cv.class_name, cv.offset, &SourceLoc { line: 0, column: 0 });
+            }
+            for entry in frame.shadows {
+                if let Some(old) = entry.old_offset {
+                    self.local_indices.insert(entry.name.clone(), old);
                 } else {
-                    self.local_indices.remove(&name);
+                    self.local_indices.remove(&entry.name);
                 }
-                if let Some(old) = old_type {
-                    self.local_types.insert(name.clone(), old);
+                if let Some(old) = entry.old_type {
+                    self.local_types.insert(entry.name.clone(), old);
                 } else {
-                    self.local_types.remove(&name);
+                    self.local_types.remove(&entry.name);
                 }
-                if let Some(old) = old_sym_idx {
-                    self.sym_index.insert(name, old);
+                if let Some(old) = entry.old_sym_idx {
+                    self.sym_index.insert(entry.name, old);
                 } else {
-                    self.sym_index.remove(&name);
+                    self.sym_index.remove(&entry.name);
                 }
             }
         }
     }
 
     fn record_scope_var(&mut self, name: &str) {
-        if let Some(scope) = self.local_scope_stack.last_mut() {
+        if let Some(frame) = self.local_scope_stack.last_mut() {
             let old_offset = self.local_indices.get(name).copied();
             let old_type = self.local_types.get(name).cloned();
             let old_sym_idx = self.sym_index.get(name).copied();
-            scope.push((name.to_string(), old_offset, old_type, old_sym_idx));
+            frame.shadows.push(ShadowEntry {
+                name: name.to_string(),
+                old_offset,
+                old_type,
+                old_sym_idx,
+            });
+        }
+    }
+
+    /// 记录当前 scope 中声明的类类型局部变量，供作用域退出时析构。
+    fn record_class_var(&mut self, name: &str, offset: i32, class_name: &str) {
+        if let Some(frame) = self.local_scope_stack.last_mut() {
+            frame.class_vars.push(ClassVarEntry {
+                name: name.to_string(),
+                offset,
+                class_name: class_name.to_string(),
+            });
+        }
+    }
+
+    /// 生成对栈上指定偏移处类对象的析构函数调用。
+    fn emit_class_dtor(&mut self, class_name: &str, offset: i32, loc: &SourceLoc) {
+        let dtor_name = format!("__dtor__{}", class_name);
+        if let Some(&idx) = self.func_index.get(&dtor_name) {
+            self.emit(OpCode::GetFrameBase, 0, loc);
+            self.emit(OpCode::PushConst, offset, loc);
+            self.emit(OpCode::Add, 0, loc);
+            self.emit(OpCode::Call, idx, loc);
+        }
+    }
+
+    /// 生成对栈上指定偏移处类对象的构造函数调用（无参默认构造函数）。
+    fn emit_class_default_ctor(&mut self, class_name: &str, offset: i32, loc: &SourceLoc) {
+        let ctor_name = format!("__ctor__{}", class_name);
+        if let Some(&idx) = self.func_index.get(&ctor_name) {
+            self.emit(OpCode::GetFrameBase, 0, loc);
+            self.emit(OpCode::PushConst, offset, loc);
+            self.emit(OpCode::Add, 0, loc);
+            self.emit(OpCode::Call, idx, loc);
+        }
+    }
+
+    /// 按从内到外的顺序，生成从当前 scope 向下退到 target_depth（包含 target_depth）之间
+    /// 所有 scope 的析构函数调用。
+    /// target_depth 是目标 scope 在 `local_scope_stack` 中的索引：
+    /// - 0 表示函数最外层 block 之前的 scope（函数参数）
+    /// - 1 表示函数最外层 block
+    fn emit_dtors_for_scope_exit(&mut self, target_depth: usize, loc: &SourceLoc) {
+        let current_depth = self.local_scope_stack.len();
+        if current_depth == 0 || current_depth < target_depth {
+            return;
+        }
+        // target_depth 是目标 scope 深度（0 表示函数参数层，不含在 local_scope_stack 中）。
+        // 实际 frame 索引为 depth-1，因此有效的 frame 索引范围是 max(target_depth, 1)-1 ..= current_depth-1。
+        let start_frame_idx = target_depth.saturating_sub(1);
+        // 先收集所有需要析构的类变量信息，避免 borrow 冲突
+        let mut dtors: Vec<(String, i32)> = Vec::new();
+        for frame_idx in (start_frame_idx..current_depth).rev() {
+            let frame = &self.local_scope_stack[frame_idx];
+            for cv in frame.class_vars.iter().rev() {
+                dtors.push((cv.class_name.clone(), cv.offset));
+            }
+        }
+        for (class_name, offset) in dtors {
+            self.emit_class_dtor(&class_name, offset, loc);
         }
     }
 
@@ -601,6 +698,7 @@ impl BytecodeGen {
             0 => &mut self.temp_slot0,
             1 => &mut self.temp_slot1,
             2 => &mut self.temp_slot2,
+            3 => &mut self.temp_slot3,
             _ => &mut self.temp_slot0,
         };
         if *slot < 0 {

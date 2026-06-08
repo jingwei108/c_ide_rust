@@ -5,7 +5,7 @@ use cide_native::compiler::typeck::TypeChecker;
 
 fn parse_and_typecheck_cpp(src: &str) -> (ProgramNode, Vec<cide_native::compiler::typeck::TypeError>) {
     let (tokens, _) = Lexer::with_mode(src, true).tokenize();
-    let (mut program, parse_errors) = Parser::with_mode(tokens, true).parse();
+    let (program, parse_errors) = Parser::with_mode(tokens, true).parse();
     if !parse_errors.is_empty() {
         panic!("Parse errors: {:?}", parse_errors);
     }
@@ -232,7 +232,7 @@ int main() {
 #[test]
 fn test_try_stmt_typecheck() {
     use cide_native::compiler::ast::{SourceLoc, Stmt};
-    let mut try_stmt = Stmt::Try {
+    let try_stmt = Stmt::Try {
         body: Box::new(Stmt::Block {
             stmts: vec![],
             loc: SourceLoc { line: 1, column: 1 },

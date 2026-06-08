@@ -1,9 +1,9 @@
 # Cide C++14 教学子集拓展实施计划
 
-**版本**: 2.1  
-**日期**: 2026-06-07  
-**状态**: 草案（基于 v2.0 架构，修正前置条件、错误码范围、容器库策略及内部矛盾）  
-**前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成
+**版本**: 2.3  
+**日期**: 2026-06-08  
+**状态**: Stage 3 完成（`new[]/delete[]` 元素构造析构 + 逆序析构 + temp slot 扩展至 4 个），57/57 C++ 单元测试全绿，C++ 三 tier 已纳入 CI  
+**前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
 
@@ -1133,7 +1133,9 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 
 ## 十、Dogfooding 与 C++ 容器验证
 
-### 10.1 Stage 0：验证 BytecodeGen（现在就能做）
+> **当前状态（2026-06-08）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。C++ 扩展 57/57 单元测试全绿。
+
+### 10.1 Stage 0：验证 BytecodeGen（已完成 ✅）
 
 开发团队用 Cide C++ 子集写一个 class template 封装，调用 Stage 0 的 C 容器函数：
 
@@ -1159,7 +1161,7 @@ public:
 2. 手写等价的 C 代码（直接调用 `cide_vec_*`）→ 生成字节码 B
 3. 对比 A ≡ B（逐指令一致）→ 证明 BytecodeGen 正确
 
-### 10.2 Stage 1：Dogfooding 验证（终极目标）
+### 10.2 Stage 1：Dogfooding 验证（下一步，Go/No-Go 检查点已就绪）
 
 当 Cide C++ 编译器成熟后，用 Cide C++ 子集写**不依赖 C 容器函数**的纯 C++ 容器：
 
@@ -1230,7 +1232,10 @@ public:
 | M1：编译器核心就绪 | T+2 周 | class / auto / 范围 for / new / delete 解析通过，AST 结构正确 |
 | M2：TypeChecker 扩展完成 | T+5 周 | auto 推导、模板单态化、类布局分析通过全部单元测试 |
 | M3：BytecodeGen 扩展完成 | T+7 周 | this / MemberCall / 虚函数调用字节码与手写 C 一致 |
+| M3.5：Stage 0.5 容器收口完成 | T+0 周 | `list<int>` / `vector<char>` / `sort_int` 测试绿；`CPP_FAILURES.md` 创建；C++ Parser/TypeChecker/BytecodeGen 三 tier 纳入 CI；55/55 C++ 单元测试通过 |
 | M4：容器库集成完成 | T+10 周 | vector<int> / string 预编译通过，`v.push_back` 生成正确字节码 |
+| M4.5：Stage 2 栈 RAII 完成 | T+1 周 | 局部类对象自动调用默认构造函数；scope exit / return / break / continue 自动按 LIFO 调用析构函数；嵌套 scope + early return + loop 跳转测试全绿 |
+| M4.6：Stage 3 `new[]/delete[]` 元素构造析构完成 | T+0 周 | `new A[n]` 逐元素调用构造函数；`delete[]` 从 `base[-4]` 读取 count 并逆序调用析构函数；临时变量槽位扩展至 4 个；新增 2 个数组构造析构测试全绿 |
 | M5：高级特性完成 | T+13 周 | 移动语义 / unique_ptr / CppImplicit 模式通过测试 |
 | M6：测试防线完成 | T+16 周 | 五层测试防线全部通过，50 道教材题目回归通过 |
 | M7：Beta 发布 | T+18 周 | 内部试用，收集反馈 |

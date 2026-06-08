@@ -113,6 +113,7 @@ impl TypeChecker {
     /// 重载决议：从候选构造函数中选择最佳匹配。
     /// 当前为简化实现：返回第一个参数数量匹配的构造函数名称。
     /// TODO: 完善为基于类型相似度的优先级排序（移动构造 > 拷贝构造 > 普通构造）。
+    #[allow(dead_code)]
     pub(crate) fn resolve_constructor_overload(
         &self,
         class_name: &str,

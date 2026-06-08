@@ -63,7 +63,7 @@ impl BytecodeGen {
                     self.emit(OpCode::PushConst, 0, loc);
                 }
             } else {
-                self.gen_expr(object);
+                self.gen_addr(object, loc);
             }
         } else {
             self.report_error("不支持的类对象表达式", loc);

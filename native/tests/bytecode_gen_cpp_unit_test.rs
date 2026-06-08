@@ -507,3 +507,226 @@ fn test_cpp_type_map_lookup() {
         Some("cide_string_push_back")
     );
 }
+
+// ============================================================================
+// Stage 2: C++ 栈对象 RAII（构造函数自动调用 / 作用域退出自动析构）
+// ============================================================================
+
+#[test]
+fn test_cpp_stack_ctor_dtor_basic() {
+    let src = r#"
+#include <stdio.h>
+int g_ctor = 0;
+int g_dtor = 0;
+class Flag {
+public:
+    int x;
+    Flag() { g_ctor++; x = 42; }
+    ~Flag() { g_dtor++; }
+};
+void foo() {
+    Flag f;
+}
+int main() {
+    foo();
+    printf("%d\n", g_ctor);
+    printf("%d\n", g_dtor);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["1", "1"]);
+}
+
+#[test]
+fn test_cpp_nested_scope_dtors_lifo() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+void foo() {
+    {
+        A a1;
+        a1.init(1);
+        {
+            A a2;
+            a2.init(2);
+        }
+    }
+}
+int main() {
+    foo();
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["21"]);
+}
+
+#[test]
+fn test_cpp_early_return_dtors() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+void foo(int x) {
+    A a1;
+    a1.init(1);
+    if (x > 0) {
+        A a2;
+        a2.init(2);
+        return;
+    }
+    A a3;
+    a3.init(3);
+}
+int main() {
+    foo(1);
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["21"]);
+}
+
+#[test]
+fn test_cpp_break_dtors() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+void foo() {
+    for (int i = 0; i < 3; i++) {
+        A a;
+        a.init(i + 1);
+        if (i == 1) {
+            break;
+        }
+    }
+}
+int main() {
+    foo();
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["12"]);
+}
+
+#[test]
+fn test_cpp_continue_dtors() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+void foo() {
+    for (int i = 0; i < 3; i++) {
+        A a;
+        a.init(i + 1);
+        if (i == 1) {
+            continue;
+        }
+    }
+}
+int main() {
+    foo();
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["123"]);
+}
+
+// ============================================================================
+// Stage 3：new[] / delete[] 元素构造析构
+// ============================================================================
+
+#[test]
+fn test_cpp_new_array_ctor_dtor() {
+    let src = r#"
+#include <stdio.h>
+int g_ctor = 0;
+int g_dtor = 0;
+class A {
+public:
+    int id;
+    A() { g_ctor++; }
+    ~A() { g_dtor++; }
+};
+int main() {
+    A* arr = new A[3];
+    printf("%d\n", g_ctor);
+    delete[] arr;
+    printf("%d\n", g_dtor);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["3", "3"]);
+}
+
+#[test]
+fn test_cpp_new_array_ctor_dtor_reverse_order() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+int main() {
+    A* arr = new A[3];
+    arr[0].init(1);
+    arr[1].init(2);
+    arr[2].init(3);
+    delete[] arr;
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["321"]);
+}

@@ -554,6 +554,13 @@ impl StmtGen for BytecodeGen {
                                 self.emit(OpCode::StoreMemByte, 0, loc);
                             }
                         }
+                        // C++ 栈对象 RAII：对 class 类型调用默认构造函数
+                        if vty.is_class() {
+                            if let Type::Class { name: class_name, .. } = vty {
+                                self.record_class_var(name, local_offset, class_name);
+                                self.emit_class_default_ctor(class_name, local_offset, loc);
+                            }
+                        }
                     }
                 };
                 emit_one(var_type, name, init, loc, *is_static);
@@ -593,6 +600,7 @@ impl StmtGen for BytecodeGen {
                 let end_jump = self.current_ip();
                 self.emit(OpCode::JumpIfZero, 0, loc);
                 self.loop_start_ips.push(start_ip);
+                self.loop_scope_depths.push(self.local_scope_stack.len());
                 let break_base = self.break_patches.len();
                 let continue_base = self.continue_patches.len();
                 self.gen_stmt(body);
@@ -608,10 +616,12 @@ impl StmtGen for BytecodeGen {
                 }
                 self.continue_patches.resize(continue_base, 0);
                 self.loop_start_ips.pop();
+                self.loop_scope_depths.pop();
             }
             Stmt::DoWhile { body, cond, loc } => {
                 let start_ip = self.current_ip();
                 self.loop_start_ips.push(start_ip);
+                self.loop_scope_depths.push(self.local_scope_stack.len());
                 let break_base = self.break_patches.len();
                 let continue_base = self.continue_patches.len();
                 self.gen_stmt(body);
@@ -628,6 +638,7 @@ impl StmtGen for BytecodeGen {
                 }
                 self.continue_patches.resize(continue_base, 0);
                 self.loop_start_ips.pop();
+                self.loop_scope_depths.pop();
             }
             Stmt::For { init, cond, step, body, loc } => {
                 self.enter_scope();
@@ -642,6 +653,7 @@ impl StmtGen for BytecodeGen {
                     self.emit(OpCode::JumpIfZero, 0, loc);
                 }
                 self.loop_start_ips.push(start_ip);
+                self.loop_scope_depths.push(self.local_scope_stack.len());
                 let break_base = self.break_patches.len();
                 let continue_base = self.continue_patches.len();
                 self.gen_stmt(body);
@@ -665,6 +677,7 @@ impl StmtGen for BytecodeGen {
                 }
                 self.continue_patches.resize(continue_base, 0);
                 self.loop_start_ips.pop();
+                self.loop_scope_depths.pop();
             }
             Stmt::Return { value, loc } => {
                 if let Some(ref mut v) = value {
@@ -712,18 +725,28 @@ impl StmtGen for BytecodeGen {
                         {
                             self.emit(OpCode::CastF2I, 0, loc);
                         }
+                        // C++ 栈对象 RAII：return 前按 LIFO 调用所有活跃 scope 的析构函数
+                        self.emit_dtors_for_scope_exit(0, loc);
                         self.emit(OpCode::Ret, 0, loc);
                     }
                 } else {
+                    // C++ 栈对象 RAII：return 前按 LIFO 调用所有活跃 scope 的析构函数
+                    self.emit_dtors_for_scope_exit(0, loc);
                     self.emit(OpCode::RetVoid, 0, loc);
                 }
             }
             Stmt::Break { loc } => {
+                // C++ 栈对象 RAII：break 前调用当前 loop 内部 scope 的析构函数
+                let target_depth = self.loop_scope_depths.last().copied().unwrap_or(1);
+                self.emit_dtors_for_scope_exit(target_depth, loc);
                 let ip = self.current_ip();
                 self.emit(OpCode::Jump, 0, loc);
                 self.break_patches.push(ip);
             }
             Stmt::Continue { loc } => {
+                // C++ 栈对象 RAII：continue 前调用当前 loop 内部 scope 的析构函数
+                let target_depth = self.loop_scope_depths.last().copied().unwrap_or(1);
+                self.emit_dtors_for_scope_exit(target_depth, loc);
                 let ip = self.current_ip();
                 self.emit(OpCode::Jump, 0, loc);
                 self.continue_patches.push(ip);
@@ -776,6 +799,7 @@ impl StmtGen for BytecodeGen {
 
                 let start_ip = self.current_ip();
                 self.loop_start_ips.push(start_ip);
+                self.loop_scope_depths.push(self.local_scope_stack.len());
                 let break_base = self.break_patches.len();
                 let continue_base = self.continue_patches.len();
 
@@ -921,6 +945,7 @@ impl StmtGen for BytecodeGen {
                 }
                 self.continue_patches.resize(continue_base, 0);
                 self.loop_start_ips.pop();
+                self.loop_scope_depths.pop();
             }
             Stmt::Try { .. } => {
                 self.report_error("Try/Catch 语句代码生成尚未实现（VM 不支持异常）", &loc);

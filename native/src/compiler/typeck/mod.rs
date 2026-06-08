@@ -392,7 +392,7 @@ impl TypeChecker {
         // Drain class template instantiations discovered during Pass 3
         // so Pass 3.5 can check their methods.
         let pending_classes: Vec<_> = self.pending_class_instantiations.drain(..).collect();
-        for (name, c) in pending_classes {
+        for (_name, c) in pending_classes {
             program.classes.push(c);
         }
 
