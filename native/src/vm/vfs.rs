@@ -32,6 +32,7 @@ struct VfsDesc {
     mode: VfsMode,
     cursor: usize,
     eof: bool,
+    error: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -171,6 +172,7 @@ impl VirtualFileSystem {
                 mode,
                 cursor,
                 eof: false,
+                error: false,
             },
         );
         fd
@@ -450,6 +452,52 @@ impl VirtualFileSystem {
         if let Some(desc) = self.descriptors.get_mut(&fd) {
             desc.cursor = 0;
             desc.eof = false;
+            desc.error = false;
+        }
+    }
+
+    pub fn fflush(&mut self, _fd: u32) -> i32 {
+        // VFS 基于内存，无底层缓冲区，fflush 为空操作
+        0
+    }
+
+    pub fn clearerr(&mut self, fd: u32) {
+        if let Some(desc) = self.descriptors.get_mut(&fd) {
+            desc.eof = false;
+            desc.error = false;
+        }
+    }
+
+    pub fn remove(&mut self, path: &str, memory: &mut MemoryState) -> i32 {
+        if let Some(meta) = self.files.remove(path) {
+            free_raw(memory, meta.heap_addr);
+            // 同时关闭所有指向该文件的描述符
+            let mut to_remove = Vec::new();
+            for (fd, desc) in &self.descriptors {
+                if desc.file_name == path {
+                    to_remove.push(*fd);
+                }
+            }
+            for fd in to_remove {
+                self.descriptors.remove(&fd);
+            }
+            0
+        } else {
+            -1
+        }
+    }
+
+    pub fn rename(&mut self, old_path: &str, new_path: &str) -> i32 {
+        if let Some(meta) = self.files.remove(old_path) {
+            self.files.insert(new_path.to_string(), meta);
+            for desc in self.descriptors.values_mut() {
+                if desc.file_name == old_path {
+                    desc.file_name = new_path.to_string();
+                }
+            }
+            0
+        } else {
+            -1
         }
     }
 

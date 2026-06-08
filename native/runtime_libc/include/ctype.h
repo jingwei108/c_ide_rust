@@ -9,3 +9,6 @@ int isalnum(int c);
 int isprint(int c);
 int iscntrl(int c);
 int isxdigit(int c);
+int isgraph(int c);
+int ispunct(int c);
+int isblank(int c);

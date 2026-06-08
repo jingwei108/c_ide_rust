@@ -639,6 +639,14 @@ impl CideVM {
         self.exit_code = code;
     }
 
+    pub fn is_finished(&self) -> bool {
+        self.finished
+    }
+
+    pub fn exit_code(&self) -> i32 {
+        self.exit_code
+    }
+
     /// 将 C 风格字符串安全写入 VM 内存的指定地址（含 null 终止符）。
     /// 若目标地址超出边界则静默跳过。
     /// 

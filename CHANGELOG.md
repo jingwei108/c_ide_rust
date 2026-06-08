@@ -29,6 +29,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 存根中声明标准库函数符号，Parser/TypeChecker 自动识别，逐步替代硬编码函数名匹配
   - 预定义宏 `NULL`/`EOF`/`stdin`/`stdout`/`stderr` 在 Lexer 中内置，兼容 K&R 早期示例
 
+### Added (标准库全面拓展 P1 — 2026-06-07)
+- **新增 19 个 Host Func + 7 个存骨头文件**，覆盖 C89/C99 教学高频函数：
+  - `ctype.h`：`isgraph`/`ispunct`/`isblank`
+  - `math.h`：`asin`/`acos`/`atan2`/`sinh`/`cosh`/`tanh`
+  - `stdlib.h`：`abort`/`strtol`/`strtod`/`llabs`
+  - `stdio.h`：`fflush`/`perror`/`clearerr`/`remove`/`rename`
+  - `string.h`：`strerror`/`strpbrk`/`strspn`/`strcspn`
+  - `time.h`：`time`/`clock` + `time_t`/`clock_t` typedef + `CLOCKS_PER_SEC` 宏
+  - `assert.h`：`assert` 宏展开为 `if (!(expr)) __cide_assert_fail()`
+  - `errno.h`：`extern int errno` + `EINVAL`/`ERANGE`/`EDOM`/`ENOENT`/`EACCES` 宏，Host Func 支持通过符号表写入
+  - `float.h`：`FLT_MAX`/`DBL_MAX`/`FLT_EPSILON`/`DBL_EPSILON` 等宏
+  - `stdint.h`/`stddef.h`：`int8_t`~`uint64_t`、`size_t`/`ptrdiff_t` typedef
+- **新增 23 个 Host Contract 测试**：覆盖全部新增函数边界条件
+- **VFS 扩展**：`VfsDesc` 新增 `error` 字段，支持 `fflush`/`clearerr`/`remove`/`rename`
+- **CideVM 公开 API**：新增 `is_finished()`/`exit_code()` getter，供测试框架查询 VM 终止状态
+
+### Fixed (标准库拓展中发现并修复的 Bug — 2026-06-07)
+- **严重：7 个新增 Host Func 参数 pop 顺序错误**
+  - 根因：新增 Host Func 实现时 `vm.pop()` 顺序错误，与 Cide 编译器「从右到左压栈」约定不匹配
+  - 影响函数：`strtol`/`strtod`/`strpbrk`/`strspn`/`strcspn`/`rename`/`atan2`
+  - 后果：这些函数在实际 C 代码中被调用时，所有参数全部错位；由于此前无端到端测试覆盖，bug 一直隐藏
+  - 修复：调整 `vm.pop()` 顺序，使第一个 pop 得到第一个参数（栈顶）
+  - 验证：Host Contract Tests 新增 23 个用例后触发失败，修复后 86 个 Host Contract 测试全部通过
+
 ### Fixed (2026-06-04 审阅报告修复)
 - **Soundness / 正确性**：
   - `cstr_to_str` 返回 `&'static str` → `Option<String>`，消除 C 端释放后的悬垂引用风险

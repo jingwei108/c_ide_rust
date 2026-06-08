@@ -15,6 +15,13 @@ use cide_native::vm::host_funcs::{
     host_getchar, host_putchar, host_rand, host_srand,
     host_sin, host_cos, host_sqrt, host_pow, host_atan, host_log, host_exp,
     host_puts, host_calloc, host_bsearch, host_sprintf, host_snprintf, host_sscanf,
+    host_isgraph, host_ispunct, host_isblank,
+    host_asin, host_acos, host_atan2, host_sinh, host_cosh, host_tanh,
+    host_llabs, host_abort,
+    host_strtol, host_strtod, host_strerror,
+    host_time, host_clock, host_cide_assert_fail,
+    host_remove, host_rename,
+    host_strpbrk, host_strspn, host_strcspn,
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -926,4 +933,353 @@ fn test_sscanf_mixed_int_and_string() {
     assert_eq!(matched, 2);
     assert_eq!(v, 42);
     assert_eq!(s, "abc");
+}
+
+
+// ─── ctype 补全契约 ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_isgraph_basic() {
+    let (mut vm, _session) = fresh_session();
+    vm.push('A' as u64);
+    host_isgraph(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 1);
+
+    vm.push(' ' as u64);
+    host_isgraph(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 0);
+
+    vm.push('\n' as u64);
+    host_isgraph(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 0);
+}
+
+#[test]
+fn test_ispunct_basic() {
+    let (mut vm, _session) = fresh_session();
+    vm.push('!' as u64);
+    host_ispunct(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 1);
+
+    vm.push('A' as u64);
+    host_ispunct(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 0);
+
+    vm.push(' ' as u64);
+    host_ispunct(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 0);
+}
+
+#[test]
+fn test_isblank_basic() {
+    let (mut vm, _session) = fresh_session();
+    vm.push(' ' as u64);
+    host_isblank(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 1);
+
+    vm.push('\t' as u64);
+    host_isblank(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 1);
+
+    vm.push('\n' as u64);
+    host_isblank(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i32, 0);
+}
+
+// ─── math 补全契约 ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_asin_acos_bounds() {
+    let (mut vm, _session) = fresh_session();
+    // asin(0) = 0
+    vm.push(0.0f64.to_bits());
+    host_asin(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!(r.abs() < 1e-10, "asin(0) 应接近 0");
+
+    // acos(1) = 0
+    vm.push(1.0f64.to_bits());
+    host_acos(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!(r.abs() < 1e-10, "acos(1) 应接近 0");
+}
+
+#[test]
+fn test_atan2_quadrants() {
+    let (mut vm, _session) = fresh_session();
+    // atan2(y=0, x=1) = 0
+    // 参数从右到左压栈：先 x，后 y
+    vm.push(1.0f64.to_bits());
+    vm.push(0.0f64.to_bits());
+    host_atan2(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!(r.abs() < 1e-10, "atan2(0,1) 应接近 0");
+}
+
+#[test]
+fn test_sinh_cosh_tanh_zero() {
+    let (mut vm, _session) = fresh_session();
+    // sinh(0) = 0
+    vm.push(0.0f64.to_bits());
+    host_sinh(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!(r.abs() < 1e-10, "sinh(0) 应接近 0");
+
+    // cosh(0) = 1
+    vm.push(0.0f64.to_bits());
+    host_cosh(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!((r - 1.0).abs() < 1e-10, "cosh(0) 应接近 1");
+
+    // tanh(0) = 0
+    vm.push(0.0f64.to_bits());
+    host_tanh(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!(r.abs() < 1e-10, "tanh(0) 应接近 0");
+}
+
+// ─── llabs 契约 ──────────────────────────────────────────────────────────────
+
+#[test]
+fn test_llabs_positive_and_negative() {
+    let (mut vm, _session) = fresh_session();
+    vm.push(42i64 as u64);
+    host_llabs(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i64, 42);
+
+    vm.push((-42i64) as u64);
+    host_llabs(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i64, 42);
+
+    vm.push(i64::MIN as u64);
+    host_llabs(&mut vm, &mut Session::default());
+    // i64::MIN 的绝对值无法用 i64 表示，wrapping_neg 结果仍是 i64::MIN
+    assert_eq!(vm.pop() as i64, i64::MIN);
+}
+
+// ─── abort 契约 ──────────────────────────────────────────────────────────────
+
+#[test]
+fn test_abort_sets_finished() {
+    let (mut vm, mut session) = fresh_session();
+    host_abort(&mut vm, &mut session);
+    assert!(vm.is_finished(), "abort 必须设置 finished");
+    assert_eq!(vm.exit_code(), 134, "abort 退出码应为 134 (SIGABRT)");
+    assert!(session.runtime.output_lines.iter().any(|l| l.contains("abort")), "abort 必须输出诊断");
+}
+
+// ─── strtol / strtod 契约 ────────────────────────────────────────────────────
+
+#[test]
+fn test_strtol_basic_decimal() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    write_test_string(&mut vm, s, "12345");
+    vm.push(10);        // base
+    vm.push(0);         // endptr = NULL
+    vm.push(s as u64);  // str
+    host_strtol(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i64, 12345);
+}
+
+#[test]
+fn test_strtol_negative() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    write_test_string(&mut vm, s, "-99");
+    vm.push(10);
+    vm.push(0);
+    vm.push(s as u64);
+    host_strtol(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i64, -99);
+}
+
+#[test]
+fn test_strtol_endptr() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    let endptr = 0x3000;
+    write_test_string(&mut vm, s, "123abc");
+    vm.push(10);
+    vm.push(endptr as u64);
+    vm.push(s as u64);
+    host_strtol(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as i64, 123);
+    let end_addr = vm.load_i32(endptr, &cide_native::vm::instruction::SourceLoc::default()) as u32;
+    assert_eq!(end_addr, s + 3, "endptr 应指向 'a'");
+}
+
+#[test]
+fn test_strtol_empty_sets_errno() {
+    let (mut vm, mut session) = fresh_session();
+    // 先声明 errno 全局变量（模拟编译器行为）
+    let errno_addr = 0x1000u32;
+    vm.write_memory(errno_addr, &0i32.to_le_bytes());
+    // 将 errno 注入符号表
+    let mut symbols = vm.get_symbols().to_vec();
+    symbols.push(cide_native::vm::vm::VMSymbol {
+        name: "errno".to_string(),
+        addr: errno_addr,
+        is_local: false,
+        ty: cide_native::compiler::ast::Type::int(),
+        scope_depth: 0,
+        func_name: String::new(),
+    });
+    vm.set_symbols(symbols);
+
+    let s = 0x2000;
+    write_test_string(&mut vm, s, "abc");
+    vm.push(10);
+    vm.push(0);
+    vm.push(s as u64);
+    host_strtol(&mut vm, &mut session);
+    let _ = vm.pop();
+    let errno_val = i32::from_le_bytes([
+        vm.memory_ref()[errno_addr as usize],
+        vm.memory_ref()[errno_addr as usize + 1],
+        vm.memory_ref()[errno_addr as usize + 2],
+        vm.memory_ref()[errno_addr as usize + 3],
+    ]);
+    assert_eq!(errno_val, 1, "解析失败应设置 errno=EINVAL");
+}
+
+#[test]
+fn test_strtod_basic() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    write_test_string(&mut vm, s, "3.14");
+    vm.push(0);         // endptr = NULL
+    vm.push(s as u64);  // str
+    host_strtod(&mut vm, &mut Session::default());
+    let r = f64::from_bits(vm.pop());
+    assert!((r - 3.14).abs() < 1e-6, "strtod(3.14) 应接近 3.14");
+}
+
+// ─── strerror 契约 ───────────────────────────────────────────────────────────
+
+#[test]
+fn test_strerror_known_codes() {
+    let (mut vm, mut session) = fresh_session();
+    vm.push(1); // EINVAL
+    host_strerror(&mut vm, &mut session);
+    let addr = vm.pop() as u32;
+    let s = read_test_string(&vm, addr);
+    assert_eq!(s, "Invalid argument");
+
+    vm.push(2); // ERANGE
+    host_strerror(&mut vm, &mut session);
+    let addr = vm.pop() as u32;
+    let s = read_test_string(&vm, addr);
+    assert_eq!(s, "Numerical result out of range");
+}
+
+// ─── VFS 扩展契约 ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_remove_deletes_file() {
+    let (mut vm, mut session) = fresh_session();
+    // 先创建文件
+    let path = 0x2000;
+    write_test_string(&mut vm, path, "test.txt");
+    vm.push(path as u64);
+    host_remove(&mut vm, &mut session);
+    assert_eq!(vm.pop() as i32, -1, "不存在的文件 remove 返回 -1");
+}
+
+#[test]
+fn test_rename_nonexistent() {
+    let (mut vm, mut session) = fresh_session();
+    let old = 0x2000;
+    let new = 0x3000;
+    write_test_string(&mut vm, old, "old.txt");
+    write_test_string(&mut vm, new, "new.txt");
+    vm.push(new as u64);
+    vm.push(old as u64);
+    host_rename(&mut vm, &mut session);
+    assert_eq!(vm.pop() as i32, -1, "不存在的文件 rename 返回 -1");
+}
+
+// ─── time / clock 契约 ───────────────────────────────────────────────────────
+
+#[test]
+fn test_time_returns_positive() {
+    let (mut vm, _session) = fresh_session();
+    vm.push(0); // tloc = NULL
+    host_time(&mut vm, &mut Session::default());
+    let t = vm.pop() as i64;
+    assert!(t > 0, "time() 应返回正数 (Unix 时间戳)");
+}
+
+#[test]
+fn test_clock_returns_non_negative() {
+    let (mut vm, _session) = fresh_session();
+    host_clock(&mut vm, &mut Session::default());
+    let c = vm.pop() as i64;
+    assert!(c >= 0, "clock() 应返回非负数");
+}
+
+// ─── assert_fail 契约 ────────────────────────────────────────────────────────
+
+#[test]
+fn test_assert_fail_sets_finished() {
+    let (mut vm, mut session) = fresh_session();
+    host_cide_assert_fail(&mut vm, &mut session);
+    assert!(vm.is_finished(), "assert_fail 必须设置 finished");
+    assert_eq!(vm.exit_code(), 1);
+    assert!(session.runtime.output_lines.iter().any(|l| l.contains("断言失败")), "assert_fail 必须输出诊断");
+}
+
+// ─── strpbrk / strspn / strcspn 契约 ─────────────────────────────────────────
+
+#[test]
+fn test_strpbrk_basic() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    let accept = 0x3000;
+    write_test_string(&mut vm, s, "hello");
+    write_test_string(&mut vm, accept, "aeiou");
+    vm.push(accept as u64);
+    vm.push(s as u64);
+    host_strpbrk(&mut vm, &mut Session::default());
+    let addr = vm.pop() as u32;
+    assert_eq!(addr, s + 1, "strpbrk(hello, aeiou) 应指向 'e'");
+}
+
+#[test]
+fn test_strpbrk_no_match() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    let accept = 0x3000;
+    write_test_string(&mut vm, s, "xyz");
+    write_test_string(&mut vm, accept, "abc");
+    vm.push(accept as u64);
+    vm.push(s as u64);
+    host_strpbrk(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as u32, 0, "strpbrk 无匹配应返回 NULL");
+}
+
+#[test]
+fn test_strspn_basic() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    let accept = 0x3000;
+    write_test_string(&mut vm, s, "123abc");
+    write_test_string(&mut vm, accept, "0123456789");
+    vm.push(accept as u64);
+    vm.push(s as u64);
+    host_strspn(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as usize, 3, "strspn(123abc, digits) 应为 3");
+}
+
+#[test]
+fn test_strcspn_basic() {
+    let (mut vm, _session) = fresh_session();
+    let s = 0x2000;
+    let reject = 0x3000;
+    write_test_string(&mut vm, s, "hello world");
+    write_test_string(&mut vm, reject, " ");
+    vm.push(reject as u64);
+    vm.push(s as u64);
+    host_strcspn(&mut vm, &mut Session::default());
+    assert_eq!(vm.pop() as usize, 5, "strcspn(hello world, space) 应为 5");
 }

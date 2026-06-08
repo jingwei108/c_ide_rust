@@ -13,7 +13,7 @@
 |------|------|------|
 | 前置条件状态 | 将 static、goto、#ifdef、volatile、qsort 等标记为"待实现" | **已修正为"已实现"**（代码事实） |
 | 错误码范围 | 声称保护 E1001~E3061 | **已修正为 E1001~E3071**，C++ 预留 E4001~E4999 |
-| 容器库策略 | 直接复制 klib 头文件 | **改为参照 klib 手写 C 容器库**（klib 宏泛型与 Cide 类型系统冲突） |
+| 容器库策略 | 直接复制 klib 头文件 | **Stage 0：手写 C 容器（临时）→ Stage 1：Dogfooding 用 Cide C++ 编译器编译 C++ 容器源码 → Stage 2：替换为 C++ 实现** |
 | 容器库时机 | 全部前置 | **类型布局前置（硬编码），算法实现后置** |
 | 依赖问题 | 示例使用 `lazy_static!`（不在 Cargo.toml） | **改为 `std::sync::LazyLock`（Rust 1.95 已支持）或普通函数** |
 | 内部矛盾 | Dogfooding 示例出现被排除的 `operator[]` | **已删除运算符重载示例** |
@@ -216,12 +216,38 @@ C++ 拓展**不可**在以下工作完成前启动：
 
 ## 四、H1 详细方案：Cide 容器库（参照 klib 自研）
 
-### 4.1 设计原则
+### 4.1 Dogfooding 路线：C 基底 → C++ 替换
 
-- **参照 klib 算法**：数据结构设计和扩容策略与 klib 保持一致（已验证的工业级算法）
+> **手写 C 容器是临时方案（Stage 0），最终目标是用 Cide C++ 编译器编译 C++ 容器源码（Stage 1 Dogfooding），验证通过后替换 C 实现（Stage 2）。**
+
+**注意**：Cide 编译器本身用 Rust 编写，不存在"自举"（编译器不能用自身编译）。此处是用 Cide C++ 编译器去编译 C++ 容器库，属于 **Dogfooding**（开发团队用自己的产品解决自己的问题），是验证编译器正确性的终极手段。
+
+```
+Stage 0（现在）        Stage 1（Dogfooding）      Stage 2（成熟）
+  C 容器（手写）   →   C++ 容器源码（教学展示）  →   C++ 容器（运行时）
+  预编译为 BC Libc      用 Cide C++ 编译器编译       完全替换 C 实现
+  学生代码调用          字节码对比验证               删除所有 C 容器
+```
+
+| 阶段 | 容器实现语言 | 编译方式 | 用途 | 时机 |
+|------|-------------|----------|------|------|
+| **Stage 0** | C（手写极简） | `precompile_bytecode_libc.py` | 学生代码运行时调用 | **现在** |
+| **Stage 1** | Cide C++ 子集 | Cide C++ 编译器 | Dogfooding + 教学源码展示 | BytecodeGen 扩展完成后 |
+| **Stage 2** | Cide C++ 子集 | Cide C++ 编译器 | **完全替换 Stage 0** | Dogfooding 验证通过后 |
+
+**Stage 1 的验证方法**：
+1. 用 Cide C++ 子集写 `cide::vector<int>`（class template + 构造函数 + push_back）
+2. 用 Cide C++ 编译器编译 → 生成字节码 A
+3. 对比 Stage 0 的 C 版本预编译字节码 B
+4. 如果 A ≡ B（逐指令一致）→ 编译器正确，可进入 Stage 2（Dogfooding 通过）
+
+### 4.2 设计原则
+
+- **Stage 0 参照 klib 算法**：数据结构设计和扩容策略与 klib 保持一致（已验证的工业级算法）
 - **Cide-C 子集编写**：使用项目已支持的 C 语法（`runtime_libc/src/string.c` 和 `stdlib.c` 的风格）
 - **预编译友好**：每个容器类型是独立的 `.c` 文件，直接由 `scripts/precompile_bytecode_libc.py` 编译
 - **标准库后置**：容器算法实现（`.c` 文件）在编译器核心完成后补充，但类型布局信息前置硬编码
+- **为未来替换留接口**：C 容器的函数签名和内存布局与目标 C++ 容器一致，确保 Stage 1/2 平滑替换
 
 ### 4.2 容器组件
 
@@ -1066,13 +1092,15 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 
 ---
 
-## 十、Dogfooding：C++ 封装层验证
+## 十、Dogfooding 与 C++ 容器验证
 
-开发团队用 Cide C++ 子集写一层 klib 的 class template 封装，作为**内部测试资产**（不进入用户产物）：
+### 10.1 Stage 0：验证 BytecodeGen（现在就能做）
+
+开发团队用 Cide C++ 子集写一个 class template 封装，调用 Stage 0 的 C 容器函数：
 
 ```cpp
-// tests/dogfooding/cide_vec_cpp_wrapper.h
-// 仅用于验证 Cide C++ BytecodeGen 直接生成
+// tests/dogfooding/stage0_vec_cpp_wrapper.h
+// 验证 Cide C++ BytecodeGen 是否能正确生成对 C 容器的调用
 
 template<class T>
 class vector {
@@ -1085,13 +1113,59 @@ public:
 };
 ```
 
-**注意**：此示例不使用运算符重载（`operator[]` 已明确排除），使用显式 `get()` 方法。
+**注意**：不使用运算符重载（已排除），使用显式 `get()` 方法。
 
-**测试流程**：
-1. 用 Cide C++ 编译器编译 `cide_vec_cpp_wrapper.h` → 生成字节码
-2. 手写等价的 C 代码（直接调用 cide_vec_*）→ 生成字节码
-3. 对比两个字节码文件 → 如果逐指令一致 → 证明 BytecodeGen 正确
-4. `--show-lowered` 输出轻量降解产物，审计容器方法映射
+**验证流程**：
+1. 用 Cide C++ 编译器编译 `stage0_vec_cpp_wrapper.h` → 生成字节码 A
+2. 手写等价的 C 代码（直接调用 `cide_vec_*`）→ 生成字节码 B
+3. 对比 A ≡ B（逐指令一致）→ 证明 BytecodeGen 正确
+
+### 10.2 Stage 1：Dogfooding 验证（终极目标）
+
+当 Cide C++ 编译器成熟后，用 Cide C++ 子集写**不依赖 C 容器函数**的纯 C++ 容器：
+
+```cpp
+// tests/dogfooding/stage1_vec_cpp.h
+// 目标：用 Cide C++ 子集实现一个自包含的 vector<int>
+// 不调用任何 cide_vec_* C 函数，完全用 C++ 语法实现
+
+template<class T>
+class vector {
+    T* data;
+    int size_;
+    int capacity_;
+public:
+    vector() : data(nullptr), size_(0), capacity_(0) {}
+    
+    void push_back(T x) {
+        if (size_ >= capacity_) {
+            int new_cap = capacity_ == 0 ? 4 : capacity_ * 2;
+            T* new_data = new T[new_cap];  // Cide new → HostMalloc
+            for (int i = 0; i < size_; i++) new_data[i] = data[i];
+            delete[] data;                 // Cide delete → HostFree
+            data = new_data;
+            capacity_ = new_cap;
+        }
+        data[size_++] = x;
+    }
+    
+    T get(int i) { return data[i]; }
+    int size() { return size_; }
+    
+    ~vector() { delete[] data; }
+};
+```
+
+**Dogfooding 验证流程**：
+1. 用 Cide C++ 编译器编译 `stage1_vec_cpp.h` → 生成字节码 C
+2. 对比 C ≡ B（Stage 0 的 C 版本字节码）
+3. 如果 C ≡ B → **Dogfooding 通过**，Cide C++ 编译器可以正确编译 C++ 项目（容器库）
+4. 进入 Stage 2：用 `stage1_vec_cpp.h` 替换 `cide_vec_int.c`，删除 C 实现
+
+**Dogfooding 失败处理**：
+- 若 C ≠ B → 分析差异，修复 BytecodeGen/TypeChecker
+- 循环 1-4 直到 C ≡ B
+- Dogfooding 是编译器正确性的**终极测试**，不通过不发布 Stage 2
 
 ---
 
@@ -1106,6 +1180,7 @@ public:
 | 学生混淆 C/C++ 语法 | 高 | 教学体验下降 | IDE 层面区分模式提示，错误消息标注 "C++ 模式" |
 | klib 参照实现偏差 | 低 | 容器行为与预期不一致 | 逐函数对照 klib 源码，Differential 测试验证 |
 | `Auto` Token 语义冲突 | 中 | C-auto 与 C++-auto 解析歧义 | Parser 根据上下文区分（C 模式 vs C++ 模式） |
+| **Dogfooding 失败** | **中** | **C++ 编译器无法正确编译 C++ 容器，Stage 2 无法实现** | **Stage 0 C 容器永久保留作为 fallback；Dogfooding 不阻塞 M8 发布** |
 
 ---
 
@@ -1121,6 +1196,8 @@ public:
 | M6：测试防线完成 | T+16 周 | 五层测试防线全部通过，50 道教材题目回归通过 |
 | M7：Beta 发布 | T+18 周 | 内部试用，收集反馈 |
 | M8：正式发布 | T+22 周 | 文档完整，教学场景验证通过 |
+| **M9：容器 Dogfooding（Stage 1）** | **T+26 周** | **用 Cide C++ 编译器编译 C++ 容器源码，字节码与 C 版本逐指令一致** |
+| **M10：全面迁移（Stage 2）** | **T+30 周** | **运行时库全部替换为 C++ 实现，删除所有手写 C 容器** |
 
 ---
 

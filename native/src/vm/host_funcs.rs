@@ -339,6 +339,31 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::FLOOR => host_floor(vm, session),
         host_func_id::ROUND => host_round(vm, session),
         host_func_id::FMOD => host_fmod(vm, session),
+        host_func_id::ISGRAPH => host_isgraph(vm, session),
+        host_func_id::ISPUNCT => host_ispunct(vm, session),
+        host_func_id::ISBLANK => host_isblank(vm, session),
+        host_func_id::ASIN => host_asin(vm, session),
+        host_func_id::ACOS => host_acos(vm, session),
+        host_func_id::ATAN2 => host_atan2(vm, session),
+        host_func_id::SINH => host_sinh(vm, session),
+        host_func_id::COSH => host_cosh(vm, session),
+        host_func_id::TANH => host_tanh(vm, session),
+        host_func_id::LLABS => host_llabs(vm, session),
+        host_func_id::ABORT => host_abort(vm, session),
+        host_func_id::STRTOL => host_strtol(vm, session),
+        host_func_id::STRTOD => host_strtod(vm, session),
+        host_func_id::STRERROR => host_strerror(vm, session),
+        host_func_id::FFLUSH => host_fflush(vm, session),
+        host_func_id::PERROR => host_perror(vm, session),
+        host_func_id::CLEARERR => host_clearerr(vm, session),
+        host_func_id::TIME => host_time(vm, session),
+        host_func_id::CLOCK => host_clock(vm, session),
+        host_func_id::ASSERT_FAIL => host_cide_assert_fail(vm, session),
+        host_func_id::REMOVE => host_remove(vm, session),
+        host_func_id::RENAME => host_rename(vm, session),
+        host_func_id::STRPBRK => host_strpbrk(vm, session),
+        host_func_id::STRSPN => host_strspn(vm, session),
+        host_func_id::STRCSPN => host_strcspn(vm, session),
         _ => {}
     }
 }
@@ -1106,6 +1131,25 @@ pub fn host_isxdigit(vm: &mut CideVM, _session: &mut Session) {
     let lower = c >= 'a' as i32 && c <= 'f' as i32;
     let upper = c >= 'A' as i32 && c <= 'F' as i32;
     vm.push(if digit || lower || upper { 1 } else { 0 });
+}
+
+pub fn host_isgraph(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c >= ' ' as i32 + 1 && c <= '~' as i32 { 1 } else { 0 });
+}
+
+pub fn host_ispunct(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    let is_print = c >= ' ' as i32 && c <= '~' as i32;
+    let is_alnum = (c >= 'a' as i32 && c <= 'z' as i32)
+        || (c >= 'A' as i32 && c <= 'Z' as i32)
+        || (c >= '0' as i32 && c <= '9' as i32);
+    vm.push(if is_print && !is_alnum && c != ' ' as i32 { 1 } else { 0 });
+}
+
+pub fn host_isblank(vm: &mut CideVM, _session: &mut Session) {
+    let c = vm.pop() as i32;
+    vm.push(if c == ' ' as i32 || c == '\t' as i32 { 1 } else { 0 });
 }
 
 pub fn host_atoi(vm: &mut CideVM, _session: &mut Session) {
@@ -2029,4 +2073,290 @@ pub fn host_fmod(vm: &mut CideVM, _session: &mut Session) {
     let x = f64::from_bits(vm.pop());
     let y = f64::from_bits(vm.pop());
     vm.push(libm::fmod(x, y).to_bits());
+}
+
+pub fn host_asin(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::asin(x).to_bits());
+}
+
+pub fn host_acos(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::acos(x).to_bits());
+}
+
+pub fn host_atan2(vm: &mut CideVM, _session: &mut Session) {
+    let y = f64::from_bits(vm.pop());
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::atan2(y, x).to_bits());
+}
+
+pub fn host_sinh(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::sinh(x).to_bits());
+}
+
+pub fn host_cosh(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::cosh(x).to_bits());
+}
+
+pub fn host_tanh(vm: &mut CideVM, _session: &mut Session) {
+    let x = f64::from_bits(vm.pop());
+    vm.push(libm::tanh(x).to_bits());
+}
+
+pub fn host_llabs(vm: &mut CideVM, _session: &mut Session) {
+    let n = vm.pop() as i64;
+    vm.push(if n < 0 { n.wrapping_neg() as u64 } else { n as u64 });
+}
+
+pub fn host_abort(vm: &mut CideVM, session: &mut Session) {
+    session.runtime.output_lines.push("[abort] 程序异常终止 (SIGABRT)".to_string());
+    vm.set_finished(134);
+}
+
+fn set_errno(vm: &mut CideVM, val: i32) {
+    for sym in vm.get_symbols() {
+        if sym.name == "errno" && !sym.is_local {
+            let _ = vm.write_memory(sym.addr, &val.to_le_bytes());
+            return;
+        }
+    }
+}
+
+pub fn host_strtol(vm: &mut CideVM, _session: &mut Session) {
+    let str_addr = vm.pop() as u32;
+    let endptr_addr = vm.pop() as u32;
+    let base = vm.pop() as i32;
+    let s = read_cstring(vm, str_addr);
+    let bytes = s.as_bytes();
+    let mut pos = 0usize;
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    let mut sign = 1i64;
+    if pos < bytes.len() {
+        if bytes[pos] == b'-' {
+            sign = -1;
+            pos += 1;
+        } else if bytes[pos] == b'+' {
+            pos += 1;
+        }
+    }
+    let start_pos = pos;
+    let mut val: i64 = 0;
+    let effective_base = if base == 0 { 10 } else { base };
+    while pos < bytes.len() {
+        let c = bytes[pos];
+        let digit = if c.is_ascii_digit() {
+            (c - b'0') as i64
+        } else if c.is_ascii_lowercase() {
+            (c - b'a' + 10) as i64
+        } else if c.is_ascii_uppercase() {
+            (c - b'A' + 10) as i64
+        } else {
+            break;
+        };
+        if digit >= effective_base as i64 {
+            break;
+        }
+        val = val.wrapping_mul(effective_base as i64).wrapping_add(digit);
+        pos += 1;
+    }
+    if pos == start_pos {
+        set_errno(vm, 1); // EINVAL
+    }
+    if endptr_addr != 0 {
+        let stop_addr = str_addr + pos as u32;
+        vm.write_memory(endptr_addr, &stop_addr.to_le_bytes());
+    }
+    vm.push((sign.wrapping_mul(val)) as u64);
+}
+
+pub fn host_strtod(vm: &mut CideVM, _session: &mut Session) {
+    let str_addr = vm.pop() as u32;
+    let endptr_addr = vm.pop() as u32;
+    let s = read_cstring(vm, str_addr);
+    let bytes = s.as_bytes();
+    let mut pos = 0usize;
+    while pos < bytes.len() && bytes[pos].is_ascii_whitespace() {
+        pos += 1;
+    }
+    let start = pos;
+    if pos < bytes.len() && (bytes[pos] == b'+' || bytes[pos] == b'-') {
+        pos += 1;
+    }
+    let mut has_dot = false;
+    let mut has_exp = false;
+    while pos < bytes.len() {
+        let c = bytes[pos];
+        if c.is_ascii_digit() {
+            pos += 1;
+        } else if c == b'.' && !has_dot {
+            has_dot = true;
+            pos += 1;
+        } else if (c == b'e' || c == b'E') && !has_exp {
+            has_exp = true;
+            pos += 1;
+            if pos < bytes.len() && (bytes[pos] == b'+' || bytes[pos] == b'-') {
+                pos += 1;
+            }
+        } else {
+            break;
+        }
+    }
+    let num_str = std::str::from_utf8(&bytes[start..pos]).unwrap_or("");
+    let val: f64 = num_str.parse().unwrap_or(0.0);
+    if pos == start {
+        set_errno(vm, 1); // EINVAL
+    }
+    if endptr_addr != 0 {
+        let stop_addr = str_addr + pos as u32;
+        vm.write_memory(endptr_addr, &stop_addr.to_le_bytes());
+    }
+    vm.push(val.to_bits());
+}
+
+pub fn host_strerror(vm: &mut CideVM, session: &mut Session) {
+    let errnum = vm.pop() as i32;
+    let msg = match errnum {
+        1 => "Invalid argument\0",
+        2 => "Numerical result out of range\0",
+        3 => "Domain error\0",
+        4 => "No such file or directory\0",
+        5 => "Permission denied\0",
+        _ => "Unknown error\0",
+    };
+    let addr = match session.memory.allocate_raw(msg.len() as u32, vm.get_memory_size()) {
+        Some(a) => a,
+        None => {
+            vm.push(0);
+            return;
+        }
+    };
+    vm.write_memory(addr, msg.as_bytes());
+    vm.push(addr as u64);
+}
+
+pub fn host_fflush(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = if fd == 0 {
+        // fflush(NULL) — 刷新所有流，VFS 内存模式无缓冲，视为成功
+        0
+    } else {
+        vfs.fflush(fd)
+    };
+    session.vfs = vfs;
+    vm.push(ret as u64);
+}
+
+pub fn host_perror(vm: &mut CideVM, session: &mut Session) {
+    let s_addr = vm.pop() as u32;
+    let prefix = read_cstring(vm, s_addr);
+    let msg = if prefix.is_empty() {
+        "Error\n".to_string()
+    } else {
+        format!("{}: Error\n", prefix)
+    };
+    session.runtime.output_lines.push(msg);
+}
+
+pub fn host_clearerr(vm: &mut CideVM, session: &mut Session) {
+    let stream = vm.pop() as u32;
+    let fd = read_fd_from_stream(vm, stream);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    vfs.clearerr(fd);
+    session.vfs = vfs;
+}
+
+pub fn host_time(vm: &mut CideVM, _session: &mut Session) {
+    let _tloc = vm.pop() as u32;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let secs = now.as_secs() as i64;
+    vm.push(secs as u64);
+}
+
+pub fn host_clock(vm: &mut CideVM, _session: &mut Session) {
+    // 返回一个近似值：使用当前时间的纳秒数作为单调时钟
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    // CLOCKS_PER_SEC 通常定义为 1_000_000，返回微秒级精度
+    let clocks = now.as_micros() as i64;
+    vm.push(clocks as u64);
+}
+
+pub fn host_cide_assert_fail(vm: &mut CideVM, session: &mut Session) {
+    session.runtime.output_lines.push("🚫 断言失败 (assertion failed)".to_string());
+    vm.set_finished(1);
+}
+
+pub fn host_remove(vm: &mut CideVM, session: &mut Session) {
+    let path_addr = vm.pop() as u32;
+    let path = read_cstring(vm, path_addr);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.remove(&path, &mut session.memory);
+    session.vfs = vfs;
+    vm.push(ret as u64);
+}
+
+pub fn host_rename(vm: &mut CideVM, session: &mut Session) {
+    let old_path_addr = vm.pop() as u32;
+    let new_path_addr = vm.pop() as u32;
+    let old_path = read_cstring(vm, old_path_addr);
+    let new_path = read_cstring(vm, new_path_addr);
+    let mut vfs = std::mem::take(&mut session.vfs);
+    let ret = vfs.rename(&old_path, &new_path);
+    session.vfs = vfs;
+    vm.push(ret as u64);
+}
+
+pub fn host_strpbrk(vm: &mut CideVM, _session: &mut Session) {
+    let s_addr = vm.pop() as u32;
+    let accept_addr = vm.pop() as u32;
+    let s = read_cstring(vm, s_addr);
+    let accept = read_cstring(vm, accept_addr);
+    for (i, c) in s.char_indices() {
+        if accept.contains(c) {
+            vm.push((s_addr + i as u32) as u64);
+            return;
+        }
+    }
+    vm.push(0);
+}
+
+pub fn host_strspn(vm: &mut CideVM, _session: &mut Session) {
+    let s_addr = vm.pop() as u32;
+    let accept_addr = vm.pop() as u32;
+    let s = read_cstring(vm, s_addr);
+    let accept = read_cstring(vm, accept_addr);
+    let mut count = 0usize;
+    for c in s.chars() {
+        if accept.contains(c) {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    vm.push(count as u64);
+}
+
+pub fn host_strcspn(vm: &mut CideVM, _session: &mut Session) {
+    let s_addr = vm.pop() as u32;
+    let reject_addr = vm.pop() as u32;
+    let s = read_cstring(vm, s_addr);
+    let reject = read_cstring(vm, reject_addr);
+    let mut count = 0usize;
+    for c in s.chars() {
+        if reject.contains(c) {
+            break;
+        }
+        count += 1;
+    }
+    vm.push(count as u64);
 }

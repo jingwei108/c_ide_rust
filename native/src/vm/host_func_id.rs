@@ -93,6 +93,45 @@ pub const FLOOR: u32 = 103;
 pub const ROUND: u32 = 104;
 pub const FMOD: u32 = 105;
 
+// ctype 补全
+pub const ISGRAPH: u32 = 106;
+pub const ISPUNCT: u32 = 107;
+pub const ISBLANK: u32 = 108;
+
+// math 补全
+pub const ASIN: u32 = 109;
+pub const ACOS: u32 = 110;
+pub const ATAN2: u32 = 111;
+pub const SINH: u32 = 112;
+pub const COSH: u32 = 113;
+pub const TANH: u32 = 114;
+
+// stdlib 补全
+pub const LLABS: u32 = 115;
+pub const ABORT: u32 = 116;
+pub const STRTOL: u32 = 117;
+pub const STRTOD: u32 = 118;
+pub const STRERROR: u32 = 119;
+
+// stdio 补全
+pub const FFLUSH: u32 = 120;
+pub const PERROR: u32 = 121;
+pub const CLEARERR: u32 = 122;
+
+// time.h
+pub const TIME: u32 = 123;
+pub const CLOCK: u32 = 124;
+pub const ASSERT_FAIL: u32 = 125;
+
+// stdio 扩展
+pub const REMOVE: u32 = 126;
+pub const RENAME: u32 = 127;
+
+// string 扩展
+pub const STRPBRK: u32 = 128;
+pub const STRSPN: u32 = 129;
+pub const STRCSPN: u32 = 130;
+
 /// 已由 Bytecode Libc 覆盖的纯计算函数。
 /// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
 /// 诊断敏感的函数（strcpy、printf、malloc 等）继续保留 Host Func 路径。
@@ -194,6 +233,32 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "floor" => Some(FLOOR),
         "round" => Some(ROUND),
         "fmod" => Some(FMOD),
+        "isgraph" => Some(ISGRAPH),
+        "ispunct" => Some(ISPUNCT),
+        "isblank" => Some(ISBLANK),
+        "asin" => Some(ASIN),
+        "acos" => Some(ACOS),
+        "atan2" => Some(ATAN2),
+        "sinh" => Some(SINH),
+        "cosh" => Some(COSH),
+        "tanh" => Some(TANH),
+        "labs" => Some(ABS),
+        "llabs" => Some(LLABS),
+        "abort" => Some(ABORT),
+        "strtol" => Some(STRTOL),
+        "strtod" => Some(STRTOD),
+        "strerror" => Some(STRERROR),
+        "fflush" => Some(FFLUSH),
+        "perror" => Some(PERROR),
+        "clearerr" => Some(CLEARERR),
+        "time" => Some(TIME),
+        "clock" => Some(CLOCK),
+        "__cide_assert_fail" => Some(ASSERT_FAIL),
+        "remove" => Some(REMOVE),
+        "rename" => Some(RENAME),
+        "strpbrk" => Some(STRPBRK),
+        "strspn" => Some(STRSPN),
+        "strcspn" => Some(STRCSPN),
         _ => None,
     }
 }

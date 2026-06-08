@@ -966,6 +966,12 @@ impl Lexer {
             "string.h" => Some(include_str!("../../runtime_libc/include/string.h")),
             "limits.h" => Some(include_str!("../../runtime_libc/include/limits.h")),
             "stdbool.h" => Some(include_str!("../../runtime_libc/include/stdbool.h")),
+            "stddef.h" => Some(include_str!("../../runtime_libc/include/stddef.h")),
+            "stdint.h" => Some(include_str!("../../runtime_libc/include/stdint.h")),
+            "time.h" => Some(include_str!("../../runtime_libc/include/time.h")),
+            "assert.h" => Some(include_str!("../../runtime_libc/include/assert.h")),
+            "errno.h" => Some(include_str!("../../runtime_libc/include/errno.h")),
+            "float.h" => Some(include_str!("../../runtime_libc/include/float.h")),
             _ => None,
         }
     }

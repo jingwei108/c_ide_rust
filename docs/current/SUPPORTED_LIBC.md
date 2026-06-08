@@ -9,11 +9,19 @@
 
 | 头文件 | 状态 | 说明 |
 |--------|------|------|
-| `<stdio.h>` | ✅ | 存根声明已加载，含 `printf`/`scanf`/`getchar`/`putchar`/`fopen`/`fclose`/`fread`/`fwrite`/`fgets`/`fputs`/`feof`/`fprintf` |
-| `<stdlib.h>` | ✅ | 存根声明已加载，含 `malloc`/`free`/`realloc`/`atoi`/`abs`/`rand`/`srand`/`exit` |
-| `<ctype.h>` | ✅ | 存根声明已加载，含 `isdigit`/`isalpha`/`islower`/`isupper`/`tolower`/`toupper`/`isspace`/`isalnum`/`isprint`/`iscntrl`/`isxdigit` |
-| `<math.h>` | ✅ | 存根声明已加载，含 `sin`/`cos`/`sqrt`/`pow`/`atan`/`log`/`exp`（`libm` `double` 精度） |
-| `<string.h>` | ✅ | 存根声明已加载，含 `strlen`/`strcpy`/`strncpy`/`strcmp`/`strcat`/`memcpy`/`memmove`/`memset` |
+| `<stdio.h>` | ✅ | 完整 I/O：含 `printf`/`scanf`/`getchar`/`putchar`/`fopen`/`fclose`/`fread`/`fwrite`/`fgets`/`fputs`/`feof`/`fprintf`/`puts`/`sprintf`/`snprintf`/`sscanf`/`fgetc`/`fputc`/`fseek`/`ftell`/`rewind`/`fflush`/`perror`/`clearerr`/`remove`/`rename` |
+| `<stdlib.h>` | ✅ | 完整核心：含 `malloc`/`free`/`realloc`/`calloc`/`atoi`/`atof`/`atol`/`abs`/`rand`/`srand`/`exit`/`qsort`/`bsearch`/`abort`/`strtol`/`strtod`/`llabs` |
+| `<ctype.h>` | ✅ | 完整字符分类：含 `isdigit`/`isalpha`/`islower`/`isupper`/`tolower`/`toupper`/`isspace`/`isalnum`/`isprint`/`iscntrl`/`isxdigit`/`isgraph`/`ispunct`/`isblank` |
+| `<math.h>` | ✅ | 完整教学 math：`sin`/`cos`/`tan`/`sqrt`/`pow`/`atan`/`log`/`log10`/`exp`/`fabs`/`ceil`/`floor`/`round`/`fmod`/`asin`/`acos`/`atan2`/`sinh`/`cosh`/`tanh`（`libm` `double` 精度） |
+| `<string.h>` | ✅ | 完整字符串：含 `strlen`/`strcpy`/`strncpy`/`strcmp`/`strncmp`/`strcat`/`strncat`/`memcpy`/`memmove`/`memset`/`memcmp`/`strchr`/`strrchr`/`strstr`/`memchr`/`strdup`/`strerror`/`strpbrk`/`strspn`/`strcspn` |
+| `<limits.h>` | ✅ | 空存根，宏由 Lexer 预定义（`INT_MAX`/`INT_MIN`/`LONG_MAX`/`LONG_MIN`/`CHAR_BIT`） |
+| `<stdbool.h>` | ✅ | 存根声明已加载，`bool` typedef + `true`/`false` 宏 |
+| `<stddef.h>` | ✅ | 存根声明已加载，`size_t`/`ptrdiff_t` typedef；`offsetof` 为编译器内置 |
+| `<stdint.h>` | ✅ | 存根声明已加载，`int8_t`/`uint8_t`/`int16_t`/`uint16_t`/`int32_t`/`uint32_t`/`int64_t`/`uint64_t` typedef |
+| `<time.h>` | ✅ | 存根声明已加载，`time_t`/`clock_t` typedef + `CLOCKS_PER_SEC` 宏；`time`/`clock` |
+| `<assert.h>` | ✅ | 存根声明已加载，`assert` 宏展开为 `__cide_assert_fail` Host Func |
+| `<errno.h>` | ✅ | 存根声明已加载，`extern int errno` + `EINVAL`/`ERANGE`/`EDOM`/`ENOENT`/`EACCES` 宏 |
+| `<float.h>` | ✅ | 存根声明已加载，`FLT_MAX`/`DBL_MAX`/`FLT_EPSILON`/`DBL_EPSILON` 等宏 |
 
 ---
 
@@ -28,6 +36,10 @@
 | `fprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
 | `getchar` | B | 硬编码 | ✅ | N/A | N/A | — |
 | `putchar` | B | 硬编码 | ✅ | N/A | N/A | — |
+| `puts` | B | 硬编码 | ✅ | N/A | N/A | — |
+| `sprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
+| `snprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
+| `sscanf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
 | `fopen` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 | `fclose` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 | `fread` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
@@ -35,6 +47,17 @@
 | `fgets` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 | `fputs` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 | `feof` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `ungetc` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `fgetc` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `fputc` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `fseek` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `ftell` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `rewind` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `fflush` | B | 硬编码 | N/A | N/A | N/A | VFS 内存模式为空操作 |
+| `perror` | B | 硬编码 | N/A | N/A | N/A | 简化版：忽略 errno |
+| `clearerr` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `remove` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
+| `rename` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 
 ### 2.2 stdlib.h
 
@@ -43,12 +66,20 @@
 | `malloc` | B | 硬编码 | ✅ | N/A | N/A | UAF/泄漏检测 |
 | `free` | B | 硬编码 | ✅ | N/A | N/A | UAF/Double-Free 检测 |
 | `realloc` | B | 硬编码 | ✅ | N/A | N/A | — |
+| `calloc` | B | 硬编码 | ✅ | N/A | N/A | — |
 | `atoi` | B | 硬编码 | ✅ | ✅ | ✅ | — |
+| `atof` | B | 硬编码 | ✅ | N/A | N/A | — |
+| `atol` | B | 硬编码 | ✅ | N/A | N/A | — |
+| `strtol` | B | 硬编码 | N/A | N/A | N/A | 支持 `endptr`，解析失败时设置 `errno=EINVAL` |
+| `strtod` | B | 硬编码 | N/A | N/A | N/A | 支持 `endptr`，解析失败时设置 `errno=EINVAL` |
 | `abs` | B | 存根声明 | ✅ | ✅ | ✅ | 已替代硬编码 |
+| `llabs` | B | 硬编码 | N/A | N/A | N/A | `long long` 绝对值 |
 | `rand` | B | 硬编码 | ✅ | ✅ | ✅ | — |
 | `srand` | B | 硬编码 | ✅ | ✅ | ✅ | — |
 | `exit` | B | 硬编码 | N/A | N/A | N/A | — |
+| `abort` | B | 硬编码 | N/A | N/A | N/A | 终止并输出诊断 |
 | `qsort` | B | 硬编码 | N/A | N/A | N/A | VM 回调敏感，未在存根中声明 |
+| `bsearch` | B | 硬编码 | N/A | N/A | N/A | VM 回调敏感 |
 
 ### 2.3 ctype.h
 
@@ -60,11 +91,14 @@
 | `isupper` | B | 存根声明 | N/A | ✅ | ✅ | — |
 | `tolower` | B | 存根声明 | N/A | ✅ | ✅ | — |
 | `toupper` | B | 存根声明 | N/A | ✅ | ✅ | — |
-| `isspace` | B | 存 stub 声明 | N/A | ✅ | ✅ | — |
+| `isspace` | B | 存根声明 | N/A | ✅ | ✅ | — |
 | `isalnum` | B | 存根声明 | N/A | ✅ | ✅ | — |
 | `isprint` | B | 存根声明 | N/A | ✅ | ✅ | — |
 | `iscntrl` | B | 存根声明 | N/A | ✅ | ✅ | — |
 | `isxdigit` | B | 存根声明 | N/A | ✅ | ✅ | — |
+| `isgraph` | B | 存根声明 | N/A | N/A | N/A | — |
+| `ispunct` | B | 存根声明 | N/A | N/A | N/A | — |
+| `isblank` | B | 存根声明 | N/A | N/A | N/A | — |
 
 ### 2.4 math.h
 
@@ -72,11 +106,24 @@
 |------|-------|----------|---------------|----------------------|--------------|------|
 | `sin` | B | 存根声明 | ✅ | N/A | N/A | `libm::sin`，`double` |
 | `cos` | B | 存根声明 | ✅ | N/A | N/A | `libm::cos`，`double` |
+| `tan` | B | 存根声明 | ✅ | N/A | N/A | `libm::tan`，`double` |
 | `sqrt` | B | 存根声明 | ✅ | N/A | N/A | `libm::sqrt`，`double` |
 | `pow` | B | 存根声明 | ✅ | N/A | N/A | `libm::pow`，`double` |
 | `atan` | B | 存根声明 | ✅ | N/A | N/A | `libm::atan`，`double` |
 | `log` | B | 存根声明 | ✅ | N/A | N/A | `libm::log`（自然对数），`double` |
+| `log10` | B | 存根声明 | ✅ | N/A | N/A | `libm::log10`，`double` |
 | `exp` | B | 存根声明 | ✅ | N/A | N/A | `libm::exp`，`double` |
+| `fabs` | B | 存根声明 | ✅ | N/A | N/A | `libm::fabs`，`double` |
+| `ceil` | B | 存根声明 | ✅ | N/A | N/A | `libm::ceil`，`double` |
+| `floor` | B | 存根声明 | ✅ | N/A | N/A | `libm::floor`，`double` |
+| `round` | B | 存根声明 | ✅ | N/A | N/A | `libm::round`，`double` |
+| `fmod` | B | 存根声明 | ✅ | N/A | N/A | `libm::fmod`，`double` |
+| `asin` | B | 存根声明 | ✅ | N/A | N/A | `libm::asin`，`double` |
+| `acos` | B | 存根声明 | ✅ | N/A | N/A | `libm::acos`，`double` |
+| `atan2` | B | 存根声明 | ✅ | N/A | N/A | `libm::atan2`，`double` |
+| `sinh` | B | 存根声明 | ✅ | N/A | N/A | `libm::sinh`，`double` |
+| `cosh` | B | 存根声明 | ✅ | N/A | N/A | `libm::cosh`，`double` |
+| `tanh` | B | 存根声明 | ✅ | N/A | N/A | `libm::tanh`，`double` |
 
 ### 2.5 string.h
 
@@ -86,11 +133,36 @@
 | `strcpy` | B | 硬编码 | ✅ | ✅ | ✅ | E3070 Buffer Overflow 诊断 |
 | `strncpy` | B | 硬编码 | ✅ | ✅ | ✅ | — |
 | `strcmp` | C | 存根声明 | N/A | ✅ | ✅ | 已切换为 Bytecode Libc 路径 |
+| `strncmp` | B | 硬编码 | N/A | N/A | N/A | — |
 | `strcat` | B | 硬编码 | ✅ | ✅ | ✅ | E3070 Buffer Overflow 诊断 |
+| `strncat` | B | 硬编码 | N/A | N/A | N/A | — |
 | `memcpy` | B | 硬编码 | N/A | ✅ | ✅ | — |
 | `memmove` | B | 硬编码 | N/A | ✅ | ✅ | — |
 | `memset` | B | 硬编码 | ✅ | ✅ | ✅ | — |
+| `memcmp` | B | 硬编码 | N/A | N/A | N/A | — |
+| `strchr` | B | 硬编码 | N/A | N/A | N/A | — |
+| `strrchr` | B | 硬编码 | N/A | N/A | N/A | — |
+| `strstr` | B | 硬编码 | N/A | N/A | N/A | — |
+| `memchr` | B | 硬编码 | N/A | N/A | N/A | — |
 | `strdup` | B | 硬编码 | N/A | N/A | N/A | `malloc`+`strcpy`，内存追踪 |
+| `strerror` | B | 硬编码 | N/A | N/A | N/A | 映射 5 种常见错误码 |
+| `strpbrk` | B | 硬编码 | N/A | N/A | N/A | — |
+| `strspn` | B | 硬编码 | N/A | N/A | N/A | — |
+| `strcspn` | B | 硬编码 | N/A | N/A | N/A | — |
+
+### 2.6 time.h
+
+| 函数 | Layer | 类型检查 | Host Contract | Bytecode Consistency | Differential | 备注 |
+|------|-------|----------|---------------|----------------------|--------------|------|
+| `time` | B | 硬编码 | N/A | N/A | N/A | 返回 Unix 时间戳（秒） |
+| `clock` | B | 硬编码 | N/A | N/A | N/A | 返回微秒级近似时钟 |
+
+### 2.7 assert.h
+
+| 宏/函数 | Layer | 类型检查 | Host Contract | Bytecode Consistency | Differential | 备注 |
+|---------|-------|----------|---------------|----------------------|--------------|------|
+| `assert` | B | 宏展开 | N/A | N/A | N/A | 展开为 `if (!(expr)) __cide_assert_fail()` |
+| `__cide_assert_fail` | B | 硬编码 | N/A | N/A | N/A | 输出诊断并终止程序 |
 
 ---
 
@@ -104,7 +176,33 @@
 | `stdout` | `1` | Lexer 预定义宏 | 全局可用 |
 | `stderr` | `2` | Lexer 预定义宏 | 全局可用 |
 | `size_t` | `unsigned int` | 存根 `typedef` | 多文件声明，覆盖不报错 |
+| `ptrdiff_t` | `int` | 存根 `typedef` | `stddef.h` 中定义 |
+| `time_t` | `long long` | 存根 `typedef` | `time.h` 中定义 |
+| `clock_t` | `long long` | 存根 `typedef` | `time.h` 中定义 |
 | `FILE` | `void*` | 存根 `typedef` | `stdio.h` 中定义 |
+| `EXIT_SUCCESS` | `0` | Lexer 预定义宏 | `stdlib.h` |
+| `EXIT_FAILURE` | `1` | Lexer 预定义宏 | `stdlib.h` |
+| `RAND_MAX` | `32767` | Lexer 预定义宏 | `stdlib.h` |
+| `SEEK_SET` | `0` | Lexer 预定义宏 | `stdio.h` |
+| `SEEK_CUR` | `1` | Lexer 预定义宏 | `stdio.h` |
+| `SEEK_END` | `2` | Lexer 预定义宏 | `stdio.h` |
+| `INT_MAX` | `2147483647` | Lexer 预定义宏 | `limits.h` |
+| `INT_MIN` | `-2147483648` | Lexer 预定义宏 | `limits.h` |
+| `LONG_MAX` | `2147483647` | Lexer 预定义宏 | `limits.h` |
+| `LONG_MIN` | `-2147483648` | Lexer 预定义宏 | `limits.h` |
+| `CHAR_BIT` | `8` | Lexer 预定义宏 | `limits.h` |
+| `true` | `1` | Lexer 预定义宏 | `stdbool.h` |
+| `false` | `0` | Lexer 预定义宏 | `stdbool.h` |
+| `CLOCKS_PER_SEC` | `1000000` | 存根宏 | `time.h` |
+| `EINVAL` | `1` | 存根宏 | `errno.h` |
+| `ERANGE` | `2` | 存根宏 | `errno.h` |
+| `EDOM` | `3` | 存根宏 | `errno.h` |
+| `ENOENT` | `4` | 存根宏 | `errno.h` |
+| `EACCES` | `5` | 存根宏 | `errno.h` |
+| `FLT_MAX` | `3.40282347e+38F` | 存根宏 | `float.h` |
+| `DBL_MAX` | `1.7976931348623157e+308` | 存根宏 | `float.h` |
+| `FLT_EPSILON` | `1.19209290e-7F` | 存根宏 | `float.h` |
+| `DBL_EPSILON` | `2.2204460492503131e-16` | 存根宏 | `float.h` |
 
 ---
 
@@ -112,9 +210,11 @@
 
 | 缺口 | 解除时间 | 说明 |
 |------|----------|------|
-| `math.h` 不支持 | 2026-06-07 | 引入 `libm`，注册 7 个数学函数 Host Func |
+| `math.h` 不支持 | 2026-06-07 | 引入 `libm`，注册 20 个数学函数 Host Func |
 | `#include <stdio.h>` 被跳过 | 2026-06-07 | Lexer 加载存根，TypeChecker 识别声明 |
 | `strdup` 不支持 | 2026-06-07 | 新增 `STRDUP` Host Func，复用 `allocate_raw` + `MemoryRegion` 追踪 |
+| 大量函数缺存根声明 | 2026-06-07 | 补全全部 6 个已有头文件存根；新增 7 个存骨头文件 |
+| P1 核心函数缺失 | 2026-06-07 | 完成 `abort`/`strtol`/`strtod`/`strerror`/`fflush`/`perror`/`clearerr`/`time`/`clock`/`assert`/`errno`/`remove`/`rename`/`strpbrk`/`strspn`/`strcspn` + ctype/math 补全 |
 
 ---
 
@@ -146,6 +246,12 @@
 | `<stdbool.h>` | `bool`, `true`, `false` | **无 Layer** | ✅ stub typedef + Lexer 预定义宏 | 现代 C 代码标配 |
 | `<stdlib.h>` | `EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX` | **无 Layer** | ✅ Lexer 预定义宏 | 程序返回值、随机数范围 |
 | `<stdio.h>` | `SEEK_SET`, `SEEK_CUR`, `SEEK_END` | **无 Layer** | ✅ Lexer 预定义宏 | `fseek` 定位 |
+| `<stddef.h>` | `size_t`, `ptrdiff_t` | **无 Layer** | ✅ stub 头文件 + 编译器内置 `offsetof` | 标准类型 |
+| `<stdint.h>` | `int32_t`, `uint64_t` 等 | **无 Layer** | ✅ stub typedef 头文件 | 精确宽度整数类型 |
+| `<time.h>` | `time_t`, `clock_t`, `CLOCKS_PER_SEC` | **无 Layer** | ✅ stub 头文件 + 宏 | 时间/计时类型 |
+| `<assert.h>` | `assert` 宏 | **无 Layer** | ✅ stub 头文件 + Host Func | 调试断言 |
+| `<errno.h>` | `errno`, `EINVAL`/`ERANGE`/`EDOM`/`ENOENT`/`EACCES` | **无 Layer** | ✅ stub 头文件 + Host 设置 | 错误码处理 |
+| `<float.h>` | `FLT_MAX`, `DBL_MAX`, `FLT_EPSILON`, `DBL_EPSILON` | **无 Layer** | ✅ stub 宏头文件 | 浮点边界 |
 
 #### 5.2.2 新增函数（P0 核心）
 
@@ -154,7 +260,25 @@
 | `<stdio.h>` | `puts` | **Layer B** | ✅ 已实现 | 简单输出字符串+换行 |
 | `<stdio.h>` | `sprintf`, `snprintf` | **Layer B** | ✅ 已实现 | 字符串构造、数字转字符串 |
 | `<stdio.h>` | `sscanf` | **Layer B** | ✅ 已实现 | 字符串解析 |
+| `<stdio.h>` | `fgetc`, `fputc` | **Layer B** | ✅ 已实现 | 单字符文件 I/O |
+| `<stdio.h>` | `fseek`, `ftell`, `rewind` | **Layer B** | ✅ 已实现 | 文件定位 |
+| `<stdio.h>` | `fflush`, `perror`, `clearerr` | **Layer B** | ✅ 已实现 | 文件错误处理 |
+| `<stdio.h>` | `remove`, `rename` | **Layer B** | ✅ 已实现 | 文件删除/重命名 |
 | `<stdlib.h>` | `calloc` | **Layer B** | ✅ 已实现 | 安全分配并零初始化（图论邻接表） |
+| `<stdlib.h>` | `bsearch` | **Layer B** | ✅ 已实现 | 二分查找 |
+| `<stdlib.h>` | `atof`, `atol` | **Layer B** | ✅ 已实现 | 字符串转数值 |
+| `<stdlib.h>` | `abort` | **Layer B** | ✅ 已实现 | 异常终止 |
+| `<stdlib.h>` | `strtol`, `strtod` | **Layer B** | ✅ 已实现 | 字符串转数值（支持 `endptr` + `errno`） |
+| `<stdlib.h>` | `llabs` | **Layer B** | ✅ 已实现 | `long long` 绝对值 |
+| `<string.h>` | `strchr`, `strrchr`, `strstr` | **Layer B** | ✅ 已实现 | 字符串搜索 |
+| `<string.h>` | `strncmp`, `strncat` | **Layer B** | ✅ 已实现 | 定长字符串操作 |
+| `<string.h>` | `memcmp`, `memchr` | **Layer B** | ✅ 已实现 | 内存比较/搜索 |
+| `<string.h>` | `strerror` | **Layer B** | ✅ 已实现 | 错误字符串（映射 5 种错误码） |
+| `<string.h>` | `strpbrk`, `strspn`, `strcspn` | **Layer B** | ✅ 已实现 | 字符串扫描 |
+| `<math.h>` | `tan`, `log10`, `fabs`, `ceil`, `floor`, `round`, `fmod` | **Layer B** | ✅ 已实现 | 数学计算补全 |
+| `<math.h>` | `asin`, `acos`, `atan2`, `sinh`, `cosh`, `tanh` | **Layer B** | ✅ 已实现 | 数学计算补全 |
+| `<ctype.h>` | `isgraph`, `ispunct`, `isblank` | **Layer B** | ✅ 已实现 | 字符分类补全 |
+| `<time.h>` | `time`, `clock` | **Layer B** | ✅ 已实现 | 系统时间/计时 |
 
 ---
 
@@ -164,49 +288,30 @@
 
 | 头文件 | 函数 | 分层 | 分层依据 |
 |--------|------|------|---------|
-| `<stdlib.h>` | `bsearch` | **Layer B** | ✅ 已实现 | VM 回调敏感（需调用用户比较函数） |
-| `<stdlib.h>` | `atof`, `atol` | **Layer C** | 纯计算，无副作用 |
-| `<stdlib.h>` | `strtol`, `strtod` | **Layer B** | 涉及 `errno` 设置 + `endptr` 写入 |
-| `<stdlib.h>` | `abort` | **Layer B** | 需操作 session state（终止+诊断） |
-| `<stdlib.h>` | `labs`, `llabs` | **Layer C** | 纯计算，和 `abs` 同理 |
-| `<string.h>` | `strchr`, `strrchr` | **Layer C** | 纯计算，指针遍历算法可展示源码 |
-| `<string.h>` | `strstr` | **Layer C** | 纯计算，KMP/朴素算法教学价值 |
-| `<string.h>` | `strncmp` | **Layer C** | 纯计算 |
-| `<string.h>` | `strncat` | **Layer B** | 内存安全诊断敏感（Buffer Overflow 检测） |
-| `<string.h>` | `memcmp` | **Layer C** | 纯计算 |
-| `<string.h>` | `memchr` | **Layer C** | 纯计算 |
-| `<string.h>` | `strtok` | **Layer C** | 纯计算但涉及全局静态状态；走 C 可展示源码 |
-| `<string.h>` | `strerror` | **Layer B** | 返回静态错误字符串表，需 Host 管理 |
-| `<math.h>` | `tan`, `fabs`, `ceil`, `floor`, `round` | **Layer B** | 与现有 7 个 math 函数保持一致（`libm` 精度） |
-| `<math.h>` | `fmod`, `log10` | **Layer B** | 同上，`libm` 直接可用 |
-| `<math.h>` | `asin`, `acos`, `atan2` | **Layer B** | 同上 |
-| `<math.h>` | `sinh`, `cosh`, `tanh` | **Layer B** | 同上 |
-| `<ctype.h>` | `isgraph`, `ispunct`, `isblank` | **Layer C** | 纯计算，和现有 ctype 函数同理 |
+| `<string.h>` | `strtok` | **Layer C** | 纯计算但涉及全局静态状态；建议走 Bytecode Libc |
 
 #### 5.3.2 新增头文件
 
 | 头文件 | 内容 | 分层 | 实现方式 |
 |--------|------|------|---------|
-| `<assert.h>` | `assert` | **Layer B** | 宏展开为条件判断 + `__cide_assert_fail` Host Func |
-| `<time.h>` | `time`, `clock` | **Layer B** | 系统调用封装 |
-| `<time.h>` | `CLOCKS_PER_SEC` | **无 Layer** | 宏定义 |
-| `<errno.h>` | `errno`, `EDOM`, `ERANGE` | **Layer B** | 全局变量 + Host 在 math/IO 错误时设置 |
-| `<stdio.h>` | `fgetc`, `fputc` | **Layer B** | VFS-backed |
-| `<stdio.h>` | `fseek`, `ftell`, `rewind` | **Layer B** | VFS-backed |
-| `<stdio.h>` | `fflush`, `perror`, `clearerr` | **Layer B** | VFS-backed |
-| `<stddef.h>` | `ptrdiff_t`, `offsetof` | **无 Layer** | typedef + 编译期宏 |
+| `<assert.h>` | `assert` | **Layer B** | ✅ 已实现 | 宏展开为条件判断 + `__cide_assert_fail` Host Func |
+| `<time.h>` | `time`, `clock` | **Layer B** | ✅ 已实现 | 系统调用封装 |
+| `<time.h>` | `CLOCKS_PER_SEC` | **无 Layer** | ✅ 已实现 | 宏定义 |
+| `<errno.h>` | `errno`, `EDOM`, `ERANGE`, `EINVAL`, `ENOENT`, `EACCES` | **无 Layer** | ✅ 已实现 | 全局变量 + Host 设置 |
+| `<stdio.h>` | `fflush`, `perror`, `clearerr`, `remove`, `rename` | **Layer B** | ✅ 已实现 | VFS-backed |
+| `<stddef.h>` | `offsetof` | **无 Layer** | ✅ 已实现 | 编译器内置（已支持） |
+| `<float.h>` | `FLT_MAX`, `DBL_MAX`, `FLT_EPSILON`, `DBL_EPSILON` | **无 Layer** | ✅ 已实现 | 编译期常量宏 |
 
 ---
 
 ### 5.4 🟡 P2 — 中期实现（进阶补全）
 
-| 头文件 | 内容 | 分层 | 说明 |
-|--------|------|------|------|
-| `<math.h>` | `INFINITY`, `NAN`, `HUGE_VAL` | **无 Layer** | 编译期常量宏 |
-| `<float.h>` | `FLT_MAX`, `DBL_MAX`, `FLT_EPSILON` 等 | **无 Layer** | 编译期常量宏 |
-| `<stdint.h>` | `int32_t`, `uint64_t` 等 | **无 Layer** | typedef 映射到已有类型 |
-| `<stdio.h>` | `remove`, `rename` | **Layer B** | VFS 操作 |
-| `<string.h>` | `strpbrk`, `strspn`, `strcspn` | **Layer C** | 纯计算 |
+> 以下项目经评估后**明确不支持**，已在排除项中登记。
+
+| 头文件 | 内容 | 不支持理由 |
+|--------|------|-----------|
+| `<math.h>` | `INFINITY`, `NAN`, `HUGE_VAL` | 可用 `1e309` 或 `0.0/0.0` 替代；标准宏在不同平台值不同，教学不依赖 |
+| `<string.h>` | `strtok` | 需全局静态状态，线程不安全；教学价值有限，学生可用 `strchr`/`strcspn` 自行实现 |
 
 ---
 
@@ -227,6 +332,8 @@
 | `atexit` / `at_quick_exit` | 退出处理函数，教学不用 |
 | `getenv` / `system` | 环境变量/系统命令，沙盒中意义有限 |
 | `frexp` / `ldexp` / `modf` / `scalbn` 等 math 高级函数 | 数值分析专用 |
+| `strtok` | 需全局静态状态，教学价值有限，可用 `strchr`/`strcspn` 自行实现 |
+| `INFINITY` / `NAN` / `HUGE_VAL` | 可用 `1e309` 或 `0.0/0.0` 替代，教学使用频率极低 |
 
 ---
 
@@ -234,48 +341,44 @@
 
 | 分层 | 新增项数 | 估算工作量 |
 |------|---------|-----------|
-| **无 Layer（宏/typedef）** | ~35 个宏/typedef | 写 stub 头文件，约 **1 天** |
-| **Layer C: Bytecode Libc** | `strchr`, `strrchr`, `strstr`, `strncmp`, `memcmp`, `memchr`, `atof`, `atol`, `labs`, `llabs`, `isgraph`, `ispunct`, `isblank` | 约 **13 个函数**，每个 30 分钟 + 测试，约 **3 天** |
-| **Layer B: Rust Host** | `puts`, `sprintf`, `snprintf`, `sscanf`, `calloc`, `bsearch`, `abort`, `strtol`, `strtod`, `strerror`, `strncat`, `fgetc`, `fputc`, `fseek`, `ftell`, `rewind`, `fflush`, `perror`, `clearerr`, `remove`, `rename`, `time`, `clock`, `errno` 管理, `assert`, + math 补全 11 个 | 约 **35 个函数**，每个 30-60 分钟，约 **7-10 天** |
+| **无 Layer（宏/typedef）** | 0 | 全部完成 |
+| **Layer C: Bytecode Libc** | `strtok` | 约 **1 个函数**，需全局静态状态支持 |
+| **Layer B: Rust Host** | `INFINITY`/`NAN` 近似宏 | 约 **1 天** |
 | **Layer A: VM Builtin** | 暂不接 codegen（待 profiling） | 0 |
 
-**总计**：约 **2-3 周** 可完成标准库全面拓展。
+**总计**：标准库教学子集已基本完整，剩余工作量 **< 1 天**。
 
 ---
 
 ### 5.7 推荐实施路线图
 
-#### Phase A（第 1 周）：基础设施 + 立即可用
+#### Phase A（第 1 周）：基础设施 + 立即可用 ✅
 - [x] `qsort` 存根声明修复（1 行）
-- [x] 新增 stub 头文件：`limits.h`, `stdbool.h`
+- [x] 新增 stub 头文件：`limits.h`, `stdbool.h`, `stddef.h`, `stdint.h`, `time.h`, `assert.h`, `errno.h`, `float.h`
 - [x] 补全已有头文件宏：`EXIT_SUCCESS`, `EXIT_FAILURE`, `RAND_MAX`, `SEEK_SET/CUR/END`
 - [x] `puts`, `sprintf`, `snprintf`, `sscanf`
 - [x] `calloc`, `bsearch`
+- [x] `fgetc`, `fputc`, `fseek`, `ftell`, `rewind`
+- [x] `strchr`, `strrchr`, `strstr`, `strncmp`, `strncat`, `memcmp`, `memchr`
+- [x] `atof`, `atol`
+- [x] `tan`, `log10`, `fabs`, `ceil`, `floor`, `round`, `fmod`
+- [x] `asin`, `acos`, `atan2`, `sinh`, `cosh`, `tanh`
+- [x] `isgraph`, `ispunct`, `isblank`
+- [x] `abort`, `strtol`, `strtod`, `llabs`
+- [x] `fflush`, `perror`, `clearerr`, `remove`, `rename`
+- [x] `strerror`, `strpbrk`, `strspn`, `strcspn`
+- [x] `time`, `clock`
+- [x] `assert` 宏
+- [x] `errno` 全局变量 + Host 设置
+- [x] `float.h` 常量宏
 
 **目标**：LeetCode 中 90% 的 C 解法能编译通过。
 
-#### Phase B（第 1-2 周）：字符串 + 文件 I/O 完整化
-- [ ] `strchr`, `strrchr`, `strstr`, `strncmp`, `strncat`, `memcmp`, `memchr`
-- [ ] `fgetc`, `fputc`, `fseek`, `ftell`, `rewind`, `fflush`, `perror`, `clearerr`
-- [ ] `atof`, `atol`, `strtol`, `strtod`, `labs`, `llabs`, `abort`
-- [ ] `time`, `clock`
-
-**目标**：数据结构教材示例代码 95% 能编译通过。
-
-#### Phase C（第 2-3 周）：语法补全 + 进阶
-- [ ] `assert` 宏
-- [ ] `errno`
-- [ ] `strtok`, `strerror`
-- [ ] `math.h` 补全（`tan`, `fabs`, `ceil`, `floor`, `round`, `fmod`, `log10`, `asin`, `acos`, `atan2`, `sinh`, `cosh`, `tanh`）
-- [ ] `isgraph`, `ispunct`, `isblank`
-- [ ] `stdint.h`, `float.h` 宏
+#### Phase B（可选）：剩余补全
+- [x] `strtok` → **明确不支持**：需全局静态状态，教学价值有限，学生可用 `strchr`/`strcspn` 自行实现
+- [x] `INFINITY`, `NAN`, `HUGE_VAL` → **明确不支持**：可用 `1e309` 或 `0.0/0.0` 替代，教学使用频率极低
 
 **目标**：K&R《C程序设计语言》全书示例代码 95% 能编译通过。
-
-#### Phase D（可选）：高级特性
-- [ ] `remove`, `rename`
-- [ ] `strpbrk`, `strspn`, `strcspn`
-- [ ] `INFINITY`, `NAN`, `HUGE_VAL`
 
 ---
 
@@ -287,6 +390,7 @@
 | `strncat` | Bytecode C | **Layer B** | 内存安全诊断敏感，需 Buffer Overflow 检测 |
 | `strtol` / `strtod` | Bytecode C / Host B | **Layer B** | 涉及 `errno` + `endptr`，非纯计算 |
 | `strtok` | Bytecode C | **Layer C** | 虽有全局状态但无诊断需求，走 C 可展示源码 |
+| `strchr`/`strrchr`/`strstr`/`strncmp`/`memcmp`/`memchr` | Bytecode C（规划） | **Layer B** | 实际实现为 Host Func，保留灵活性 |
 
 ---
 
