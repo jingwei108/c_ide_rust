@@ -237,6 +237,57 @@ impl Type {
         }
     }
 
+    /// Generate a mangled name for this type (used in template instantiation).
+    pub fn mangle_name(&self) -> String {
+        match self {
+            Type::Void { .. } => "void".to_string(),
+            Type::Int { is_unsigned, .. } => {
+                if *is_unsigned {
+                    "unsigned_int".to_string()
+                } else {
+                    "int".to_string()
+                }
+            }
+            Type::Char { is_unsigned, .. } => {
+                if *is_unsigned {
+                    "unsigned_char".to_string()
+                } else {
+                    "char".to_string()
+                }
+            }
+            Type::Float { .. } => "float".to_string(),
+            Type::Double { .. } => "double".to_string(),
+            Type::LongLong { is_unsigned, .. } => {
+                if *is_unsigned {
+                    "unsigned_long_long".to_string()
+                } else {
+                    "long_long".to_string()
+                }
+            }
+            Type::Pointer { pointee, .. } => format!("p_{}", pointee.mangle_name()),
+            Type::Array { element, dims, .. } => {
+                format!(
+                    "a{}_{}",
+                    dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("_"),
+                    element.mangle_name()
+                )
+            }
+            Type::Function { return_type, param_types, .. } => {
+                let params = param_types.iter().map(|t| t.mangle_name()).collect::<Vec<_>>().join("_");
+                format!("fn_{}_{}", return_type.mangle_name(), params)
+            }
+            Type::Struct { name, .. } => format!("struct_{}", name),
+            Type::Union { name, .. } => format!("union_{}", name),
+            Type::Class { name, .. } => format!("class_{}", name),
+            Type::Reference { base, is_const } => {
+                let prefix = if *is_const { "const_ref" } else { "ref" };
+                format!("{}_{}", prefix, base.mangle_name())
+            }
+            Type::RValueRef { base } => format!("rref_{}", base.mangle_name()),
+            Type::Auto => "auto".to_string(),
+        }
+    }
+
     // 兼容访问器
     pub fn kind(&self) -> TypeKind {
         match self {
@@ -1107,6 +1158,7 @@ pub fn compute_type_size(
     ty: &Type,
     struct_defs: &HashMap<String, Vec<StructField>>,
     union_defs: &HashMap<String, Vec<StructField>>,
+    class_size_map: &HashMap<String, i32>,
 ) -> i32 {
     match ty.kind() {
         TypeKind::Void => 0,
@@ -1122,14 +1174,14 @@ pub fn compute_type_size(
             }
             let elem_count = ty.total_elements();
             let base_elem = base_element_type(ty);
-            let elem_size = compute_type_size(base_elem, struct_defs, union_defs);
+            let elem_size = compute_type_size(base_elem, struct_defs, union_defs, class_size_map);
             elem_count * elem_size
         }
         TypeKind::Struct => struct_defs
             .get(ty.name())
             .map(|f| {
                 f.iter()
-                    .map(|field| compute_type_size(&field.ty, struct_defs, union_defs))
+                    .map(|field| compute_type_size(&field.ty, struct_defs, union_defs, class_size_map))
                     .sum()
             })
             .unwrap_or(0),
@@ -1137,22 +1189,12 @@ pub fn compute_type_size(
             .get(ty.name())
             .map(|f| {
                 f.iter()
-                    .map(|field| compute_type_size(&field.ty, struct_defs, union_defs))
+                    .map(|field| compute_type_size(&field.ty, struct_defs, union_defs, class_size_map))
                     .max()
                     .unwrap_or(0)
             })
             .unwrap_or(0),
-        TypeKind::Class => {
-            // C++ class layout: same as struct for Phase 31 (no vptr in size yet)
-            struct_defs
-                .get(ty.name())
-                .map(|f| {
-                    f.iter()
-                        .map(|field| compute_type_size(&field.ty, struct_defs, union_defs))
-                        .sum()
-                })
-                .unwrap_or(0)
-        }
+        TypeKind::Class => class_size_map.get(ty.name()).copied().unwrap_or(0),
         TypeKind::Reference | TypeKind::RValueRef => 4, // reference is a pointer under the hood
         TypeKind::Auto => 0,                            // should not appear in codegen before TypeChecker replaces it
     }

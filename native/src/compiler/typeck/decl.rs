@@ -56,6 +56,20 @@ impl TypeChecker {
                 is_static,
                 ..
             } => {
+                // Auto type deduction for C++
+                if var_type.is_auto() {
+                    if let Some(ref mut init_expr) = init {
+                        let deduced = self.deduce_auto_type(init_expr);
+                        *var_type = deduced;
+                    } else {
+                        self.report_error(
+                            "auto 类型变量必须有初始化表达式",
+                            loc,
+                            ErrorCode::E4025_AutoRequiresInitializer,
+                        );
+                        *var_type = Type::int();
+                    }
+                }
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         self.check_array_initializer(var_type, init_expr, loc);
@@ -70,6 +84,16 @@ impl TypeChecker {
                                 ErrorCode::E3004_TypeMismatch,
                             );
                         } else {
+                            // C++ reference binding lvalue check
+                            if let Type::Reference { is_const, .. } = var_type {
+                                if !*is_const && !self.is_lvalue(init_expr) {
+                                    self.report_error(
+                                        "非 const 引用必须绑定到左值",
+                                        loc,
+                                        ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                    );
+                                }
+                            }
                             insert_implicit_cast(init_expr, var_type);
                         }
                     }
@@ -208,7 +232,36 @@ impl TypeChecker {
                 }
                 self.dispatch_stmt(stmt);
             }
-            // === C++ 新增 (Phase 31 占位) ===
+            Stmt::RangeFor { var, var_type, iter, body, loc } => {
+                self.enter_scope();
+                let iter_type = self.resolve_expr_type(iter);
+                // Deduce element type from iterable
+                let elem_type = if iter_type.is_array() {
+                    iter_type.innermost_element_type()
+                } else if let Type::Pointer { pointee, .. } = &iter_type {
+                    pointee.as_ref().clone()
+                } else {
+                    self.report_error(
+                        "范围 for 的迭代对象必须是数组或指针类型",
+                        loc,
+                        ErrorCode::E4020_RangeForNotSupported,
+                    );
+                    Type::int()
+                };
+                let deduced_var_type = if var_type.is_auto() {
+                    elem_type
+                } else {
+                    var_type.clone()
+                };
+                self.declare_var(var, &deduced_var_type, false, false, false);
+                self.loop_depth += 1;
+                self.dispatch_stmt(body);
+                self.loop_depth -= 1;
+                self.exit_scope();
+            }
+            Stmt::Try { loc, .. } => {
+                self.report_error("try/catch 异常处理不被支持", loc, ErrorCode::E4001_ExceptionNotSupported);
+            }
             _ => {}
         }
     }
@@ -238,6 +291,44 @@ impl TypeChecker {
                 );
             }
         }
+    }
+
+    /// Visit a function declaration, pre-registering class fields as variables in the outermost scope.
+    /// Used for checking class method bodies where fields are implicitly accessible.
+    pub(super) fn visit_func_decl_with_fields(&mut self, node: &mut FuncDecl, fields: &[(Type, String)]) {
+        self.current_file = node.source_file.clone();
+        self.current_func_return = node.return_type.clone();
+        self.current_func_params.clear();
+        self.func_labels.clear();
+        self.pending_gotos.clear();
+        self.enter_scope();
+        for (fty, fname) in fields {
+            self.declare_var(fname, fty, false, false, false);
+        }
+        for p in &node.params {
+            self.current_func_params.insert(p.name.clone());
+            self.declare_var(&p.name, &p.ty, false, false, false);
+        }
+        if let Some(ref mut body) = node.body {
+            self.dispatch_stmt(body);
+        }
+        let unresolved: Vec<(String, SourceLoc)> = self
+            .pending_gotos
+            .iter()
+            .filter(|(label, _)| !self.func_labels.contains_key(label))
+            .map(|(label, loc)| (label.clone(), *loc))
+            .collect();
+        for (label, loc) in unresolved {
+            self.report_error(
+                &format!("goto 目标标签 '{}' 未定义", label),
+                &loc,
+                ErrorCode::E3071_UndefinedLabel,
+            );
+        }
+        self.pending_gotos.clear();
+        self.func_labels.clear();
+        self.exit_scope();
+        self.current_func_params.clear();
     }
 
     pub(crate) fn check_user_func(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -308,6 +399,15 @@ impl TypeChecker {
                 }
             }
             return sym.return_type.clone();
+        }
+
+        // Try template implicit instantiation
+        if !args.is_empty() {
+            let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
+            if let Some((mangled, new_func)) = self.try_instantiate_template(name, &arg_types) {
+                self.pending_instantiations.push((mangled.clone(), new_func));
+                return self.check_user_func(&mangled, args, loc);
+            }
         }
 
         self.report_error(&format!("未定义的函数 '{}'", name), loc, ErrorCode::E3036_UndefinedFunc);

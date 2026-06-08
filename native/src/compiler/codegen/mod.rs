@@ -626,7 +626,8 @@ impl BytecodeGen {
     }
 
     fn type_size(&self, ty: &Type) -> i32 {
-        compute_type_size(ty, &self.struct_defs, &self.union_defs)
+        let empty_class_map: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+        compute_type_size(ty, &self.struct_defs, &self.union_defs, &empty_class_map)
     }
 
     // =====================================================================

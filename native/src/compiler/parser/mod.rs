@@ -720,7 +720,10 @@ impl Parser {
             let param_name = self.consume(TokenType::Identifier, "预期模板参数名").text.clone();
             params.push(TemplateParam { name: param_name.clone(), loc });
             // 将模板参数注册为类型名，使其在函数/类体中可被识别
-            self.typedef_names.insert(param_name, Type::int());
+            // 使用 Class 类型作为占位符，以便 TypeChecker 在单态化时识别模板参数
+            let tp_name = params.last().unwrap().name.clone();
+            self.typedef_names
+                .insert(param_name, Type::Class { name: tp_name, is_const: false });
             if !self.match_token(TokenType::Comma) {
                 break;
             }
@@ -1310,7 +1313,11 @@ impl Parser {
                 if is_static {
                     self.advance(); // consume 'static'
                 }
-                while self.check(TokenType::Register) || self.check(TokenType::Auto) || self.check(TokenType::Inline) {
+                // In C++ mode, 'auto' is a type keyword, not a storage class; don't skip it.
+                while self.check(TokenType::Register)
+                    || (!self.is_cpp_mode && self.check(TokenType::Auto))
+                    || self.check(TokenType::Inline)
+                {
                     self.advance();
                 }
                 self.parse_var_decl_stmt(is_static)

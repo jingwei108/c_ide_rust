@@ -350,6 +350,15 @@ impl TypeChecker {
                         *ty = self.visit_call(name, args, loc);
                         return ty.clone();
                     }
+                    // Try template implicit instantiation
+                    if !args.is_empty() {
+                        let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
+                        if let Some((mangled, new_func)) = self.try_instantiate_template(name, &arg_types) {
+                            self.pending_instantiations.push((mangled.clone(), new_func));
+                            *ty = self.visit_call(&mangled, args, loc);
+                            return ty.clone();
+                        }
+                    }
                 }
                 let callee_ty = self.resolve_expr_type(callee);
                 let func_info = if let Type::Pointer { pointee, .. } = &callee_ty {
@@ -424,18 +433,22 @@ impl TypeChecker {
             }
             Expr::Member { object, member, loc, ty } => {
                 let obj_type = self.resolve_expr_type(object);
-                let (type_name, is_union) = if obj_type.is_struct() {
-                    (obj_type.name().to_string(), false)
+                let (type_name, kind) = if obj_type.is_struct() {
+                    (obj_type.name().to_string(), "struct")
                 } else if obj_type.is_union() {
-                    (obj_type.name().to_string(), true)
+                    (obj_type.name().to_string(), "union")
+                } else if obj_type.is_class() {
+                    (obj_type.name().to_string(), "class")
                 } else if let Type::Pointer { pointee, .. } = &obj_type {
                     if let Type::Struct { name, .. } = pointee.as_ref() {
-                        (name.clone(), false)
+                        (name.clone(), "struct")
                     } else if let Type::Union { name, .. } = pointee.as_ref() {
-                        (name.clone(), true)
+                        (name.clone(), "union")
+                    } else if let Type::Class { name, .. } = pointee.as_ref() {
+                        (name.clone(), "class")
                     } else {
                         self.report_error(
-                            "'.' 和 '->' 只能用于结构体或联合体类型",
+                            "'.' 和 '->' 只能用于结构体、联合体或类类型",
                             loc,
                             ErrorCode::E3041_MemberNonStruct,
                         );
@@ -443,19 +456,41 @@ impl TypeChecker {
                         return ty.clone();
                     }
                 } else {
-                    self.report_error("'.' 和 '->' 只能用于结构体或联合体类型", loc, ErrorCode::E3041_MemberNonStruct);
+                    self.report_error(
+                        "'.' 和 '->' 只能用于结构体、联合体或类类型",
+                        loc,
+                        ErrorCode::E3041_MemberNonStruct,
+                    );
                     *ty = Type::int();
                     return ty.clone();
                 };
-                let field_type = if is_union {
-                    self.get_union_field_type(&type_name, member)
+                let (field_type, access) = if kind == "union" {
+                    (self.get_union_field_type(&type_name, member), None)
+                } else if kind == "struct" {
+                    (self.get_struct_field_type(&type_name, member), None)
                 } else {
-                    self.get_struct_field_type(&type_name, member)
+                    self.get_class_field_type_with_access(&type_name, member)
                 };
                 if let Some(ft) = field_type {
+                    // Access control check for class members
+                    if let Some(acc) = access {
+                        if matches!(acc, AccessSpec::Private) && self.current_class.as_ref() != Some(&type_name) {
+                            self.report_error(
+                                &format!("无法访问类 '{}' 的私有成员 '{}'", type_name, member),
+                                loc,
+                                ErrorCode::E4024_PrivateMemberAccess,
+                            );
+                        }
+                    }
                     *ty = ft;
                 } else {
-                    let kind_str = if is_union { "联合体" } else { "结构体" };
+                    let kind_str = if kind == "union" {
+                        "联合体"
+                    } else if kind == "struct" {
+                        "结构体"
+                    } else {
+                        "类"
+                    };
                     self.report_error(
                         &format!("{} '{}' 没有成员 '{}'", kind_str, type_name, member),
                         loc,
@@ -568,10 +603,187 @@ impl TypeChecker {
                 // Should have been replaced by Literal above; unreachable
                 Type::int()
             }
-            // === C++ 新增 (Phase 31 占位) ===
-            _ => {
-                self.report_error("C++ 表达式类型检查尚未实现", expr.loc(), ErrorCode::E4013_NewDeleteNotSupported);
-                Type::int()
+            Expr::This { loc, ty } => {
+                if let Some(ref class_name) = self.current_class {
+                    *ty = Type::Pointer {
+                        pointee: Box::new(Type::Class {
+                            name: class_name.clone(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    };
+                } else {
+                    self.report_error("'this' 只能在类成员函数中使用", loc, ErrorCode::E4023_ThisOutsideClass);
+                    *ty = Type::int();
+                }
+                ty.clone()
+            }
+            Expr::MemberCall {
+                object,
+                method,
+                args,
+                is_virtual,
+                loc,
+                ty,
+            } => {
+                let obj_type = self.resolve_expr_type(object);
+                // Resolve class type from object (value or pointer)
+                let class_name = if let Type::Class { name, .. } = &obj_type {
+                    name.clone()
+                } else if let Type::Pointer { pointee, .. } = &obj_type {
+                    if let Type::Class { name, .. } = pointee.as_ref() {
+                        name.clone()
+                    } else {
+                        self.report_error("成员调用只能用于类类型", loc, ErrorCode::E3041_MemberNonStruct);
+                        *ty = Type::int();
+                        return ty.clone();
+                    }
+                } else {
+                    self.report_error("成员调用只能用于类类型", loc, ErrorCode::E3041_MemberNonStruct);
+                    *ty = Type::int();
+                    return ty.clone();
+                };
+
+                let method_sig = self.find_class_method(&class_name, method);
+                if let Some(sig) = method_sig {
+                    // Check access control (simplified: allow public, block private from outside)
+                    if matches!(sig.access, AccessSpec::Private) && self.current_class.as_ref() != Some(&class_name) {
+                        self.report_error(
+                            &format!("无法访问类 '{}' 的私有成员 '{}'", class_name, method),
+                            loc,
+                            ErrorCode::E4024_PrivateMemberAccess,
+                        );
+                    }
+                    // Check argument count (method sig includes implicit 'this' in TypeChecker registration,
+                    // but MemberCall args are user-provided args only)
+                    let user_param_count = sig.param_types.len().saturating_sub(1);
+                    if args.len() != user_param_count {
+                        self.report_error(
+                            &format!(
+                                "方法 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                                method,
+                                user_param_count,
+                                args.len()
+                            ),
+                            loc,
+                            ErrorCode::E3037_FuncArgCount,
+                        );
+                    } else {
+                        for (i, (arg, expected)) in args.iter_mut().zip(sig.param_types.iter().skip(1)).enumerate() {
+                            let arg_type = self.resolve_expr_type(arg);
+                            if !self.check_assignable(expected, &arg_type, loc) {
+                                self.report_error(
+                                    &format!("方法 '{}' 第 {} 个参数类型不匹配", method, i + 1),
+                                    loc,
+                                    ErrorCode::E3038_FuncArgType,
+                                );
+                            } else {
+                                insert_implicit_cast(arg, expected);
+                            }
+                        }
+                    }
+                    *ty = sig.ret.clone();
+                    *is_virtual = sig.is_virtual;
+                } else {
+                    self.report_error(
+                        &format!("类 '{}' 没有方法 '{}'", class_name, method),
+                        loc,
+                        ErrorCode::E3042_UnknownMember,
+                    );
+                    *ty = Type::int();
+                }
+                ty.clone()
+            }
+            Expr::New {
+                elem_type,
+                size_expr,
+                init,
+                loc,
+                ty,
+            } => {
+                if let Some(ref mut se) = size_expr {
+                    let size_ty = self.resolve_expr_type(se);
+                    if !self.is_int(&size_ty) {
+                        self.report_error("new[] 的大小必须是 int 类型", loc, ErrorCode::E4027_InvalidNewType);
+                    }
+                }
+                if let Some(ref mut i) = init {
+                    let init_ty = self.resolve_expr_type(i);
+                    if !self.check_assignable(elem_type, &init_ty, loc) {
+                        self.report_error(
+                            &format!("new 的初始化类型不匹配：期望 '{}'，实际 '{}'", elem_type, init_ty),
+                            loc,
+                            ErrorCode::E4027_InvalidNewType,
+                        );
+                    }
+                }
+                *ty = Type::Pointer {
+                    pointee: Box::new(elem_type.clone()),
+                    is_const: false,
+                };
+                ty.clone()
+            }
+            Expr::Delete { expr, is_array: _, loc, ty } => {
+                let expr_ty = self.resolve_expr_type(expr);
+                if !expr_ty.is_pointer() {
+                    self.report_error("delete 只能用于指针类型", loc, ErrorCode::E4028_InvalidDeleteType);
+                }
+                *ty = Type::void();
+                ty.clone()
+            }
+            Expr::Move { expr, loc: _, ty } => {
+                let expr_ty = self.resolve_expr_type(expr);
+                *ty = Type::RValueRef { base: Box::new(expr_ty) };
+                ty.clone()
+            }
+            Expr::Lambda {
+                params,
+                body: _,
+                unique_id,
+                loc,
+                ty,
+                ..
+            } => {
+                // Generate a closure struct type
+                let lambda_name = format!("__lambda_{}", unique_id);
+                *ty = Type::Class {
+                    name: lambda_name.clone(),
+                    is_const: false,
+                };
+                // Register the lambda type as a class symbol (simplified: empty fields for now)
+                if !self.classes.contains_key(&lambda_name) {
+                    self.classes.insert(
+                        lambda_name.clone(),
+                        ClassSymbol {
+                            fields: vec![],
+                            methods: HashMap::new(),
+                            base: None,
+                            vtable: None,
+                            size: 0,
+                        },
+                    );
+                }
+                // Register lambda call function
+                let call_name = format!("{}__call", lambda_name);
+                if !self.funcs.contains_key(&call_name) {
+                    let mut call_params = vec![Param {
+                        name: "this".to_string(),
+                        ty: Type::Pointer {
+                            pointee: Box::new(ty.clone()),
+                            is_const: false,
+                        },
+                        loc: *loc,
+                    }];
+                    call_params.extend(params.iter().cloned());
+                    self.funcs.insert(
+                        call_name.clone(),
+                        FuncSymbol {
+                            return_type: Type::int(),
+                            param_types: call_params.iter().map(|p| p.ty.clone()).collect(),
+                        },
+                    );
+                }
+                ty.clone()
             }
         }
     }

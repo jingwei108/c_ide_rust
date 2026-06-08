@@ -442,7 +442,8 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
             .iter()
             .map(|f| {
                 let current = offset;
-                offset += ast::compute_type_size(&f.ty, &output.struct_defs, &output.union_defs);
+                let empty_class_map: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+                offset += ast::compute_type_size(&f.ty, &output.struct_defs, &output.union_defs, &empty_class_map);
                 (f.name.clone(), current)
             })
             .collect();
@@ -645,7 +646,8 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
             .iter()
             .map(|f| {
                 let current = offset;
-                offset += ast::compute_type_size(&f.ty, &output.struct_defs, &output.union_defs);
+                let empty_class_map: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+                offset += ast::compute_type_size(&f.ty, &output.struct_defs, &output.union_defs, &empty_class_map);
                 (f.name.clone(), current)
             })
             .collect();

@@ -30,6 +30,30 @@ struct StructSymbol {
     fields: Vec<(Type, String)>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct MethodSig {
+    pub ret: Type,
+    pub param_types: Vec<Type>,
+    pub is_virtual: bool,
+    pub is_static: bool,
+    pub access: AccessSpec,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct ClassSymbol {
+    pub fields: Vec<(Type, String, AccessSpec)>,
+    pub methods: HashMap<String, MethodSig>,
+    pub base: Option<String>,
+    pub vtable: Option<VTable>,
+    pub size: i32,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct TemplateSymbol {
+    pub params: Vec<TemplateParam>,
+    pub decl: Templateable,
+}
+
 #[derive(Default)]
 pub struct TypeChecker {
     errors: Vec<TypeError>,
@@ -41,6 +65,8 @@ pub struct TypeChecker {
     static_global_files: HashMap<String, Vec<String>>,
     structs: HashMap<String, StructSymbol>,
     unions: HashMap<String, StructSymbol>,
+    classes: HashMap<String, ClassSymbol>,
+    templates: HashMap<String, TemplateSymbol>,
     scopes: Vec<HashMap<String, VarSymbol>>,
     current_func_return: Type,
     current_file: String,
@@ -49,11 +75,18 @@ pub struct TypeChecker {
     current_func_params: HashSet<String>,
     func_labels: HashMap<String, SourceLoc>,
     pending_gotos: Vec<(String, SourceLoc)>,
+    current_class: Option<String>,
+    /// Template instantiations discovered during type checking; appended to program.funcs at the end.
+    pending_instantiations: Vec<(String, FuncDecl)>,
 }
 
 /// 根据 (from, to) 类型对判断是否允许隐式转换，并返回转换后的目标类型。
 fn implicit_cast_target(from: &Type, to: &Type) -> Option<Type> {
     use TypeKind::*;
+    // Reference types do not participate in implicit scalar conversions
+    if matches!(from.kind(), Reference | RValueRef) || matches!(to.kind(), Reference | RValueRef) {
+        return None;
+    }
     match (from.kind(), to.kind()) {
         (Int | Char | Float | LongLong, Double) => Some(Type::double()),
         (Double, Int) => Some(Type::Int {
@@ -140,7 +173,9 @@ impl TypeChecker {
                 (name.clone(), fields)
             })
             .collect();
-        crate::compiler::ast::compute_type_size(ty, &struct_defs, &union_defs)
+        let class_size_map: HashMap<String, i32> =
+            self.classes.iter().map(|(name, sym)| (name.clone(), sym.size)).collect();
+        crate::compiler::ast::compute_type_size(ty, &struct_defs, &union_defs, &class_size_map)
     }
 
     pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
@@ -174,7 +209,140 @@ impl TypeChecker {
             self.unions.insert(u.name.clone(), sym);
         }
 
-        // Pass 2: Register function signatures
+        // Pass 1.5: Register classes and compute layouts
+        for c in &program.classes {
+            if self.classes.contains_key(&c.name) || self.structs.contains_key(&c.name) {
+                self.report_error(&format!("类 '{}' 重复定义", c.name), &c.loc, ErrorCode::E3002_StructRedeclared);
+                continue;
+            }
+            // Check base class exists
+            if let Some(ref base_name) = c.base {
+                if !self.classes.contains_key(base_name) && !self.structs.contains_key(base_name) {
+                    self.report_error(
+                        &format!("基类 '{}' 未定义", base_name),
+                        &c.loc,
+                        ErrorCode::E4021_BaseClassNotFound,
+                    );
+                }
+            }
+            let mut fields: Vec<(Type, String, AccessSpec)> = Vec::new();
+            let mut methods: HashMap<String, MethodSig> = HashMap::new();
+            let mut vtable_entries: Vec<(String, Type)> = Vec::new();
+
+            // Inherit base fields
+            if let Some(ref base_name) = c.base {
+                if let Some(base_sym) = self.classes.get(base_name) {
+                    for (fty, fname, faccess) in &base_sym.fields {
+                        fields.push((fty.clone(), fname.clone(), *faccess));
+                    }
+                    for (mname, msig) in &base_sym.methods {
+                        methods.insert(mname.clone(), msig.clone());
+                        if msig.is_virtual {
+                            let func_ty = Type::Function {
+                                return_type: Box::new(msig.ret.clone()),
+                                param_types: msig.param_types.clone(),
+                                is_const: false,
+                            };
+                            vtable_entries.push((mname.clone(), func_ty));
+                        }
+                    }
+                }
+            }
+
+            // Class members already have access set by parser
+            for member in &c.members {
+                match member {
+                    ClassMember::Field { name, ty, access } => {
+                        fields.push((ty.clone(), name.clone(), *access));
+                    }
+                    ClassMember::Method {
+                        name,
+                        ret,
+                        params,
+                        is_virtual,
+                        access,
+                        ..
+                    } => {
+                        let acc = *access;
+                        let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
+                        let sig = MethodSig {
+                            ret: ret.clone(),
+                            param_types: param_types.clone(),
+                            is_virtual: *is_virtual,
+                            is_static: false,
+                            access: acc,
+                        };
+                        methods.insert(name.clone(), sig);
+                        if *is_virtual {
+                            let func_ty = Type::Function {
+                                return_type: Box::new(ret.clone()),
+                                param_types,
+                                is_const: false,
+                            };
+                            // Override check: if base has same virtual method, replace
+                            if let Some(pos) = vtable_entries.iter().position(|(n, _)| n == name) {
+                                vtable_entries[pos] = (name.clone(), func_ty);
+                            } else {
+                                vtable_entries.push((name.clone(), func_ty));
+                            }
+                        }
+                    }
+                    ClassMember::Constructor { params, access, .. } => {
+                        let acc = *access;
+                        let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
+                        let sig = MethodSig {
+                            ret: Type::void(),
+                            param_types,
+                            is_virtual: false,
+                            is_static: false,
+                            access: acc,
+                        };
+                        methods.insert(format!("__ctor__{}", c.name), sig);
+                    }
+                    ClassMember::Destructor { access, .. } => {
+                        let acc = *access;
+                        let sig = MethodSig {
+                            ret: Type::void(),
+                            param_types: vec![Type::Pointer {
+                                pointee: Box::new(Type::Class {
+                                    name: c.name.clone(),
+                                    is_const: false,
+                                }),
+                                is_const: false,
+                            }],
+                            is_virtual: false,
+                            is_static: false,
+                            access: acc,
+                        };
+                        methods.insert(format!("__dtor__{}", c.name), sig);
+                    }
+                }
+            }
+
+            // Compute size: base size + all fields (base fields already in fields vec)
+            // Compute total size by summing all field sizes
+
+            let vtable = if vtable_entries.is_empty() {
+                None
+            } else {
+                Some(VTable { entries: vtable_entries })
+            };
+
+            // Insert with size 0 first so compute_type_size can resolve recursive class types
+            let sym = ClassSymbol {
+                fields: fields.clone(),
+                methods,
+                base: c.base.clone(),
+                vtable,
+                size: 0,
+            };
+            self.classes.insert(c.name.clone(), sym);
+            // Now compute actual size
+            let total_field_size: i32 = fields.iter().map(|(ty, _, _)| self.compute_type_size(ty)).sum();
+            self.classes.get_mut(&c.name).unwrap().size = total_field_size;
+        }
+
+        // Pass 2: Register function signatures (including class methods as mangled funcs)
         for f in &program.funcs {
             let new_sym = FuncSymbol {
                 return_type: f.return_type.clone(),
@@ -209,6 +377,94 @@ impl TypeChecker {
                 }
                 self.funcs.insert(f.name.clone(), new_sym);
             }
+        }
+
+        // Pass 2.3: Register class methods as mangled global functions
+        for c in &program.classes {
+            for member in &c.members {
+                if let ClassMember::Method { name, ret, params, .. } = member {
+                    let mangled = format!("{}__{}", c.name, name);
+                    let param_types: Vec<Type> = std::iter::once(Type::Pointer {
+                        pointee: Box::new(Type::Class {
+                            name: c.name.clone(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    })
+                    .chain(params.iter().map(|p| p.ty.clone()))
+                    .collect();
+                    let new_sym = FuncSymbol {
+                        return_type: ret.clone(),
+                        param_types,
+                    };
+                    if let Some(existing) = self.funcs.get(&mangled) {
+                        if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
+                            self.report_error(
+                                &format!("方法 '{}' 的声明与之前定义签名不一致", mangled),
+                                &c.loc,
+                                ErrorCode::E3003_FuncRedeclared,
+                            );
+                        }
+                        continue;
+                    }
+                    self.funcs.insert(mangled, new_sym);
+                }
+                if let ClassMember::Constructor { params, .. } = member {
+                    let mangled = format!("__ctor__{}", c.name);
+                    let param_types: Vec<Type> = std::iter::once(Type::Pointer {
+                        pointee: Box::new(Type::Class {
+                            name: c.name.clone(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    })
+                    .chain(params.iter().map(|p| p.ty.clone()))
+                    .collect();
+                    let new_sym = FuncSymbol {
+                        return_type: Type::void(),
+                        param_types,
+                    };
+                    if self.funcs.contains_key(&mangled) {
+                        continue;
+                    }
+                    self.funcs.insert(mangled, new_sym);
+                }
+                if let ClassMember::Destructor { .. } = member {
+                    let mangled = format!("__dtor__{}", c.name);
+                    let param_types = vec![Type::Pointer {
+                        pointee: Box::new(Type::Class {
+                            name: c.name.clone(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    }];
+                    let new_sym = FuncSymbol {
+                        return_type: Type::void(),
+                        param_types,
+                    };
+                    if self.funcs.contains_key(&mangled) {
+                        continue;
+                    }
+                    self.funcs.insert(mangled, new_sym);
+                }
+            }
+        }
+
+        // Pass 2.6: Register templates
+        for t in &program.templates {
+            let name = match &t.decl {
+                Templateable::Func(f) => f.name.clone(),
+                Templateable::Class(c) => c.name.clone(),
+            };
+            if self.templates.contains_key(&name) {
+                self.report_error(&format!("模板 '{}' 重复定义", name), &t.loc, ErrorCode::E3003_FuncRedeclared);
+                continue;
+            }
+            let sym = TemplateSymbol {
+                params: t.params.clone(),
+                decl: t.decl.clone(),
+            };
+            self.templates.insert(name, sym);
         }
 
         // Pass 2.5: Register globals and check initializers
@@ -248,7 +504,115 @@ impl TypeChecker {
             }
         }
 
+        // Pass 3.5: Check class method / constructor / destructor bodies
+        for c in &program.classes {
+            self.current_class = Some(c.name.clone());
+            // Register class fields as pseudo-variables for method body checking
+            let class_fields: Vec<(Type, String)> = if let Some(sym) = self.classes.get(&c.name) {
+                sym.fields.iter().map(|(ty, name, _)| (ty.clone(), name.clone())).collect()
+            } else {
+                vec![]
+            };
+            for member in &c.members {
+                match member {
+                    ClassMember::Method {
+                        name: method_name,
+                        ret,
+                        params,
+                        body,
+                        ..
+                    } => {
+                        if let Some(ref b) = body {
+                            let mut func_decl = FuncDecl {
+                                loc: c.loc,
+                                return_type: ret.clone(),
+                                name: format!("{}__{}", c.name, method_name),
+                                params: std::iter::once(Param {
+                                    name: "this".to_string(),
+                                    ty: Type::Pointer {
+                                        pointee: Box::new(Type::Class {
+                                            name: c.name.clone(),
+                                            is_const: false,
+                                        }),
+                                        is_const: false,
+                                    },
+                                    loc: c.loc,
+                                })
+                                .chain(params.iter().cloned())
+                                .collect(),
+                                body: Some(b.clone()),
+                                is_static: false,
+                                is_extern: false,
+                                source_file: String::new(),
+                            };
+                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                        }
+                    }
+                    ClassMember::Constructor { params, body, .. } => {
+                        if let Some(ref b) = body {
+                            let mut func_decl = FuncDecl {
+                                loc: c.loc,
+                                return_type: Type::void(),
+                                name: format!("__ctor__{}", c.name),
+                                params: std::iter::once(Param {
+                                    name: "this".to_string(),
+                                    ty: Type::Pointer {
+                                        pointee: Box::new(Type::Class {
+                                            name: c.name.clone(),
+                                            is_const: false,
+                                        }),
+                                        is_const: false,
+                                    },
+                                    loc: c.loc,
+                                })
+                                .chain(params.iter().cloned())
+                                .collect(),
+                                body: Some(b.clone()),
+                                is_static: false,
+                                is_extern: false,
+                                source_file: String::new(),
+                            };
+                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                        }
+                    }
+                    ClassMember::Destructor { body, .. } => {
+                        if let Some(ref b) = body {
+                            let mut func_decl = FuncDecl {
+                                loc: c.loc,
+                                return_type: Type::void(),
+                                name: format!("__dtor__{}", c.name),
+                                params: vec![Param {
+                                    name: "this".to_string(),
+                                    ty: Type::Pointer {
+                                        pointee: Box::new(Type::Class {
+                                            name: c.name.clone(),
+                                            is_const: false,
+                                        }),
+                                        is_const: false,
+                                    },
+                                    loc: c.loc,
+                                }],
+                                body: Some(b.clone()),
+                                is_static: false,
+                                is_extern: false,
+                                source_file: String::new(),
+                            };
+                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            self.current_class = None;
+        }
+
         self.exit_scope();
+
+        // Append template instantiations discovered during type checking
+        for (_, f) in self.pending_instantiations.drain(..) {
+            program.funcs.push(f);
+        }
+
         (self.errors, self.warnings, self.hints)
     }
 
@@ -615,6 +979,48 @@ impl TypeChecker {
         if target == value {
             return true;
         }
+        // Reference type compatibility (basic type check, lvalue/rvalue checked at use site)
+        if let Type::Reference {
+            base: t_base,
+            is_const: t_const,
+        } = target
+        {
+            if let Type::Reference {
+                base: v_base,
+                is_const: v_const,
+            } = value
+            {
+                // Reference to reference: only const& can bind to const&
+                if t_base == v_base && (*t_const || !*v_const) {
+                    return true;
+                }
+                return false;
+            }
+            // Non-reference value binding to reference: check base type compatibility
+            if t_base.as_ref() == value || (*t_const && self.check_scalar_assignable(t_base, value, loc)) {
+                return true;
+            }
+            if t_base.as_ref() == value {
+                return true;
+            }
+            if let Type::Pointer { pointee: t_pt, .. } = t_base.as_ref() {
+                if let Type::Pointer { pointee: v_pt, .. } = value {
+                    if t_pt == v_pt || matches!(t_pt.as_ref(), Type::Void { .. }) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+        if let Type::RValueRef { base: t_base } = target {
+            if t_base.as_ref() == value {
+                return true;
+            }
+            if self.check_scalar_assignable(t_base, value, loc) {
+                return true;
+            }
+            return false;
+        }
         if self.check_array_pointer_assignable(target, value, loc) {
             return true;
         }
@@ -628,6 +1034,22 @@ impl TypeChecker {
             return true;
         }
         false
+    }
+
+    /// 判断表达式是否为左值（可被取地址的表达式）。
+    /// 尝试隐式实例化函数模板，返回 (mangled_name, FuncDecl) 但不注册到 program。
+    pub(crate) fn try_instantiate_template(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, FuncDecl)> {
+        self.try_monomorphize_func(name, arg_types)
+    }
+
+    pub(crate) fn is_lvalue(&self, expr: &Expr) -> bool {
+        match expr {
+            Expr::Identifier { .. } => true,
+            Expr::Member { .. } => true,
+            Expr::Index { .. } => true,
+            Expr::Unary { op: UnaryOp::Deref, .. } => true,
+            _ => false,
+        }
     }
 
     pub(crate) fn get_struct_field_type(&self, struct_name: &str, field_name: &str) -> Option<Type> {
@@ -647,6 +1069,35 @@ impl TypeChecker {
             }
         }
         None
+    }
+    pub(crate) fn get_class_field_type(&self, class_name: &str, field_name: &str) -> Option<Type> {
+        let sym = self.classes.get(class_name)?;
+        for (fty, fname, _) in &sym.fields {
+            if fname == field_name {
+                return Some(fty.clone());
+            }
+        }
+        None
+    }
+    pub(crate) fn get_class_field_type_with_access(
+        &self,
+        class_name: &str,
+        field_name: &str,
+    ) -> (Option<Type>, Option<AccessSpec>) {
+        let sym = match self.classes.get(class_name) {
+            Some(s) => s,
+            None => return (None, None),
+        };
+        for (fty, fname, faccess) in &sym.fields {
+            if fname == field_name {
+                return (Some(fty.clone()), Some(*faccess));
+            }
+        }
+        (None, None)
+    }
+    pub(crate) fn find_class_method(&self, class_name: &str, method_name: &str) -> Option<MethodSig> {
+        let sym = self.classes.get(class_name)?;
+        sym.methods.get(method_name).cloned()
     }
 
     fn expr_involves_array_or_pointer(&self, expr: &Expr) -> bool {
@@ -980,5 +1431,7 @@ impl TypeChecker {
 }
 
 mod builtin;
+mod cpp_auto;
+mod cpp_monomorph;
 mod decl;
 mod expr;

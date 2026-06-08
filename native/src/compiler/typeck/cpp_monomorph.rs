@@ -1,0 +1,303 @@
+use super::*;
+
+impl TypeChecker {
+    /// 尝试根据实参类型隐式实例化函数模板。
+    /// 返回实例化后的 mangled 函数名（如 "max__int"），若无法匹配则返回 None。
+    /// Try to monomorphize a function template. Returns (mangled_name, FuncDecl) if successful.
+    pub(crate) fn try_monomorphize_func(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, FuncDecl)> {
+        let template = self.templates.get(name)?.clone();
+        let func_decl = match &template.decl {
+            Templateable::Func(f) => f.as_ref(),
+            _ => return None,
+        };
+
+        if template.params.is_empty() {
+            return None;
+        }
+
+        // Derive template arguments from parameter types
+        let mut type_map: HashMap<String, Type> = HashMap::new();
+        for (param, arg_ty) in func_decl.params.iter().zip(arg_types.iter()) {
+            self.infer_template_arg(&param.ty, arg_ty, &mut type_map);
+        }
+        // Also infer from return type if it's a template param (for cases like T foo())
+        if let Some(first_arg) = arg_types.first() {
+            self.infer_template_arg(&func_decl.return_type, first_arg, &mut type_map);
+        }
+
+        // Check all template params have been inferred
+        let mut type_args: Vec<Type> = Vec::new();
+        for tp in &template.params {
+            if let Some(t) = type_map.get(&tp.name) {
+                type_args.push(t.clone());
+            } else {
+                return None; // Could not infer all params
+            }
+        }
+
+        let mangled = Self::mangle_template_name(name, &type_args);
+        if self.funcs.contains_key(&mangled) {
+            return None; // Already instantiated; caller should look up self.funcs
+        }
+
+        // Instantiate: deep clone and replace template params
+        let mut new_func = func_decl.clone();
+        new_func.name = mangled.clone();
+        self.replace_template_types_in_func(&mut new_func, &type_map);
+
+        self.funcs.insert(
+            mangled.clone(),
+            FuncSymbol {
+                return_type: new_func.return_type.clone(),
+                param_types: new_func.params.iter().map(|p| p.ty.clone()).collect(),
+            },
+        );
+
+        Some((mangled, new_func))
+    }
+
+    /// Mangling rule: func__T1_T2_...
+    fn mangle_template_name(base: &str, type_args: &[Type]) -> String {
+        let mut result = base.to_string();
+        for t in type_args {
+            result.push_str("__");
+            result.push_str(&t.mangle_name());
+        }
+        result
+    }
+
+    /// Infer template argument by matching a formal parameter type against an actual type.
+    fn infer_template_arg(&self, formal: &Type, actual: &Type, map: &mut HashMap<String, Type>) {
+        match formal {
+            Type::Class { name, .. }
+                // Treat Class types with names not found in self.classes as template params
+                // (Parser registers template params as Type::Class { name: param_name })
+                if !self.classes.contains_key(name) && !self.structs.contains_key(name) => {
+                    map.insert(name.clone(), actual.clone());
+                }
+            Type::Pointer { pointee, .. } => {
+                if let Type::Pointer { pointee: actual_pointee, .. } = actual {
+                    self.infer_template_arg(pointee, actual_pointee, map);
+                }
+            }
+            Type::Array { element, .. } => {
+                if let Type::Array { element: actual_elem, .. } = actual {
+                    self.infer_template_arg(element, actual_elem, map);
+                }
+            }
+            Type::Reference { base, .. } => {
+                if let Type::Reference { base: actual_base, .. } = actual {
+                    self.infer_template_arg(base, actual_base, map);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// Recursively replace template parameter types in a function declaration.
+    fn replace_template_types_in_func(&self, func: &mut FuncDecl, type_map: &HashMap<String, Type>) {
+        func.return_type = Self::replace_template_type(&func.return_type, type_map);
+        for p in &mut func.params {
+            p.ty = Self::replace_template_type(&p.ty, type_map);
+        }
+        if let Some(ref mut body) = func.body {
+            self.replace_template_types_in_stmt(body, type_map);
+        }
+    }
+
+    fn replace_template_type(ty: &Type, type_map: &HashMap<String, Type>) -> Type {
+        match ty {
+            Type::Class { name, .. } if type_map.contains_key(name) => type_map[name].clone(),
+            Type::Pointer { pointee, is_const } => Type::Pointer {
+                pointee: Box::new(Self::replace_template_type(pointee, type_map)),
+                is_const: *is_const,
+            },
+            Type::Array {
+                element,
+                array_size,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+            } => Type::Array {
+                element: Box::new(Self::replace_template_type(element, type_map)),
+                array_size: *array_size,
+                dims: dims.clone(),
+                is_const: *is_const,
+                is_vla: *is_vla,
+                vla_dims: vla_dims.clone(),
+            },
+            Type::Reference { base, is_const } => Type::Reference {
+                base: Box::new(Self::replace_template_type(base, type_map)),
+                is_const: *is_const,
+            },
+            Type::RValueRef { base } => Type::RValueRef {
+                base: Box::new(Self::replace_template_type(base, type_map)),
+            },
+            Type::Function {
+                return_type,
+                param_types,
+                is_const,
+            } => Type::Function {
+                return_type: Box::new(Self::replace_template_type(return_type, type_map)),
+                param_types: param_types.iter().map(|t| Self::replace_template_type(t, type_map)).collect(),
+                is_const: *is_const,
+            },
+            _ => ty.clone(),
+        }
+    }
+
+    fn replace_template_types_in_stmt(&self, stmt: &mut Stmt, type_map: &HashMap<String, Type>) {
+        match stmt {
+            Stmt::VarDecl { var_type, init, extra_vars, .. } => {
+                *var_type = Self::replace_template_type(var_type, type_map);
+                for (ety, _, einit) in extra_vars.iter_mut() {
+                    *ety = Self::replace_template_type(ety, type_map);
+                    if let Some(ref mut e) = einit {
+                        self.replace_template_types_in_expr(e, type_map);
+                    }
+                }
+                if let Some(ref mut e) = init {
+                    self.replace_template_types_in_expr(e, type_map);
+                }
+            }
+            Stmt::Block { stmts, .. } => {
+                for s in stmts {
+                    self.replace_template_types_in_stmt(s, type_map);
+                }
+            }
+            Stmt::Switch { body, .. } => {
+                self.replace_template_types_in_stmt(body, type_map);
+            }
+            Stmt::If { cond, then_stmt, else_stmt, .. } => {
+                self.replace_template_types_in_expr(cond, type_map);
+                self.replace_template_types_in_stmt(then_stmt, type_map);
+                if let Some(ref mut e) = else_stmt {
+                    self.replace_template_types_in_stmt(e, type_map);
+                }
+            }
+            Stmt::While { cond, body, .. } => {
+                self.replace_template_types_in_expr(cond, type_map);
+                self.replace_template_types_in_stmt(body, type_map);
+            }
+            Stmt::DoWhile { body, cond, .. } => {
+                self.replace_template_types_in_stmt(body, type_map);
+                self.replace_template_types_in_expr(cond, type_map);
+            }
+            Stmt::For { init, cond, step, body, .. } => {
+                if let Some(ref mut i) = init {
+                    self.replace_template_types_in_stmt(i, type_map);
+                }
+                if let Some(ref mut c) = cond {
+                    self.replace_template_types_in_expr(c, type_map);
+                }
+                for s in step {
+                    self.replace_template_types_in_expr(s, type_map);
+                }
+                self.replace_template_types_in_stmt(body, type_map);
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(ref mut v) = value {
+                    self.replace_template_types_in_expr(v, type_map);
+                }
+            }
+            Stmt::Expr { expr, .. } => {
+                self.replace_template_types_in_expr(expr, type_map);
+            }
+            Stmt::RangeFor { var_type, iter, body, .. } => {
+                *var_type = Self::replace_template_type(var_type, type_map);
+                self.replace_template_types_in_expr(iter, type_map);
+                self.replace_template_types_in_stmt(body, type_map);
+            }
+            Stmt::Case { stmt, .. } => {
+                self.replace_template_types_in_stmt(stmt, type_map);
+            }
+            Stmt::Label { stmt, .. } => {
+                self.replace_template_types_in_stmt(stmt, type_map);
+            }
+            _ => {}
+        }
+    }
+
+    fn replace_template_types_in_expr(&self, expr: &mut Expr, type_map: &HashMap<String, Type>) {
+        match expr {
+            Expr::Binary { left, right, .. } => {
+                self.replace_template_types_in_expr(left, type_map);
+                self.replace_template_types_in_expr(right, type_map);
+            }
+            Expr::Unary { operand, .. } => {
+                self.replace_template_types_in_expr(operand, type_map);
+            }
+            Expr::Ternary {
+                cond, then_branch, else_branch, ..
+            } => {
+                self.replace_template_types_in_expr(cond, type_map);
+                self.replace_template_types_in_expr(then_branch, type_map);
+                self.replace_template_types_in_expr(else_branch, type_map);
+            }
+            Expr::Assign { left, right, .. } => {
+                self.replace_template_types_in_expr(left, type_map);
+                self.replace_template_types_in_expr(right, type_map);
+            }
+            Expr::Call { args, .. } => {
+                for a in args {
+                    self.replace_template_types_in_expr(a, type_map);
+                }
+            }
+            Expr::MemberCall { object, args, .. } => {
+                self.replace_template_types_in_expr(object, type_map);
+                for a in args {
+                    self.replace_template_types_in_expr(a, type_map);
+                }
+            }
+            Expr::Member { object, ty, .. } => {
+                self.replace_template_types_in_expr(object, type_map);
+                *ty = Self::replace_template_type(ty, type_map);
+            }
+            Expr::Index { array, index, ty, .. } => {
+                self.replace_template_types_in_expr(array, type_map);
+                self.replace_template_types_in_expr(index, type_map);
+                *ty = Self::replace_template_type(ty, type_map);
+            }
+            Expr::Cast { expr, target_type, ty, .. } => {
+                self.replace_template_types_in_expr(expr, type_map);
+                *target_type = Self::replace_template_type(target_type, type_map);
+                *ty = Self::replace_template_type(ty, type_map);
+            }
+            Expr::New { elem_type, size_expr, init, .. } => {
+                *elem_type = Self::replace_template_type(elem_type, type_map);
+                if let Some(ref mut s) = size_expr {
+                    self.replace_template_types_in_expr(s, type_map);
+                }
+                if let Some(ref mut i) = init {
+                    self.replace_template_types_in_expr(i, type_map);
+                }
+            }
+            Expr::Delete { expr, .. } => {
+                self.replace_template_types_in_expr(expr, type_map);
+            }
+            Expr::Lambda { params, body, .. } => {
+                for p in params.iter_mut() {
+                    p.ty = Self::replace_template_type(&p.ty, type_map);
+                }
+                self.replace_template_types_in_stmt(body, type_map);
+            }
+            Expr::InitList { elements, ty, .. } => {
+                *ty = Self::replace_template_type(ty, type_map);
+                for e in elements.iter_mut() {
+                    self.replace_template_types_in_expr(&mut e.value, type_map);
+                }
+            }
+            Expr::Sizeof { ty, .. } => {
+                *ty = Self::replace_template_type(ty, type_map);
+            }
+            Expr::Offsetof { ty, .. } => {
+                *ty = Self::replace_template_type(ty, type_map);
+            }
+            Expr::Move { expr, .. } => {
+                self.replace_template_types_in_expr(expr, type_map);
+            }
+            _ => {}
+        }
+    }
+}
