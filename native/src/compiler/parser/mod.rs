@@ -569,8 +569,12 @@ impl Parser {
                 continue;
             }
 
-            // 跳过 inline 修饰符
-            while self.check(TokenType::Inline) {
+            // 跳过 inline / virtual 修饰符
+            let mut is_virtual = false;
+            while self.check(TokenType::Inline) || self.check(TokenType::Virtual) {
+                if self.check(TokenType::Virtual) {
+                    is_virtual = true;
+                }
                 self.advance();
             }
 
@@ -593,7 +597,7 @@ impl Parser {
                 members.push(ClassMember::Destructor {
                     body,
                     access: current_access,
-                    is_virtual: false,
+                    is_virtual,
                 });
                 continue;
             }
@@ -636,8 +640,7 @@ impl Parser {
                 let params = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
 
-                // 检查 override / virtual
-                let is_virtual = false;
+                // 检查 override
                 if self.check(TokenType::Override) {
                     self.advance();
                 }

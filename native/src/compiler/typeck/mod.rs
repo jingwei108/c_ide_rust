@@ -342,6 +342,13 @@ impl TypeChecker {
             self.classes.get_mut(&c.name).unwrap().size = total_field_size;
         }
 
+        // Write vtables back to program.classes for BytecodeGen
+        for c in &mut program.classes {
+            if let Some(sym) = self.classes.get(&c.name) {
+                c.vtable = sym.vtable.clone();
+            }
+        }
+
         // Pass 2: Register function signatures (including class methods as mangled funcs)
         for f in &program.funcs {
             let new_sym = FuncSymbol {
@@ -505,6 +512,7 @@ impl TypeChecker {
         }
 
         // Pass 3.5: Check class method / constructor / destructor bodies
+        let mut class_methods: Vec<FuncDecl> = Vec::new();
         for c in &program.classes {
             self.current_class = Some(c.name.clone());
             // Register class fields as pseudo-variables for method body checking
@@ -546,6 +554,7 @@ impl TypeChecker {
                                 source_file: String::new(),
                             };
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                            class_methods.push(func_decl);
                         }
                     }
                     ClassMember::Constructor { params, body, .. } => {
@@ -573,6 +582,7 @@ impl TypeChecker {
                                 source_file: String::new(),
                             };
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                            class_methods.push(func_decl);
                         }
                     }
                     ClassMember::Destructor { body, .. } => {
@@ -598,6 +608,7 @@ impl TypeChecker {
                                 source_file: String::new(),
                             };
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                            class_methods.push(func_decl);
                         }
                     }
                     _ => {}
@@ -605,6 +616,7 @@ impl TypeChecker {
             }
             self.current_class = None;
         }
+        program.funcs.extend(class_methods);
 
         self.exit_scope();
 

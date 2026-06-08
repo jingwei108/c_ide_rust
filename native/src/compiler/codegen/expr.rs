@@ -1008,8 +1008,185 @@ impl ExprGen for BytecodeGen {
                 }
                 self.emit(OpCode::PushConst, offset, &loc);
             }
-            // === C++ 新增 (Phase 31 占位) ===
-            _ => self.report_error("C++ 表达式尚未支持代码生成", &loc),
+            // === C++ 新增 (Phase 33) ===
+            Expr::This { .. } => {
+                let this_offset = self.resolve_local("this");
+                if this_offset >= 0 {
+                    self.emit(OpCode::LoadLocal, this_offset, &loc);
+                } else {
+                    self.report_error("this 在静态上下文中不可用", &loc);
+                    self.emit(OpCode::PushConst, 0, &loc);
+                }
+            }
+            Expr::MemberCall { object, method, args, is_virtual, ty, .. } => {
+                let obj_type = object.ty().clone();
+                let class_name = match self.extract_class_name(&obj_type) {
+                    Some(n) => n,
+                    None => {
+                        self.report_error("MemberCall 需要类类型对象", &loc);
+                        self.emit(OpCode::PushConst, 0, &loc);
+                        return;
+                    }
+                };
+                let is_struct_ret = ty.is_struct();
+                let ret_temp_offset = if is_struct_ret {
+                    let sz = (self.type_size(ty) + 3) & !3;
+                    let offset = self.next_local_offset;
+                    self.next_local_offset += sz;
+                    Some(offset)
+                } else {
+                    None
+                };
+                // Generate args in reverse order (excluding this)
+                for arg in args.iter_mut().rev() {
+                    let arg_ty = arg.ty().clone();
+                    if arg_ty.is_struct() {
+                        let sz = self.type_size(&arg_ty);
+                        let words = (sz + 3) / 4;
+                        self.gen_expr(arg);
+                        for _ in 1..words {
+                            self.emit(OpCode::PushConst, 0, &loc);
+                        }
+                    } else if arg_ty.kind() == TypeKind::Double {
+                        self.gen_expr(arg);
+                        self.emit(OpCode::SplitD, 0, &loc);
+                    } else if arg_ty.kind() == TypeKind::LongLong {
+                        self.gen_expr(arg);
+                        self.emit(OpCode::SplitQ, 0, &loc);
+                    } else {
+                        self.gen_expr(arg);
+                    }
+                }
+                // Generate this pointer
+                if obj_type.is_pointer() {
+                    self.gen_expr(object);
+                } else if obj_type.kind() == TypeKind::Class {
+                    if let Expr::Identifier { name, .. } = object.as_ref() {
+                        if let Some(&offset) = self.local_indices.get(name) {
+                            self.emit(OpCode::GetFrameBase, 0, &loc);
+                            self.emit(OpCode::PushConst, offset, &loc);
+                            self.emit(OpCode::Add, 0, &loc);
+                        } else if let Some(&offset) = self.global_indices.get(name) {
+                            self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                        } else {
+                            self.report_error("未声明的类对象", &loc);
+                            self.emit(OpCode::PushConst, 0, &loc);
+                        }
+                    } else {
+                        self.gen_expr(object);
+                    }
+                } else {
+                    self.report_error("不支持的类对象表达式", &loc);
+                    self.emit(OpCode::PushConst, 0, &loc);
+                }
+                if *is_virtual {
+                    let this_temp = self.get_temp_slot(0);
+                    self.emit(OpCode::StoreLocal, this_temp, &loc);
+                    if let Some(offset) = ret_temp_offset {
+                        self.emit(OpCode::GetFrameBase, 0, &loc);
+                        self.emit(OpCode::PushConst, offset, &loc);
+                        self.emit(OpCode::Add, 0, &loc);
+                    }
+                    // Push this as argument
+                    self.emit(OpCode::LoadLocal, this_temp, &loc);
+                    // Virtual lookup
+                    let class = match self.class_defs.get(&class_name) {
+                        Some(c) => c,
+                        None => {
+                            self.report_error(&format!("未知类 '{}'", class_name), &loc);
+                            return;
+                        }
+                    };
+                    let vtable = match &class.vtable {
+                        Some(vt) => vt,
+                        None => {
+                            self.report_error(&format!("类 '{}' 没有虚表", class_name), &loc);
+                            return;
+                        }
+                    };
+                    let vindex = match vtable.entries.iter().position(|(n, _)| n == method) {
+                        Some(i) => i,
+                        None => {
+                            self.report_error(&format!("方法 '{}' 不在 '{}' 的虚表中", method, class_name), &loc);
+                            return;
+                        }
+                    };
+                    self.emit(OpCode::LoadLocal, this_temp, &loc);
+                    self.emit(OpCode::LoadMem, 0, &loc);
+                    self.emit(OpCode::PushConst, (vindex * 4) as i32, &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                    self.emit(OpCode::LoadMem, 0, &loc);
+                    self.emit(OpCode::CallPtr, (args.len() + 1) as i32, &loc);
+                } else {
+                    if let Some(offset) = ret_temp_offset {
+                        self.emit(OpCode::GetFrameBase, 0, &loc);
+                        self.emit(OpCode::PushConst, offset, &loc);
+                        self.emit(OpCode::Add, 0, &loc);
+                    }
+                    let mangled = format!("{}__{}", class_name, method);
+                    if let Some(&idx) = self.func_index.get(&mangled) {
+                        self.emit(OpCode::Call, idx, &loc);
+                    } else {
+                        self.report_error(&format!("未定义的类方法 '{}'", mangled), &loc);
+                        self.emit(OpCode::PushConst, 0, &loc);
+                    }
+                }
+                if is_struct_ret {
+                    self.emit(OpCode::GetFrameBase, 0, &loc);
+                    self.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                }
+            }
+            Expr::New { elem_type, size_expr, init, .. } => {
+                let elem_sz = self.type_size(elem_type);
+                if let Some(size_expr) = size_expr {
+                    self.gen_expr(size_expr);
+                    self.emit(OpCode::PushConst, elem_sz, &loc);
+                    self.emit(OpCode::Mul, 0, &loc);
+                } else {
+                    self.emit(OpCode::PushConst, elem_sz, &loc);
+                }
+                self.emit(OpCode::CallHost, crate::vm::host_func_id::MALLOC as i32, &loc);
+                // If class type, initialize vptr and call constructor
+                if let Type::Class { name, .. } = elem_type {
+                    let ptr_temp = self.get_temp_slot(0);
+                    self.emit(OpCode::StoreLocal, ptr_temp, &loc);
+                    // Initialize vptr if class has a vtable
+                    if let Some(&vtable_offset) = self.class_vtables.get(name) {
+                        self.emit(OpCode::LoadLocal, ptr_temp, &loc);
+                        self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + vtable_offset as i32, &loc);
+                        self.emit(OpCode::StoreMem, 0, &loc);
+                    }
+                    let ctor_name = format!("__ctor__{}", name);
+                    if self.func_index.contains_key(&ctor_name) {
+                        if let Some(init_expr) = init {
+                            if let Expr::Call { args, .. } = init_expr.as_mut() {
+                                for arg in args.iter_mut().rev() {
+                                    self.gen_expr(arg);
+                                }
+                            }
+                        }
+                        self.emit(OpCode::LoadLocal, ptr_temp, &loc);
+                        if let Some(&idx) = self.func_index.get(&ctor_name) {
+                            self.emit(OpCode::Call, idx, &loc);
+                        }
+                        self.emit(OpCode::LoadLocal, ptr_temp, &loc);
+                    } else {
+                        self.emit(OpCode::LoadLocal, ptr_temp, &loc);
+                    }
+                }
+            }
+            Expr::Delete { expr, .. } => {
+                self.gen_expr(expr);
+                self.emit(OpCode::CallHost, crate::vm::host_func_id::FREE as i32, &loc);
+            }
+            Expr::Move { expr, .. } => {
+                self.gen_expr(expr);
+            }
+            Expr::Lambda { .. } => {
+                self.report_error("Lambda 表达式代码生成尚未实现", &loc);
+                self.emit(OpCode::PushConst, 0, &loc);
+            }
         }
     }
 

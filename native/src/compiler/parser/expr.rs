@@ -708,7 +708,28 @@ impl Parser {
         }
 
         if self.match_token(TokenType::LParen) {
-            init = Some(Box::new(self.parse_expression()));
+            if self.check(TokenType::RParen) {
+                // Empty parens: treat as default constructor call
+                init = Some(Box::new(Expr::Call {
+                    name: elem_type.name().to_string(),
+                    args: Vec::new(),
+                    loc: loc.clone(),
+                    ty: Type::void(),
+                }));
+            } else {
+                let is_class = matches!(elem_type.kind(), TypeKind::Class);
+                if is_class {
+                    let ctor_args = self.parse_arg_list();
+                    init = Some(Box::new(Expr::Call {
+                        name: elem_type.name().to_string(),
+                        args: ctor_args,
+                        loc: loc.clone(),
+                        ty: Type::void(),
+                    }));
+                } else {
+                    init = Some(Box::new(self.parse_expression()));
+                }
+            }
             self.consume(TokenType::RParen, "new 初始化预期 ')'");
         }
 

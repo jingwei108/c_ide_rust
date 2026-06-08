@@ -708,13 +708,17 @@ impl TypeChecker {
                     }
                 }
                 if let Some(ref mut i) = init {
-                    let init_ty = self.resolve_expr_type(i);
-                    if !self.check_assignable(elem_type, &init_ty, loc) {
-                        self.report_error(
-                            &format!("new 的初始化类型不匹配：期望 '{}'，实际 '{}'", elem_type, init_ty),
-                            loc,
-                            ErrorCode::E4027_InvalidNewType,
-                        );
+                    // For class types, allow any init expression (constructor args)
+                    let skip_check = matches!(elem_type, Type::Class { .. });
+                    if !skip_check {
+                        let init_ty = self.resolve_expr_type(i);
+                        if !self.check_assignable(elem_type, &init_ty, loc) {
+                            self.report_error(
+                                &format!("new 的初始化类型不匹配：期望 '{}'，实际 '{}'", elem_type, init_ty),
+                                loc,
+                                ErrorCode::E4027_InvalidNewType,
+                            );
+                        }
                     }
                 }
                 *ty = Type::Pointer {

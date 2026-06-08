@@ -64,6 +64,9 @@ pub struct BytecodeGen {
     sym_index: HashMap<String, i32>,
     struct_defs: HashMap<String, Vec<StructField>>,
     union_defs: HashMap<String, Vec<StructField>>,
+    class_defs: HashMap<String, ClassDecl>,
+    class_sizes: HashMap<String, i32>,
+    class_vtables: HashMap<String, u32>,
     string_data: Vec<(u32, String)>,
     string_mem_offset: u32,
     source_map: Vec<(u32, VMSourceLoc)>,
@@ -127,6 +130,9 @@ impl BytecodeGen {
             sym_index: HashMap::new(),
             struct_defs: HashMap::new(),
             union_defs: HashMap::new(),
+            class_defs: HashMap::new(),
+            class_sizes: HashMap::new(),
+            class_vtables: HashMap::new(),
             string_data: Vec::new(),
             string_mem_offset: GLOBAL_START + BYTECODE_LIBC_GLOBALS_RESERVED,
             source_map: Vec::new(),
@@ -146,6 +152,46 @@ impl BytecodeGen {
         }
         for u in &program.unions {
             self.union_defs.insert(u.name.clone(), u.fields.clone());
+        }
+
+        // Register classes (C++ extension)
+        for c in &program.classes {
+            self.class_defs.insert(c.name.clone(), c.clone());
+        }
+        // Compute class sizes with topological ordering (base classes first)
+        let mut pending: Vec<String> = program.classes.iter().map(|c| c.name.clone()).collect();
+        while !pending.is_empty() {
+            let mut resolved = Vec::new();
+            for class_name in &pending {
+                let class = self.class_defs.get(class_name).unwrap();
+                let mut can_compute = true;
+                if let Some(ref base) = class.base {
+                    if !self.class_sizes.contains_key(base) {
+                        can_compute = false;
+                    }
+                }
+                if can_compute {
+                    let mut size = 4; // vptr
+                    if let Some(ref base_name) = class.base {
+                        size = self.class_sizes.get(base_name).copied().unwrap_or(4);
+                    }
+                    for member in &class.members {
+                        if let ClassMember::Field { ty, .. } = member {
+                            size += self.type_size(ty);
+                        }
+                    }
+                    self.class_sizes.insert(class_name.clone(), size);
+                    resolved.push(class_name.clone());
+                }
+            }
+            if resolved.is_empty() && !pending.is_empty() {
+                // Circular inheritance or missing base — break to avoid infinite loop
+                for class_name in &pending {
+                    self.class_sizes.insert(class_name.clone(), 4);
+                }
+                break;
+            }
+            pending.retain(|n| !resolved.contains(n));
         }
 
         // Pre-fill func_index so global initializers can resolve function names
@@ -300,6 +346,22 @@ impl BytecodeGen {
                 func_name: String::new(),
             });
             self.next_global_offset += sz;
+        }
+
+        // Allocate vtables in global memory for virtual dispatch (C++ extension)
+        for c in &program.classes {
+            if let Some(ref vtable) = c.vtable {
+                let entries = &vtable.entries;
+                let vtable_size = entries.len() as i32 * 4;
+                let vtable_offset = self.next_global_offset;
+                self.next_global_offset += vtable_size;
+                self.class_vtables.insert(c.name.clone(), vtable_offset as u32);
+                for (i, (method_name, _)) in entries.iter().enumerate() {
+                    let mangled = format!("{}__{}", c.name, method_name);
+                    let func_idx = self.func_index.get(&mangled).copied().unwrap_or(0);
+                    self.globals_init_32.push((vtable_offset as u32 + i as u32 * 4, func_idx));
+                }
+            }
         }
 
         self.string_mem_offset = 0x1000 + self.next_global_offset as u32;
@@ -561,8 +623,38 @@ impl BytecodeGen {
                 }
                 0
             }
+            TypeKind::Class | TypeKind::Pointer if base_kind(object_type) == TypeKind::Class => {
+                self.get_class_member_offset(object_type.name(), member_name)
+            }
             _ => 0,
         }
+    }
+
+    fn get_class_member_offset(&self, class_name: &str, member_name: &str) -> i32 {
+        let class = match self.class_defs.get(class_name) {
+            Some(c) => c,
+            None => return 0,
+        };
+        let mut offset = 4; // vptr at offset 0
+        // Check base class fields first
+        if let Some(ref base_name) = class.base {
+            let base_offset = self.get_class_member_offset(base_name, member_name);
+            if base_offset > 0 {
+                return base_offset; // base_offset already includes vptr of base
+            }
+            let base_size = self.class_sizes.get(base_name).copied().unwrap_or(4);
+            offset = base_size;
+        }
+        // Search in current class fields
+        for member in &class.members {
+            if let ClassMember::Field { name, ty, .. } = member {
+                if name == member_name {
+                    return offset;
+                }
+                offset += self.type_size(ty);
+            }
+        }
+        0
     }
 
     fn push_f64_constant(&mut self, val: f64) -> i32 {
@@ -597,6 +689,16 @@ impl BytecodeGen {
         }
     }
 
+    fn extract_class_name(&self, ty: &Type) -> Option<String> {
+        match ty {
+            Type::Class { name, .. } => Some(name.clone()),
+            Type::Pointer { pointee, .. } | Type::Reference { base: pointee, .. } | Type::RValueRef { base: pointee } => {
+                self.extract_class_name(pointee)
+            }
+            _ => None,
+        }
+    }
+
     fn elem_type_size(&self, arr_type: &Type) -> i32 {
         let (elem_kind, elem_type) = if let Type::Array { element, .. } = arr_type {
             (element.kind(), element.as_ref())
@@ -626,8 +728,7 @@ impl BytecodeGen {
     }
 
     fn type_size(&self, ty: &Type) -> i32 {
-        let empty_class_map: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
-        compute_type_size(ty, &self.struct_defs, &self.union_defs, &empty_class_map)
+        compute_type_size(ty, &self.struct_defs, &self.union_defs, &self.class_sizes)
     }
 
     // =====================================================================

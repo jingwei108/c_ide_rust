@@ -744,8 +744,98 @@ impl StmtGen for BytecodeGen {
                 }
                 self.gen_stmt(stmt);
             }
-            // === C++ 新增 (Phase 31 占位) ===
-            _ => self.report_error("C++ 语句尚未支持代码生成", &loc),
+            // === C++ 新增 (Phase 33) ===
+            Stmt::RangeFor { var, var_type, iter, body, .. } => {
+                let iter_ty = iter.ty().clone();
+                let (elem_ty, elem_count) = match &iter_ty {
+                    Type::Array { element, array_size, .. } => (element.clone(), *array_size),
+                    _ => {
+                        self.report_error("RangeFor 目前只支持数组类型", &loc);
+                        return;
+                    }
+                };
+                self.enter_scope();
+                // Base address temp
+                let base_offset = self.next_local_offset;
+                self.next_local_offset += 4;
+                if let Expr::Identifier { name, .. } = iter.as_ref() {
+                    if let Some(&offset) = self.local_indices.get(name) {
+                        self.emit(OpCode::GetFrameBase, 0, &loc);
+                        self.emit(OpCode::PushConst, offset, &loc);
+                        self.emit(OpCode::Add, 0, &loc);
+                    } else if let Some(&offset) = self.global_indices.get(name) {
+                        self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                    } else {
+                        self.report_error("RangeFor: 未声明的数组变量", &loc);
+                        self.exit_scope();
+                        return;
+                    }
+                } else {
+                    self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
+                    self.exit_scope();
+                    return;
+                }
+                self.emit(OpCode::StoreLocal, base_offset, &loc);
+                // Index temp
+                let idx_offset = self.next_local_offset;
+                self.next_local_offset += 4;
+                self.emit(OpCode::PushConst, 0, &loc);
+                self.emit(OpCode::StoreLocal, idx_offset, &loc);
+                // Loop variable
+                let var_sz = (self.type_size(var_type) + 3) & !3;
+                let var_offset = self.next_local_offset;
+                self.next_local_offset += var_sz;
+                self.local_indices.insert(var.clone(), var_offset);
+                self.local_types.insert(var.clone(), var_type.clone());
+
+                let start_ip = self.current_ip();
+                self.loop_start_ips.push(start_ip);
+                let break_base = self.break_patches.len();
+                let continue_base = self.continue_patches.len();
+
+                // Condition: idx < count
+                self.emit(OpCode::LoadLocal, idx_offset, &loc);
+                self.emit(OpCode::PushConst, elem_count, &loc);
+                self.emit(OpCode::Lt, 0, &loc);
+                let cond_jump = self.current_ip();
+                self.emit(OpCode::JumpIfZero, 0, &loc);
+
+                // Load element: var = base[idx]
+                let elem_sz = self.type_size(&elem_ty);
+                self.emit(OpCode::LoadLocal, base_offset, &loc);
+                self.emit(OpCode::LoadLocal, idx_offset, &loc);
+                self.emit(OpCode::PushConst, elem_sz, &loc);
+                self.emit(OpCode::Mul, 0, &loc);
+                self.emit(OpCode::Add, 0, &loc);
+                self.emit(OpCode::LoadMem, 0, &loc);
+                self.emit(OpCode::StoreLocal, var_offset, &loc);
+
+                self.gen_stmt(body);
+
+                // Continue: ++idx
+                let continue_ip = self.current_ip();
+                self.emit(OpCode::LoadLocal, idx_offset, &loc);
+                self.emit(OpCode::PushConst, 1, &loc);
+                self.emit(OpCode::Add, 0, &loc);
+                self.emit(OpCode::StoreLocal, idx_offset, &loc);
+                self.emit(OpCode::Jump, start_ip as i32, &loc);
+
+                let end_ip = self.current_ip();
+                self.exit_scope();
+                self.patch_jump(cond_jump, end_ip);
+                for i in break_base..self.break_patches.len() {
+                    self.patch_jump(self.break_patches[i], end_ip);
+                }
+                self.break_patches.resize(break_base, 0);
+                for i in continue_base..self.continue_patches.len() {
+                    self.patch_jump(self.continue_patches[i], continue_ip);
+                }
+                self.continue_patches.resize(continue_base, 0);
+                self.loop_start_ips.pop();
+            }
+            Stmt::Try { .. } => {
+                self.report_error("Try/Catch 语句代码生成尚未实现（VM 不支持异常）", &loc);
+            }
         }
     }
 
