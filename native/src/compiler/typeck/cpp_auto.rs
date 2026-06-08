@@ -59,10 +59,11 @@ impl TypeChecker {
                 }
             }
             Expr::New { elem_type, .. } => Type::pointer_to(elem_type.clone()),
-            Expr::Lambda { .. } => {
-                // Lambda deduce: will be handled by lambda processing in expr.rs
-                // Fallback to a generic lambda struct type; actual type set during lambda resolution
-                Type::int()
+            Expr::Lambda { unique_id, .. } => {
+                Type::Class {
+                    name: format!("__lambda_{}", unique_id),
+                    is_const: false,
+                }
             }
             Expr::Cast { target_type, .. } => target_type.clone(),
             Expr::Ternary { then_branch, .. } => self.deduce_auto_type(then_branch),

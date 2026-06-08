@@ -4,44 +4,140 @@
 // To regenerate:
 //   python scripts/precompile_bytecode_libc.py
 
-pub const BYTECODE_LIBC_CODE_LEN: usize = 790;
+pub const BYTECODE_LIBC_CODE_LEN: usize = 2243;
 pub const BYTECODE_LIBC_BASE_INDEX: i32 = 1000;
-pub const BYTECODE_LIBC_GLOBALS_RESERVED: u32 = 1024;
-pub const BYTECODE_LIBC_FUNC_COUNT: usize = 22;
+pub const BYTECODE_LIBC_GLOBALS_RESERVED: u32 = 3072;
+pub const BYTECODE_LIBC_FUNC_COUNT: usize = 60;
 
 /// Bytecode Libc 中所有可用的函数名（供索引查询使用）。
 /// 注意：并非所有函数都默认走 Bytecode 路径，
 /// 实际路径由 `host_func_id::BYTECODE_LIBC_PURE_FUNCS` 控制。
 pub const BYTECODE_LIBC_ALL_FUNCS: &[&str] = &[
-    "isdigit", "isalpha", "islower", "isupper", "tolower", "toupper", "isspace", "isalnum", "isprint", "iscntrl",
-    "isxdigit", "abs", "atoi", "srand", "rand", "strlen", "strcmp", "strcpy", "strcat", "strncpy", "memcpy", "memmove",
+    "cide_list_init_int",
+    "cide_list_push_back_int",
+    "cide_list_push_front_int",
+    "cide_list_pop_back_int",
+    "cide_list_size_int",
+    "cide_list_get_int",
+    "cide_list_destroy_int",
+    "cide_sort_int_swap",
+    "cide_sort_int_qsort",
+    "cide_sort_int",
+    "cide_string_init",
+    "cide_string_push_back",
+    "cide_string_pop_back",
+    "cide_string_size",
+    "cide_string_get",
+    "cide_string_clear",
+    "cide_string_destroy",
+    "cide_vec_init_char",
+    "cide_vec_push_char",
+    "cide_vec_pop_char",
+    "cide_vec_size_char",
+    "cide_vec_get_char",
+    "cide_vec_clear_char",
+    "cide_vec_destroy_char",
+    "cide_vec_init_float",
+    "cide_vec_push_float",
+    "cide_vec_pop_float",
+    "cide_vec_size_float",
+    "cide_vec_get_float",
+    "cide_vec_clear_float",
+    "cide_vec_destroy_float",
+    "cide_vec_init_int",
+    "cide_vec_push_int",
+    "cide_vec_pop_int",
+    "cide_vec_size_int",
+    "cide_vec_get_int",
+    "cide_vec_clear_int",
+    "cide_vec_destroy_int",
+    "isdigit",
+    "isalpha",
+    "islower",
+    "isupper",
+    "tolower",
+    "toupper",
+    "isspace",
+    "isalnum",
+    "isprint",
+    "iscntrl",
+    "isxdigit",
+    "abs",
+    "atoi",
+    "srand",
+    "rand",
+    "strlen",
+    "strcmp",
+    "strcpy",
+    "strcat",
+    "strncpy",
+    "memcpy",
+    "memmove",
 ];
 
 /// 将函数名解析为 Bytecode Libc 固定索引。
 pub fn bytecode_libc_index(name: &str) -> Option<i32> {
     match name {
-        "isdigit" => Some(1000),
-        "isalpha" => Some(1001),
-        "islower" => Some(1002),
-        "isupper" => Some(1003),
-        "tolower" => Some(1004),
-        "toupper" => Some(1005),
-        "isspace" => Some(1006),
-        "isalnum" => Some(1007),
-        "isprint" => Some(1008),
-        "iscntrl" => Some(1009),
-        "isxdigit" => Some(1010),
-        "abs" => Some(1011),
-        "atoi" => Some(1012),
-        "srand" => Some(1013),
-        "rand" => Some(1014),
-        "strlen" => Some(1015),
-        "strcmp" => Some(1016),
-        "strcpy" => Some(1017),
-        "strcat" => Some(1018),
-        "strncpy" => Some(1019),
-        "memcpy" => Some(1020),
-        "memmove" => Some(1021),
+        "cide_list_init_int" => Some(1000),
+        "cide_list_push_back_int" => Some(1001),
+        "cide_list_push_front_int" => Some(1002),
+        "cide_list_pop_back_int" => Some(1003),
+        "cide_list_size_int" => Some(1004),
+        "cide_list_get_int" => Some(1005),
+        "cide_list_destroy_int" => Some(1006),
+        "cide_sort_int_swap" => Some(1007),
+        "cide_sort_int_qsort" => Some(1008),
+        "cide_sort_int" => Some(1009),
+        "cide_string_init" => Some(1010),
+        "cide_string_push_back" => Some(1011),
+        "cide_string_pop_back" => Some(1012),
+        "cide_string_size" => Some(1013),
+        "cide_string_get" => Some(1014),
+        "cide_string_clear" => Some(1015),
+        "cide_string_destroy" => Some(1016),
+        "cide_vec_init_char" => Some(1017),
+        "cide_vec_push_char" => Some(1018),
+        "cide_vec_pop_char" => Some(1019),
+        "cide_vec_size_char" => Some(1020),
+        "cide_vec_get_char" => Some(1021),
+        "cide_vec_clear_char" => Some(1022),
+        "cide_vec_destroy_char" => Some(1023),
+        "cide_vec_init_float" => Some(1024),
+        "cide_vec_push_float" => Some(1025),
+        "cide_vec_pop_float" => Some(1026),
+        "cide_vec_size_float" => Some(1027),
+        "cide_vec_get_float" => Some(1028),
+        "cide_vec_clear_float" => Some(1029),
+        "cide_vec_destroy_float" => Some(1030),
+        "cide_vec_init_int" => Some(1031),
+        "cide_vec_push_int" => Some(1032),
+        "cide_vec_pop_int" => Some(1033),
+        "cide_vec_size_int" => Some(1034),
+        "cide_vec_get_int" => Some(1035),
+        "cide_vec_clear_int" => Some(1036),
+        "cide_vec_destroy_int" => Some(1037),
+        "isdigit" => Some(1038),
+        "isalpha" => Some(1039),
+        "islower" => Some(1040),
+        "isupper" => Some(1041),
+        "tolower" => Some(1042),
+        "toupper" => Some(1043),
+        "isspace" => Some(1044),
+        "isalnum" => Some(1045),
+        "isprint" => Some(1046),
+        "iscntrl" => Some(1047),
+        "isxdigit" => Some(1048),
+        "abs" => Some(1049),
+        "atoi" => Some(1050),
+        "srand" => Some(1051),
+        "rand" => Some(1052),
+        "strlen" => Some(1053),
+        "strcmp" => Some(1054),
+        "strcpy" => Some(1055),
+        "strcat" => Some(1056),
+        "strncpy" => Some(1057),
+        "memcpy" => Some(1058),
+        "memmove" => Some(1059),
         _ => None,
     }
 }
@@ -50,3 +146,78 @@ pub fn bytecode_libc_index(name: &str) -> Option<i32> {
 pub fn is_bytecode_libc(name: &str) -> bool {
     bytecode_libc_index(name).is_some()
 }
+
+use crate::compiler::ast::Type;
+
+/// 返回 Bytecode Libc 函数的签名 (return_type, param_types)。
+pub fn bytecode_libc_sig(name: &str) -> Option<(Type, Vec<Type>)> {
+    let void = Type::void();
+    let int = Type::int();
+    let float = Type::float();
+    let char = Type::char();
+    let int_ptr = Type::pointer_to(Type::int());
+    let float_ptr = Type::pointer_to(Type::float());
+    let char_ptr = Type::pointer_to(Type::char());
+    match name {
+        // list<int>
+        "cide_list_init_int" => Some((void.clone(), vec![int_ptr.clone()])),
+        "cide_list_push_back_int" => Some((void.clone(), vec![int_ptr.clone(), int.clone()])),
+        "cide_list_push_front_int" => Some((void.clone(), vec![int_ptr.clone(), int.clone()])),
+        "cide_list_pop_back_int" => Some((int.clone(), vec![int_ptr.clone()])),
+        "cide_list_size_int" => Some((int.clone(), vec![int_ptr.clone()])),
+        "cide_list_get_int" => Some((int.clone(), vec![int_ptr.clone(), int.clone()])),
+        "cide_list_destroy_int" => Some((void.clone(), vec![int_ptr.clone()])),
+        // sort
+        "cide_sort_int_swap" => Some((void.clone(), vec![int_ptr.clone(), int_ptr.clone()])),
+        "cide_sort_int_qsort" => Some((void.clone(), vec![int_ptr.clone(), int.clone(), int.clone()])),
+        "cide_sort_int" => Some((void.clone(), vec![int_ptr.clone(), int.clone()])),
+        // string
+        "cide_string_init" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
+        "cide_string_push_back" => Some((void.clone(), vec![Type::pointer_to(Type::void()), char.clone()])),
+        "cide_string_pop_back" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
+        "cide_string_size" => Some((int.clone(), vec![Type::pointer_to(Type::void())])),
+        "cide_string_get" => Some((char.clone(), vec![Type::pointer_to(Type::void()), int.clone()])),
+        "cide_string_clear" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
+        "cide_string_destroy" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
+        // vec<char>
+        "cide_vec_init_char" => Some((void.clone(), vec![char_ptr.clone()])),
+        "cide_vec_push_char" => Some((void.clone(), vec![char_ptr.clone(), char.clone()])),
+        "cide_vec_pop_char" => Some((char.clone(), vec![char_ptr.clone()])),
+        "cide_vec_size_char" => Some((int.clone(), vec![char_ptr.clone()])),
+        "cide_vec_get_char" => Some((char.clone(), vec![char_ptr.clone(), int.clone()])),
+        "cide_vec_clear_char" => Some((void.clone(), vec![char_ptr.clone()])),
+        "cide_vec_destroy_char" => Some((void.clone(), vec![char_ptr.clone()])),
+        // vec<float>
+        "cide_vec_init_float" => Some((void.clone(), vec![float_ptr.clone()])),
+        "cide_vec_push_float" => Some((void.clone(), vec![float_ptr.clone(), float.clone()])),
+        "cide_vec_pop_float" => Some((float.clone(), vec![float_ptr.clone()])),
+        "cide_vec_size_float" => Some((int.clone(), vec![float_ptr.clone()])),
+        "cide_vec_get_float" => Some((float.clone(), vec![float_ptr.clone(), int.clone()])),
+        "cide_vec_clear_float" => Some((void.clone(), vec![float_ptr.clone()])),
+        "cide_vec_destroy_float" => Some((void.clone(), vec![float_ptr.clone()])),
+        // vec<int>
+        "cide_vec_init_int" => Some((void.clone(), vec![int_ptr.clone()])),
+        "cide_vec_push_int" => Some((void.clone(), vec![int_ptr.clone(), int.clone()])),
+        "cide_vec_pop_int" => Some((int.clone(), vec![int_ptr.clone()])),
+        "cide_vec_size_int" => Some((int.clone(), vec![int_ptr.clone()])),
+        "cide_vec_get_int" => Some((int.clone(), vec![int_ptr.clone(), int.clone()])),
+        "cide_vec_clear_int" => Some((void.clone(), vec![int_ptr.clone()])),
+        "cide_vec_destroy_int" => Some((void.clone(), vec![int_ptr.clone()])),
+        // ctype
+        "isdigit" | "isalpha" | "islower" | "isupper" | "isspace" | "isalnum" | "isprint" | "iscntrl" | "isxdigit" | "tolower" | "toupper" => Some((int.clone(), vec![int.clone()])),
+        // misc
+        "abs" => Some((int.clone(), vec![int.clone()])),
+        "atoi" => Some((int.clone(), vec![Type::pointer_to(Type::char())])),
+        "srand" => Some((void.clone(), vec![int.clone()])),
+        "rand" => Some((int.clone(), vec![])),
+        "strlen" => Some((int.clone(), vec![Type::pointer_to(Type::char())])),
+        "strcmp" => Some((int.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())])),
+        "strcpy" => Some((void.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())])),
+        "strcat" => Some((void.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())])),
+        "strncpy" => Some((void.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char()), int.clone()])),
+        "memcpy" => Some((void.clone(), vec![Type::pointer_to(Type::void()), Type::pointer_to(Type::void()), int.clone()])),
+        "memmove" => Some((void.clone(), vec![Type::pointer_to(Type::void()), Type::pointer_to(Type::void()), int.clone()])),
+        _ => None,
+    }
+}
+

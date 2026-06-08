@@ -156,10 +156,36 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     let session = &mut *s;
 
     let units = session.compile.compile_units.clone();
+    println!("CAPI: calling run_multi_file_pipeline with {} units", units.len());
     if run_multi_file_pipeline(session, units).is_err() {
         return -1;
     }
     0
+}
+
+pub fn dump_var_decls(stmt: &crate::compiler::ast::Stmt, depth: i32) {
+    use crate::compiler::ast::Stmt;
+    match stmt {
+        Stmt::Block { stmts, .. } => {
+            for s in stmts {
+                dump_var_decls(s, depth + 1);
+            }
+        }
+        Stmt::VarDecl { name, init, .. } => {
+            println!("DUMP: VarDecl name={}, init_is_some={}", name, init.is_some());
+        }
+        Stmt::If { then_stmt, else_stmt, .. } => {
+            dump_var_decls(then_stmt, depth + 1);
+            if let Some(e) = else_stmt {
+                dump_var_decls(e, depth + 1);
+            }
+        }
+        Stmt::While { body, .. } => dump_var_decls(body, depth + 1),
+        Stmt::For { body, .. } => dump_var_decls(body, depth + 1),
+        Stmt::DoWhile { body, .. } => dump_var_decls(body, depth + 1),
+        Stmt::RangeFor { body, .. } => dump_var_decls(body, depth + 1),
+        _ => {}
+    }
 }
 
 /// 返回指向编译错误字符串的指针。

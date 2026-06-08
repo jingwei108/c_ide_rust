@@ -35,6 +35,7 @@ pub(crate) struct MethodSig {
     pub ret: Type,
     pub param_types: Vec<Type>,
     pub is_virtual: bool,
+    #[allow(dead_code)]
     pub is_static: bool,
     pub access: AccessSpec,
 }
@@ -43,6 +44,7 @@ pub(crate) struct MethodSig {
 pub(crate) struct ClassSymbol {
     pub fields: Vec<(Type, String, AccessSpec)>,
     pub methods: HashMap<String, MethodSig>,
+    #[allow(dead_code)]
     pub base: Option<String>,
     pub vtable: Option<VTable>,
     pub size: i32,
@@ -78,6 +80,17 @@ pub struct TypeChecker {
     current_class: Option<String>,
     /// Template instantiations discovered during type checking; appended to program.funcs at the end.
     pending_instantiations: Vec<(String, FuncDecl)>,
+    /// Lambdas discovered during type checking; lifted to ClassDecl + FuncDecl at the end.
+    pending_lambdas: Vec<LambdaInfo>,
+}
+
+#[derive(Debug, Clone)]
+struct LambdaInfo {
+    id: u64,
+    captures: Vec<(String, Type, bool)>, // (name, type, is_by_reference)
+    params: Vec<Param>,
+    body: Stmt,
+    loc: SourceLoc,
 }
 
 /// 根据 (from, to) 类型对判断是否允许隐式转换，并返回转换后的目标类型。
@@ -210,144 +223,7 @@ impl TypeChecker {
         }
 
         // Pass 1.5: Register classes and compute layouts
-        for c in &program.classes {
-            if self.classes.contains_key(&c.name) || self.structs.contains_key(&c.name) {
-                self.report_error(&format!("类 '{}' 重复定义", c.name), &c.loc, ErrorCode::E3002_StructRedeclared);
-                continue;
-            }
-            // Check base class exists
-            if let Some(ref base_name) = c.base {
-                if !self.classes.contains_key(base_name) && !self.structs.contains_key(base_name) {
-                    self.report_error(
-                        &format!("基类 '{}' 未定义", base_name),
-                        &c.loc,
-                        ErrorCode::E4021_BaseClassNotFound,
-                    );
-                }
-            }
-            let mut fields: Vec<(Type, String, AccessSpec)> = Vec::new();
-            let mut methods: HashMap<String, MethodSig> = HashMap::new();
-            let mut vtable_entries: Vec<(String, Type)> = Vec::new();
-
-            // Inherit base fields
-            if let Some(ref base_name) = c.base {
-                if let Some(base_sym) = self.classes.get(base_name) {
-                    for (fty, fname, faccess) in &base_sym.fields {
-                        fields.push((fty.clone(), fname.clone(), *faccess));
-                    }
-                    for (mname, msig) in &base_sym.methods {
-                        methods.insert(mname.clone(), msig.clone());
-                        if msig.is_virtual {
-                            let func_ty = Type::Function {
-                                return_type: Box::new(msig.ret.clone()),
-                                param_types: msig.param_types.clone(),
-                                is_const: false,
-                            };
-                            vtable_entries.push((mname.clone(), func_ty));
-                        }
-                    }
-                }
-            }
-
-            // Class members already have access set by parser
-            for member in &c.members {
-                match member {
-                    ClassMember::Field { name, ty, access } => {
-                        fields.push((ty.clone(), name.clone(), *access));
-                    }
-                    ClassMember::Method {
-                        name,
-                        ret,
-                        params,
-                        is_virtual,
-                        access,
-                        ..
-                    } => {
-                        let acc = *access;
-                        let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
-                        let sig = MethodSig {
-                            ret: ret.clone(),
-                            param_types: param_types.clone(),
-                            is_virtual: *is_virtual,
-                            is_static: false,
-                            access: acc,
-                        };
-                        methods.insert(name.clone(), sig);
-                        if *is_virtual {
-                            let func_ty = Type::Function {
-                                return_type: Box::new(ret.clone()),
-                                param_types,
-                                is_const: false,
-                            };
-                            // Override check: if base has same virtual method, replace
-                            if let Some(pos) = vtable_entries.iter().position(|(n, _)| n == name) {
-                                vtable_entries[pos] = (name.clone(), func_ty);
-                            } else {
-                                vtable_entries.push((name.clone(), func_ty));
-                            }
-                        }
-                    }
-                    ClassMember::Constructor { params, access, .. } => {
-                        let acc = *access;
-                        let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
-                        let sig = MethodSig {
-                            ret: Type::void(),
-                            param_types,
-                            is_virtual: false,
-                            is_static: false,
-                            access: acc,
-                        };
-                        methods.insert(format!("__ctor__{}", c.name), sig);
-                    }
-                    ClassMember::Destructor { access, .. } => {
-                        let acc = *access;
-                        let sig = MethodSig {
-                            ret: Type::void(),
-                            param_types: vec![Type::Pointer {
-                                pointee: Box::new(Type::Class {
-                                    name: c.name.clone(),
-                                    is_const: false,
-                                }),
-                                is_const: false,
-                            }],
-                            is_virtual: false,
-                            is_static: false,
-                            access: acc,
-                        };
-                        methods.insert(format!("__dtor__{}", c.name), sig);
-                    }
-                }
-            }
-
-            // Compute size: base size + all fields (base fields already in fields vec)
-            // Compute total size by summing all field sizes
-
-            let vtable = if vtable_entries.is_empty() {
-                None
-            } else {
-                Some(VTable { entries: vtable_entries })
-            };
-
-            // Insert with size 0 first so compute_type_size can resolve recursive class types
-            let sym = ClassSymbol {
-                fields: fields.clone(),
-                methods,
-                base: c.base.clone(),
-                vtable,
-                size: 0,
-            };
-            self.classes.insert(c.name.clone(), sym);
-            // Now compute actual size
-            let total_field_size: i32 = fields.iter().map(|(ty, _, _)| self.compute_type_size(ty)).sum();
-            self.classes.get_mut(&c.name).unwrap().size = total_field_size;
-        }
-
-        // Write vtables back to program.classes for BytecodeGen
-        for c in &mut program.classes {
-            if let Some(sym) = self.classes.get(&c.name) {
-                c.vtable = sym.vtable.clone();
-            }
-        }
+        self.register_class_layouts(program);
 
         // Pass 2: Register function signatures (including class methods as mangled funcs)
         for f in &program.funcs {
@@ -512,117 +388,74 @@ impl TypeChecker {
         }
 
         // Pass 3.5: Check class method / constructor / destructor bodies
-        let mut class_methods: Vec<FuncDecl> = Vec::new();
-        for c in &program.classes {
-            self.current_class = Some(c.name.clone());
-            // Register class fields as pseudo-variables for method body checking
-            let class_fields: Vec<(Type, String)> = if let Some(sym) = self.classes.get(&c.name) {
-                sym.fields.iter().map(|(ty, name, _)| (ty.clone(), name.clone())).collect()
-            } else {
-                vec![]
-            };
-            for member in &c.members {
-                match member {
-                    ClassMember::Method {
-                        name: method_name,
-                        ret,
-                        params,
-                        body,
-                        ..
-                    } => {
-                        if let Some(ref b) = body {
-                            let mut func_decl = FuncDecl {
-                                loc: c.loc,
-                                return_type: ret.clone(),
-                                name: format!("{}__{}", c.name, method_name),
-                                params: std::iter::once(Param {
-                                    name: "this".to_string(),
-                                    ty: Type::Pointer {
-                                        pointee: Box::new(Type::Class {
-                                            name: c.name.clone(),
-                                            is_const: false,
-                                        }),
-                                        is_const: false,
-                                    },
-                                    loc: c.loc,
-                                })
-                                .chain(params.iter().cloned())
-                                .collect(),
-                                body: Some(b.clone()),
-                                is_static: false,
-                                is_extern: false,
-                                source_file: String::new(),
-                            };
-                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
-                            class_methods.push(func_decl);
-                        }
-                    }
-                    ClassMember::Constructor { params, body, .. } => {
-                        if let Some(ref b) = body {
-                            let mut func_decl = FuncDecl {
-                                loc: c.loc,
-                                return_type: Type::void(),
-                                name: format!("__ctor__{}", c.name),
-                                params: std::iter::once(Param {
-                                    name: "this".to_string(),
-                                    ty: Type::Pointer {
-                                        pointee: Box::new(Type::Class {
-                                            name: c.name.clone(),
-                                            is_const: false,
-                                        }),
-                                        is_const: false,
-                                    },
-                                    loc: c.loc,
-                                })
-                                .chain(params.iter().cloned())
-                                .collect(),
-                                body: Some(b.clone()),
-                                is_static: false,
-                                is_extern: false,
-                                source_file: String::new(),
-                            };
-                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
-                            class_methods.push(func_decl);
-                        }
-                    }
-                    ClassMember::Destructor { body, .. } => {
-                        if let Some(ref b) = body {
-                            let mut func_decl = FuncDecl {
-                                loc: c.loc,
-                                return_type: Type::void(),
-                                name: format!("__dtor__{}", c.name),
-                                params: vec![Param {
-                                    name: "this".to_string(),
-                                    ty: Type::Pointer {
-                                        pointee: Box::new(Type::Class {
-                                            name: c.name.clone(),
-                                            is_const: false,
-                                        }),
-                                        is_const: false,
-                                    },
-                                    loc: c.loc,
-                                }],
-                                body: Some(b.clone()),
-                                is_static: false,
-                                is_extern: false,
-                                source_file: String::new(),
-                            };
-                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
-                            class_methods.push(func_decl);
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            self.current_class = None;
-        }
-        program.funcs.extend(class_methods);
+        self.check_class_methods(program);
 
         self.exit_scope();
 
         // Append template instantiations discovered during type checking
         for (_, f) in self.pending_instantiations.drain(..) {
             program.funcs.push(f);
+        }
+
+        // Pass 4: Lift lambdas to ClassDecl + FuncDecl
+        let lambdas: Vec<_> = self.pending_lambdas.drain(..).collect();
+        for info in lambdas {
+            let lambda_name = format!("__lambda_{}", info.id);
+            let call_name = format!("{}__call", lambda_name);
+
+            // Create ClassDecl with capture fields
+            let class_members: Vec<ClassMember> = info
+                .captures
+                .iter()
+                .map(|(name, ty, _)| ClassMember::Field {
+                    name: name.clone(),
+                    ty: ty.clone(),
+                    access: AccessSpec::Public,
+                })
+                .collect();
+            program.classes.push(ClassDecl {
+                loc: info.loc,
+                name: lambda_name.clone(),
+                base: None,
+                members: class_members,
+                vtable: None,
+            });
+
+            // Create FuncDecl for __call
+            let mut call_params = vec![Param {
+                name: "this".to_string(),
+                ty: Type::Pointer {
+                    pointee: Box::new(Type::Class {
+                        name: lambda_name.clone(),
+                        is_const: false,
+                    }),
+                    is_const: false,
+                },
+                loc: info.loc,
+            }];
+            call_params.extend(info.params.iter().cloned());
+
+            let mut func_decl = FuncDecl {
+                loc: info.loc,
+                return_type: Type::int(),
+                name: call_name,
+                params: call_params,
+                body: Some(info.body),
+                is_static: false,
+                is_extern: false,
+                source_file: self.current_file.clone(),
+            };
+
+            // Rewrite capture variable accesses to this->field
+            if let Some(ref mut body) = func_decl.body {
+                Self::rewrite_lambda_captures(body, &info.captures, &lambda_name);
+            }
+
+            // Type-check the generated function body
+            self.current_class = Some(lambda_name.clone());
+            self.visit_func_decl(&mut func_decl);
+            self.current_class = None;
+            program.funcs.push(func_decl);
         }
 
         (self.errors, self.warnings, self.hints)
@@ -1082,6 +915,7 @@ impl TypeChecker {
         }
         None
     }
+    #[allow(dead_code)]
     pub(crate) fn get_class_field_type(&self, class_name: &str, field_name: &str) -> Option<Type> {
         let sym = self.classes.get(class_name)?;
         for (fty, fname, _) in &sym.fields {
@@ -1440,10 +1274,160 @@ impl TypeChecker {
             );
         }
     }
+
+    // =========================================================================
+    // Lambda capture rewriting: replace captured identifiers with this->field
+    // =========================================================================
+
+    fn rewrite_lambda_captures(stmt: &mut Stmt, captures: &[(String, Type, bool)], lambda_name: &str) {
+        match stmt {
+            Stmt::Block { stmts, .. } => {
+                for s in stmts {
+                    Self::rewrite_lambda_captures(s, captures, lambda_name);
+                }
+            }
+            Stmt::VarDecl { init, .. } => {
+                if let Some(e) = init {
+                    Self::rewrite_lambda_captures_in_expr(e, captures, lambda_name);
+                }
+            }
+            Stmt::Expr { expr, .. } => {
+                Self::rewrite_lambda_captures_in_expr(expr, captures, lambda_name);
+            }
+            Stmt::If { cond, then_stmt, else_stmt, .. } => {
+                Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
+                Self::rewrite_lambda_captures(then_stmt, captures, lambda_name);
+                if let Some(s) = else_stmt {
+                    Self::rewrite_lambda_captures(s, captures, lambda_name);
+                }
+            }
+            Stmt::While { cond, body, .. } => {
+                Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+            }
+            Stmt::DoWhile { body, cond, .. } => {
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+                Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
+            }
+            Stmt::For { init, cond, step, body, .. } => {
+                if let Some(i) = init {
+                    Self::rewrite_lambda_captures(i, captures, lambda_name);
+                }
+                if let Some(c) = cond {
+                    Self::rewrite_lambda_captures_in_expr(c, captures, lambda_name);
+                }
+                for s in step.iter_mut() {
+                    Self::rewrite_lambda_captures_in_expr(s, captures, lambda_name);
+                }
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+            }
+            Stmt::Return { value, .. } => {
+                if let Some(v) = value {
+                    Self::rewrite_lambda_captures_in_expr(v, captures, lambda_name);
+                }
+            }
+            Stmt::Switch { cond, body, .. } => {
+                Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+            }
+            Stmt::RangeFor { iter, body, .. } => {
+                Self::rewrite_lambda_captures_in_expr(iter, captures, lambda_name);
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+            }
+            Stmt::Try { body, .. } => {
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+            }
+            _ => {}
+        }
+    }
+
+    fn rewrite_lambda_captures_in_expr(expr: &mut Expr, captures: &[(String, Type, bool)], lambda_name: &str) {
+        match expr {
+            Expr::Identifier { name, loc, ty: _ } => {
+                for (cap_name, cap_ty, _) in captures.iter() {
+                    if cap_name == name {
+                        let this_ty = Type::Pointer {
+                            pointee: Box::new(Type::Class {
+                                name: lambda_name.to_string(),
+                                is_const: false,
+                            }),
+                            is_const: false,
+                        };
+                        *expr = Expr::Member {
+                            object: Box::new(Expr::This {
+                                loc: *loc,
+                                ty: this_ty.clone(),
+                            }),
+                            member: name.clone(),
+                            loc: *loc,
+                            ty: cap_ty.clone(),
+                        };
+                        break;
+                    }
+                }
+            }
+            Expr::Binary { left, right, .. } => {
+                Self::rewrite_lambda_captures_in_expr(left, captures, lambda_name);
+                Self::rewrite_lambda_captures_in_expr(right, captures, lambda_name);
+            }
+            Expr::Unary { operand, .. } => {
+                Self::rewrite_lambda_captures_in_expr(operand, captures, lambda_name);
+            }
+            Expr::Call { name: _, args, .. } => {
+                // name is a String, not an Expr to rewrite
+                for a in args.iter_mut() {
+                    Self::rewrite_lambda_captures_in_expr(a, captures, lambda_name);
+                }
+            }
+            Expr::MemberCall { object, args, .. } => {
+                Self::rewrite_lambda_captures_in_expr(object, captures, lambda_name);
+                for a in args.iter_mut() {
+                    Self::rewrite_lambda_captures_in_expr(a, captures, lambda_name);
+                }
+            }
+            Expr::Index { array, index, .. } => {
+                Self::rewrite_lambda_captures_in_expr(array, captures, lambda_name);
+                Self::rewrite_lambda_captures_in_expr(index, captures, lambda_name);
+            }
+            Expr::Member { object, .. } => {
+                Self::rewrite_lambda_captures_in_expr(object, captures, lambda_name);
+            }
+            Expr::Assign { left, right, .. } => {
+                Self::rewrite_lambda_captures_in_expr(left, captures, lambda_name);
+                Self::rewrite_lambda_captures_in_expr(right, captures, lambda_name);
+            }
+            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+                Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
+                Self::rewrite_lambda_captures_in_expr(then_branch, captures, lambda_name);
+                Self::rewrite_lambda_captures_in_expr(else_branch, captures, lambda_name);
+            }
+            Expr::Cast { expr, .. } => {
+                Self::rewrite_lambda_captures_in_expr(expr, captures, lambda_name);
+            }
+            Expr::Sizeof { operand, .. } => {
+                if let Some(e) = operand {
+                    Self::rewrite_lambda_captures_in_expr(e, captures, lambda_name);
+                }
+            }
+            Expr::InitList { elements, .. } => {
+                for e in elements.iter_mut() {
+                    Self::rewrite_lambda_captures_in_expr(&mut e.value, captures, lambda_name);
+                }
+            }
+            Expr::Offsetof { .. } => {}
+            Expr::Lambda { body, .. } => {
+                Self::rewrite_lambda_captures(body, captures, lambda_name);
+            }
+            _ => {}
+        }
+    }
 }
 
 mod builtin;
 mod cpp_auto;
+mod cpp_class_layout;
+mod cpp_container;
 mod cpp_monomorph;
+mod cpp_overload;
 mod decl;
 mod expr;

@@ -473,8 +473,14 @@ impl StmtGen for BytecodeGen {
                                     }
                                 }
                             }
-                        } else if vty.is_struct() {
-                            self.gen_struct_copy_to_local(local_offset, e, loc);
+                        } else if vty.is_struct() || vty.is_class() {
+                            // Lambda 闭包：gen_lambda 在栈上推闭包对象地址，直接保存地址（不逐字段拷贝）
+                            if matches!(e, Expr::Lambda { .. }) {
+                                self.gen_expr(e);
+                                self.emit(OpCode::StoreLocal, local_offset, loc);
+                            } else {
+                                self.gen_struct_copy_to_local(local_offset, e, loc);
+                            }
                         } else if vty.is_array() && matches!(e, Expr::StringLiteral { .. }) {
                             if let Expr::StringLiteral { ref value, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
@@ -747,35 +753,13 @@ impl StmtGen for BytecodeGen {
             // === C++ 新增 (Phase 33) ===
             Stmt::RangeFor { var, var_type, iter, body, .. } => {
                 let iter_ty = iter.ty().clone();
-                let (elem_ty, elem_count) = match &iter_ty {
-                    Type::Array { element, array_size, .. } => (element.clone(), *array_size),
-                    _ => {
-                        self.report_error("RangeFor 目前只支持数组类型", &loc);
-                        return;
-                    }
-                };
-                self.enter_scope();
-                // Base address temp
-                let base_offset = self.next_local_offset;
-                self.next_local_offset += 4;
-                if let Expr::Identifier { name, .. } = iter.as_ref() {
-                    if let Some(&offset) = self.local_indices.get(name) {
-                        self.emit(OpCode::GetFrameBase, 0, &loc);
-                        self.emit(OpCode::PushConst, offset, &loc);
-                        self.emit(OpCode::Add, 0, &loc);
-                    } else if let Some(&offset) = self.global_indices.get(name) {
-                        self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
-                    } else {
-                        self.report_error("RangeFor: 未声明的数组变量", &loc);
-                        self.exit_scope();
-                        return;
-                    }
-                } else {
-                    self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
-                    self.exit_scope();
+                let is_container = matches!(&iter_ty, Type::Class { name, .. } if crate::compiler::cpp_frontend::type_map::is_builtin_container(name) || name.starts_with("cide_vec_") || name == "cide_string" || name == "cide_list_int");
+                let is_array = matches!(&iter_ty, Type::Array { .. });
+                if !is_array && !is_container {
+                    self.report_error("RangeFor 目前只支持数组和内置容器类型", &loc);
                     return;
                 }
-                self.emit(OpCode::StoreLocal, base_offset, &loc);
+                self.enter_scope();
                 // Index temp
                 let idx_offset = self.next_local_offset;
                 self.next_local_offset += 4;
@@ -795,20 +779,123 @@ impl StmtGen for BytecodeGen {
 
                 // Condition: idx < count
                 self.emit(OpCode::LoadLocal, idx_offset, &loc);
-                self.emit(OpCode::PushConst, elem_count, &loc);
+                if is_array {
+                    let elem_count = if let Type::Array { array_size, .. } = &iter_ty { *array_size } else { 0 };
+                    self.emit(OpCode::PushConst, elem_count, &loc);
+                } else {
+                    // Container: call cide_vec_size_*(&iter)
+                    let size_func = match iter_ty.name() {
+                        "cide_vec_int" => "cide_vec_size_int",
+                        "cide_vec_float" => "cide_vec_size_float",
+                        "cide_vec_char" => "cide_vec_size_char",
+                        "cide_string" => "cide_string_size",
+                        "cide_list_int" => "cide_list_size_int",
+                        _ => {
+                            self.report_error("RangeFor: 不支持的内置容器类型", &loc);
+                            self.exit_scope();
+                            return;
+                        }
+                    };
+                    if let Some(&idx) = self.func_index.get(size_func) {
+                        // Push &iter
+                        if let Expr::Identifier { name, .. } = iter.as_ref() {
+                            if let Some(&offset) = self.local_indices.get(name) {
+                                self.emit(OpCode::GetFrameBase, 0, &loc);
+                                self.emit(OpCode::PushConst, offset, &loc);
+                                self.emit(OpCode::Add, 0, &loc);
+                            } else if let Some(&offset) = self.global_indices.get(name) {
+                                self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                            } else {
+                                self.report_error("RangeFor: 未声明的容器变量", &loc);
+                                self.exit_scope();
+                                return;
+                            }
+                        } else {
+                            self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
+                            self.exit_scope();
+                            return;
+                        }
+                        self.emit(OpCode::Call, idx, &loc);
+                    } else {
+                        self.report_error(&format!("RangeFor: 未找到容器函数 '{}'", size_func), &loc);
+                        self.exit_scope();
+                        return;
+                    }
+                }
                 self.emit(OpCode::Lt, 0, &loc);
                 let cond_jump = self.current_ip();
                 self.emit(OpCode::JumpIfZero, 0, &loc);
 
-                // Load element: var = base[idx]
-                let elem_sz = self.type_size(&elem_ty);
-                self.emit(OpCode::LoadLocal, base_offset, &loc);
-                self.emit(OpCode::LoadLocal, idx_offset, &loc);
-                self.emit(OpCode::PushConst, elem_sz, &loc);
-                self.emit(OpCode::Mul, 0, &loc);
-                self.emit(OpCode::Add, 0, &loc);
-                self.emit(OpCode::LoadMem, 0, &loc);
-                self.emit(OpCode::StoreLocal, var_offset, &loc);
+                // Load element: var = iter[idx]
+                if is_array {
+                    let elem_ty = if let Type::Array { element, .. } = &iter_ty { element.clone() } else { Box::new(Type::int()) };
+                    let elem_sz = self.type_size(&elem_ty);
+                    if let Expr::Identifier { name, .. } = iter.as_ref() {
+                        if let Some(&offset) = self.local_indices.get(name) {
+                            self.emit(OpCode::GetFrameBase, 0, &loc);
+                            self.emit(OpCode::PushConst, offset, &loc);
+                            self.emit(OpCode::Add, 0, &loc);
+                        } else if let Some(&offset) = self.global_indices.get(name) {
+                            self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                        } else {
+                            self.report_error("RangeFor: 未声明的数组变量", &loc);
+                            self.exit_scope();
+                            return;
+                        }
+                    } else {
+                        self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
+                        self.exit_scope();
+                        return;
+                    }
+                    self.emit(OpCode::LoadLocal, idx_offset, &loc);
+                    self.emit(OpCode::PushConst, elem_sz, &loc);
+                    self.emit(OpCode::Mul, 0, &loc);
+                    self.emit(OpCode::Add, 0, &loc);
+                    self.emit(OpCode::LoadMem, 0, &loc);
+                    self.emit(OpCode::StoreLocal, var_offset, &loc);
+                } else {
+                    // Container: call cide_vec_get_*(&iter, idx)
+                    let get_func = match iter_ty.name() {
+                        "cide_vec_int" => "cide_vec_get_int",
+                        "cide_vec_float" => "cide_vec_get_float",
+                        "cide_vec_char" => "cide_vec_get_char",
+                        "cide_string" => "cide_string_get",
+                        "cide_list_int" => "cide_list_get_int",
+                        _ => {
+                            self.report_error("RangeFor: 不支持的内置容器类型", &loc);
+                            self.exit_scope();
+                            return;
+                        }
+                    };
+                    if let Some(&idx) = self.func_index.get(get_func) {
+                        // Push idx first (will be second on stack after &iter)
+                        self.emit(OpCode::LoadLocal, idx_offset, &loc);
+                        // Push &iter
+                        if let Expr::Identifier { name, .. } = iter.as_ref() {
+                            if let Some(&offset) = self.local_indices.get(name) {
+                                self.emit(OpCode::GetFrameBase, 0, &loc);
+                                self.emit(OpCode::PushConst, offset, &loc);
+                                self.emit(OpCode::Add, 0, &loc);
+                            } else if let Some(&offset) = self.global_indices.get(name) {
+                                self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                            } else {
+                                self.report_error("RangeFor: 未声明的容器变量", &loc);
+                                self.exit_scope();
+                                return;
+                            }
+                        } else {
+                            self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
+                            self.exit_scope();
+                            return;
+                        }
+                        self.emit(OpCode::Call, idx, &loc);
+                        self.emit(OpCode::StoreLocal, var_offset, &loc);
+                    } else {
+                        self.report_error(&format!("RangeFor: 未找到容器函数 '{}'", get_func), &loc);
+                        self.exit_scope();
+                        return;
+                    }
+                }
 
                 self.gen_stmt(body);
 

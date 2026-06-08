@@ -376,6 +376,11 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         push_hints(session, &type_hints, full_source, None);
     }
 
+    // Debug: check f's init in main
+    println!("DEBUG: program.funcs count={}", program.funcs.len());
+    for f in &program.funcs {
+        println!("DEBUG: func name={}, body_is_some={}", f.name, f.body.is_some());
+    }
     // 4. BytecodeGen
     let gen = BytecodeGen::new();
     let output = match gen.generate(&mut program) {
@@ -578,6 +583,14 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
     }
     if !type_hints.is_empty() {
         push_hints(session, &type_hints, &full_source, Some(&file_ranges));
+    }
+
+    for f in &program.funcs {
+        if f.name == "main" {
+            if let Some(ref body) = f.body {
+                crate::capi::dump_var_decls(body, 0);
+            }
+        }
     }
 
     // 4. BytecodeGen

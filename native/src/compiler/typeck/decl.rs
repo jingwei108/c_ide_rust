@@ -240,9 +240,23 @@ impl TypeChecker {
                     iter_type.innermost_element_type()
                 } else if let Type::Pointer { pointee, .. } = &iter_type {
                     pointee.as_ref().clone()
+                } else if iter_type.is_class() {
+                    match iter_type.name() {
+                        "cide_vec_int" | "cide_list_int" => Type::int(),
+                        "cide_vec_float" => Type::float(),
+                        "cide_vec_char" | "cide_string" => Type::char(),
+                        _ => {
+                            self.report_error(
+                                "范围 for 不支持该容器类型",
+                                loc,
+                                ErrorCode::E4020_RangeForNotSupported,
+                            );
+                            Type::int()
+                        }
+                    }
                 } else {
                     self.report_error(
-                        "范围 for 的迭代对象必须是数组或指针类型",
+                        "范围 for 的迭代对象必须是数组、指针或内置容器类型",
                         loc,
                         ErrorCode::E4020_RangeForNotSupported,
                     );
@@ -295,16 +309,14 @@ impl TypeChecker {
 
     /// Visit a function declaration, pre-registering class fields as variables in the outermost scope.
     /// Used for checking class method bodies where fields are implicitly accessible.
-    pub(super) fn visit_func_decl_with_fields(&mut self, node: &mut FuncDecl, fields: &[(Type, String)]) {
+    pub(super) fn visit_func_decl_with_fields(&mut self, node: &mut FuncDecl, _fields: &[(Type, String)]) {
         self.current_file = node.source_file.clone();
         self.current_func_return = node.return_type.clone();
         self.current_func_params.clear();
         self.func_labels.clear();
         self.pending_gotos.clear();
         self.enter_scope();
-        for (fty, fname) in fields {
-            self.declare_var(fname, fty, false, false, false);
-        }
+        // Class fields are resolved via implicit this->field in resolve_expr_type
         for p in &node.params {
             self.current_func_params.insert(p.name.clone());
             self.declare_var(&p.name, &p.ty, false, false, false);
@@ -408,6 +420,36 @@ impl TypeChecker {
                 self.pending_instantiations.push((mangled.clone(), new_func));
                 return self.check_user_func(&mangled, args, loc);
             }
+        }
+
+        // Fallback: Bytecode Libc functions are pre-registered at codegen time
+        if let Some((ret_ty, param_types)) = crate::vm::bytecode_libc_index::bytecode_libc_sig(name) {
+            if args.len() != param_types.len() {
+                self.report_error(
+                    &format!(
+                        "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                        name,
+                        param_types.len(),
+                        args.len()
+                    ),
+                    loc,
+                    ErrorCode::E3037_FuncArgCount,
+                );
+            } else {
+                for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !self.check_assignable(expected, &arg_type, loc) {
+                        self.report_error(
+                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
+                            loc,
+                            ErrorCode::E3038_FuncArgType,
+                        );
+                    } else {
+                        insert_implicit_cast(arg, expected);
+                    }
+                }
+            }
+            return ret_ty;
         }
 
         self.report_error(&format!("未定义的函数 '{}'", name), loc, ErrorCode::E3036_UndefinedFunc);

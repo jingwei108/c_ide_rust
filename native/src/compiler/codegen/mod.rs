@@ -2,7 +2,7 @@ use crate::compiler::ast::*;
 use crate::vm::instruction::{Instruction, SourceLoc as VMSourceLoc};
 use crate::vm::opcode::OpCode;
 use crate::vm::vm::VMSymbol;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 fn base_kind(ty: &Type) -> TypeKind {
     match ty {
@@ -75,6 +75,8 @@ pub struct BytecodeGen {
     loop_start_ips: Vec<usize>,
     goto_patches: HashMap<String, Vec<usize>>,
     label_ips: HashMap<String, usize>,
+    // Lambda class name -> set of by-reference captured field names
+    lambda_by_ref_fields: HashMap<String, HashSet<String>>,
 }
 
 impl Default for BytecodeGen {
@@ -86,15 +88,15 @@ impl Default for BytecodeGen {
 impl BytecodeGen {
     pub fn new() -> Self {
         use crate::vm::bytecode_libc_index::{
-            bytecode_libc_index, BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT, BYTECODE_LIBC_GLOBALS_RESERVED,
+            bytecode_libc_index, BYTECODE_LIBC_ALL_FUNCS, BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT,
+            BYTECODE_LIBC_GLOBALS_RESERVED,
         };
-        use crate::vm::host_func_id::BYTECODE_LIBC_PURE_FUNCS;
         use crate::vm::vm::GLOBAL_START;
 
         let mut func_index = HashMap::new();
 
         // 预注册 Bytecode Libc 函数到固定索引段
-        for &name in BYTECODE_LIBC_PURE_FUNCS.iter() {
+        for &name in BYTECODE_LIBC_ALL_FUNCS.iter() {
             if let Some(idx) = bytecode_libc_index(name) {
                 func_index.insert(name.to_string(), idx);
             }
@@ -141,6 +143,7 @@ impl BytecodeGen {
             loop_start_ips: Vec::new(),
             goto_patches: HashMap::new(),
             label_ips: HashMap::new(),
+            lambda_by_ref_fields: HashMap::new(),
         }
     }
 
@@ -171,9 +174,10 @@ impl BytecodeGen {
                     }
                 }
                 if can_compute {
-                    let mut size = 4; // vptr
+                    let needs_vptr = class.vtable.is_some();
+                    let mut size = if needs_vptr { 4 } else { 0 };
                     if let Some(ref base_name) = class.base {
-                        size = self.class_sizes.get(base_name).copied().unwrap_or(4);
+                        size = self.class_sizes.get(base_name).copied().unwrap_or(if needs_vptr { 4 } else { 0 });
                     }
                     for member in &class.members {
                         if let ClassMember::Field { ty, .. } = member {
@@ -192,6 +196,22 @@ impl BytecodeGen {
                 break;
             }
             pending.retain(|n| !resolved.contains(n));
+        }
+
+        // Register builtin container sizes
+        let container_mappings = [
+            ("vector<int>", "cide_vec_int"),
+            ("vector<float>", "cide_vec_float"),
+            ("vector<char>", "cide_vec_char"),
+            ("string", "cide_string"),
+            ("list<int>", "cide_list_int"),
+        ];
+        for (cpp_name, cide_name) in &container_mappings {
+            if let Some(layout) = crate::compiler::cpp_frontend::builtin_layout::builtin_class_layout(cide_name) {
+                for name in [*cpp_name, *cide_name] {
+                    self.class_sizes.entry(name.to_string()).or_insert(layout.size);
+                }
+            }
         }
 
         // Pre-fill func_index so global initializers can resolve function names
@@ -405,6 +425,8 @@ impl BytecodeGen {
                 self.emit(OpCode::Ret, 0, &f.loc);
             }
             self.exit_function();
+            for (i, instr) in self.code.iter().enumerate().skip(func_ip) {
+            }
         }
 
         let wrapper_ip = self.current_ip();
@@ -635,14 +657,14 @@ impl BytecodeGen {
             Some(c) => c,
             None => return 0,
         };
-        let mut offset = 4; // vptr at offset 0
+        let mut offset = if class.vtable.is_some() { 4 } else { 0 };
         // Check base class fields first
         if let Some(ref base_name) = class.base {
             let base_offset = self.get_class_member_offset(base_name, member_name);
             if base_offset > 0 {
                 return base_offset; // base_offset already includes vptr of base
             }
-            let base_size = self.class_sizes.get(base_name).copied().unwrap_or(4);
+            let base_size = self.class_sizes.get(base_name).copied().unwrap_or(if class.vtable.is_some() { 4 } else { 0 });
             offset = base_size;
         }
         // Search in current class fields
@@ -812,6 +834,9 @@ impl BytecodeGen {
     }
 }
 
+mod cpp_lambda;
+mod cpp_member_call;
+mod cpp_this_new_delete;
 mod expr;
 mod stmt;
 pub(crate) use stmt::StmtGen;

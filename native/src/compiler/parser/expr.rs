@@ -782,13 +782,15 @@ impl Parser {
             } else if self.check(TokenType::Ampersand) {
                 self.advance(); // &
                 if self.check(TokenType::Identifier) {
-                    capture.push(CaptureMode::ByReference);
+                    let name = self.current().text.clone();
+                    capture.push(CaptureMode::ByReference(name));
                     self.advance();
                 } else {
                     capture.push(CaptureMode::Implicit);
                 }
             } else if self.check(TokenType::Identifier) {
-                capture.push(CaptureMode::ByValue);
+                let name = self.current().text.clone();
+                capture.push(CaptureMode::ByValue(name));
                 self.advance();
             }
         }
@@ -806,11 +808,13 @@ impl Parser {
         }
 
         let body = Box::new(self.parse_statement());
+        let id = self.next_lambda_id;
+        self.next_lambda_id += 1;
         Expr::Lambda {
             capture,
             params,
             body,
-            unique_id: 0,
+            unique_id: id,
             loc,
             ty: Type::default(),
         }

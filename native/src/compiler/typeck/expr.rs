@@ -331,6 +331,28 @@ impl TypeChecker {
                     // Function name used as value (function pointer)
                     *ty = Type::function_pointer(sym.return_type, sym.param_types);
                 } else {
+                    // Check if it's a class field (implicit this->field)
+                    if let Some(class_name) = self.current_class.clone() {
+                        if let Some(class_sym) = self.classes.get(&class_name) {
+                            if let Some((field_ty, _, _)) = class_sym.fields.iter().find(|(_, n, _)| n == name) {
+                                let this_ty = Type::Pointer {
+                                    pointee: Box::new(Type::Class { name: class_name.clone(), is_const: false }),
+                                    is_const: false,
+                                };
+                                *expr = Expr::Member {
+                                    object: Box::new(Expr::Identifier {
+                                        name: "this".to_string(),
+                                        ty: this_ty.clone(),
+                                        loc: *loc,
+                                    }),
+                                    member: name.clone(),
+                                    ty: field_ty.clone(),
+                                    loc: *loc,
+                                };
+                                return self.resolve_expr_type(expr);
+                            }
+                        }
+                    }
                     self.report_error(&format!("未声明的变量 '{}'", name), loc, ErrorCode::E3023_UndeclaredVar);
                     *ty = Type::int();
                 }
@@ -357,6 +379,60 @@ impl TypeChecker {
                             self.pending_instantiations.push((mangled.clone(), new_func));
                             *ty = self.visit_call(&mangled, args, loc);
                             return ty.clone();
+                        }
+                    }
+                    // Lambda call: f(args) -> f.__call(args)
+                    if let Some(sym) = self.lookup_var(name) {
+                        if let Type::Class { name: class_name, .. } = &sym.ty {
+                            if class_name.starts_with("__lambda_") {
+                                // Replace current expr and resolve
+                                // Need to manually resolve MemberCall here
+                                let _obj_ty = &sym.ty;
+                                let call_name = format!("{}__call", class_name);
+                                let ret_ty = if let Some(func_sym) = self.funcs.get(&call_name).cloned() {
+                                    let expected = func_sym.param_types.clone();
+                                    if args.len() + 1 != expected.len() {
+                                        self.report_error(
+                                            &format!("Lambda 调用参数数量不匹配：期望 {} 个，实际 {} 个", expected.len() - 1, args.len()),
+                                            loc,
+                                            ErrorCode::E3037_FuncArgCount,
+                                        );
+                                    } else {
+                                        for (i, arg) in args.iter_mut().enumerate() {
+                                            let arg_ty = self.resolve_expr_type(arg);
+                                            let expected_ty = &expected[i + 1];
+                                            if !self.check_assignable(expected_ty, &arg_ty, loc) {
+                                                self.report_error(
+                                                    &format!("Lambda 调用第 {} 个参数类型不匹配：期望 '{}'，实际 '{}'", i + 1, expected_ty, arg_ty),
+                                                    loc,
+                                                    ErrorCode::E3004_TypeMismatch,
+                                                );
+                                            } else {
+                                                insert_implicit_cast(arg, expected_ty);
+                                            }
+                                        }
+                                    }
+                                    // Rewrite CallPtr -> Call with this as first arg
+                                    let mut new_args = vec![Expr::Identifier {
+                                        name: name.clone(),
+                                        ty: sym.ty.clone(),
+                                        loc: *loc,
+                                    }];
+                                    new_args.extend(args.iter().cloned());
+                                    *expr = Expr::Call {
+                                        name: call_name,
+                                        args: new_args,
+                                        loc: *loc,
+                                        ty: func_sym.return_type.clone(),
+                                    };
+                                    func_sym.return_type.clone()
+                                } else {
+                                    self.report_error(&format!("未找到 Lambda 调用函数 '{}'", call_name), loc, ErrorCode::E3036_UndefinedFunc);
+                                    *ty = Type::int();
+                                    Type::int()
+                                };
+                                return ret_ty;
+                            }
                         }
                     }
                 }
@@ -684,14 +760,29 @@ impl TypeChecker {
                     }
                     *ty = sig.ret.clone();
                     *is_virtual = sig.is_virtual;
-                } else {
-                    self.report_error(
-                        &format!("类 '{}' 没有方法 '{}'", class_name, method),
-                        loc,
-                        ErrorCode::E3042_UnknownMember,
-                    );
-                    *ty = Type::int();
+                    return ty.clone();
                 }
+                if let Some((host_func, addr_expr, call_args, result_ty)) =
+                    self.try_resolve_container_member_call(&class_name, method, object, args, loc)
+                {
+                    *is_virtual = false;
+                    let mut full_args = vec![addr_expr];
+                    full_args.extend(call_args);
+                    let ret = result_ty.clone();
+                    *expr = Expr::Call {
+                        name: host_func,
+                        args: full_args,
+                        loc: *loc,
+                        ty: result_ty,
+                    };
+                    return ret;
+                }
+                self.report_error(
+                    &format!("类 '{}' 没有方法 '{}'", class_name, method),
+                    loc,
+                    ErrorCode::E3042_UnknownMember,
+                );
+                *ty = Type::int();
                 ty.clone()
             }
             Expr::New {
@@ -742,11 +833,11 @@ impl TypeChecker {
             }
             Expr::Lambda {
                 params,
-                body: _,
+                body,
                 unique_id,
                 loc,
                 ty,
-                ..
+                capture,
             } => {
                 // Generate a closure struct type
                 let lambda_name = format!("__lambda_{}", unique_id);
@@ -754,16 +845,32 @@ impl TypeChecker {
                     name: lambda_name.clone(),
                     is_const: false,
                 };
-                // Register the lambda type as a class symbol (simplified: empty fields for now)
+                // Collect capture variable types from current scope
+                let mut capture_info = Vec::new();
+                let mut fields = Vec::new();
+                for cap in capture.iter() {
+                    match cap {
+                        CaptureMode::ByValue(name) | CaptureMode::ByReference(name) => {
+                            if let Some(sym) = self.lookup_var(name) {
+                                let is_by_ref = matches!(cap, CaptureMode::ByReference(_));
+                                capture_info.push((name.clone(), sym.ty.clone(), is_by_ref));
+                                fields.push((sym.ty.clone(), name.clone(), AccessSpec::Public));
+                            }
+                        }
+                        CaptureMode::Implicit => {}
+                    }
+                }
+                // Register the lambda type as a class symbol with capture fields
                 if !self.classes.contains_key(&lambda_name) {
+                    let size = fields.iter().map(|(fty, _, _)| self.compute_type_size(fty)).sum();
                     self.classes.insert(
                         lambda_name.clone(),
                         ClassSymbol {
-                            fields: vec![],
+                            fields,
                             methods: HashMap::new(),
                             base: None,
                             vtable: None,
-                            size: 0,
+                            size,
                         },
                     );
                 }
@@ -787,6 +894,14 @@ impl TypeChecker {
                         },
                     );
                 }
+                // Record pending lambda for later lifting
+                self.pending_lambdas.push(super::LambdaInfo {
+                    id: *unique_id,
+                    captures: capture_info,
+                    params: params.clone(),
+                    body: body.as_ref().clone(),
+                    loc: *loc,
+                });
                 ty.clone()
             }
         }

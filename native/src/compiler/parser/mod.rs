@@ -54,6 +54,7 @@ pub struct Parser {
     pos: usize,
     anonymous_structs: Vec<StructDecl>,
     is_cpp_mode: bool,
+    next_lambda_id: u64,
 }
 
 impl Parser {
@@ -65,6 +66,12 @@ impl Parser {
         let mut typedef_names = HashMap::new();
         // 预定义 FILE 类型（stdio.h 中的不透明结构体指针）
         typedef_names.insert("FILE".to_string(), Type::void());
+        // 预注册 C++ 内置容器类型名
+        if is_cpp_mode {
+            for name in ["cide_vec_int", "cide_vec_float", "cide_vec_char", "cide_string", "cide_list_int"] {
+                typedef_names.insert(name.to_string(), Type::Class { name: name.to_string(), is_const: false });
+            }
+        }
         Self {
             tokens,
             errors: Vec::new(),
@@ -72,6 +79,7 @@ impl Parser {
             pos: 0,
             anonymous_structs: Vec::new(),
             is_cpp_mode,
+            next_lambda_id: 0,
         }
     }
 
@@ -579,7 +587,7 @@ impl Parser {
             }
 
             // 析构函数 ~Name()
-            if self.check(TokenType::Minus)
+            if self.check(TokenType::BitNot)
                 && self.peek(1).ty == TokenType::Identifier
                 && self.peek(2).ty == TokenType::LParen
             {
@@ -598,6 +606,30 @@ impl Parser {
                     body,
                     access: current_access,
                     is_virtual,
+                });
+                continue;
+            }
+
+            // 构造函数检查（无返回类型）
+            if self.check(TokenType::Identifier)
+                && self.current().text == name
+                && self.peek(1).ty == TokenType::LParen
+            {
+                self.advance(); // class name
+                self.consume(TokenType::LParen, "预期 '('");
+                let params = self.parse_param_list();
+                self.consume(TokenType::RParen, "预期 ')'");
+                let body = if self.check(TokenType::LBrace) {
+                    Some(self.parse_statement())
+                } else {
+                    self.consume(TokenType::Semicolon, "构造函数声明后预期 ';'");
+                    None
+                };
+                members.push(ClassMember::Constructor {
+                    params,
+                    body,
+                    is_default: false,
+                    access: current_access,
                 });
                 continue;
             }
@@ -922,6 +954,12 @@ impl Parser {
             if let Some(ty) = self.typedef_names.get(&self.current().text).cloned() {
                 self.advance();
                 ty
+            } else if self.is_cpp_mode {
+                let name = self.advance().text.clone();
+                Type::Class {
+                    name,
+                    is_const: false,
+                }
             } else {
                 if is_unsigned {
                     Type::unsigned_int()

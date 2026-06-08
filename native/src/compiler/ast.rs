@@ -1112,10 +1112,10 @@ pub struct TemplateDecl {
     pub decl: Templateable,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CaptureMode {
-    ByValue,
-    ByReference,
+    ByValue(String),
+    ByReference(String),
     Implicit,
 }
 

@@ -1419,6 +1419,13 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
         }
     }
 
+    // 若 realloc 恰好复用了旧地址（如 heap_offset 回退后），需清理刚添加的 freed_log
+    let new_end = new_addr.saturating_add(aligned_new_size);
+    vm.freed_logs.retain(|log| {
+        let log_end = log.addr.saturating_add(log.size);
+        log_end <= new_addr || log.addr >= new_end
+    });
+
     // Track new region
     session.memory.regions.push(MemoryRegion {
         addr: new_addr,

@@ -2,7 +2,7 @@ use super::*;
 
 impl TypeChecker {
     pub(crate) fn is_builtin_func(&self, name: &str) -> bool {
-        crate::vm::host_func_id::is_builtin(name)
+        crate::vm::host_func_id::is_builtin(name) || crate::vm::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS.contains(&name)
     }
 
     pub(crate) fn visit_call(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {

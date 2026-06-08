@@ -256,8 +256,16 @@ impl MemoryState {
             if (block.size as u32) > aligned_size {
                 block.addr += aligned_size;
                 block.size -= aligned_size as i32;
+                // 若该 free block 恰位于 heap 顶部，更新 heap_offset 避免后续分配冲突
+                if addr == self.heap_offset {
+                    self.heap_offset = block.addr;
+                }
             } else {
                 self.free_list.remove(idx);
+                // 若整块被分配且位于 heap 顶部，推进 heap_offset
+                if addr == self.heap_offset {
+                    self.heap_offset = addr + aligned_size;
+                }
             }
         } else {
             addr = self.heap_offset;
@@ -266,6 +274,39 @@ impl MemoryState {
                 return None;
             }
             self.heap_offset = new_offset as u32;
+        }
+        // 清理 free_list 中与刚分配区域重叠的 stale 块
+        let alloc_end = addr + aligned_size;
+        let mut i = 0;
+        while i < self.free_list.len() {
+            let block = &self.free_list[i];
+            let block_end = block.addr as u32 + block.size as u32;
+            if (block.addr as u32) >= alloc_end || block_end <= addr {
+                i += 1;
+                continue;
+            }
+            if (block.addr as u32) >= addr && block_end <= alloc_end {
+                // 完全被覆盖
+                self.free_list.remove(i);
+            } else if (block.addr as u32) < addr && block_end > alloc_end {
+                // 分配在块内部：拆分为前后两部分
+                let tail_size = block_end - alloc_end;
+                let head_size = addr - (block.addr as u32);
+                self.free_list[i].size = head_size as i32;
+                if tail_size > 0 {
+                    self.free_list.push(FreeBlock { addr: alloc_end, size: tail_size as i32 });
+                }
+                i += 1;
+            } else if (block.addr as u32) < addr {
+                // 覆盖块的后部
+                self.free_list[i].size = (addr - block.addr as u32) as i32;
+                i += 1;
+            } else {
+                // 覆盖块的前部
+                self.free_list[i].addr = alloc_end;
+                self.free_list[i].size = (block_end - alloc_end) as i32;
+                i += 1;
+            }
         }
         Some(addr)
     }
