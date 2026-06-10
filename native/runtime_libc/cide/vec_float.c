@@ -19,11 +19,35 @@ void cide_vec_push_float(cide_vec_float *v, float x) {
 }
 
 float cide_vec_pop_float(cide_vec_float *v) {
+    if (v->n == 0) return 0.0;
     return v->a[--v->n];
 }
 
 int cide_vec_size_float(cide_vec_float *v) {
     return v->n;
+}
+
+int cide_vec_capacity_float(cide_vec_float *v) {
+    return v->m;
+}
+
+float cide_vec_front_float(cide_vec_float *v) {
+    if (v->n == 0) return 0.0f;
+    return v->a[0];
+}
+
+float cide_vec_back_float(cide_vec_float *v) {
+    if (v->n == 0) return 0.0f;
+    return v->a[v->n - 1];
+}
+
+void cide_vec_pop_front_float(cide_vec_float *v) {
+    if (v->n == 0) return;
+    int i;
+    for (i = 0; i < v->n - 1; i++) {
+        v->a[i] = v->a[i + 1];
+    }
+    v->n--;
 }
 
 float cide_vec_get_float(cide_vec_float *v, int i) {

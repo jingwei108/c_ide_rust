@@ -68,6 +68,18 @@ impl TypeChecker {
             "floor" => self.check_builtin_floor(args, loc),
             "round" => self.check_builtin_round(args, loc),
             "fmod" => self.check_builtin_fmod(args, loc),
+            "std__move" => {
+                if args.len() != 1 {
+                    self.report_error(
+                        "std::move 预期 1 个参数",
+                        loc,
+                        ErrorCode::E3037_FuncArgCount,
+                    );
+                    return Type::int();
+                }
+                let arg_ty = self.resolve_expr_type(&mut args[0]);
+                Type::RValueRef { base: Box::new(arg_ty) }
+            }
             // math.h functions are resolved through stub declarations in funcs
             _ => self.check_user_func(name, args, loc),
         }

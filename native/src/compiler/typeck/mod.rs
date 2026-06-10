@@ -37,12 +37,15 @@ pub(crate) struct MethodSig {
     pub is_virtual: bool,
     #[allow(dead_code)]
     pub is_static: bool,
+    pub is_explicit: bool,
+    pub is_const: bool,
     pub access: AccessSpec,
 }
 
 #[derive(Debug, Clone)]
 pub(crate) struct ClassSymbol {
     pub fields: Vec<(Type, String, AccessSpec)>,
+    pub static_fields: Vec<(Type, String, AccessSpec)>,
     pub methods: HashMap<String, MethodSig>,
     #[allow(dead_code)]
     pub base: Option<String>,
@@ -78,6 +81,7 @@ pub struct TypeChecker {
     func_labels: HashMap<String, SourceLoc>,
     pending_gotos: Vec<(String, SourceLoc)>,
     current_class: Option<String>,
+    current_method_is_const: bool,
     /// Template instantiations discovered during type checking; appended to program.funcs at the end.
     pending_instantiations: Vec<(String, FuncDecl)>,
     /// Class template instantiations discovered during type checking; appended to program.classes at the end.
@@ -267,17 +271,21 @@ impl TypeChecker {
         // Pass 2.3: Register class methods as mangled global functions
         for c in &program.classes {
             for member in &c.members {
-                if let ClassMember::Method { name, ret, params, .. } = member {
+                if let ClassMember::Method { name, ret, params, is_const, is_static, .. } = member {
                     let mangled = format!("{}__{}", c.name, name);
-                    let param_types: Vec<Type> = std::iter::once(Type::Pointer {
-                        pointee: Box::new(Type::Class {
-                            name: c.name.clone(),
-                            is_const: false,
-                        }),
-                        is_const: false,
-                    })
-                    .chain(params.iter().map(|p| p.ty.clone()))
-                    .collect();
+                    let param_types: Vec<Type> = if *is_static {
+                        params.iter().map(|p| p.ty.clone()).collect()
+                    } else {
+                        std::iter::once(Type::Pointer {
+                            pointee: Box::new(Type::Class {
+                                name: c.name.clone(),
+                                is_const: *is_const,
+                            }),
+                            is_const: *is_const,
+                        })
+                        .chain(params.iter().map(|p| p.ty.clone()))
+                        .collect()
+                    };
                     let new_sym = FuncSymbol {
                         return_type: ret.clone(),
                         param_types,
@@ -334,6 +342,28 @@ impl TypeChecker {
                 }
             }
         }
+
+        // Pass 2.4: Register class static fields as mangled global variables
+        let mut static_field_globals: Vec<GlobalDecl> = Vec::new();
+        for c in &program.classes {
+            for member in &c.members {
+                if let ClassMember::Field { name: field_name, ty, is_static: true, .. } = member {
+                    let mangled = format!("{}__{}", c.name, field_name);
+                    if !program.globals.iter().any(|g| g.name == mangled) {
+                        static_field_globals.push(GlobalDecl {
+                            loc: c.loc,
+                            ty: ty.clone(),
+                            name: mangled,
+                            init: None,
+                            is_static: false,
+                            is_extern: false,
+                            source_file: String::new(),
+                        });
+                    }
+                }
+            }
+        }
+        program.globals.extend(static_field_globals);
 
         // Pass 2.6: Register templates
         for t in &program.templates {
@@ -420,6 +450,7 @@ impl TypeChecker {
                     name: name.clone(),
                     ty: ty.clone(),
                     access: AccessSpec::Public,
+                    is_static: false,
                 })
                 .collect();
             program.classes.push(ClassDecl {
@@ -945,6 +976,11 @@ impl TypeChecker {
             None => return (None, None),
         };
         for (fty, fname, faccess) in &sym.fields {
+            if fname == field_name {
+                return (Some(fty.clone()), Some(*faccess));
+            }
+        }
+        for (fty, fname, faccess) in &sym.static_fields {
             if fname == field_name {
                 return (Some(fty.clone()), Some(*faccess));
             }

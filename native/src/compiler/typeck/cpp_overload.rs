@@ -19,32 +19,41 @@ impl TypeChecker {
                         ret,
                         params,
                         body,
+                        is_const,
+                        is_static,
                         ..
                     } => {
                         if let Some(ref b) = body {
-                            let mut func_decl = FuncDecl {
-                                loc: c.loc,
-                                return_type: ret.clone(),
-                                name: format!("{}__{}", c.name, method_name),
-                                params: std::iter::once(Param {
+                            self.current_method_is_const = *is_const && !*is_static;
+                            let func_params: Vec<Param> = if *is_static {
+                                params.iter().cloned().collect()
+                            } else {
+                                std::iter::once(Param {
                                     name: "this".to_string(),
                                     ty: Type::Pointer {
                                         pointee: Box::new(Type::Class {
                                             name: c.name.clone(),
-                                            is_const: false,
+                                            is_const: *is_const,
                                         }),
-                                        is_const: false,
+                                        is_const: *is_const,
                                     },
                                     loc: c.loc,
                                 })
                                 .chain(params.iter().cloned())
-                                .collect(),
+                                .collect()
+                            };
+                            let mut func_decl = FuncDecl {
+                                loc: c.loc,
+                                return_type: ret.clone(),
+                                name: format!("{}__{}", c.name, method_name),
+                                params: func_params,
                                 body: Some(b.clone()),
-                                is_static: false,
+                                is_static: *is_static,
                                 is_extern: false,
                                 source_file: String::new(),
                             };
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                            self.current_method_is_const = false;
                             class_methods.push(func_decl);
                         }
                     }

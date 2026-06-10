@@ -809,3 +809,131 @@ int main() {
     assert_eq!(ret, 0);
     assert_eq!(outputs, vec!["42", "100"]);
 }
+
+// ============================================================================
+// Phase D: BytecodeGen 加固 — 嵌套 struct new size / 深层 RAII / goto 边界
+// ============================================================================
+
+#[test]
+fn test_cpp_new_nested_struct_size() {
+    let src = r#"
+#include <stdio.h>
+template<class T>
+class list {
+    struct Node {
+        T data;
+        Node* next;
+    };
+    Node* head;
+public:
+    list() : head((Node*)0) {}
+    void push_back(T x) {
+        Node* node = new Node;
+        node->data = x;
+        node->next = head;
+        head = node;
+    }
+    T get(int i) {
+        Node* p = head;
+        while (i-- > 0 && p != (Node*)0) p = p->next;
+        if (p == (Node*)0) return 0;
+        return p->data;
+    }
+    ~list() {
+        Node* p = head;
+        while (p != (Node*)0) {
+            Node* n = p->next;
+            delete p;
+            p = n;
+        }
+    }
+};
+int main() {
+    list<int> l;
+    l.push_back(10);
+    l.push_back(20);
+    printf("%d\n", l.get(0));
+    printf("%d\n", l.get(1));
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["20", "10"]);
+}
+
+#[test]
+fn test_cpp_deep_nested_scope_raii() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+void foo() {
+    {
+        A a1;
+        a1.init(1);
+        {
+            A a2;
+            a2.init(2);
+            {
+                A a3;
+                a3.init(3);
+                return;
+            }
+        }
+    }
+}
+int main() {
+    foo();
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["321"]);
+}
+
+#[test]
+fn test_cpp_goto_with_dtor_scope() {
+    let src = r#"
+#include <stdio.h>
+int g_log = 0;
+void set_log(int v) { g_log = g_log * 10 + v; }
+class A {
+public:
+    int id;
+    A() { id = 0; }
+    void init(int i) { id = i; }
+    ~A() { set_log(id); }
+};
+void foo() {
+    A a1;
+    a1.init(1);
+    goto end;
+    {
+        A a2;
+        a2.init(2);
+    }
+end:
+    ;
+}
+int main() {
+    foo();
+    printf("%d\n", g_log);
+    return 0;
+}
+"#;
+    // 当前行为：Cide 允许 goto 向前跳转，a1 在函数退出时析构，a2 所在块被跳过。
+    // 记录为已知行为：不强制报错，但需确保不崩溃且已构造对象正确析构。
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["1"]);
+}

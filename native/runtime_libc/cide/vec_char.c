@@ -19,11 +19,35 @@ void cide_vec_push_char(cide_vec_char *v, char x) {
 }
 
 char cide_vec_pop_char(cide_vec_char *v) {
+    if (v->n == 0) return (char)'\0';
     return v->a[--v->n];
 }
 
 int cide_vec_size_char(cide_vec_char *v) {
     return v->n;
+}
+
+int cide_vec_capacity_char(cide_vec_char *v) {
+    return v->m;
+}
+
+char cide_vec_front_char(cide_vec_char *v) {
+    if (v->n == 0) return (char)'\0';
+    return v->a[0];
+}
+
+char cide_vec_back_char(cide_vec_char *v) {
+    if (v->n == 0) return (char)'\0';
+    return v->a[v->n - 1];
+}
+
+void cide_vec_pop_front_char(cide_vec_char *v) {
+    if (v->n == 0) return;
+    int i;
+    for (i = 0; i < v->n - 1; i++) {
+        v->a[i] = v->a[i + 1];
+    }
+    v->n--;
 }
 
 char cide_vec_get_char(cide_vec_char *v, int i) {

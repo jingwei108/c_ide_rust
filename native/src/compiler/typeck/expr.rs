@@ -340,8 +340,8 @@ impl TypeChecker {
                         if let Some(class_sym) = self.classes.get(&class_name) {
                             if let Some((field_ty, _, _)) = class_sym.fields.iter().find(|(_, n, _)| n == name) {
                                 let this_ty = Type::Pointer {
-                                    pointee: Box::new(Type::Class { name: class_name.clone(), is_const: false }),
-                                    is_const: false,
+                                    pointee: Box::new(Type::Class { name: class_name.clone(), is_const: self.current_method_is_const }),
+                                    is_const: self.current_method_is_const,
                                 };
                                 *expr = Expr::Member {
                                     object: Box::new(Expr::Identifier {
@@ -372,6 +372,7 @@ impl TypeChecker {
                     if self.funcs.contains_key(name)
                         || self.static_func_sigs.contains_key(name)
                         || self.is_builtin_func(name)
+                        || name.starts_with("std__")
                     {
                         *ty = self.visit_call(name, args, loc);
                         return ty.clone();
@@ -618,6 +619,28 @@ impl TypeChecker {
                         }
                     }
                 }
+                if let Expr::Member { object, .. } = left.as_ref() {
+                    let obj_ty = object.ty();
+                    if let Type::Pointer { pointee, is_const } = &obj_ty {
+                        if let Type::Class { is_const: ic, .. } = pointee.as_ref() {
+                            if *ic || *is_const {
+                                self.report_error(
+                                    "不能修改 const 对象的成员",
+                                    loc,
+                                    ErrorCode::E3065_ConstViolation,
+                                );
+                            }
+                        }
+                    } else if let Type::Class { is_const, .. } = &obj_ty {
+                        if *is_const {
+                            self.report_error(
+                                "不能修改 const 对象的成员",
+                                loc,
+                                ErrorCode::E3065_ConstViolation,
+                            );
+                        }
+                    }
+                }
                 if !self.check_assignable(&left_type, &right_type, loc) {
                     self.report_error(
                         &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type),
@@ -688,9 +711,9 @@ impl TypeChecker {
                     *ty = Type::Pointer {
                         pointee: Box::new(Type::Class {
                             name: class_name.clone(),
-                            is_const: false,
+                            is_const: self.current_method_is_const,
                         }),
-                        is_const: false,
+                        is_const: self.current_method_is_const,
                     };
                 } else {
                     self.report_error("'this' 只能在类成员函数中使用", loc, ErrorCode::E4023_ThisOutsideClass);
@@ -733,6 +756,26 @@ impl TypeChecker {
                             loc,
                             ErrorCode::E4024_PrivateMemberAccess,
                         );
+                    }
+                    // Check const-correctness: const object cannot call non-const method
+                    if !sig.is_const && !sig.is_static {
+                        let obj_is_const = match &obj_type {
+                            Type::Class { is_const, .. } => *is_const,
+                            Type::Pointer { pointee, is_const } => {
+                                if let Type::Class { is_const: ic, .. } = pointee.as_ref() { *ic || *is_const } else { *is_const }
+                            }
+                            Type::Reference { base, is_const } => {
+                                if let Type::Class { is_const: ic, .. } = base.as_ref() { *ic || *is_const } else { *is_const }
+                            }
+                            _ => false,
+                        };
+                        if obj_is_const {
+                            self.report_error(
+                                &format!("不能在 const 对象上调用非 const 方法 '{}'", method),
+                                loc,
+                                ErrorCode::E3065_ConstViolation,
+                            );
+                        }
                     }
                     // Check argument count (MemberCall args are user-provided args only)
                     let user_param_count = sig.param_types.len();
@@ -872,6 +915,7 @@ impl TypeChecker {
                         lambda_name.clone(),
                         ClassSymbol {
                             fields,
+                            static_fields: vec![],
                             methods: HashMap::new(),
                             base: None,
                             vtable: None,

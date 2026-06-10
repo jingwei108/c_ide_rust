@@ -317,7 +317,8 @@ impl Parser {
                 let checkpoint = self.pos;
                 let errors_checkpoint = self.errors.len();
                 self.advance();
-                if self.check(TokenType::Identifier) {
+                let has_name = self.check(TokenType::Identifier);
+                if has_name {
                     self.advance();
                 }
                 if self.check(TokenType::LBrace) {
@@ -346,7 +347,27 @@ impl Parser {
                     if is_var_decl && !is_pure_decl {
                         self.parse_global_var_or_func(&mut program, false, false);
                     } else {
-                        program.structs.push(self.parse_struct_decl());
+                        // C++ 模式下，有名字的 struct 声明解析为 class-like（支持构造函数、方法等）
+                        if self.is_cpp_mode && has_name {
+                            let class_decl = self.parse_class_decl_inner(true);
+                            self.typedef_names.insert(
+                                class_decl.name.clone(),
+                                Type::Class {
+                                    name: class_decl.name.clone(),
+                                    is_const: false,
+                                },
+                            );
+                            program.classes.push(class_decl);
+                        } else {
+                            let struct_decl = self.parse_struct_decl();
+                            if self.is_cpp_mode {
+                                self.typedef_names.insert(
+                                    struct_decl.name.clone(),
+                                    Type::struct_type(struct_decl.name.clone()),
+                                );
+                            }
+                            program.structs.push(struct_decl);
+                        }
                     }
                 } else {
                     self.pos = checkpoint;
@@ -419,13 +440,67 @@ impl Parser {
         let base_type = self.parse_base_type();
         // 前瞻：跳过前导 *，检查是否是 identifier (
         let lookahead = self.look_ahead_skip_stars();
-        let is_func_decl = lookahead < self.tokens.len()
+        let is_func_decl = if lookahead < self.tokens.len()
             && self.tokens[lookahead].ty == TokenType::Identifier
-            && lookahead + 1 < self.tokens.len()
-            && self.tokens[lookahead + 1].ty == TokenType::LParen;
+        {
+            if lookahead + 1 < self.tokens.len()
+                && self.tokens[lookahead + 1].ty == TokenType::LParen
+            {
+                true
+            } else if self.is_cpp_mode
+                && lookahead + 3 < self.tokens.len()
+                && self.tokens[lookahead + 1].ty == TokenType::ColonColon
+                && self.tokens[lookahead + 2].ty == TokenType::Identifier
+                && self.tokens[lookahead + 3].ty == TokenType::LParen
+            {
+                // C++ qualified name: Bar::set(...)
+                true
+            } else {
+                false
+            }
+        } else {
+            false
+        };
         if is_func_decl {
             self.pos = checkpoint;
             program.funcs.push(self.parse_func_decl(is_static, is_extern));
+        } else if self.is_cpp_mode
+            && lookahead < self.tokens.len()
+            && self.tokens[lookahead].ty == TokenType::Identifier
+            && lookahead + 2 < self.tokens.len()
+            && self.tokens[lookahead + 1].ty == TokenType::ColonColon
+            && self.tokens[lookahead + 2].ty == TokenType::Identifier
+        {
+            // C++ qualified static field definition: int A::count = 0;
+            let ty = base_type.clone();
+            let class_name = self.consume(TokenType::Identifier, "预期类名").text.clone();
+            self.consume(TokenType::ColonColon, "预期 '::'");
+            let field_tok = self.consume(TokenType::Identifier, "预期字段名").clone();
+            let name = format!("{}__{}", class_name, field_tok.text);
+            let init = if is_extern {
+                None
+            } else if self.match_token(TokenType::Assign) {
+                if self.check(TokenType::LBrace) {
+                    Some(self.parse_init_list())
+                } else {
+                    Some(self.parse_assign())
+                }
+            } else {
+                None
+            };
+            program.globals.push(GlobalDecl {
+                loc: SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                },
+                ty: ty.clone(),
+                name,
+                init,
+                is_static,
+                is_extern,
+                source_file: String::new(),
+            });
+            self.consume(TokenType::Semicolon, "静态成员定义后预期 ';'");
         } else {
             let (ty, name) = self.parse_declarator(&base_type);
             let init = if is_extern {
@@ -518,6 +593,12 @@ impl Parser {
             },
         );
         self.consume(TokenType::Semicolon, "结构体声明后预期 ';'");
+        if self.is_cpp_mode && !decl.name.starts_with("__anon_struct_") {
+            self.typedef_names.insert(
+                decl.name.clone(),
+                Type::struct_type(decl.name.clone()),
+            );
+        }
         decl
     }
 
@@ -549,11 +630,19 @@ impl Parser {
     // =========================================================================
 
     fn parse_class_decl(&mut self) -> ClassDecl {
+        self.parse_class_decl_inner(false)
+    }
+
+    fn parse_class_decl_inner(&mut self, is_struct: bool) -> ClassDecl {
         let loc = SourceLoc {
             line: self.current().line,
             column: self.current().column,
         };
-        self.consume(TokenType::Class, "预期 'class'");
+        if is_struct {
+            self.consume(TokenType::Struct, "预期 'struct'");
+        } else {
+            self.consume(TokenType::Class, "预期 'class'");
+        }
         let name = self.consume(TokenType::Identifier, "预期类名").text.clone();
 
         let mut base = None;
@@ -568,7 +657,7 @@ impl Parser {
         self.consume(TokenType::LBrace, "预期 '{'");
 
         let mut members = Vec::new();
-        let mut current_access = AccessSpec::Private; // class 默认 private
+        let mut current_access = if is_struct { AccessSpec::Public } else { AccessSpec::Private }; // struct 默认 public，class 默认 private
 
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             // 访问说明符
@@ -585,15 +674,52 @@ impl Parser {
                 continue;
             }
 
-            // 跳过 inline / virtual 修饰符
+            // 跳过 inline / virtual / explicit / static 修饰符
             let mut is_virtual = false;
-            while self.check(TokenType::Inline) || self.check(TokenType::Virtual) {
-                if self.check(TokenType::Virtual) {
-                    is_virtual = true;
+            let mut is_explicit = false;
+            let mut is_static = false;
+            loop {
+                if self.check(TokenType::Inline) || self.check(TokenType::Virtual) || self.check(TokenType::Explicit) {
+                    if self.check(TokenType::Virtual) {
+                        is_virtual = true;
+                    }
+                    if self.check(TokenType::Explicit) {
+                        is_explicit = true;
+                    }
+                    self.advance();
+                } else if self.is_cpp_mode && self.is_static_token() {
+                    is_static = true;
+                    self.advance();
+                } else {
+                    break;
                 }
-                self.advance();
             }
 
+            // 嵌套 struct / class / union / enum
+            if self.check(TokenType::Struct) {
+                let decl = self.parse_struct_decl();
+                members.push(ClassMember::NestedStruct {
+                    decl,
+                    access: current_access,
+                });
+                continue;
+            }
+            if self.is_cpp_mode && self.check(TokenType::Class) {
+                let decl = self.parse_class_decl();
+                members.push(ClassMember::NestedClass {
+                    decl,
+                    access: current_access,
+                });
+                continue;
+            }
+            if self.check(TokenType::Union) {
+                let decl = self.parse_union_decl();
+                members.push(ClassMember::NestedStruct {
+                    decl,
+                    access: current_access,
+                });
+                continue;
+            }
             // 析构函数 ~Name()
             if self.check(TokenType::BitNot)
                 && self.peek(1).ty == TokenType::Identifier
@@ -640,6 +766,7 @@ impl Parser {
                     body,
                     is_default: false,
                     access: current_access,
+                    is_explicit,
                 });
                 continue;
             }
@@ -682,6 +809,9 @@ impl Parser {
                 let params = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
 
+                // 检查 const（仅对方法有效）
+                let is_const = self.match_token(TokenType::Const);
+
                 // 检查 override
                 if self.check(TokenType::Override) {
                     self.advance();
@@ -702,6 +832,7 @@ impl Parser {
                         body,
                         is_default: false,
                         access: current_access,
+                        is_explicit,
                     });
                 } else {
                     let body = if self.check(TokenType::LBrace) {
@@ -717,7 +848,8 @@ impl Parser {
                         body,
                         is_virtual,
                         access: current_access,
-                        is_static: false,
+                        is_static,
+                        is_const,
                     });
                 }
             } else {
@@ -730,6 +862,7 @@ impl Parser {
                     name: field_name,
                     ty,
                     access: current_access,
+                    is_static,
                 });
             }
         }
@@ -777,9 +910,13 @@ impl Parser {
         }
         self.consume(TokenType::Gt, "预期 '>'");
 
-        // 模板后面跟着函数或类声明
+        // 模板后面跟着函数、类或结构体声明
         let decl = if self.check(TokenType::Class) {
             let class_decl = self.parse_class_decl();
+            self.template_names.insert(class_decl.name.clone());
+            Templateable::Class(Box::new(class_decl))
+        } else if self.check(TokenType::Struct) {
+            let class_decl = self.parse_class_decl_inner(true);
             self.template_names.insert(class_decl.name.clone());
             Templateable::Class(Box::new(class_decl))
         } else {
@@ -828,10 +965,19 @@ impl Parser {
         }
 
         let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
+        let mut func_name = name_tok.text.clone();
+        // C++ 类外成员函数定义: Bar::set → Bar__set
+        if self.is_cpp_mode && self.match_token(TokenType::ColonColon) {
+            let method_tok = self.consume(TokenType::Identifier, "预期方法名").clone();
+            func_name = format!("{}__{}", func_name, method_tok.text);
+        }
         self.consume(TokenType::LParen, "预期 '('");
 
         let params = self.parse_param_list();
         self.consume(TokenType::RParen, "预期 ')'");
+        if self.is_cpp_mode {
+            self.match_token(TokenType::Const);
+        }
         let body = if self.check(TokenType::LBrace) {
             Some(self.parse_block())
         } else {
@@ -845,7 +991,7 @@ impl Parser {
                 column: name_tok.column,
             },
             return_type: ret_type,
-            name: name_tok.text,
+            name: func_name,
             params,
             body,
             is_static,
@@ -945,6 +1091,12 @@ impl Parser {
         } else if self.match_token(TokenType::Struct) {
             if self.check(TokenType::Identifier) {
                 let name_tok = self.advance().clone();
+                // C++ 模式下，如果 struct 名字已注册为类型（class 或 struct），返回该类型
+                if self.is_cpp_mode {
+                    if let Some(ty) = self.typedef_names.get(&name_tok.text).cloned() {
+                        return ty;
+                    }
+                }
                 Type::struct_type(name_tok.text)
             } else if self.check(TokenType::LBrace) {
                 let loc = SourceLoc {
@@ -1732,6 +1884,12 @@ impl Parser {
             let is_range_for = if self.is_type_token() || self.check(TokenType::Auto) {
                 let _ = self.parse_base_type();
                 while self.match_token(TokenType::Star) {}
+                if self.is_cpp_mode && (self.check(TokenType::Ampersand) || self.check(TokenType::AndAnd)) {
+                    self.advance();
+                    if self.check(TokenType::Const) {
+                        self.advance();
+                    }
+                }
                 if self.check(TokenType::Identifier) {
                     self.advance();
                     self.check(TokenType::Colon)
@@ -1748,6 +1906,14 @@ impl Parser {
                 let mut final_type = var_type;
                 while self.match_token(TokenType::Star) {
                     final_type = Type::pointer_to(final_type);
+                }
+                if self.is_cpp_mode {
+                    if self.match_token(TokenType::Ampersand) {
+                        let is_const = self.match_token(TokenType::Const);
+                        final_type = Type::Reference { base: Box::new(final_type), is_const };
+                    } else if self.match_token(TokenType::AndAnd) {
+                        final_type = Type::RValueRef { base: Box::new(final_type) };
+                    }
                 }
                 let var_name = self.advance().text.clone();
                 self.consume(TokenType::Colon, "range for 预期 ':'");

@@ -1094,6 +1094,7 @@ pub enum ClassMember {
         name: String,
         ty: Type,
         access: AccessSpec,
+        is_static: bool,
     },
     Method {
         name: String,
@@ -1103,17 +1104,27 @@ pub enum ClassMember {
         is_virtual: bool,
         access: AccessSpec,
         is_static: bool,
+        is_const: bool,
     },
     Constructor {
         params: Vec<Param>,
         body: Option<Stmt>,
         is_default: bool,
         access: AccessSpec,
+        is_explicit: bool,
     },
     Destructor {
         body: Option<Stmt>,
         access: AccessSpec,
         is_virtual: bool,
+    },
+    NestedStruct {
+        decl: StructDecl,
+        access: AccessSpec,
+    },
+    NestedClass {
+        decl: ClassDecl,
+        access: AccessSpec,
     },
 }
 

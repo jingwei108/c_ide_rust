@@ -317,3 +317,142 @@ int main() {
     let (_program, errors) = parse_and_typecheck_cpp(src);
     assert!(errors.is_empty(), "Type errors: {:?}", errors);
 }
+
+#[test]
+fn test_cpp_auto_ref_deduction() {
+    let src = r#"
+int main() {
+    int x = 42;
+    auto& r = x;
+    const auto& cr = x;
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_const_ref_bind_rvalue() {
+    let src = r#"
+int main() {
+    const int& r = 5;
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_auto_new_struct() {
+    let src = r#"
+struct Node { int x; };
+int main() {
+    auto p = new struct Node;
+    p->x = 42;
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_std_move() {
+    let src = r#"
+int main() {
+    int x = 42;
+    int&& r = std::move(x);
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_const_method_read_member() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    int get() const { return x; }
+};
+int main() {
+    Box b;
+    b.x = 10;
+    return b.get();
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_const_method_cannot_modify_member() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    void set(int v) const { x = v; }
+};
+int main() { return 0; }
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(!errors.is_empty(), "Should report const violation");
+    assert!(errors.iter().any(|e| e.code == 3065), "Expected E3065 ConstViolation, got: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_const_method_this_is_const() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    void modify() const { this->x = 42; }
+};
+int main() { return 0; }
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(!errors.is_empty(), "Should report const violation for this->x assignment in const method");
+    assert!(errors.iter().any(|e| e.code == 3065), "Expected E3065 ConstViolation, got: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_const_object_cannot_call_nonconst_method() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    int get() const { return x; }
+    void set(int v) { x = v; }
+};
+int main() {
+    const Box b;
+    b.set(10);
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(!errors.is_empty(), "Should report error calling non-const method on const object");
+    assert!(errors.iter().any(|e| e.code == 3065), "Expected E3065 ConstViolation, got: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_const_object_can_call_const_method() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    int get() const { return x; }
+    void set(int v) { x = v; }
+};
+int main() {
+    const Box b;
+    return b.get();
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}

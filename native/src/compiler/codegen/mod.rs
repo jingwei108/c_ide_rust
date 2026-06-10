@@ -189,8 +189,31 @@ impl BytecodeGen {
         for c in &program.classes {
             self.class_defs.insert(c.name.clone(), c.clone());
         }
+        // Register nested structs/classes from class members
+        fn collect_nested(
+            class: &crate::compiler::ast::ClassDecl,
+            struct_defs: &mut HashMap<String, Vec<crate::compiler::ast::StructField>>,
+            class_defs: &mut HashMap<String, crate::compiler::ast::ClassDecl>,
+        ) {
+            use crate::compiler::ast::ClassMember;
+            for member in &class.members {
+                match member {
+                    ClassMember::NestedStruct { decl, .. } => {
+                        struct_defs.insert(decl.name.clone(), decl.fields.clone());
+                    }
+                    ClassMember::NestedClass { decl, .. } => {
+                        class_defs.insert(decl.name.clone(), decl.clone());
+                        collect_nested(decl, struct_defs, class_defs);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        for c in &program.classes {
+            collect_nested(c, &mut self.struct_defs, &mut self.class_defs);
+        }
         // Compute class sizes with topological ordering (base classes first)
-        let mut pending: Vec<String> = program.classes.iter().map(|c| c.name.clone()).collect();
+        let mut pending: Vec<String> = self.class_defs.keys().cloned().collect();
         while !pending.is_empty() {
             let mut resolved = Vec::new();
             for class_name in &pending {

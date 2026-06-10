@@ -57,17 +57,17 @@ impl TypeChecker {
                 ..
             } => {
                 // Auto type deduction for C++
-                if var_type.is_auto() {
+                if Self::type_has_auto(var_type) {
                     if let Some(ref mut init_expr) = init {
                         let deduced = self.deduce_auto_type(init_expr);
-                        *var_type = deduced;
+                        *var_type = Self::replace_auto_in_type(var_type, deduced);
                     } else {
                         self.report_error(
                             "auto 类型变量必须有初始化表达式",
                             loc,
                             ErrorCode::E4025_AutoRequiresInitializer,
                         );
-                        *var_type = Type::int();
+                        *var_type = Self::replace_auto_in_type(var_type, Type::int());
                     }
                 }
                 // Class template instantiation
@@ -87,8 +87,9 @@ impl TypeChecker {
                             );
                         } else {
                             // C++ reference binding lvalue check
-                            if let Type::Reference { is_const, .. } = var_type {
-                                if !*is_const && !self.is_lvalue(init_expr) {
+                            if let Type::Reference { base, is_const } = var_type {
+                                let is_const_ref = *is_const || base.is_const();
+                                if !is_const_ref && !self.is_lvalue(init_expr) {
                                     self.report_error(
                                         "非 const 引用必须绑定到左值",
                                         loc,
@@ -490,5 +491,42 @@ impl TypeChecker {
 
         self.report_error(&format!("未定义的函数 '{}'", name), loc, ErrorCode::E3036_UndefinedFunc);
         Type::void()
+    }
+
+    fn type_has_auto(ty: &Type) -> bool {
+        match ty {
+            Type::Auto => true,
+            Type::Pointer { pointee, .. } => Self::type_has_auto(pointee),
+            Type::Reference { base, .. } => Self::type_has_auto(base),
+            Type::RValueRef { base, .. } => Self::type_has_auto(base),
+            Type::Array { element, .. } => Self::type_has_auto(element),
+            _ => false,
+        }
+    }
+
+    fn replace_auto_in_type(ty: &Type, replacement: Type) -> Type {
+        match ty {
+            Type::Auto => replacement,
+            Type::Pointer { pointee, is_const } => Type::Pointer {
+                pointee: Box::new(Self::replace_auto_in_type(pointee, replacement)),
+                is_const: *is_const,
+            },
+            Type::Reference { base, is_const } => Type::Reference {
+                base: Box::new(Self::replace_auto_in_type(base, replacement)),
+                is_const: *is_const,
+            },
+            Type::RValueRef { base } => Type::RValueRef {
+                base: Box::new(Self::replace_auto_in_type(base, replacement)),
+            },
+            Type::Array { element, array_size, dims, is_const, is_vla, vla_dims } => Type::Array {
+                element: Box::new(Self::replace_auto_in_type(element, replacement)),
+                array_size: *array_size,
+                dims: dims.clone(),
+                is_const: *is_const,
+                is_vla: *is_vla,
+                vla_dims: vla_dims.clone(),
+            },
+            _ => ty.clone(),
+        }
     }
 }

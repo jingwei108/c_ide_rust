@@ -461,6 +461,191 @@ int main() { return 0; }
 }
 
 #[test]
+fn test_parser_cpp_struct_tag_as_type_alias() {
+    let src = r#"
+struct Node { int x; };
+Node* p;
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    // C++ 模式下 struct 被解析为 ClassDecl
+    assert_eq!(program.classes.len(), 1);
+    assert_eq!(program.classes[0].name, "Node");
+    assert_eq!(program.globals.len(), 1);
+    assert_eq!(program.globals[0].name, "p");
+    assert_eq!(program.globals[0].ty.to_string(), "class Node*");
+}
+
+#[test]
+fn test_parser_cpp_template_struct() {
+    let src = r#"
+template<class T>
+struct Pair {
+    T first;
+    T second;
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    assert_eq!(program.templates.len(), 1);
+    assert_eq!(program.templates[0].params.len(), 1);
+    assert_eq!(program.templates[0].params[0].name, "T");
+    match &program.templates[0].decl {
+        cide_native::compiler::ast::Templateable::Class(c) => {
+            assert_eq!(c.name, "Pair");
+            assert_eq!(c.members.len(), 2);
+        }
+        _ => panic!("Expected Class template"),
+    }
+}
+
+#[test]
+fn test_parser_cpp_cast_expr() {
+    let src = r#"
+int main() {
+    int* p = (int*)0;
+    return 0;
+}
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
+fn test_parser_cpp_ctor_init_list_cast_class() {
+    let src = r#"
+class Foo {
+public:
+    int* p;
+    Foo() : p((int*)0) {}
+};
+int main() { return 0; }
+"#;
+    let (_program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
+fn test_parser_cpp_class_inner_struct() {
+    let src = r#"
+class List {
+public:
+    struct Node {
+        int data;
+        Node* next;
+    };
+    Node* head;
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
+fn test_parser_cpp_template_class_inner_struct() {
+    let src = r#"
+template<class T>
+class list {
+    struct Node {
+        T data;
+        Node* next;
+    };
+    Node* head;
+public:
+    list() : head(nullptr) {}
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
+fn test_parser_cpp_member_func_outside_class() {
+    let src = r#"
+class Bar {
+public:
+    int x;
+    void set(int v);
+};
+void Bar::set(int v) { x = v; }
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let bar_set = program.funcs.iter().find(|f| f.name == "Bar__set");
+    assert!(bar_set.is_some(), "Expected Bar__set function");
+}
+
+#[test]
+fn test_parser_cpp_lambda_multi_capture() {
+    let src = r#"
+int main() {
+    int a = 1, b = 2;
+    auto f = [a, &b](int x) { return a + b + x; };
+    return 0;
+}
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
+fn test_parser_cpp_range_for_ref() {
+    let src = r#"
+int main() {
+    int arr[3] = {1, 2, 3};
+    for (auto& x : arr) { x = x * 2; }
+    for (const auto& x : arr) {}
+    return 0;
+}
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
+fn test_parser_cpp_ctor_overload() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    Box() { x = 0; }
+    Box(int v) { x = v; }
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let box_class = &program.classes[0];
+    let ctors: Vec<_> = box_class.members.iter().filter(|m| matches!(m, ClassMember::Constructor { .. })).collect();
+    assert_eq!(ctors.len(), 2);
+}
+
+#[test]
+fn test_parser_cpp_template_ctor_overload() {
+    let src = r#"
+template<class T>
+class Vec {
+public:
+    T* data;
+    Vec() {}
+    Vec(int n) {}
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+}
+
+#[test]
 fn test_parser_cpp_ctor_init_list_with_body() {
     let src = r#"
 class Rect {
@@ -488,4 +673,61 @@ int main() { return 0; }
         }
         _ => panic!("Expected Constructor"),
     }
+}
+
+#[test]
+fn test_parser_cpp_const_member_func() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    int get() const { return x; }
+    void set(int v) { x = v; }
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let class = &program.classes[0];
+    assert_eq!(class.members.len(), 3);
+    match &class.members[1] {
+        ClassMember::Method { name, is_const, .. } => {
+            assert_eq!(name, "get");
+            assert!(*is_const, "get() should be const");
+        }
+        _ => panic!("Expected Method for get"),
+    }
+    match &class.members[2] {
+        ClassMember::Method { name, is_const, .. } => {
+            assert_eq!(name, "set");
+            assert!(!is_const, "set() should not be const");
+        }
+        _ => panic!("Expected Method for set"),
+    }
+}
+
+#[test]
+fn test_parser_cpp_const_member_func_outside_class() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    int get() const;
+};
+int Box::get() const { return x; }
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    assert_eq!(program.classes.len(), 1);
+    match &program.classes[0].members[1] {
+        ClassMember::Method { name, is_const, .. } => {
+            assert_eq!(name, "get");
+            assert!(*is_const, "get() should be const");
+        }
+        _ => panic!("Expected Method for get"),
+    }
+    assert!(program.funcs.iter().any(|f| f.name == "Box__get"), "Box__get should exist");
 }

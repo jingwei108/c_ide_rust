@@ -35,6 +35,7 @@ impl TypeChecker {
             }
         }
         let mut fields: Vec<(Type, String, AccessSpec)> = Vec::new();
+        let mut static_fields: Vec<(Type, String, AccessSpec)> = Vec::new();
         let mut methods: HashMap<String, MethodSig> = HashMap::new();
         let mut vtable_entries: Vec<(String, Type)> = Vec::new();
 
@@ -61,8 +62,12 @@ impl TypeChecker {
         // Class members already have access set by parser
         for member in &c.members {
             match member {
-                ClassMember::Field { name: field_name, ty, access } => {
-                    fields.push((ty.clone(), field_name.clone(), *access));
+                ClassMember::Field { name: field_name, ty, access, is_static } => {
+                    if *is_static {
+                        static_fields.push((ty.clone(), field_name.clone(), *access));
+                    } else {
+                        fields.push((ty.clone(), field_name.clone(), *access));
+                    }
                 }
                 ClassMember::Method {
                     name: method_name,
@@ -70,6 +75,8 @@ impl TypeChecker {
                     params,
                     is_virtual,
                     access,
+                    is_static,
+                    is_const,
                     ..
                 } => {
                     let acc = *access;
@@ -78,7 +85,9 @@ impl TypeChecker {
                         ret: ret.clone(),
                         param_types: param_types.clone(),
                         is_virtual: *is_virtual,
-                        is_static: false,
+                        is_static: *is_static,
+                        is_explicit: false,
+                        is_const: *is_const,
                         access: acc,
                     };
                     methods.insert(method_name.clone(), sig);
@@ -96,14 +105,17 @@ impl TypeChecker {
                         }
                     }
                 }
-                ClassMember::Constructor { params, access, .. } => {
+                ClassMember::Constructor { params, access, is_explicit, .. } => {
                     let acc = *access;
+                    let is_exp = *is_explicit;
                     let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
                     let sig = MethodSig {
                         ret: Type::void(),
                         param_types,
                         is_virtual: false,
                         is_static: false,
+                        is_explicit: is_exp,
+                        is_const: false,
                         access: acc,
                     };
                     methods.insert(format!("__ctor__{}", name), sig);
@@ -121,9 +133,20 @@ impl TypeChecker {
                         }],
                         is_virtual: false,
                         is_static: false,
+                        is_explicit: false,
+                        is_const: false,
                         access: acc,
                     };
                     methods.insert(format!("__dtor__{}", name), sig);
+                }
+                ClassMember::NestedStruct { decl, .. } => {
+                    let sym = StructSymbol {
+                        fields: decl.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect(),
+                    };
+                    self.structs.insert(decl.name.clone(), sym);
+                }
+                ClassMember::NestedClass { decl, .. } => {
+                    self.register_single_class_layout(&decl.name, decl);
                 }
             }
         }
@@ -137,13 +160,14 @@ impl TypeChecker {
         // Insert with size 0 first so compute_type_size can resolve recursive class types
         let sym = ClassSymbol {
             fields: fields.clone(),
+            static_fields: static_fields.clone(),
             methods,
             base: c.base.clone(),
             vtable,
             size: 0,
         };
         self.classes.insert(name.to_string(), sym);
-        // Now compute actual size
+        // Now compute actual size (static fields are NOT part of instance)
         let total_field_size: i32 = fields.iter().map(|(ty, _, _)| self.compute_type_size(ty)).sum();
         self.classes.get_mut(name).unwrap().size = total_field_size;
 
@@ -177,6 +201,8 @@ impl TypeChecker {
                                     param_types: m.params.clone(),
                                     is_virtual: m.is_virtual,
                                     is_static: false,
+                                    is_explicit: false,
+                                    is_const: false,
                                     access: AccessSpec::Public,
                                 },
                             )
@@ -186,6 +212,7 @@ impl TypeChecker {
                         name.to_string(),
                         ClassSymbol {
                             fields,
+                            static_fields: vec![],
                             methods,
                             base: None,
                             vtable: None,

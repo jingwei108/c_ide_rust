@@ -774,24 +774,31 @@ impl Parser {
         };
         self.consume(TokenType::LBracket, "Lambda 预期 '['");
         let mut capture = Vec::new();
-        // 简化：支持 []、[x]、[&x]、[=]、[&]
+        // 支持 []、[x]、[&x]、[=]、[&]、[a, &b]、[this]、[=, &a]、[&, a]
         if !self.check(TokenType::RBracket) {
-            if self.check(TokenType::Assign) {
-                self.advance(); // =
-                capture.push(CaptureMode::Implicit);
-            } else if self.check(TokenType::Ampersand) {
-                self.advance(); // &
-                if self.check(TokenType::Identifier) {
+            loop {
+                if self.check(TokenType::Assign) {
+                    self.advance(); // =
+                    capture.push(CaptureMode::Implicit);
+                } else if self.check(TokenType::Ampersand) {
+                    self.advance(); // &
+                    if self.check(TokenType::Identifier) {
+                        let name = self.current().text.clone();
+                        capture.push(CaptureMode::ByReference(name));
+                        self.advance();
+                    } else {
+                        capture.push(CaptureMode::Implicit);
+                    }
+                } else if self.check(TokenType::Identifier) {
                     let name = self.current().text.clone();
-                    capture.push(CaptureMode::ByReference(name));
+                    capture.push(CaptureMode::ByValue(name));
                     self.advance();
                 } else {
-                    capture.push(CaptureMode::Implicit);
+                    break;
                 }
-            } else if self.check(TokenType::Identifier) {
-                let name = self.current().text.clone();
-                capture.push(CaptureMode::ByValue(name));
-                self.advance();
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                }
             }
         }
         self.consume(TokenType::RBracket, "Lambda 预期 ']'");
@@ -1091,12 +1098,18 @@ impl Parser {
         }
         if self.check(TokenType::Identifier) {
             let name_tok = self.advance().clone();
+            let mut name = name_tok.text.clone();
+            if self.is_cpp_mode && self.check(TokenType::ColonColon) {
+                self.advance(); // ::
+                let inner = self.consume(TokenType::Identifier, ":: 后预期标识符").clone();
+                name = format!("{}__{}", name, inner.text);
+            }
             let loc = SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
             };
             return Expr::Identifier {
-                name: name_tok.text,
+                name,
                 loc,
                 ty: Type::default(),
             };

@@ -63,6 +63,25 @@ int cide_list_size_int(cide_list_int *l) {
     return l->n;
 }
 
+int cide_list_front_int(cide_list_int *l) {
+    if (!l->head) return 0;
+    return l->head->data;
+}
+
+int cide_list_back_int(cide_list_int *l) {
+    if (!l->tail) return 0;
+    return l->tail->data;
+}
+
+void cide_list_pop_front_int(cide_list_int *l) {
+    if (!l->head) return;
+    cide_list_node_int *node = l->head;
+    l->head = node->next;
+    if (!l->head) l->tail = (cide_list_node_int *)0;
+    free(node);
+    l->n--;
+}
+
 int cide_list_get_int(cide_list_int *l, int i) {
     cide_list_node_int *p = l->head;
     while (i-- > 0 && p != (cide_list_node_int *)0) p = p->next;

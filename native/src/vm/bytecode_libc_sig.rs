@@ -28,6 +28,7 @@ pub fn bytecode_libc_sig(name: &str) -> Option<(Type, Vec<Type>)> {
         "cide_string_pop_back" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
         "cide_string_size" => Some((int.clone(), vec![Type::pointer_to(Type::void())])),
         "cide_string_get" => Some((char.clone(), vec![Type::pointer_to(Type::void()), int.clone()])),
+        "cide_string_c_str" => Some((Type::pointer_to(Type::char()), vec![Type::pointer_to(Type::void())])),
         "cide_string_clear" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
         "cide_string_destroy" => Some((void.clone(), vec![Type::pointer_to(Type::void())])),
         // vec<char>

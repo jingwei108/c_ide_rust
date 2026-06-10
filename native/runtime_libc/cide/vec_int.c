@@ -19,11 +19,35 @@ void cide_vec_push_int(cide_vec_int *v, int x) {
 }
 
 int cide_vec_pop_int(cide_vec_int *v) {
+    if (v->n == 0) return 0;
     return v->a[--v->n];
 }
 
 int cide_vec_size_int(cide_vec_int *v) {
     return v->n;
+}
+
+int cide_vec_capacity_int(cide_vec_int *v) {
+    return v->m;
+}
+
+int cide_vec_front_int(cide_vec_int *v) {
+    if (v->n == 0) return 0;
+    return v->a[0];
+}
+
+int cide_vec_back_int(cide_vec_int *v) {
+    if (v->n == 0) return 0;
+    return v->a[v->n - 1];
+}
+
+void cide_vec_pop_front_int(cide_vec_int *v) {
+    if (v->n == 0) return;
+    int i;
+    for (i = 0; i < v->n - 1; i++) {
+        v->a[i] = v->a[i + 1];
+    }
+    v->n--;
 }
 
 int cide_vec_get_int(cide_vec_int *v, int i) {

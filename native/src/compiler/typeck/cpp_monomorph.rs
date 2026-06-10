@@ -319,6 +319,14 @@ impl TypeChecker {
                         self.replace_template_types_in_stmt(b, type_map);
                     }
                 }
+                ClassMember::NestedStruct { decl, .. } => {
+                    for field in &mut decl.fields {
+                        field.ty = Self::replace_template_type(&field.ty, type_map);
+                    }
+                }
+                ClassMember::NestedClass { decl, .. } => {
+                    self.replace_template_types_in_class(decl, type_map);
+                }
             }
         }
     }

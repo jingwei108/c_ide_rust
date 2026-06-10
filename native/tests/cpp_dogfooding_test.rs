@@ -206,3 +206,185 @@ fn test_cpp_vector_int_get_bytecode_comparison() {
     let _ = get_function_instructions(&cpp, cpp_get_name);
     let _ = get_function_instructions(&c, c_get_name);
 }
+
+// ============================================================================
+// Stage 6: Dogfooding — list<int>
+// ============================================================================
+
+fn cpp_list_int_src() -> &'static str {
+    r#"
+#include <stdio.h>
+
+template<class T>
+class list {
+    struct Node {
+        T data;
+        Node* next;
+    };
+    Node* head;
+    Node* tail;
+    int size_;
+public:
+    list() : head((Node*)0), tail((Node*)0), size_(0) {}
+    void push_back(T x) {
+        Node* node = new Node;
+        node->data = x;
+        node->next = (Node*)0;
+        if (tail) {
+            tail->next = node;
+        } else {
+            head = node;
+        }
+        tail = node;
+        size_++;
+    }
+    void push_front(T x) {
+        Node* node = new Node;
+        node->data = x;
+        node->next = head;
+        head = node;
+        if (!tail) tail = node;
+        size_++;
+    }
+    T get(int i) {
+        Node* p = head;
+        while (i-- > 0 && p != (Node*)0) p = p->next;
+        if (p == (Node*)0) return 0;
+        return p->data;
+    }
+    int size() { return size_; }
+    ~list() {
+        Node* p = head;
+        while (p) {
+            Node* n = p->next;
+            delete p;
+            p = n;
+        }
+    }
+};
+
+int main() {
+    list<int> l;
+    l.push_back(1);
+    l.push_back(2);
+    l.push_front(0);
+    printf("%d\n", l.size());
+    for (int i = 0; i < l.size(); i++) {
+        printf("%d\n", l.get(i));
+    }
+    return 0;
+}
+"#
+}
+
+fn c_list_int_src() -> &'static str {
+    r#"
+#include <stdio.h>
+int main() {
+    cide_list_int l;
+    cide_list_init_int(&l);
+    cide_list_push_back_int(&l, 1);
+    cide_list_push_back_int(&l, 2);
+    cide_list_push_front_int(&l, 0);
+    printf("%d\n", cide_list_size_int(&l));
+    for (int i = 0; i < cide_list_size_int(&l); i++) {
+        printf("%d\n", cide_list_get_int(&l, i));
+    }
+    cide_list_destroy_int(&l);
+    return 0;
+}
+"#
+}
+
+#[test]
+fn test_cpp_list_int_dogfooding_runs() {
+    let (ret, outputs) = compile_and_run_cpp(cpp_list_int_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["3", "0", "1", "2"], "stdout should match");
+}
+
+#[test]
+fn test_c_list_int_baseline_runs() {
+    let (ret, outputs) = compile_and_run_cpp(c_list_int_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["3", "0", "1", "2"], "stdout should match");
+}
+
+// ============================================================================
+// Stage 6: Dogfooding — string
+// ============================================================================
+
+fn cpp_string_src() -> &'static str {
+    r#"
+#include <stdio.h>
+
+class string {
+    char* data_;
+    int size_;
+    int capacity_;
+public:
+    string() : data_((char*)0), size_(0), capacity_(0) {}
+    void push_back(char c) {
+        if (size_ + 1 >= capacity_) {
+            int new_cap = capacity_ == 0 ? 4 : capacity_ * 2;
+            char* new_data = new char[new_cap];
+            for (int i = 0; i < size_; i++) new_data[i] = data_[i];
+            delete[] data_;
+            data_ = new_data;
+            capacity_ = new_cap;
+        }
+        data_[size_++] = c;
+        data_[size_] = '\0';
+    }
+    char get(int i) { return data_[i]; }
+    int size() { return size_; }
+    char* c_str() { return data_; }
+    ~string() { delete[] data_; }
+};
+
+int main() {
+    string s;
+    s.push_back('h');
+    s.push_back('e');
+    s.push_back('l');
+    s.push_back('l');
+    s.push_back('o');
+    printf("%d\n", s.size());
+    printf("%s\n", s.c_str());
+    return 0;
+}
+"#
+}
+
+fn c_string_baseline_src() -> &'static str {
+    r#"
+#include <stdio.h>
+int main() {
+    cide_string s;
+    cide_string_init(&s);
+    cide_string_push_back(&s, 'h');
+    cide_string_push_back(&s, 'e');
+    cide_string_push_back(&s, 'l');
+    cide_string_push_back(&s, 'l');
+    cide_string_push_back(&s, 'o');
+    printf("%d\n", cide_string_size(&s));
+    printf("%s\n", cide_string_c_str(&s));
+    cide_string_destroy(&s);
+    return 0;
+}
+"#
+}
+
+#[test]
+fn test_cpp_string_dogfooding_runs() {
+    let (ret, outputs) = compile_and_run_cpp(cpp_string_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["5", "hello"], "stdout should match");
+}
+
+#[test]
+fn test_c_string_baseline_runs() {
+    let (ret, outputs) = compile_and_run_cpp(c_string_baseline_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["5", "hello"], "stdout should match");
+}
