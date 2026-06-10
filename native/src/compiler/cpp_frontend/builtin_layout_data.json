@@ -1,0 +1,502 @@
+{
+  "version": 1,
+  "generated_at": "2026-06-10T04:45:33.182575+00:00",
+  "classes": {
+    "cide_list_int": {
+      "cpp_name": "list<int>",
+      "source_file": "native/runtime_libc/cide/list_int.cpp",
+      "size": 12,
+      "fields": [
+        {
+          "name": "head",
+          "type": "void*"
+        },
+        {
+          "name": "tail",
+          "type": "void*"
+        },
+        {
+          "name": "n",
+          "type": "int"
+        }
+      ],
+      "methods": [
+        {
+          "name": "push_back",
+          "params": [
+            "int"
+          ],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "push_front",
+          "params": [
+            "int"
+          ],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_back",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "size",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "front",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "back",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_front",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "get",
+          "params": [
+            "int"
+          ],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "clear",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "destroy",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        }
+      ]
+    },
+    "cide_string": {
+      "cpp_name": "string",
+      "source_file": "native/runtime_libc/cide/string.cpp",
+      "size": 12,
+      "fields": [
+        {
+          "name": "n",
+          "type": "int"
+        },
+        {
+          "name": "m",
+          "type": "int"
+        },
+        {
+          "name": "s",
+          "type": "char*"
+        }
+      ],
+      "methods": [
+        {
+          "name": "push_back",
+          "params": [
+            "char"
+          ],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_back",
+          "params": [],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "size",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "capacity",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "front",
+          "params": [],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "back",
+          "params": [],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "get",
+          "params": [
+            "int"
+          ],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "c_str",
+          "params": [],
+          "ret": "char*",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_front",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "clear",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "destroy",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        }
+      ]
+    },
+    "cide_vec_char": {
+      "cpp_name": "vector<char>",
+      "source_file": "native/runtime_libc/cide/vector_char.cpp",
+      "size": 12,
+      "fields": [
+        {
+          "name": "n",
+          "type": "int"
+        },
+        {
+          "name": "m",
+          "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "char*"
+        }
+      ],
+      "methods": [
+        {
+          "name": "push_back",
+          "params": [
+            "char"
+          ],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_back",
+          "params": [],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "size",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "capacity",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "front",
+          "params": [],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "back",
+          "params": [],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_front",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "get",
+          "params": [
+            "int"
+          ],
+          "ret": "char",
+          "is_virtual": false
+        },
+        {
+          "name": "clear",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "destroy",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        }
+      ]
+    },
+    "cide_vec_float": {
+      "cpp_name": "vector<float>",
+      "source_file": "native/runtime_libc/cide/vector_float.cpp",
+      "size": 12,
+      "fields": [
+        {
+          "name": "n",
+          "type": "int"
+        },
+        {
+          "name": "m",
+          "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "float*"
+        }
+      ],
+      "methods": [
+        {
+          "name": "push_back",
+          "params": [
+            "float"
+          ],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_back",
+          "params": [],
+          "ret": "float",
+          "is_virtual": false
+        },
+        {
+          "name": "size",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "capacity",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "front",
+          "params": [],
+          "ret": "float",
+          "is_virtual": false
+        },
+        {
+          "name": "back",
+          "params": [],
+          "ret": "float",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_front",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "get",
+          "params": [
+            "int"
+          ],
+          "ret": "float",
+          "is_virtual": false
+        },
+        {
+          "name": "clear",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "destroy",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        }
+      ]
+    },
+    "cide_vec_int": {
+      "cpp_name": "vector<int>",
+      "source_file": "native/runtime_libc/cide/vector_int.cpp",
+      "size": 12,
+      "fields": [
+        {
+          "name": "n",
+          "type": "int"
+        },
+        {
+          "name": "m",
+          "type": "int"
+        },
+        {
+          "name": "a",
+          "type": "int*"
+        }
+      ],
+      "methods": [
+        {
+          "name": "push_back",
+          "params": [
+            "int"
+          ],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_back",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "size",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "capacity",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "front",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "back",
+          "params": [],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "pop_front",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "get",
+          "params": [
+            "int"
+          ],
+          "ret": "int",
+          "is_virtual": false
+        },
+        {
+          "name": "clear",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        },
+        {
+          "name": "destroy",
+          "params": [],
+          "ret": "void",
+          "is_virtual": false
+        }
+      ]
+    }
+  },
+  "method_map": {
+    "cide_list_int": {
+      "push_back": "cide_list_push_back_int",
+      "push_front": "cide_list_push_front_int",
+      "pop_back": "cide_list_pop_back_int",
+      "size": "cide_list_size_int",
+      "front": "cide_list_front_int",
+      "back": "cide_list_back_int",
+      "pop_front": "cide_list_pop_front_int",
+      "get": "cide_list_get_int",
+      "clear": "cide_list_clear_int",
+      "destroy": "cide_list_destroy_int"
+    },
+    "cide_string": {
+      "push_back": "cide_string_push_back",
+      "pop_back": "cide_string_pop_back",
+      "size": "cide_string_size",
+      "capacity": "cide_string_capacity",
+      "front": "cide_string_front",
+      "back": "cide_string_back",
+      "get": "cide_string_get",
+      "c_str": "cide_string_c_str",
+      "pop_front": "cide_string_pop_front",
+      "clear": "cide_string_clear",
+      "destroy": "cide_string_destroy"
+    },
+    "cide_vec_char": {
+      "push_back": "cide_vec_push_char",
+      "pop_back": "cide_vec_pop_char",
+      "size": "cide_vec_size_char",
+      "capacity": "cide_vec_capacity_char",
+      "front": "cide_vec_front_char",
+      "back": "cide_vec_back_char",
+      "pop_front": "cide_vec_pop_front_char",
+      "get": "cide_vec_get_char",
+      "clear": "cide_vec_clear_char",
+      "destroy": "cide_vec_destroy_char"
+    },
+    "cide_vec_float": {
+      "push_back": "cide_vec_push_float",
+      "pop_back": "cide_vec_pop_float",
+      "size": "cide_vec_size_float",
+      "capacity": "cide_vec_capacity_float",
+      "front": "cide_vec_front_float",
+      "back": "cide_vec_back_float",
+      "pop_front": "cide_vec_pop_front_float",
+      "get": "cide_vec_get_float",
+      "clear": "cide_vec_clear_float",
+      "destroy": "cide_vec_destroy_float"
+    },
+    "cide_vec_int": {
+      "push_back": "cide_vec_push_int",
+      "pop_back": "cide_vec_pop_int",
+      "size": "cide_vec_size_int",
+      "capacity": "cide_vec_capacity_int",
+      "front": "cide_vec_front_int",
+      "back": "cide_vec_back_int",
+      "pop_front": "cide_vec_pop_front_int",
+      "get": "cide_vec_get_int",
+      "clear": "cide_vec_clear_int",
+      "destroy": "cide_vec_destroy_int"
+    }
+  }
+}

@@ -66,10 +66,12 @@ def precompile(exe: str) -> dict:
             sources.extend(
                 os.path.join(src_dir, f)
                 for f in os.listdir(src_dir)
-                if f.endswith(".c")
+                if f.endswith(".c") or f.endswith(".cpp")
             )
     sources = sorted(sources)
-    source_paths = sources
+    # Short-term: .cpp files contain declarations only (no implementations),
+    # so we only pass .c files to the bytecode exporter.
+    source_paths = [p for p in sources if p.endswith(".c")]
 
     print(f"Precompiling {len(source_paths)} files:")
     for p in source_paths:

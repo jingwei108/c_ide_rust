@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (架构重构)
+- **内置容器布局解耦（CPP_BUILTIN_LAYOUT_DECOUPLING_PLAN）**：将 `vector<int>`/`vector<float>`/`vector<char>`/`string`/`list<int>` 的布局与方法签名从 Rust 硬编码迁移到 `.cpp` 接口声明文件
+  - 新建 `native/runtime_libc/cide/{vector_int,vector_float,vector_char,string,list_int}.cpp` 作为唯一真相来源，通过 `clang++ -fsyntax-only` 语法验证
+  - 新增 `scripts/extract_cpp_builtin_layout.py` 轻量解析脚本，从 `.cpp` 提取字段、方法签名并生成 `native/src/compiler/cpp_frontend/builtin_layout_data.json`
+  - 重写 `builtin_layout.rs`：改为 `include_str!("builtin_layout_data.json")` + `LazyLock` 加载，零硬编码容器信息
+  - 重写 `type_map.rs`：改为 JSON 加载 `cpp_type_to_cide` / `map_container_method`，零硬编码方法映射
+  - `codegen/mod.rs` 与 `typeck/cpp_class_layout.rs` 中的硬编码 `container_mappings` 列表改为动态遍历 `builtin_class_mappings()`
+  - `scripts/precompile_bytecode_libc.py` 扩展 glob 支持 `.cpp`（当前仅识别，不预编译为字节码）
+  - 删除已废弃的 `native/runtime_libc/cide/layouts.toml`
+  - 全部 600+ 测试通过，零回归
+
 ### Added (P0 语法拓展)
 - **通用逗号运算符 `a, b`**：Parser 在 `parse_assign` 前新增 `parse_comma` 层，AST 新增 `BinaryOp::Comma`
   - TypeChecker 取右操作数类型，CodeGen 生成左值计算 + `Pop` 后保留右值

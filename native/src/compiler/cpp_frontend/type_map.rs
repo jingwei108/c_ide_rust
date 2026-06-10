@@ -1,84 +1,51 @@
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-static KLIB_TYPE_MAP: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    let mut m = HashMap::new();
-    m.insert("vector<int>", "cide_vec_int");
-    m.insert("vector<float>", "cide_vec_float");
-    m.insert("vector<char>", "cide_vec_char");
-    m.insert("list<int>", "cide_list_int");
-    m.insert("string", "cide_string");
-    m
+#[derive(Debug, Clone, Deserialize)]
+struct LayoutData {
+    #[allow(dead_code)]
+    version: i32,
+    #[allow(dead_code)]
+    #[serde(rename = "generated_at")]
+    generated_at: String,
+    classes: HashMap<String, ClassLayoutJson>,
+    #[serde(rename = "method_map")]
+    method_map: HashMap<String, HashMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ClassLayoutJson {
+    #[allow(dead_code)]
+    cpp_name: String,
+}
+
+static LAYOUT_DATA: LazyLock<LayoutData> = LazyLock::new(|| {
+    let json = include_str!("builtin_layout_data.json");
+    serde_json::from_str(json).expect("builtin_layout_data.json is invalid")
 });
 
-static KLIB_METHOD_MAP: LazyLock<HashMap<(&'static str, &'static str), &'static str>> = LazyLock::new(|| {
-    let mut m = HashMap::new();
-    m.insert(("cide_vec_int", "push_back"), "cide_vec_push_int");
-    m.insert(("cide_vec_int", "pop_back"), "cide_vec_pop_int");
-    m.insert(("cide_vec_int", "size"), "cide_vec_size_int");
-    m.insert(("cide_vec_int", "capacity"), "cide_vec_capacity_int");
-    m.insert(("cide_vec_int", "front"), "cide_vec_front_int");
-    m.insert(("cide_vec_int", "back"), "cide_vec_back_int");
-    m.insert(("cide_vec_int", "get"), "cide_vec_get_int");
-    m.insert(("cide_vec_int", "pop_front"), "cide_vec_pop_front_int");
-    m.insert(("cide_vec_int", "clear"), "cide_vec_clear_int");
-    m.insert(("cide_vec_int", "destroy"), "cide_vec_destroy_int");
-    m.insert(("cide_vec_float", "push_back"), "cide_vec_push_float");
-    m.insert(("cide_vec_float", "pop_back"), "cide_vec_pop_float");
-    m.insert(("cide_vec_float", "size"), "cide_vec_size_float");
-    m.insert(("cide_vec_float", "capacity"), "cide_vec_capacity_float");
-    m.insert(("cide_vec_float", "front"), "cide_vec_front_float");
-    m.insert(("cide_vec_float", "back"), "cide_vec_back_float");
-    m.insert(("cide_vec_float", "get"), "cide_vec_get_float");
-    m.insert(("cide_vec_float", "pop_front"), "cide_vec_pop_front_float");
-    m.insert(("cide_vec_float", "clear"), "cide_vec_clear_float");
-    m.insert(("cide_vec_float", "destroy"), "cide_vec_destroy_float");
-    m.insert(("cide_vec_char", "push_back"), "cide_vec_push_char");
-    m.insert(("cide_vec_char", "pop_back"), "cide_vec_pop_char");
-    m.insert(("cide_vec_char", "size"), "cide_vec_size_char");
-    m.insert(("cide_vec_char", "capacity"), "cide_vec_capacity_char");
-    m.insert(("cide_vec_char", "front"), "cide_vec_front_char");
-    m.insert(("cide_vec_char", "back"), "cide_vec_back_char");
-    m.insert(("cide_vec_char", "get"), "cide_vec_get_char");
-    m.insert(("cide_vec_char", "pop_front"), "cide_vec_pop_front_char");
-    m.insert(("cide_vec_char", "clear"), "cide_vec_clear_char");
-    m.insert(("cide_vec_char", "destroy"), "cide_vec_destroy_char");
-    m.insert(("cide_string", "push_back"), "cide_string_push_back");
-    m.insert(("cide_string", "pop_back"), "cide_string_pop_back");
-    m.insert(("cide_string", "size"), "cide_string_size");
-    m.insert(("cide_string", "capacity"), "cide_string_capacity");
-    m.insert(("cide_string", "front"), "cide_string_front");
-    m.insert(("cide_string", "back"), "cide_string_back");
-    m.insert(("cide_string", "get"), "cide_string_get");
-    m.insert(("cide_string", "c_str"), "cide_string_c_str");
-    m.insert(("cide_string", "pop_front"), "cide_string_pop_front");
-    m.insert(("cide_string", "clear"), "cide_string_clear");
-    m.insert(("cide_string", "destroy"), "cide_string_destroy");
-    m.insert(("cide_list_int", "push_back"), "cide_list_push_back_int");
-    m.insert(("cide_list_int", "push_front"), "cide_list_push_front_int");
-    m.insert(("cide_list_int", "pop_back"), "cide_list_pop_back_int");
-    m.insert(("cide_list_int", "size"), "cide_list_size_int");
-    m.insert(("cide_list_int", "front"), "cide_list_front_int");
-    m.insert(("cide_list_int", "back"), "cide_list_back_int");
-    m.insert(("cide_list_int", "get"), "cide_list_get_int");
-    m.insert(("cide_list_int", "pop_front"), "cide_list_pop_front_int");
-    m.insert(("cide_list_int", "destroy"), "cide_list_destroy_int");
-    m
-});
-
-/// 将 C++ 标准类型名映射到 Cide 容器库的内部类型名。
-/// 例如：`vector<int>` → `cide_vec_int`
+/// Map a C++ standard container type name to its Cide internal type name.
+/// e.g. `vector<int>` → `cide_vec_int`
 pub fn cpp_type_to_cide(name: &str) -> Option<&'static str> {
-    KLIB_TYPE_MAP.get(name).copied()
+    for (cide_name, cls) in &LAYOUT_DATA.classes {
+        if cls.cpp_name == name {
+            // Leak once to obtain a 'static reference.
+            return Some(Box::leak(cide_name.clone().into_boxed_str()));
+        }
+    }
+    None
 }
 
-/// 检查给定的类型名是否是内置容器类型。
+/// Check whether the given type name is a builtin container type.
 pub fn is_builtin_container(name: &str) -> bool {
-    KLIB_TYPE_MAP.contains_key(name)
+    cpp_type_to_cide(name).is_some()
 }
 
-/// 将内置容器的方法调用映射为 Cide 容器库函数名。
-/// 例如：`("cide_vec_int", "push_back")` → `"cide_vec_push_int"`
+/// Map a builtin container method call to the underlying Cide container library
+/// function name.  The mapping is read from builtin_layout_data.json.
 pub fn map_container_method(class_name: &str, method: &str) -> Option<&'static str> {
-    KLIB_METHOD_MAP.get(&(class_name, method)).copied()
+    let class_map = LAYOUT_DATA.method_map.get(class_name)?;
+    let func_name = class_map.get(method)?;
+    Some(Box::leak(func_name.clone().into_boxed_str()))
 }

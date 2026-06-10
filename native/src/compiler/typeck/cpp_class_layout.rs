@@ -172,16 +172,9 @@ impl TypeChecker {
         self.classes.get_mut(name).unwrap().size = total_field_size;
 
         // Register builtin container layouts so TypeChecker knows their sizes
-        let container_mappings = [
-            ("vector<int>", "cide_vec_int"),
-            ("vector<float>", "cide_vec_float"),
-            ("vector<char>", "cide_vec_char"),
-            ("string", "cide_string"),
-            ("list<int>", "cide_list_int"),
-        ];
-        for (cpp_name, cide_name) in &container_mappings {
+        for (cpp_name, cide_name) in crate::compiler::cpp_frontend::builtin_layout::builtin_class_mappings() {
             if let Some(layout) = crate::compiler::cpp_frontend::builtin_layout::builtin_class_layout(cide_name) {
-                for name in [*cpp_name, *cide_name] {
+                for name in [cpp_name, cide_name] {
                     if self.classes.contains_key(name) {
                         continue;
                     }

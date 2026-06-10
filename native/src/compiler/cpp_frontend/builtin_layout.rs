@@ -1,6 +1,50 @@
 use crate::compiler::ast::Type;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+
+// =============================================================================
+// JSON schema (must match scripts/extract_cpp_builtin_layout.py output)
+// =============================================================================
+
+#[derive(Debug, Clone, Deserialize)]
+struct FieldJson {
+    name: String,
+    #[serde(rename = "type")]
+    ty: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct MethodSigJson {
+    name: String,
+    params: Vec<String>,
+    ret: String,
+    is_virtual: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ClassLayoutJson {
+    cpp_name: String,
+    #[allow(dead_code)]
+    source_file: String,
+    size: i32,
+    fields: Vec<FieldJson>,
+    methods: Vec<MethodSigJson>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct LayoutData {
+    #[allow(dead_code)]
+    version: i32,
+    #[allow(dead_code)]
+    #[serde(rename = "generated_at")]
+    generated_at: String,
+    classes: HashMap<String, ClassLayoutJson>,
+}
+
+// =============================================================================
+// Public API (kept backward-compatible)
+// =============================================================================
 
 #[derive(Debug, Clone)]
 pub struct ClassLayout {
@@ -17,144 +61,88 @@ pub struct MethodSig {
     pub is_virtual: bool,
 }
 
-fn builtin_layouts() -> HashMap<String, ClassLayout> {
-    let mut m = HashMap::new();
-
-    // vector_int
-    m.insert(
-        "cide_vec_int".to_string(),
-        ClassLayout {
-            size: 12,
-            fields: vec![
-                ("n".to_string(), Type::int()),
-                ("m".to_string(), Type::int()),
-                ("a".to_string(), Type::pointer_to(Type::int())),
-            ],
-            methods: vec![
-                MethodSig { name: "push_back".to_string(), params: vec![Type::int()], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "pop_back".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "size".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "capacity".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "front".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "back".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "get".to_string(), params: vec![Type::int()], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "pop_front".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "clear".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "destroy".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-            ],
-        },
-    );
-
-    // vector_float
-    m.insert(
-        "cide_vec_float".to_string(),
-        ClassLayout {
-            size: 12,
-            fields: vec![
-                ("n".to_string(), Type::int()),
-                ("m".to_string(), Type::int()),
-                ("a".to_string(), Type::pointer_to(Type::float())),
-            ],
-            methods: vec![
-                MethodSig { name: "push_back".to_string(), params: vec![Type::float()], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "pop_back".to_string(), params: vec![], ret: Type::float(), is_virtual: false },
-                MethodSig { name: "size".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "capacity".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "front".to_string(), params: vec![], ret: Type::float(), is_virtual: false },
-                MethodSig { name: "back".to_string(), params: vec![], ret: Type::float(), is_virtual: false },
-                MethodSig { name: "get".to_string(), params: vec![Type::int()], ret: Type::float(), is_virtual: false },
-                MethodSig { name: "pop_front".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "clear".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "destroy".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-            ],
-        },
-    );
-
-    // vector_char
-    m.insert(
-        "cide_vec_char".to_string(),
-        ClassLayout {
-            size: 12,
-            fields: vec![
-                ("n".to_string(), Type::int()),
-                ("m".to_string(), Type::int()),
-                ("a".to_string(), Type::pointer_to(Type::char())),
-            ],
-            methods: vec![
-                MethodSig { name: "push_back".to_string(), params: vec![Type::char()], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "pop_back".to_string(), params: vec![], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "size".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "capacity".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "front".to_string(), params: vec![], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "back".to_string(), params: vec![], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "get".to_string(), params: vec![Type::int()], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "c_str".to_string(), params: vec![], ret: Type::pointer_to(Type::char()), is_virtual: false },
-                MethodSig { name: "pop_front".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "clear".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "destroy".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-            ],
-        },
-    );
-
-    // string
-    m.insert(
-        "cide_string".to_string(),
-        ClassLayout {
-            size: 12,
-            fields: vec![
-                ("n".to_string(), Type::int()),
-                ("m".to_string(), Type::int()),
-                ("s".to_string(), Type::pointer_to(Type::char())),
-            ],
-            methods: vec![
-                MethodSig { name: "push_back".to_string(), params: vec![Type::char()], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "pop_back".to_string(), params: vec![], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "size".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "capacity".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "front".to_string(), params: vec![], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "back".to_string(), params: vec![], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "get".to_string(), params: vec![Type::int()], ret: Type::char(), is_virtual: false },
-                MethodSig { name: "c_str".to_string(), params: vec![], ret: Type::pointer_to(Type::char()), is_virtual: false },
-                MethodSig { name: "pop_front".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "clear".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "destroy".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-            ],
-        },
-    );
-
-    // list_int
-    m.insert(
-        "cide_list_int".to_string(),
-        ClassLayout {
-            size: 12,
-            fields: vec![
-                ("head".to_string(), Type::pointer_to(Type::void())),
-                ("tail".to_string(), Type::pointer_to(Type::void())),
-                ("n".to_string(), Type::int()),
-            ],
-            methods: vec![
-                MethodSig { name: "push_back".to_string(), params: vec![Type::int()], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "push_front".to_string(), params: vec![Type::int()], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "pop_back".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "size".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "front".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "back".to_string(), params: vec![], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "get".to_string(), params: vec![Type::int()], ret: Type::int(), is_virtual: false },
-                MethodSig { name: "pop_front".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-                MethodSig { name: "destroy".to_string(), params: vec![], ret: Type::void(), is_virtual: false },
-            ],
-        },
-    );
-
-    m
+/// Parse a simple type string into Cide's `Type` enum.
+/// Supports: void, int, float, char, double, and pointer variants (e.g. "int*").
+fn parse_type_str(s: &str) -> Type {
+    let s = s.trim();
+    if s.ends_with('*') {
+        let inner = s[..s.len() - 1].trim();
+        return Type::pointer_to(parse_type_str(inner));
+    }
+    match s {
+        "void" => Type::void(),
+        "int" => Type::int(),
+        "float" => Type::float(),
+        "char" => Type::char(),
+        "double" => Type::double(),
+        _ => {
+            // Fallback for unknown types; in practice all builtin types are covered above.
+            Type::int()
+        }
+    }
 }
 
-static BUILTIN_LAYOUTS: LazyLock<HashMap<String, ClassLayout>> = LazyLock::new(builtin_layouts);
+fn convert_layout(json: &ClassLayoutJson) -> ClassLayout {
+    ClassLayout {
+        size: json.size,
+        fields: json
+            .fields
+            .iter()
+            .map(|f| (f.name.clone(), parse_type_str(&f.ty)))
+            .collect(),
+        methods: json
+            .methods
+            .iter()
+            .map(|m| MethodSig {
+                name: m.name.clone(),
+                params: m.params.iter().map(|p| parse_type_str(p)).collect(),
+                ret: parse_type_str(&m.ret),
+                is_virtual: m.is_virtual,
+            })
+            .collect(),
+    }
+}
 
+static LAYOUT_DATA: LazyLock<LayoutData> = LazyLock::new(|| {
+    let json = include_str!("builtin_layout_data.json");
+    serde_json::from_str(json).expect("builtin_layout_data.json is invalid")
+});
+
+static BUILTIN_LAYOUTS: LazyLock<HashMap<String, ClassLayout>> = LazyLock::new(|| {
+    LAYOUT_DATA
+        .classes
+        .iter()
+        .map(|(k, v)| (k.clone(), convert_layout(v)))
+        .collect()
+});
+
+/// Look up the layout of a builtin container by its Cide internal name.
 pub fn builtin_class_layout(name: &str) -> Option<ClassLayout> {
     BUILTIN_LAYOUTS.get(name).cloned()
 }
 
+/// Look up a specific method signature on a builtin container.
 pub fn builtin_method_sig(class_name: &str, method_name: &str) -> Option<MethodSig> {
-    BUILTIN_LAYOUTS.get(class_name)?.methods.iter().find(|m| m.name == method_name).cloned()
+    BUILTIN_LAYOUTS
+        .get(class_name)?
+        .methods
+        .iter()
+        .find(|m| m.name == method_name)
+        .cloned()
+}
+
+/// Return all (cpp_name, cide_name) pairs known to the builtin layout system.
+/// Useful for codegen / type-checker loops that pre-register container metadata.
+pub fn builtin_class_mappings() -> Vec<(&'static str, &'static str)> {
+    // We leak the strings once so we can hand out 'static references.
+    // This is fine because the data lives for the entire process lifetime.
+    LAYOUT_DATA
+        .classes
+        .iter()
+        .map(|(cide_name, cls)| {
+            let cpp: &'static str = Box::leak(cls.cpp_name.clone().into_boxed_str());
+            let cide: &'static str = Box::leak(cide_name.clone().into_boxed_str());
+            (cpp, cide)
+        })
+        .collect()
 }
