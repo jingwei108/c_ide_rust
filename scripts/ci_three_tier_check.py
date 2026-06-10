@@ -37,6 +37,7 @@ TIER_TESTS = [
     ("C++ Parser", "parser_cpp_unit_test", "CPP_FAILURES.md"),
     ("C++ TypeChecker", "typeck_cpp_unit_test", "CPP_FAILURES.md"),
     ("C++ BytecodeGen", "bytecode_gen_cpp_unit_test", "CPP_FAILURES.md"),
+    ("C++ Dogfooding", "cpp_dogfooding_test", "DOGFOODING_FAILURES.md"),
 ]
 
 # 已知为设计决策、不需要修复的差异（不视为 CI 失败）

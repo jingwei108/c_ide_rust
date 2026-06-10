@@ -13,19 +13,26 @@
 - `cpp_dogfooding_test.rs`: 全部通过（含 Stage 5 基础设施自验证 + Stage 6 `vector<int>` / `list<int>` / `string` Dogfooding）
 - **C++ 扩展合计: 92/92 通过**
 
-### Stage 6 Dogfooding 状态
+### Stage 6~1 Dogfooding 状态
 
-| 容器 | C++ 编译 | C 基线 | stdout 一致性 | 字节码比较 |
-|------|---------|--------|--------------|-----------|
-| `vector<int>` | ✅ | ✅ | ✅ | ⚠️ 因架构限制不可比较（见下文 KNOWN_DIVERGENCE） |
-| `list<int>` | ✅ | ✅ | ✅ | ⚠️ 因架构限制不可比较 |
-| `string` | ✅ | ✅ | ✅ | ⚠️ 因架构限制不可比较 |
+Dogfooding 详细状态已迁移至 **`DOGFOODING_FAILURES.md`**。
+
+| 容器/算法 | C++ 编译 | C 基线 | stdout 一致性 | 字节码等价 |
+|-----------|---------|--------|--------------|-----------|
+| `vector<int>` | ✅ | ✅ | ✅ | ✅ |
+| `vector<float>` | ✅ | ✅ | ✅ | ✅ |
+| `vector<char>` | ✅ | ✅ | ✅ | ✅ |
+| `list<int>` | ✅ | ✅ | ✅ | size ✅ / get ⚠️ |
+| `string` | ✅ | ✅ | ✅ | ✅ |
+| `sort_int` | ✅ | ✅ | ✅ | — |
 
 **当前无运行失败。**
 
 ## 历史记录
 
 ### ~~`cpp_dogfooding_test.rs` mangled 函数名错误导致字节码比较测试永远 SKIP~~ → 已修复（2026-06-10）
+
+详细记录见 `DOGFOODING_FAILURES.md`。
 
 - **位置**：`native/tests/cpp_dogfooding_test.rs` 第 190 行
 - **问题**：`let cpp_get_name = "get__vector__int";`（错误）
@@ -47,12 +54,7 @@
 
 ## KNOWN_DIVERGENCE（设计决策导致的偏差）
 
-### 跨编译单元预编译函数字节码不可比较（架构限制）
-
-- **影响范围**：`test_cpp_vector_int_get_bytecode_comparison` 及同类字节码比较测试
-- **根因**：C 基线容器（`cide_vec_get_int` 等）为预编译 Bytecode Libc 函数，存储在固定索引段中；`compile_cpp_bytecode` 仅返回当前编译单元的 `CompileOutput`，预编译函数的指令序列不在 `func_table` 中
-- **后果**：C++ 与 C 版本的逐指令一致验证在现有测试架构下不可行
-- **缓解**：以运行 stdout 语义等价作为首要验收标准；字节码比较仅对同一编译单元内的函数有意义
+C++ Dogfooding 的详细 KNOWN_DIVERGENCE 记录已迁移至 **`DOGFOODING_FAILURES.md`**。
 
 ### C++ `vector<int>` 与 C `cide_vec_int` 的 `push_back` 字节码差异（算法差异）
 

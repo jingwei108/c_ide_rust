@@ -50,6 +50,10 @@ jobs:
         run: cargo test --test differential_stress
         working-directory: native
 
+      - name: Phase C++ - Dogfooding Verification
+        run: cargo test --test cpp_dogfooding_test
+        working-directory: native
+
       - name: Phase E - Fuzz Stress Tests
         run: cargo test --test fuzz_stress_test
         working-directory: native
