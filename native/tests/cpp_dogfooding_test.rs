@@ -187,7 +187,7 @@ fn test_cpp_vector_int_get_bytecode_comparison() {
     let c = c_output.unwrap();
 
     // C++ mangled name for vector<int>::get
-    let cpp_get_name = "get__vector__int";
+    let cpp_get_name = "vector__int__get";
     // C version function name
     let c_get_name = "cide_vec_get_int";
 
