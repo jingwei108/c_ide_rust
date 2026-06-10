@@ -453,8 +453,10 @@ impl TypeChecker {
         // Try template implicit instantiation
         if !args.is_empty() {
             let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
-            if let Some((mangled, new_func)) = self.try_instantiate_template(name, &arg_types) {
-                self.pending_instantiations.push((mangled.clone(), new_func));
+            if let Some((mangled, maybe_new_func)) = self.try_instantiate_template(name, &arg_types) {
+                if let Some(new_func) = maybe_new_func {
+                    self.pending_instantiations.push((mangled.clone(), new_func));
+                }
                 return self.check_user_func(&mangled, args, loc);
             }
         }

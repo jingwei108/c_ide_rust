@@ -1,8 +1,8 @@
 # Cide C++14 教学子集拓展实施计划
 
-**版本**: 2.5  
-**日期**: 2026-06-08  
-**状态**: Stage 5 完成（Dogfooding 基础设施：`compile_cpp_bytecode` + `assert_bytecode_equivalent` + `cpp_dogfooding_test.rs`），Stage 6 启动（`vector<int>` Dogfooding 运行一致性验证通过），72/72 C++ 单元测试全绿（含 7 个 Dogfooding 测试），C++ 三 tier 已纳入 CI  
+**版本**: 2.6  
+**日期**: 2026-06-10  
+**状态**: Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>` 运行时 stdout 与 C 基线完全一致；`get`/`size` 等简单方法字节码逐指令等价验证通过（StepEvent 归一化 + 启动代码排除）；`sort_int` C++ 全局函数实现运行时一致性验证通过；新增 15 个 Dogfooding 测试（总计 26 个，全绿）；全部 600+ Rust 单元测试保持全绿，C++ 三 tier 已纳入 CI  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
@@ -1133,7 +1133,17 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 
 ## 十、Dogfooding 与 C++ 容器验证
 
-> **当前状态（2026-06-08）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。Stage 4 引用声明与基本语义已完成：`int& r = x` 全链路通过；`T&` 函数参数/返回值支持；引用自动解引用；引用参数隐式取地址；返回引用的函数调用识别为左值。Stage 5 Dogfooding 基础设施已完成：`native/tests/test_utils.rs` 提供 `compile_cpp_bytecode` + `assert_bytecode_equivalent`（Jump/Call 归一化 + diff 输出）；`native/tests/cpp_dogfooding_test.rs` 提供 harness 和工具自验证。Stage 6 `vector<int>` Dogfooding 已启动：C++ 模板类 `vector<int>`（使用 `new[]/delete[]` + 循环复制）编译通过并运行正确，stdout 与 C 基线 `cide_vec_int` 一致（`3\n1\n4\n`）。**构造函数成员初始化列表 `Class() : field(val) {}` 已修复**：Parser 在两个构造函数分支增加 `parse_ctor_init_list()`，降解为 `this->field = expr;` 赋值语句插入 `Block` 开头。C++ 扩展 74/74 单元测试全绿（含 2 个新增初始化列表测试 + 7 个 Dogfooding 测试）。
+> **当前状态（2026-06-10）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。Stage 4 引用声明与基本语义已完成：`int& r = x` 全链路通过；`T&` 函数参数/返回值支持；引用自动解引用；引用参数隐式取地址；返回引用的函数调用识别为左值。Stage 5 Dogfooding 基础设施已完成：`native/tests/test_utils.rs` 提供 `compile_cpp_bytecode` + `assert_bytecode_equivalent`（Jump/Call 归一化 + diff 输出）；`native/tests/cpp_dogfooding_test.rs` 提供 harness 和工具自验证。Stage 6 `vector<int>` Dogfooding 已启动：C++ 模板类 `vector<int>`（使用 `new[]/delete[]` + 循环复制）编译通过并运行正确，stdout 与 C 基线 `cide_vec_int` 一致（`3\n1\n4\n`）。**构造函数成员初始化列表 `Class() : field(val) {}` 已修复**：Parser 在两个构造函数分支增加 `parse_ctor_init_list()`，降解为 `this->field = expr;` 赋值语句插入 `Block` 开头。**Stage 1 Dogfooding 验证推进**：
+> - `vector<int/float/char>`、`string`、`list<int>` C++ 纯实现运行时 stdout 与 C 基线完全一致
+> - `sort_int` C++ 模板函数实现运行时 stdout 与 C 基线完全一致（排序结果 `1\n1\n3\n4\n5\n`）
+> - **字节码等价验证**：`get`/`size` 等简单访问方法在 C++ class 与 C struct 字段布局对齐后，逐指令等价（StepEvent 行号归一化 + Call 目标名归一化 + 启动代码排除）
+> - **已知差异（诚实记录）**：`push_back`/`pop_back` 等方法因 C++ 使用 `new[]/delete[]` + 循环复制，C 使用 `realloc`，算法实现不同，字节码不等价；`list<int>::get` 因 C++ 使用 `if/return` 而 C 使用三元运算符 `?:`，控制流结构不同，字节码不等价
+> - **P0 编译器 bug 修复（Dogfooding 过程中发现）**：
+>   1. 函数模板隐式实例化：`Array` 实际参数无法匹配 `Pointer` 形式参数进行模板参数推断 → 修复 `infer_template_arg` 增加 `Array → Pointer` 退化分支
+>   2. 函数模板实例化后 AST 未重写：`CallPtr { callee: "foo" }` 实例化为 `foo__int` 后，BytecodeGen 仍看到原始名称 → 修复 `resolve_expr_type` 将 `CallPtr` 重写为 `Call { name: mangled }`
+>   3. 递归模板调用已实例化回退失败：`try_monomorphize_func` 对已实例化函数返回 `None`，caller 无法获取 mangled 名称 → 改为返回 `Some((mangled, None))`
+>   4. 模板实例化函数体未检查：`pending_instantiations` 在 `exit_scope` 后才 drain，函数体从未被 TypeChecker 遍历 → 增加 Pass 3.6 循环检查直至收敛
+> - Dogfooding 测试总计 25 个（10 个原有 + 15 个新增），全部通过；600+ Rust 单元测试保持全绿
 
 ### 10.1 Stage 0：验证 BytecodeGen（已完成 ✅）
 
@@ -1161,7 +1171,7 @@ public:
 2. 手写等价的 C 代码（直接调用 `cide_vec_*`）→ 生成字节码 B
 3. 对比 A ≡ B（逐指令一致）→ 证明 BytecodeGen 正确
 
-### 10.2 Stage 1：Dogfooding 验证（进行中 🔄）
+### 10.2 Stage 1：Dogfooding 验证（进行中 🔄，核心验证通过）
 
 当 Cide C++ 编译器成熟后，用 Cide C++ 子集写**不依赖 C 容器函数**的纯 C++ 容器：
 
@@ -1172,11 +1182,11 @@ public:
 
 template<class T>
 class vector {
-    T* data;
     int size_;
     int capacity_;
+    T* data;
 public:
-    vector() : data(nullptr), size_(0), capacity_(0) {}
+    vector() : size_(0), capacity_(0), data(nullptr) {}
     
     void push_back(T x) {
         if (size_ >= capacity_) {

@@ -429,12 +429,21 @@ impl TypeChecker {
         // Pass 3.5: Check class method / constructor / destructor bodies
         self.check_class_methods(program);
 
-        self.exit_scope();
-
-        // Append template instantiations discovered during type checking
-        for (_, f) in self.pending_instantiations.drain(..) {
-            program.funcs.push(f);
+        // Pass 3.6: Check pending function template instantiations recursively.
+        // Function template instantiations discovered during Pass 3/3.5 may contain
+        // further template calls (e.g. sort__int calls sort_rec__int), so we loop
+        // until no new instantiations are generated.
+        while !self.pending_instantiations.is_empty() {
+            let pending: Vec<_> = self.pending_instantiations.drain(..).collect();
+            for (_, mut f) in pending {
+                if f.body.is_some() {
+                    self.visit_func_decl(&mut f);
+                }
+                program.funcs.push(f);
+            }
         }
+
+        self.exit_scope();
 
         // Pass 4: Lift lambdas to ClassDecl + FuncDecl
         let lambdas: Vec<_> = self.pending_lambdas.drain(..).collect();
@@ -923,7 +932,7 @@ impl TypeChecker {
 
     /// 判断表达式是否为左值（可被取地址的表达式）。
     /// 尝试隐式实例化函数模板，返回 (mangled_name, FuncDecl) 但不注册到 program。
-    pub(crate) fn try_instantiate_template(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, FuncDecl)> {
+    pub(crate) fn try_instantiate_template(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, Option<FuncDecl>)> {
         self.try_monomorphize_func(name, arg_types)
     }
 

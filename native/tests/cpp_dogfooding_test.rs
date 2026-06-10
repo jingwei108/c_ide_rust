@@ -1,8 +1,8 @@
 mod test_utils;
 
 use test_utils::{
-    assert_bytecode_equivalent, compile_and_run_cpp, compile_cpp_bytecode,
-    get_function_instructions,
+    assert_bytecode_equivalent, assert_bytecode_equivalent_named, compile_and_run_cpp,
+    compile_cpp_bytecode, get_function_instructions,
 };
 
 // ============================================================================
@@ -96,11 +96,11 @@ fn cpp_vector_int_src() -> &'static str {
 
 template<class T>
 class vector {
-    T* data;
     int size_;
     int capacity_;
+    T* data;
 public:
-    vector() : data((T*)0), size_(0), capacity_(0) {}
+    vector() : size_(0), capacity_(0), data((T*)0) {}
     void push_back(T x) {
         if (size_ >= capacity_) {
             int new_cap = capacity_ == 0 ? 4 : capacity_ * 2;
@@ -165,51 +165,8 @@ fn test_c_vector_int_baseline_runs() {
     assert_eq!(outputs, vec!["3", "1", "4"], "stdout should match");
 }
 
-/// Attempt to compare the `get` method bytecode between C++ and C versions.
-/// This is an experimental comparison: if the algorithm differs too much,
-/// the test is allowed to fail with a recorded note (not a hard blocker).
-#[test]
-fn test_cpp_vector_int_get_bytecode_comparison() {
-    let cpp_output = compile_cpp_bytecode(cpp_vector_int_src());
-    let c_output = compile_cpp_bytecode(c_vector_int_src());
-
-    // If either fails to compile, record as a known limitation and skip.
-    if cpp_output.is_err() || c_output.is_err() {
-        println!(
-            "SKIP: Compilation failed. C++ err: {:?}, C err: {:?}",
-            cpp_output.err(),
-            c_output.err()
-        );
-        return;
-    }
-
-    let cpp = cpp_output.unwrap();
-    let c = c_output.unwrap();
-
-    // C++ mangled name for vector<int>::get
-    let cpp_get_name = "vector__int__get";
-    // C version function name
-    let c_get_name = "cide_vec_get_int";
-
-    if !cpp.func_table.contains_key(cpp_get_name) || !c.func_table.contains_key(c_get_name) {
-        println!(
-            "SKIP: Function not found. C++: {}, C: {}",
-            cpp.func_table.contains_key(cpp_get_name),
-            c.func_table.contains_key(c_get_name)
-        );
-        return;
-    }
-
-    // We do not assert here because the two implementations may legitimately differ
-    // (e.g. C++ uses new[]/delete[] + loop copy, C uses realloc).
-    // Instead, we just ensure the comparison tool runs without panicking on missing data.
-    let _ = get_function_instructions(&cpp, cpp_get_name);
-    let _ = get_function_instructions(&c, c_get_name);
-}
-
 // ============================================================================
 // Stage 6: Dogfooding — list<int>
-// ============================================================================
 
 fn cpp_list_int_src() -> &'static str {
     r#"
@@ -319,11 +276,11 @@ fn cpp_string_src() -> &'static str {
 #include <stdio.h>
 
 class string {
-    char* data_;
     int size_;
     int capacity_;
+    char* data_;
 public:
-    string() : data_((char*)0), size_(0), capacity_(0) {}
+    string() : size_(0), capacity_(0), data_((char*)0) {}
     void push_back(char c) {
         if (size_ + 1 >= capacity_) {
             int new_cap = capacity_ == 0 ? 4 : capacity_ * 2;
@@ -387,4 +344,362 @@ fn test_c_string_baseline_runs() {
     let (ret, outputs) = compile_and_run_cpp(c_string_baseline_src()).expect("Compile/run failed");
     assert_eq!(ret, 0, "Exit code should be 0");
     assert_eq!(outputs, vec!["5", "hello"], "stdout should match");
+}
+
+// ============================================================================
+// Stage 1: Dogfooding — vector<float>
+// ============================================================================
+
+fn cpp_vector_float_src() -> &'static str {
+    r#"
+#include <stdio.h>
+
+template<class T>
+class vector {
+    int size_;
+    int capacity_;
+    T* data;
+public:
+    vector() : size_(0), capacity_(0), data((T*)0) {}
+    void push_back(T x) {
+        if (size_ >= capacity_) {
+            int new_cap = capacity_ == 0 ? 4 : capacity_ * 2;
+            T* new_data = new T[new_cap];
+            for (int i = 0; i < size_; i++) new_data[i] = data[i];
+            delete[] data;
+            data = new_data;
+            capacity_ = new_cap;
+        }
+        data[size_++] = x;
+    }
+    T get(int i) { return data[i]; }
+    int size() { return size_; }
+    ~vector() { delete[] data; }
+};
+
+int main() {
+    vector<float> v;
+    v.push_back(3.0);
+    v.push_back(1.0);
+    v.push_back(4.0);
+    for (int i = 0; i < v.size(); i++) {
+        printf("%.1f\n", v.get(i));
+    }
+    return 0;
+}
+"#
+}
+
+fn c_vector_float_src() -> &'static str {
+    r#"
+#include <stdio.h>
+int main() {
+    cide_vec_float v;
+    cide_vec_init_float(&v);
+    cide_vec_push_float(&v, 3.0);
+    cide_vec_push_float(&v, 1.0);
+    cide_vec_push_float(&v, 4.0);
+    for (int i = 0; i < cide_vec_size_float(&v); i++) {
+        printf("%.1f\n", cide_vec_get_float(&v, i));
+    }
+    cide_vec_destroy_float(&v);
+    return 0;
+}
+"#
+}
+
+fn c_vector_float_inline_src() -> &'static str {
+    r#"
+typedef struct {
+    int n;
+    int m;
+    float *a;
+} cide_vec_float;
+float cide_vec_get_float(cide_vec_float *v, int i) { return v->a[i]; }
+int cide_vec_size_float(cide_vec_float *v) { return v->n; }
+int main() { return 0; }
+"#
+}
+
+#[test]
+fn test_cpp_vector_float_dogfooding_runs() {
+    let (ret, outputs) = compile_and_run_cpp(cpp_vector_float_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["3.0", "1.0", "4.0"], "stdout should match");
+}
+
+#[test]
+fn test_c_vector_float_baseline_runs() {
+    let (ret, outputs) = compile_and_run_cpp(c_vector_float_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["3.0", "1.0", "4.0"], "stdout should match");
+}
+
+#[test]
+fn test_cpp_vector_float_get_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_vector_float_src()).unwrap();
+    let c = compile_cpp_bytecode(c_vector_float_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "vector__float__get", &c, "cide_vec_get_float");
+}
+
+#[test]
+fn test_cpp_vector_float_size_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_vector_float_src()).unwrap();
+    let c = compile_cpp_bytecode(c_vector_float_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "vector__float__size", &c, "cide_vec_size_float");
+}
+
+// ============================================================================
+// Stage 1: Dogfooding — vector<char>
+// ============================================================================
+
+fn cpp_vector_char_src() -> &'static str {
+    r#"
+#include <stdio.h>
+
+template<class T>
+class vector {
+    int size_;
+    int capacity_;
+    T* data;
+public:
+    vector() : size_(0), capacity_(0), data((T*)0) {}
+    void push_back(T x) {
+        if (size_ >= capacity_) {
+            int new_cap = capacity_ == 0 ? 4 : capacity_ * 2;
+            T* new_data = new T[new_cap];
+            for (int i = 0; i < size_; i++) new_data[i] = data[i];
+            delete[] data;
+            data = new_data;
+            capacity_ = new_cap;
+        }
+        data[size_++] = x;
+    }
+    T get(int i) { return data[i]; }
+    int size() { return size_; }
+    ~vector() { delete[] data; }
+};
+
+int main() {
+    vector<char> v;
+    v.push_back('a');
+    v.push_back('b');
+    v.push_back('c');
+    for (int i = 0; i < v.size(); i++) {
+        printf("%c\n", v.get(i));
+    }
+    return 0;
+}
+"#
+}
+
+fn c_vector_char_src() -> &'static str {
+    r#"
+#include <stdio.h>
+int main() {
+    cide_vec_char v;
+    cide_vec_init_char(&v);
+    cide_vec_push_char(&v, 'a');
+    cide_vec_push_char(&v, 'b');
+    cide_vec_push_char(&v, 'c');
+    for (int i = 0; i < cide_vec_size_char(&v); i++) {
+        printf("%c\n", cide_vec_get_char(&v, i));
+    }
+    cide_vec_destroy_char(&v);
+    return 0;
+}
+"#
+}
+
+fn c_vector_char_inline_src() -> &'static str {
+    r#"
+typedef struct {
+    int n;
+    int m;
+    char *a;
+} cide_vec_char;
+char cide_vec_get_char(cide_vec_char *v, int i) { return v->a[i]; }
+int cide_vec_size_char(cide_vec_char *v) { return v->n; }
+int main() { return 0; }
+"#
+}
+
+#[test]
+fn test_cpp_vector_char_dogfooding_runs() {
+    let (ret, outputs) = compile_and_run_cpp(cpp_vector_char_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["a", "b", "c"], "stdout should match");
+}
+
+#[test]
+fn test_c_vector_char_baseline_runs() {
+    let (ret, outputs) = compile_and_run_cpp(c_vector_char_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["a", "b", "c"], "stdout should match");
+}
+
+#[test]
+fn test_cpp_vector_char_get_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_vector_char_src()).unwrap();
+    let c = compile_cpp_bytecode(c_vector_char_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "vector__char__get", &c, "cide_vec_get_char");
+}
+
+#[test]
+fn test_cpp_vector_char_size_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_vector_char_src()).unwrap();
+    let c = compile_cpp_bytecode(c_vector_char_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "vector__char__size", &c, "cide_vec_size_char");
+}
+
+// ============================================================================
+// Stage 1: Dogfooding — sort_int
+// ============================================================================
+
+fn cpp_sort_int_src() -> &'static str {
+    r#"
+#include <stdio.h>
+
+template<class T>
+void sort_swap(T *a, T *b) {
+    T t = *a;
+    *a = *b;
+    *b = t;
+}
+
+template<class T>
+void sort_rec(T *a, int left, int right) {
+    if (left >= right) return;
+    T pivot = a[(left + right) / 2];
+    int i = left;
+    int j = right;
+    while (i <= j) {
+        while (a[i] < pivot) i++;
+        while (a[j] > pivot) j--;
+        if (i <= j) {
+            sort_swap(&a[i], &a[j]);
+            i++;
+            j--;
+        }
+    }
+    if (left < j) sort_rec(a, left, j);
+    if (i < right) sort_rec(a, i, right);
+}
+
+template<class T>
+void sort(T *a, int n) {
+    if (n > 1) sort_rec(a, 0, n - 1);
+}
+
+int main() {
+    int a[5] = {3, 1, 4, 1, 5};
+    sort(a, 5);
+    for (int i = 0; i < 5; i++) {
+        printf("%d\n", a[i]);
+    }
+    return 0;
+}
+"#
+}
+
+fn c_sort_int_src() -> &'static str {
+    r#"
+#include <stdio.h>
+int main() {
+    int a[5] = {3, 1, 4, 1, 5};
+    cide_sort_int(a, 5);
+    for (int i = 0; i < 5; i++) {
+        printf("%d\n", a[i]);
+    }
+    return 0;
+}
+"#
+}
+
+#[test]
+fn test_cpp_sort_int_dogfooding_runs() {
+    let (ret, outputs) = compile_and_run_cpp(cpp_sort_int_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["1", "1", "3", "4", "5"], "stdout should match");
+}
+
+#[test]
+fn test_c_sort_int_baseline_runs() {
+    let (ret, outputs) = compile_and_run_cpp(c_sort_int_src()).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["1", "1", "3", "4", "5"], "stdout should match");
+}
+
+// ============================================================================
+// Stage 1: Bytecode equivalence — vector<int> get/size
+// ============================================================================
+
+fn c_vector_int_inline_src() -> &'static str {
+    r#"
+typedef struct { int n; int m; int *a; } cide_vec_int;
+int cide_vec_get_int(cide_vec_int *v, int i) { return v->a[i]; }
+int cide_vec_size_int(cide_vec_int *v) { return v->n; }
+int main() { return 0; }
+"#
+}
+
+#[test]
+fn test_cpp_vector_int_get_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_vector_int_src()).unwrap();
+    let c = compile_cpp_bytecode(c_vector_int_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "vector__int__get", &c, "cide_vec_get_int");
+}
+
+#[test]
+fn test_cpp_vector_int_size_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_vector_int_src()).unwrap();
+    let c = compile_cpp_bytecode(c_vector_int_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "vector__int__size", &c, "cide_vec_size_int");
+}
+
+// ============================================================================
+// Stage 1: Bytecode equivalence — list<int> size
+// ============================================================================
+
+fn c_list_int_inline_src() -> &'static str {
+    r#"
+typedef struct cide_list_node_int { int data; struct cide_list_node_int *next; } cide_list_node_int;
+typedef struct { cide_list_node_int *head; cide_list_node_int *tail; int n; } cide_list_int;
+int cide_list_size_int(cide_list_int *l) { return l->n; }
+int main() { return 0; }
+"#
+}
+
+#[test]
+fn test_cpp_list_int_size_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_list_int_src()).unwrap();
+    let c = compile_cpp_bytecode(c_list_int_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "list__int__size", &c, "cide_list_size_int");
+}
+
+// ============================================================================
+// Stage 1: Bytecode equivalence — string get/size
+// ============================================================================
+
+fn c_string_inline_src() -> &'static str {
+    r#"
+typedef struct { int n; int m; char *s; } cide_string;
+char cide_string_get(cide_string *str, int i) { return str->s[i]; }
+int cide_string_size(cide_string *str) { return str->n; }
+int main() { return 0; }
+"#
+}
+
+#[test]
+fn test_cpp_string_get_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_string_src()).unwrap();
+    let c = compile_cpp_bytecode(c_string_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "string__get", &c, "cide_string_get");
+}
+
+#[test]
+fn test_cpp_string_size_bytecode_equivalent() {
+    let cpp = compile_cpp_bytecode(cpp_string_src()).unwrap();
+    let c = compile_cpp_bytecode(c_string_inline_src()).unwrap();
+    assert_bytecode_equivalent_named(&cpp, "string__size", &c, "cide_string_size");
 }

@@ -4,7 +4,10 @@ impl TypeChecker {
     /// 尝试根据实参类型隐式实例化函数模板。
     /// 返回实例化后的 mangled 函数名（如 "max__int"），若无法匹配则返回 None。
     /// Try to monomorphize a function template. Returns (mangled_name, FuncDecl) if successful.
-    pub(crate) fn try_monomorphize_func(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, FuncDecl)> {
+    /// Returns `Some((mangled_name, Some(func_decl)))` for a new instantiation,
+    /// `Some((mangled_name, None))` if already instantiated,
+    /// or `None` if the name is not a template or inference failed.
+    pub(crate) fn try_monomorphize_func(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, Option<FuncDecl>)> {
         let template = self.templates.get(name)?.clone();
         let func_decl = match &template.decl {
             Templateable::Func(f) => f.as_ref(),
@@ -37,7 +40,7 @@ impl TypeChecker {
 
         let mangled = Self::mangle_template_name(name, &type_args);
         if self.funcs.contains_key(&mangled) {
-            return None; // Already instantiated; caller should look up self.funcs
+            return Some((mangled, None)); // Already instantiated
         }
 
         // Instantiate: deep clone and replace template params
@@ -53,7 +56,7 @@ impl TypeChecker {
             },
         );
 
-        Some((mangled, new_func))
+        Some((mangled, Some(new_func)))
     }
 
     /// Mangling rule: func__T1_T2_...
@@ -76,8 +79,15 @@ impl TypeChecker {
                     map.insert(name.clone(), actual.clone());
                 }
             Type::Pointer { pointee, .. } => {
-                if let Type::Pointer { pointee: actual_pointee, .. } = actual {
-                    self.infer_template_arg(pointee, actual_pointee, map);
+                match actual {
+                    Type::Pointer { pointee: actual_pointee, .. } => {
+                        self.infer_template_arg(pointee, actual_pointee, map);
+                    }
+                    Type::Array { element: actual_elem, .. } => {
+                        // C array-to-pointer decay: T formal vs T[5] actual
+                        self.infer_template_arg(pointee, actual_elem, map);
+                    }
+                    _ => {}
                 }
             }
             Type::Array { element, .. } => {

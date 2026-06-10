@@ -45,11 +45,25 @@ pub fn get_function_instructions(
     // Compute end IP by finding the next function's start IP.
     let mut ips: Vec<usize> = output.func_table.values().map(|m| m.ip).collect();
     ips.sort();
-    let end_ip = ips
+    let mut end_ip = ips
         .iter()
         .find(|&&ip| ip > start_ip)
         .copied()
         .unwrap_or(output.code.len());
+
+    // If this is the last function, exclude trailing startup code (Call(main), Ret)
+    // that the VM appends after all user functions.
+    if end_ip == output.code.len() && output.code.len() >= 2 {
+        if let Some(&main_idx) = output.func_index.get("main") {
+            let second_last = &output.code[output.code.len() - 2];
+            let last = &output.code[output.code.len() - 1];
+            if second_last.op == OpCode::Call && second_last.operand == main_idx
+                && last.op == OpCode::Ret
+            {
+                end_ip -= 2;
+            }
+        }
+    }
 
     Some((start_ip, output.code[start_ip..end_ip].to_vec()))
 }
@@ -66,6 +80,8 @@ pub enum NormalizedOperand {
 /// - `Jump` / `JumpIfZero` / `JumpIfNotZero`: absolute IP operands are converted to
 ///   relative offsets from the current instruction index (relative to function start).
 /// - `Call`: function index operand is converted to the function name via `func_index`.
+/// - `StepEvent`: source line numbers are normalized to 0 (debug events should not affect
+///   semantic equivalence).
 /// - All other operands are kept as-is.
 fn normalize_instructions(
     instrs: &[Instruction],
@@ -81,6 +97,9 @@ fn normalize_instructions(
         .map(|(idx, instr)| {
             let current_abs_ip = start_ip + idx;
             match instr.op {
+                OpCode::StepEvent => {
+                    (instr.op, NormalizedOperand::Int(0))
+                }
                 OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero => {
                     let abs_target = instr.operand as usize;
                     let rel = abs_target as i32 - current_abs_ip as i32;
@@ -124,10 +143,24 @@ pub fn assert_bytecode_equivalent(
     expected_output: &CompileOutput,
     func_name: &str,
 ) {
-    let (actual_start, actual_instrs) = get_function_instructions(actual_output, func_name)
-        .unwrap_or_else(|| panic!("Function '{}' not found in actual output", func_name));
-    let (expected_start, expected_instrs) = get_function_instructions(expected_output, func_name)
-        .unwrap_or_else(|| panic!("Function '{}' not found in expected output", func_name));
+    assert_bytecode_equivalent_named(actual_output, func_name, expected_output, func_name);
+}
+
+/// Assert that two CompileOutputs contain semantically equivalent bytecode for the given functions,
+/// allowing the actual and expected functions to have different names.
+///
+/// Panics with a detailed diff on mismatch.
+pub fn assert_bytecode_equivalent_named(
+    actual_output: &CompileOutput,
+    actual_name: &str,
+    expected_output: &CompileOutput,
+    expected_name: &str,
+) {
+    let (actual_start, actual_instrs) = get_function_instructions(actual_output, actual_name)
+        .unwrap_or_else(|| panic!("Function '{}' not found in actual output", actual_name));
+    let (expected_start, expected_instrs) =
+        get_function_instructions(expected_output, expected_name)
+            .unwrap_or_else(|| panic!("Function '{}' not found in expected output", expected_name));
 
     let actual_norm = normalize_instructions(&actual_instrs, actual_start, &actual_output.func_index);
     let expected_norm =
@@ -136,8 +169,9 @@ pub fn assert_bytecode_equivalent(
     if actual_norm != expected_norm {
         let diff = format_diff(&actual_norm, &expected_norm);
         panic!(
-            "Bytecode mismatch for function '{}':\n--- actual\n{}\n--- expected\n{}\n--- diff\n{}",
-            func_name,
+            "Bytecode mismatch (actual '{}' vs expected '{}'):\n--- actual\n{}\n--- expected\n{}\n--- diff\n{}",
+            actual_name,
+            expected_name,
             display_normalized_slice(&actual_norm),
             display_normalized_slice(&expected_norm),
             diff

@@ -380,10 +380,19 @@ impl TypeChecker {
                     // Try template implicit instantiation
                     if !args.is_empty() {
                         let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
-                        if let Some((mangled, new_func)) = self.try_instantiate_template(name, &arg_types) {
-                            self.pending_instantiations.push((mangled.clone(), new_func));
-                            *ty = self.visit_call(&mangled, args, loc);
-                            return ty.clone();
+                        if let Some((mangled, maybe_new_func)) = self.try_instantiate_template(name, &arg_types) {
+                            if let Some(new_func) = maybe_new_func {
+                                self.pending_instantiations.push((mangled.clone(), new_func));
+                            }
+                            // Rewrite CallPtr -> Call so BytecodeGen can resolve by mangled name
+                            let new_args = std::mem::take(args);
+                            *expr = Expr::Call {
+                                name: mangled,
+                                args: new_args,
+                                loc: *loc,
+                                ty: Type::default(),
+                            };
+                            return self.resolve_expr_type(expr);
                         }
                     }
                     // Lambda call: f(args) -> f.__call(args)
