@@ -82,6 +82,7 @@ docs/                   设计文档、事故报告
 | Phase 37 | C++ 扩展 Stage 4：引用声明与基本语义（`int& r = x` 全链路；`T&` 参数/返回值；引用自动解引用；隐式取地址；返回引用左值识别） | ✅ 完成 |
 | Phase 38 | C++ 扩展 Stage 5：隐式移动构造函数自动生成（类含指针/资源字段时自动生成 `__ctor__{Class}__move`；`std::move` 初始化调用移动构造；源指针字段置空防双重释放） | ✅ 完成 |
 | Phase 39 | C++ 扩展 Stage 6：`unique_ptr<T>` 简化版 dogfooding + 构造函数初始化语法 `Type name(args);` + 构造函数重载/隐式默认构造 | ✅ 完成 |
+| Phase 40 | C++ 扩展 M6：测试防线收尾 — 新增 59 个 C++ E2E 回归用例（核心语言 / 容器算法 / 教学 OJ），`test_cide_e2e_cpp` 纳入 CI，Golden 由 Clang++ 生成 | ✅ 完成 |
 
 ## 测试防线
 

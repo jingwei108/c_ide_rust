@@ -84,6 +84,17 @@ jobs:
           name: shadow-verification-report
           path: reports/shadow_report.json
 
+      - name: C++ Shadow Verification
+        run: python scripts/shadow_verify_cpp.py
+        shell: bash
+
+      - name: Upload C++ Shadow Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cpp-shadow-verification-report
+          path: native/tests/shadow_verification/reports/cpp_shadow_report.json
+
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov
 

@@ -53,7 +53,7 @@ impl TypeChecker {
             }
         };
         let result_ty = method_sig.ret.clone();
-        let call_args: Vec<Expr> = args.iter().cloned().collect();
+        let call_args: Vec<Expr> = args.to_vec();
         Some((host_func.to_string(), addr_expr, call_args, result_ty))
     }
 }

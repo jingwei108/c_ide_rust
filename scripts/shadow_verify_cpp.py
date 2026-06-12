@@ -15,6 +15,7 @@ import subprocess
 import tempfile
 import time
 import json
+import ctypes
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional, List, Dict
@@ -26,6 +27,7 @@ SCRIPT_DIR = Path(__file__).parent.resolve()
 PROJECT_ROOT = SCRIPT_DIR.parent
 NATIVE_DIR = PROJECT_ROOT / "native"
 CIDE_CLI = NATIVE_DIR / "target/release/cide_cli.exe"
+DLL_PATH = NATIVE_DIR / "target/release/cide_native.dll"
 CLANG_PATH = "clang++"
 
 
@@ -366,7 +368,7 @@ def run_with_clang(source: str) -> RunResult:
         exe_file = Path(tmpdir) / "test.exe" if sys.platform == "win32" else Path(tmpdir) / "test"
         cpp_file.write_text(source, encoding="utf-8")
 
-        compile_cmd = [CLANG_PATH, str(cpp_file), "-o", str(exe_file), "-std=c++11"]
+        compile_cmd = [CLANG_PATH, str(cpp_file), "-o", str(exe_file), "-std=c++14"]
         if sys.platform != "win32":
             compile_cmd.append("-lm")
         try:
@@ -407,52 +409,75 @@ def run_with_clang(source: str) -> RunResult:
 
 
 def run_with_cide(source: str) -> RunResult:
+    """通过 C API 调用 Cide 编译并运行 C++ 代码（使用 main.cpp 自动启用 C++ 模式）。"""
+    import ctypes
+
     start = time.time()
-    if not CIDE_CLI.exists():
+    dll = ctypes.CDLL(str(DLL_PATH))
+
+    # C API 函数签名
+    dll.cide_session_create.restype = ctypes.c_void_p
+    dll.cide_session_destroy.argtypes = [ctypes.c_void_p]
+    dll.cide_compile_unit.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+    dll.cide_compile_unit.restype = ctypes.c_int
+    dll.cide_compile_all.argtypes = [ctypes.c_void_p]
+    dll.cide_compile_all.restype = ctypes.c_int
+    dll.cide_run.argtypes = [ctypes.c_void_p]
+    dll.cide_run.restype = ctypes.c_int
+    dll.cide_get_compile_errors.restype = ctypes.c_char_p
+    dll.cide_get_compile_errors.argtypes = [ctypes.c_void_p]
+    dll.cide_get_runtime_error.restype = ctypes.c_char_p
+    dll.cide_get_runtime_error.argtypes = [ctypes.c_void_p]
+    dll.cide_get_output_length.restype = ctypes.c_int
+    dll.cide_get_output_length.argtypes = [ctypes.c_void_p]
+    dll.cide_get_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+
+    session = dll.cide_session_create()
+    if not session:
         return RunResult(
-            compiler="cide", compile_success=False, compile_error=f"cide_cli not found: {CIDE_CLI}",
-            run_success=False, run_error="", stdout="", stderr="",
-            exit_code=-1, duration_ms=(time.time() - start) * 1000,
+            compiler="cide", compile_success=False, compile_error="session create failed",
+            run_success=False, run_error="", stdout="", stderr="", exit_code=-1,
+            duration_ms=(time.time() - start) * 1000,
         )
 
     try:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            cpp_file = Path(tmpdir) / "test.cpp"
-            cpp_file.write_text(source, encoding="utf-8")
-            proc = subprocess.run(
-                [str(CIDE_CLI), "run", str(cpp_file)],
-                capture_output=True, text=True, encoding="utf-8", timeout=15
-            )
-            full_out = (proc.stdout or "") + (proc.stderr or "")
-            compile_ok = "编译失败。" not in full_out
-            runtime_ok = "运行错误" not in full_out and "Runtime error" not in full_out
-            # Extract program output
-            out_lines = []
-            if "=== 运行输出 ===" in full_out:
-                _, rest = full_out.split("=== 运行输出 ===", 1)
-                for line in rest.strip().splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("程序运行完成"):
-                        continue
-                    if line.startswith("====="):
-                        break
-                    out_lines.append(line)
-            else:
-                # No output section means compile failed or no output
-                pass
+        dll.cide_compile_unit(session, b"main.cpp", source.encode("utf-8"))
+        compile_ret = dll.cide_compile_all(session)
+        if compile_ret != 0:
+            err_ptr = dll.cide_get_compile_errors(session)
+            err_msg = err_ptr.decode("utf-8", errors="replace") if err_ptr else "Unknown compile error"
             return RunResult(
-                compiler="cide", compile_success=compile_ok, compile_error=full_out if not compile_ok else "",
-                run_success=runtime_ok and proc.returncode == 0,
-                run_error=full_out if not runtime_ok else "",
-                stdout="\n".join(out_lines), stderr=proc.stderr,
-                exit_code=proc.returncode, duration_ms=(time.time() - start) * 1000,
+                compiler="cide", compile_success=False, compile_error=err_msg,
+                run_success=False, run_error="", stdout="", stderr=err_msg,
+                exit_code=compile_ret, duration_ms=(time.time() - start) * 1000,
             )
-    except Exception as e:
+
+        run_ret = dll.cide_run(session)
+
+        out_len = dll.cide_get_output_length(session)
+        stdout_str = ""
+        if out_len > 0:
+            buf = ctypes.create_string_buffer(out_len + 1)
+            dll.cide_get_output(session, buf, out_len + 1)
+            stdout_str = buf.value.decode("utf-8", errors="replace")
+            # 清理 Cide 的额外输出后缀（如 "程序运行完成，返回值：0"）
+            import re
+            stdout_str = re.sub(r'程序运行完成，返回值：-?\d+\n?', '', stdout_str)
+            # 清理内存泄漏检测报告
+            stdout_str = re.sub(r'===== 内存泄漏检测报告 =====.*?={30,}', '', stdout_str, flags=re.DOTALL)
+            stdout_str = stdout_str.strip()
+
+        err_ptr = dll.cide_get_runtime_error(session)
+        runtime_err = err_ptr.decode("utf-8", errors="replace") if err_ptr else ""
+
         return RunResult(
-            compiler="cide", compile_success=False, compile_error=str(e),
-            run_success=False, run_error="", stdout="", stderr="",
-            exit_code=-1, duration_ms=(time.time() - start) * 1000,
+            compiler="cide", compile_success=True, compile_error="",
+            run_success=run_ret == 0 and not runtime_err,
+            run_error=runtime_err, stdout=stdout_str, stderr=runtime_err,
+            exit_code=run_ret, duration_ms=(time.time() - start) * 1000,
         )
+    finally:
+        dll.cide_session_destroy(session)
 
 
 def compare_results(clang: RunResult, cide: RunResult) -> str:
@@ -470,9 +495,25 @@ def compare_results(clang: RunResult, cide: RunResult) -> str:
     return "match"
 
 
+def load_directory_cases() -> List[ShadowCase]:
+    """加载 native/tests/cases/cpp/ 目录下的 .cpp 文件作为影子验证用例。"""
+    cases_dir = NATIVE_DIR / "tests/cases/cpp"
+    cases = []
+    if cases_dir.exists():
+        for cpp_file in sorted(cases_dir.glob("*.cpp")):
+            source = cpp_file.read_text(encoding="utf-8")
+            cases.append(ShadowCase(
+                name=cpp_file.stem,
+                source=source,
+                category="e2e_regression",
+            ))
+    return cases
+
+
 def main():
+    all_cases = CPP_CASES + load_directory_cases()
     diffs: List[ShadowDiff] = []
-    for case in CPP_CASES:
+    for case in all_cases:
         print(f"Running {case.name} ...", flush=True)
         clang_res = run_with_clang(case.source)
         cide_res = run_with_cide(case.source)
@@ -494,6 +535,10 @@ def main():
     output_gap = sum(1 for d in diffs if d.diff_type == "output_gap")
     clang_fail = sum(1 for d in diffs if d.diff_type == "clang_compile_fail")
 
+    # 标记为 "gap" 的用例是已知的 Cide 限制/缺失特性，视为预期差异
+    expected_gaps = [d for d in diffs if d.expected_category == "gap" and d.diff_type != "match"]
+    unexpected_gaps = [d for d in diffs if d.expected_category != "gap" and d.diff_type != "match"]
+
     print("\n" + "=" * 60)
     print("C++ Shadow Verification 报告")
     print("=" * 60)
@@ -503,6 +548,18 @@ def main():
     print(f"  ❌ 运行时差异: {runtime_gap}")
     print(f"  ❌ 输出差异: {output_gap}")
     print(f"  ⚠️  Clang++ 编译失败: {clang_fail}")
+    print(f"  📌 预期差异 (gap): {len(expected_gaps)}")
+    print(f"  🚨 非预期差异: {len(unexpected_gaps)}")
+
+    if expected_gaps:
+        print("\n预期差异用例（已记录的 Cide 限制）：")
+        for d in expected_gaps:
+            print(f"  - {d.case_name}: {d.diff_type}")
+
+    if unexpected_gaps:
+        print("\n非预期差异用例（需要调查）：")
+        for d in unexpected_gaps:
+            print(f"  - {d.case_name}: {d.diff_type}")
 
     report_path = PROJECT_ROOT / "native/tests/shadow_verification/reports/cpp_shadow_report.json"
     report_path.parent.mkdir(parents=True, exist_ok=True)
@@ -510,7 +567,8 @@ def main():
         json.dump([asdict(d) for d in diffs], f, ensure_ascii=False, indent=2)
     print(f"\n报告已保存: {report_path}")
 
-    return 0 if match == total else 1
+    # 只有非预期差异才导致 CI 失败
+    return 0 if not unexpected_gaps else 1
 
 
 if __name__ == "__main__":

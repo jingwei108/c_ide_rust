@@ -206,10 +206,8 @@ impl TypeChecker {
                 }
                 self.replace_template_types_in_stmt(body, type_map);
             }
-            Stmt::Return { value, .. } => {
-                if let Some(ref mut v) = value {
-                    self.replace_template_types_in_expr(v, type_map);
-                }
+            Stmt::Return { value: Some(ref mut v), .. } => {
+                self.replace_template_types_in_expr(v, type_map);
             }
             Stmt::Expr { expr, .. } => {
                 self.replace_template_types_in_expr(expr, type_map);

@@ -58,7 +58,8 @@ impl TypeChecker {
             } => {
                 // Auto type deduction for C++
                 if Self::type_has_auto(var_type) {
-                    if let Some(ref mut init_expr) = init {
+                    #[allow(clippy::collapsible_match)]
+                        if let Some(ref mut init_expr) = init {
                         let deduced = self.deduce_auto_type(init_expr);
                         *var_type = Self::replace_auto_in_type(var_type, deduced);
                     } else {
@@ -84,6 +85,7 @@ impl TypeChecker {
                     self.declare_var(name, var_type, false, false, *is_static);
                     // C++ 构造函数初始化语法：将占位符 __ctor__* 解析为具体 mangled 构造函数名，
                     // 并在参数列表前插入 this 指针（&var_name），使后续 resolve_expr_type 能按普通函数调用检查。
+                    #[allow(clippy::collapsible_match)]
                     if let Some(ref mut init_expr) = init {
                         if let Expr::Call { name, args, loc: ctor_loc, .. } = init_expr {
                             if let Type::Class { name: class_name, .. } = var_type {

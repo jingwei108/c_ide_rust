@@ -33,7 +33,7 @@ TIER_TESTS = [
     ("Phase B", "bytecode_libc_consistency", "BYTECODE_LIBC_FAILURES.md"),
     ("Phase C", "differential_stress", "DIFFERENTIAL_FAILURES.md"),
     ("Phase E", "fuzz_stress_test", "FUZZ_FAILURES.md"),
-    ("K&R / E2E / LeetCode", "cide_e2e", ["KR_FAILURES.md", "E2E_FAILURES.md", "LEETCODE_FAILURES.md"]),
+    ("K&R / E2E / LeetCode / C++", "cide_e2e", ["KR_FAILURES.md", "E2E_FAILURES.md", "LEETCODE_FAILURES.md", "CPP_FAILURES.md"]),
     ("C++ Parser", "parser_cpp_unit_test", "CPP_FAILURES.md"),
     ("C++ TypeChecker", "typeck_cpp_unit_test", "CPP_FAILURES.md"),
     ("C++ BytecodeGen", "bytecode_gen_cpp_unit_test", "CPP_FAILURES.md"),

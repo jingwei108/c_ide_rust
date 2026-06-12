@@ -280,26 +280,26 @@ impl MemoryState {
         let mut i = 0;
         while i < self.free_list.len() {
             let block = &self.free_list[i];
-            let block_end = block.addr as u32 + block.size as u32;
-            if (block.addr as u32) >= alloc_end || block_end <= addr {
+            let block_end = block.addr + block.size as u32;
+            if block.addr >= alloc_end || block_end <= addr {
                 i += 1;
                 continue;
             }
-            if (block.addr as u32) >= addr && block_end <= alloc_end {
+            if block.addr >= addr && block_end <= alloc_end {
                 // 完全被覆盖
                 self.free_list.remove(i);
-            } else if (block.addr as u32) < addr && block_end > alloc_end {
+            } else if block.addr < addr && block_end > alloc_end {
                 // 分配在块内部：拆分为前后两部分
                 let tail_size = block_end - alloc_end;
-                let head_size = addr - (block.addr as u32);
+                let head_size = addr - block.addr;
                 self.free_list[i].size = head_size as i32;
                 if tail_size > 0 {
                     self.free_list.push(FreeBlock { addr: alloc_end, size: tail_size as i32 });
                 }
                 i += 1;
-            } else if (block.addr as u32) < addr {
+            } else if block.addr < addr {
                 // 覆盖块的后部
-                self.free_list[i].size = (addr - block.addr as u32) as i32;
+                self.free_list[i].size = (addr - block.addr) as i32;
                 i += 1;
             } else {
                 // 覆盖块的前部

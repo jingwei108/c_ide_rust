@@ -65,9 +65,8 @@ pub struct MethodSig {
 /// Supports: void, int, float, char, double, and pointer variants (e.g. "int*").
 fn parse_type_str(s: &str) -> Type {
     let s = s.trim();
-    if s.ends_with('*') {
-        let inner = s[..s.len() - 1].trim();
-        return Type::pointer_to(parse_type_str(inner));
+    if let Some(inner) = s.strip_suffix('*') {
+        return Type::pointer_to(parse_type_str(inner.trim()));
     }
     match s {
         "void" => Type::void(),

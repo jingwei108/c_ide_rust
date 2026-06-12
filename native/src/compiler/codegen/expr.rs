@@ -64,9 +64,9 @@ impl ExprGen for BytecodeGen {
                     .or_else(|| self.global_types.get(name))
                     .or_else(|| self.static_local_types.get(name))
                     .and_then(|t| t.reference_base().cloned());
-                if base_ty.is_some() {
+                if let Some(base_ty) = base_ty {
                     self.gen_addr(expr, &loc);
-                    match base_ty.unwrap().kind() {
+                    match base_ty.kind() {
                         TypeKind::Char => self.emit(OpCode::LoadMemByte, 0, &loc),
                         TypeKind::Double => self.emit(OpCode::LoadMemD, 0, &loc),
                         TypeKind::LongLong => self.emit(OpCode::LoadMemQ, 0, &loc),

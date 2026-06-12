@@ -4,6 +4,19 @@ use std::path::Path;
 use cide_native::session::InputMode;
 
 fn compile_and_run(source: &str, input: Option<&str>, input_mode: InputMode) -> Result<(i32, Vec<String>), String> {
+    compile_and_run_with_filename(source, input, input_mode, "main.c")
+}
+
+fn compile_and_run_cpp(source: &str, input: Option<&str>, input_mode: InputMode) -> Result<(i32, Vec<String>), String> {
+    compile_and_run_with_filename(source, input, input_mode, "main.cpp")
+}
+
+fn compile_and_run_with_filename(
+    source: &str,
+    input: Option<&str>,
+    input_mode: InputMode,
+    filename: &str,
+) -> Result<(i32, Vec<String>), String> {
     unsafe {
         let session = cide_native::capi::cide_session_create();
         if session.is_null() {
@@ -19,8 +32,14 @@ fn compile_and_run(source: &str, input: Option<&str>, input_mode: InputMode) -> 
             (*session).runtime.input_lines = normalized.split_inclusive('\n').map(|l| l.to_string()).collect();
         }
 
+        let fname = CString::new(filename).map_err(|e| e.to_string())?;
         let src = CString::new(source).map_err(|e| e.to_string())?;
-        let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
+        cide_native::capi::cide_compile_unit(
+            session,
+            fname.as_ptr() as *const c_char,
+            src.as_ptr() as *const c_char,
+        );
+        let compile_ret = cide_native::capi::cide_compile_all(session);
         if compile_ret != 0 {
             let err_ptr = cide_native::capi::cide_get_compile_errors(session);
             let err_msg = if err_ptr.is_null() {
@@ -97,11 +116,19 @@ fn filter_cide_diagnostics(lines: &[String]) -> Vec<String> {
 }
 
 fn load_cases(dir: &Path) -> Vec<(String, String, Option<String>)> {
+    load_cases_with_ext(dir, "c")
+}
+
+fn load_cpp_cases(dir: &Path) -> Vec<(String, String, Option<String>)> {
+    load_cases_with_ext(dir, "cpp")
+}
+
+fn load_cases_with_ext(dir: &Path, ext: &str) -> Vec<(String, String, Option<String>)> {
     let mut cases = Vec::new();
     if let Ok(entries) = std::fs::read_dir(dir) {
         for entry in entries.flatten() {
             let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("c") {
+            if path.extension().and_then(|s| s.to_str()) == Some(ext) {
                 let name = path.file_stem().unwrap().to_string_lossy().to_string();
                 let source = std::fs::read_to_string(&path).unwrap_or_default();
                 let input_path = path.with_extension("in");
@@ -136,7 +163,32 @@ fn run_case(
     golden_subdir: &str,
     input_mode: InputMode,
 ) -> Result<(), String> {
-    let result = compile_and_run(source, input, input_mode);
+    run_case_with_compiler(name, source, input, golden_subdir, input_mode, false)
+}
+
+fn run_cpp_case(
+    name: &str,
+    source: &str,
+    input: Option<&str>,
+    golden_subdir: &str,
+    input_mode: InputMode,
+) -> Result<(), String> {
+    run_case_with_compiler(name, source, input, golden_subdir, input_mode, true)
+}
+
+fn run_case_with_compiler(
+    name: &str,
+    source: &str,
+    input: Option<&str>,
+    golden_subdir: &str,
+    input_mode: InputMode,
+    is_cpp: bool,
+) -> Result<(), String> {
+    let result = if is_cpp {
+        compile_and_run_cpp(source, input, input_mode)
+    } else {
+        compile_and_run(source, input, input_mode)
+    };
     match result {
         Ok((ret, outputs)) => {
             if ret != 0 {
@@ -219,6 +271,12 @@ const KNOWN_KR_FAILURES: &[&str] = &[
 /// Monitored by `test_cide_e2e_leetcode_known_failures` below.
 const KNOWN_LEETCODE_FAILURES: &[&str] = &[
     // 阶段 4~5 逐步填充
+];
+
+/// Known C++ failures documented in CPP_FAILURES.md.
+/// Monitored by `test_cide_e2e_cpp_known_failures` below.
+const KNOWN_CPP_FAILURES: &[&str] = &[
+    // M6 推进过程中逐步填充
 ];
 
 #[test]
@@ -391,15 +449,79 @@ fn test_cide_e2e_leetcode_known_failures() {
 }
 
 #[test]
+fn test_cide_e2e_cpp() {
+    let cases = load_cpp_cases(Path::new("tests/cases/cpp"));
+    let known: std::collections::HashSet<&str> = KNOWN_CPP_FAILURES.iter().copied().collect();
+
+    let mut failures = Vec::new();
+    for (name, source, input) in &cases {
+        if known.contains(name.as_str()) {
+            continue;
+        }
+        let mode = if source.contains("getchar()") {
+            InputMode::Batch
+        } else {
+            InputMode::Interactive
+        };
+        if let Err(e) = run_cpp_case(name, source, input.as_deref(), "cpp", mode) {
+            failures.push(format!("{}: {}", name, e));
+        }
+    }
+    if !failures.is_empty() {
+        panic!(
+            "C++ e2e failures ({} of {} non-known):\n{}\n\n\
+             These are NEW failures not yet in KNOWN_CPP_FAILURES. \
+             Please investigate, record in CPP_FAILURES.md, and update the list.",
+            failures.len(),
+            cases.len() - known.len(),
+            failures.join("\n")
+        );
+    }
+}
+
+#[test]
+fn test_cide_e2e_cpp_known_failures() {
+    let mut passed_unexpectedly = Vec::new();
+    for name in KNOWN_CPP_FAILURES {
+        let path = Path::new("tests/cases/cpp").join(format!("{}.cpp", name));
+        let source = std::fs::read_to_string(&path).unwrap_or_default();
+        let input_path = path.with_extension("in");
+        let input = if input_path.exists() {
+            Some(std::fs::read_to_string(&input_path).unwrap_or_default())
+        } else {
+            None
+        };
+        let mode = if source.contains("getchar()") {
+            InputMode::Batch
+        } else {
+            InputMode::Interactive
+        };
+        if run_cpp_case(name, &source, input.as_deref(), "cpp", mode).is_ok() {
+            passed_unexpectedly.push(name.to_string());
+        }
+    }
+    if !passed_unexpectedly.is_empty() {
+        panic!(
+            "Known C++ failures unexpectedly PASSED ({}). \
+             Please update CPP_FAILURES.md and KNOWN_CPP_FAILURES in cide_e2e.rs:\n{}",
+            passed_unexpectedly.len(),
+            passed_unexpectedly.join("\n")
+        );
+    }
+}
+
+#[test]
 fn test_cide_e2e_generate_report() {
     let baseline_cases = load_cases(Path::new("tests/cases/baseline"));
     let template_cases = load_cases(Path::new("tests/cases_template_generated"));
     let knr_cases = load_cases(Path::new("tests/cases/knr"));
     let leetcode_cases = load_cases(Path::new("tests/cases/leetcode"));
+    let cpp_cases = load_cpp_cases(Path::new("tests/cases/cpp"));
 
     let known_template: std::collections::HashSet<&str> = KNOWN_TEMPLATE_FAILURES.iter().copied().collect();
     let known_kr: std::collections::HashSet<&str> = KNOWN_KR_FAILURES.iter().copied().collect();
     let known_leetcode: std::collections::HashSet<&str> = KNOWN_LEETCODE_FAILURES.iter().copied().collect();
+    let known_cpp: std::collections::HashSet<&str> = KNOWN_CPP_FAILURES.iter().copied().collect();
 
     let mut report = String::new();
     report.push_str("# Cide E2E 测试报告\n\n");
@@ -434,6 +556,12 @@ fn test_cide_e2e_generate_report() {
         leetcode_cases.len().saturating_sub(known_leetcode.len()),
         known_leetcode.len()
     ));
+    report.push_str(&format!(
+        "| C++ | {} | {} | {} |\n",
+        cpp_cases.len(),
+        cpp_cases.len().saturating_sub(known_cpp.len()),
+        known_cpp.len()
+    ));
     report.push('\n');
 
     if !KNOWN_TEMPLATE_FAILURES.is_empty() {
@@ -462,6 +590,16 @@ fn test_cide_e2e_generate_report() {
         report.push_str("|------|----------|\n");
         for name in KNOWN_LEETCODE_FAILURES {
             report.push_str(&format!("| {} | LEETCODE_FAILURES.md |\n", name));
+        }
+        report.push('\n');
+    }
+
+    if !KNOWN_CPP_FAILURES.is_empty() {
+        report.push_str("## 已知失败详情（C++）\n\n");
+        report.push_str("| 用例 | 根因文件 |\n");
+        report.push_str("|------|----------|\n");
+        for name in KNOWN_CPP_FAILURES {
+            report.push_str(&format!("| {} | CPP_FAILURES.md |\n", name));
         }
         report.push('\n');
     }

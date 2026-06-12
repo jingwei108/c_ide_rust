@@ -713,7 +713,7 @@ impl Parser {
                 init = Some(Box::new(Expr::Call {
                     name: format!("__ctor__{}", elem_type.name()),
                     args: Vec::new(),
-                    loc: loc.clone(),
+                    loc,
                     ty: Type::void(),
                 }));
             } else {
@@ -723,7 +723,7 @@ impl Parser {
                     init = Some(Box::new(Expr::Call {
                         name: format!("__ctor__{}__{}", elem_type.name(), ctor_args.len()),
                         args: ctor_args,
-                        loc: loc.clone(),
+                        loc,
                         ty: Type::void(),
                     }));
                 } else {

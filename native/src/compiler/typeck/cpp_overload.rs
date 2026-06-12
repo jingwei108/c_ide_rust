@@ -18,15 +18,14 @@ impl TypeChecker {
                         name: method_name,
                         ret,
                         params,
-                        body,
+                        body: Some(ref b),
                         is_const,
                         is_static,
                         ..
                     } => {
-                        if let Some(ref b) = body {
                             self.current_method_is_const = *is_const && !*is_static;
                             let func_params: Vec<Param> = if *is_static {
-                                params.iter().cloned().collect()
+                                params.to_vec()
                             } else {
                                 std::iter::once(Param {
                                     name: "this".to_string(),
@@ -55,10 +54,8 @@ impl TypeChecker {
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                             self.current_method_is_const = false;
                             class_methods.push(func_decl);
-                        }
                     }
-                    ClassMember::Constructor { params, body, .. } => {
-                        if let Some(ref b) = body {
+                    ClassMember::Constructor { params, body: Some(ref b), .. } => {
                             let ctor_name = if params.is_empty() {
                                 format!("__ctor__{}", c.name)
                             } else {
@@ -88,10 +85,8 @@ impl TypeChecker {
                             };
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                             class_methods.push(func_decl);
-                        }
                     }
-                    ClassMember::Destructor { body, .. } => {
-                        if let Some(ref b) = body {
+                    ClassMember::Destructor { body: Some(ref b), .. } => {
                             let mut func_decl = FuncDecl {
                                 loc: c.loc,
                                 return_type: Type::void(),
@@ -114,7 +109,6 @@ impl TypeChecker {
                             };
                             self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                             class_methods.push(func_decl);
-                        }
                     }
                     _ => {}
                 }

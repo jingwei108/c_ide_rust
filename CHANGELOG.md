@@ -40,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 存根中声明标准库函数符号，Parser/TypeChecker 自动识别，逐步替代硬编码函数名匹配
   - 预定义宏 `NULL`/`EOF`/`stdin`/`stdout`/`stderr` 在 Lexer 中内置，兼容 K&R 早期示例
 
+### Added (C++ 扩展 M6 — 测试防线收尾)
+- **59 个 C++ E2E 回归用例**：新增 `native/tests/cases/cpp/` 目录，覆盖三大类
+  - 核心语言（15）：class / ctor / dtor / 引用 / auto / 范围 for / 模板 / 虚函数 / this
+  - 容器与算法（15）：自实现 vector<int/float/char> / list<int> / string / 排序 / 栈 / 队列 / 链表 / 二叉树
+  - 教学/OJ 题目（29）：Two Sum / 去重 / 移除元素 / 二分 / 最大子数组 / 股票 / 单数 / 多数 / 旋转 / 移动零 / 回文 / 括号 / 反转链表 / 合并链表 / 树深度 / 相同树 / 翻转树 / 爬楼梯 / 帕斯卡 / 平方根 / 罗马数字 / 缺失数字 / 公共前缀 / 首个唯一字符等
+- **C++ E2E 测试框架**：扩展 `native/tests/cide_e2e.rs`
+  - `compile_and_run_cpp` 通过 `cide_compile_unit(..., "main.cpp", ...)` 自动启用 C++ 模式
+  - `load_cpp_cases` / `run_cpp_case` 支持 `.cpp` 用例与 `.in` 输入文件
+  - `test_cide_e2e_cpp` / `test_cide_e2e_cpp_known_failures` 及 `KNOWN_CPP_FAILURES` 监控
+  - `TEST_REPORT.md` 生成已汇总 C++ 统计
+- **Golden 来源**：所有 59 个 `.out` 文件由 Clang++ (`-std=c++14 -O0`) 生成，Cide 输出与之逐行对比，目前 59/59 全绿
+- **诚实记录子集边界**：`native/tests/CPP_FAILURES.md` 新增 M6 过程中识别的 Cide C++ 子集边界（如类字段逗号多声明、指针逻辑运算、模板类方法引用参数等），用例已规避，无已知失败
+
 ### Added (C++ 扩展 Stage 1 — 类模板实例化)
 - **Parser 模板 id 类型解析**：新增 `Type::TemplateId { base, args }`，`Parser` 维护 `template_names` 集合，`parse_base_type` 识别 `vector<int>` 语法
 - **TypeChecker 类模板实例化**：`try_monomorphize_class` 镜像函数模板单态化逻辑，支持字段/方法/构造函数/析构函数中的模板参数替换

@@ -1594,20 +1594,20 @@ impl Parser {
             Some(Stmt::Block { mut stmts, loc }) => {
                 let mut new_stmts = Vec::new();
                 for (field, expr) in init_list {
-                    let expr_loc = expr.loc().clone();
+                    let expr_loc = *expr.loc();
                     let assign_expr = Expr::Assign {
                         op: AssignOp::Assign,
                         left: Box::new(Expr::Member {
                             object: Box::new(Expr::This {
-                                loc: expr_loc.clone(),
+                                loc: expr_loc,
                                 ty: Type::default(),
                             }),
                             member: field,
-                            loc: expr_loc.clone(),
+                            loc: expr_loc,
                             ty: Type::default(),
                         }),
                         right: Box::new(expr),
-                        loc: expr_loc.clone(),
+                        loc: expr_loc,
                         ty: Type::default(),
                     };
                     new_stmts.push(Stmt::Expr {

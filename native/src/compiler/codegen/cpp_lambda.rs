@@ -38,9 +38,9 @@ impl BytecodeGen {
 
         // Initialize capture fields
         for (field_name, field_offset, _field_ty) in field_offsets {
-            let cap_mode = capture.iter().find_map(|cap| match cap {
-                CaptureMode::ByValue(n) | CaptureMode::ByReference(n) if n == &field_name => Some(cap),
-                _ => None,
+            let cap_mode = capture.iter().find(|cap| match cap {
+                CaptureMode::ByValue(n) | CaptureMode::ByReference(n) => n == &field_name,
+                _ => false,
             });
 
             if let Some(cap) = cap_mode {

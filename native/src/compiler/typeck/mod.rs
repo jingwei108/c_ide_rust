@@ -37,6 +37,7 @@ pub(crate) struct MethodSig {
     pub is_virtual: bool,
     #[allow(dead_code)]
     pub is_static: bool,
+    #[allow(dead_code)]
     pub is_explicit: bool,
     pub is_const: bool,
     pub access: AccessSpec,
@@ -1357,10 +1358,8 @@ impl TypeChecker {
                     Self::rewrite_lambda_captures(s, captures, lambda_name);
                 }
             }
-            Stmt::VarDecl { init, .. } => {
-                if let Some(e) = init {
-                    Self::rewrite_lambda_captures_in_expr(e, captures, lambda_name);
-                }
+            Stmt::VarDecl { init: Some(e), .. } => {
+                Self::rewrite_lambda_captures_in_expr(e, captures, lambda_name);
             }
             Stmt::Expr { expr, .. } => {
                 Self::rewrite_lambda_captures_in_expr(expr, captures, lambda_name);
@@ -1392,10 +1391,8 @@ impl TypeChecker {
                 }
                 Self::rewrite_lambda_captures(body, captures, lambda_name);
             }
-            Stmt::Return { value, .. } => {
-                if let Some(v) = value {
-                    Self::rewrite_lambda_captures_in_expr(v, captures, lambda_name);
-                }
+            Stmt::Return { value: Some(v), .. } => {
+                Self::rewrite_lambda_captures_in_expr(v, captures, lambda_name);
             }
             Stmt::Switch { cond, body, .. } => {
                 Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
@@ -1475,10 +1472,8 @@ impl TypeChecker {
             Expr::Cast { expr, .. } => {
                 Self::rewrite_lambda_captures_in_expr(expr, captures, lambda_name);
             }
-            Expr::Sizeof { operand, .. } => {
-                if let Some(e) = operand {
-                    Self::rewrite_lambda_captures_in_expr(e, captures, lambda_name);
-                }
+            Expr::Sizeof { operand: Some(e), .. } => {
+                Self::rewrite_lambda_captures_in_expr(e, captures, lambda_name);
             }
             Expr::InitList { elements, .. } => {
                 for e in elements.iter_mut() {

@@ -326,10 +326,7 @@ impl TypeChecker {
                     access: AccessSpec::Public,
                 },
             );
-            if !self.funcs.contains_key(&default_ctor_name) {
-                self.funcs.insert(
-                    default_ctor_name,
-                    FuncSymbol {
+            self.funcs.entry(default_ctor_name).or_insert_with(|| FuncSymbol {
                         return_type: Type::void(),
                         param_types: vec![Type::Pointer {
                             pointee: Box::new(Type::Class {
@@ -338,9 +335,7 @@ impl TypeChecker {
                             }),
                             is_const: false,
                         }],
-                    },
-                );
-            }
+                    });
         }
 
         // Register builtin container layouts so TypeChecker knows their sizes

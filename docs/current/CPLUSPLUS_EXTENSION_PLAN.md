@@ -1,8 +1,8 @@
 # Cide C++14 教学子集拓展实施计划
 
-**版本**: 2.6  
-**日期**: 2026-06-10  
-**状态**: Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>` 运行时 stdout 与 C 基线完全一致；`get`/`size` 等简单方法字节码逐指令等价验证通过（StepEvent 归一化 + 启动代码排除）；`sort_int` C++ 全局函数实现运行时一致性验证通过；**M5 隐式移动构造函数自动生成已实现**：类定义含指针/资源字段时，编译器自动生成 `__ctor__{Class}__move`，`std::move` 初始化对象时调用，并将源对象指针字段置空防止双重释放；**`unique_ptr<T>` 简化版 dogfooding 已实现**：支持构造/`get`/`release`/`reset`/`std::move` 转移所有权/析构，新增 Dogfooding 测试（总计 29 个，全绿）；全部 600+ Rust 单元测试保持全绿，C++ 三 tier 已纳入 CI  
+**版本**: 2.7  
+**日期**: 2026-06-12  
+**状态**: **M6 测试防线收尾已完成**：新增 `native/tests/cases/cpp/` 59 个 C++ E2E 回归用例（超过计划 50 个），覆盖核心语言、容器算法、教学/OJ 题目三大类，全部用例 stdout 与 Clang++ (`-std=c++14 -O0`) 输出逐行一致；`test_cide_e2e_cpp` / `test_cide_e2e_cpp_known_failures` 已纳入 E2E 测试框架；`TEST_REPORT.md` 已汇总 C++ 统计；`CPP_FAILURES.md` 已记录 M6 过程中识别的 Cide C++ 子集边界（用例已规避，无已知失败）。此前 Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>` 运行时 stdout 与 C 基线完全一致；`get`/`size` 等简单方法字节码逐指令等价验证通过；`sort_int` C++ 全局函数实现运行时一致性验证通过；M5 隐式移动构造函数自动生成、`unique_ptr<T>` 简化版 dogfooding、CppImplicit 全面作用域守卫均已完成；全部 Rust 单元测试保持全绿，C++ 三 tier 已纳入 CI  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
@@ -953,7 +953,7 @@ native/src/compiler/
 
 ### 7.1 CppExplicit 模式
 
-学生显式管理资源生命周期，与 C 模式一致：
+学生显式管理资源生命周期，与 C 模式一致。此模式用于进阶教学，让学生理解 RAII 的本质：
 
 ```cpp
 vector<int> v;
@@ -965,49 +965,270 @@ v.__destroy();   // 显式调用
 
 ### 7.2 CppImplicit 模式
 
-编译器在每个作用域退出点自动插入析构调用：
+编译器在每个作用域退出点（块结束、`return`、`break`、`continue`）按 **LIFO（先构造的后析构）** 自动插入析构调用，学生无需手写 `__destroy`。此模式用于入门教学，降低心智负担。
 
 ```cpp
-void foo() {
-    vector<int> v;      // __init 自动插入
+void foo(bool cond) {
+    vector<int> v;          // __ctor__vector_int 自动插入
     v.push_back(1);
     if (cond) {
-        vector<int> w;  // __init 自动插入
+        vector<int> w;      // __ctor__vector_int 自动插入
         w.push_back(2);
-        return;         // w.__destroy 自动插入，v.__destroy 自动插入
+        return;             // __dtor__vector_int(w) → __dtor__vector_int(v) 自动插入
     }
     v.push_back(3);
-}                       // v.__destroy 自动插入
+}                           // __dtor__vector_int(v) 自动插入
 ```
 
-### 7.3 作用域守卫生成算法
+覆盖场景：
+
+| 场景 | 行为 |
+|------|------|
+| 块作用域正常结束 | 逆序析构当前块内所有类对象 |
+| `return` | 逆序析构函数内所有活跃作用域的类对象 |
+| `break` / `continue` | 逆序析构当前循环内部作用域的类对象，再跳转 |
+| 嵌套作用域 | 内层对象先于外层对象析构 |
+| 循环体 | 每次进入循环体 = 新作用域；循环正常结束或跳转时析构 |
+| `goto` 跳出作用域 | 由 BytecodeGen 根据目标 label 所在作用域深度，析构中间跳过的作用域（教学子集建议避免此类写法，行为与 GCC -O0 保持一致） |
+
+### 7.3 全面作用域守卫生成算法
+
+CppImplicit 模式的核心不是 AST 层面的"降解"，而是 BytecodeGen 在代码生成阶段维护**作用域帧（ScopeFrame）**，并在每一条可能退出作用域的控制流边前注入析构调用。这样 SourceLoc 天然保留，且无需对 AST 做前置变换。
+
+#### 7.3.1 数据结构
 
 ```rust
-fn generate_implicit_dtors(stmt: &Stmt) -> Stmt {
-    match stmt {
-        Stmt::Block(stmts) => {
-            let mut dtors = Vec::new();
-            let mut new_stmts = Vec::new();
-            for s in stmts {
-                if is_early_exit(s) {
-                    new_stmts.extend(dtors.iter().cloned());
-                }
-                new_stmts.push(generate_implicit_dtors(s));
-                if let Stmt::VarDecl { name, var_type, .. } = s {
-                    if has_dtor(var_type) {
-                        dtors.push(generate_dtor_call(name, var_type));
-                    }
-                }
-            }
-            for dtor in dtors.iter().rev() {
-                new_stmts.push(dtor.clone());
-            }
-            Stmt::Block(new_stmts)
-        }
-        _ => stmt.clone(),
+// native/src/compiler/codegen/mod.rs
+
+#[derive(Debug, Clone)]
+struct ClassVarEntry {
+    name: String,       // 变量名，用于调试
+    offset: i32,        // 相对于栈帧基址的局部变量偏移
+    class_name: String, // 类名，用于查找 __dtor__{ClassName}
+}
+
+#[derive(Debug, Clone, Default)]
+struct ScopeFrame {
+    shadows: Vec<ShadowEntry>,
+    /// 在当前 scope 中声明的类类型局部变量，按声明顺序排列。
+    /// 作用域退出时按 LIFO（逆序）调用析构函数。
+    class_vars: Vec<ClassVarEntry>,
+}
+
+pub struct BytecodeGen {
+    local_scope_stack: Vec<ScopeFrame>,
+    /// 当前 loop 对应的 scope 深度栈，与 loop_start_ips 同步 push/pop。
+    /// 用于 break/continue 时计算需要析构的 scope 层数。
+    loop_scope_depths: Vec<usize>,
+    // ...
+}
+```
+
+#### 7.3.2 构造时登记
+
+当 `Stmt::VarDecl` 声明一个 class 类型局部变量时，BytecodeGen 完成两件事：
+
+1. 若变量无初始化表达式，生成对默认构造函数 `__ctor__{ClassName}` 的调用；
+2. 将该变量登记到当前 `ScopeFrame.class_vars` 末尾。
+
+```rust
+// native/src/compiler/codegen/stmt.rs
+
+if vty.is_class() {
+    if let Type::Class { name: class_name, .. } = vty {
+        self.record_class_var(name, local_offset, class_name);
+        self.emit_class_default_ctor(class_name, local_offset, loc);
     }
 }
 ```
+
+`record_class_var` 把条目追加到当前 scope 的 `class_vars`，保证顺序与构造顺序一致：
+
+```rust
+fn record_class_var(&mut self, name: &str, offset: i32, class_name: &str) {
+    if let Some(frame) = self.local_scope_stack.last_mut() {
+        frame.class_vars.push(ClassVarEntry {
+            name: name.to_string(),
+            offset,
+            class_name: class_name.to_string(),
+        });
+    }
+}
+```
+
+#### 7.3.3 析构函数调用生成
+
+```rust
+/// 生成对栈上指定偏移处类对象的析构函数调用。
+fn emit_class_dtor(&mut self, class_name: &str, offset: i32, loc: &SourceLoc) {
+    let dtor_name = format!("__dtor__{}", class_name);
+    if let Some(&idx) = self.func_index.get(&dtor_name) {
+        self.emit(OpCode::GetFrameBase, 0, loc);
+        self.emit(OpCode::PushConst, offset, loc);
+        self.emit(OpCode::Add, 0, loc);
+        self.emit(OpCode::Call, idx, loc);
+    }
+}
+
+/// 生成对栈上指定偏移处类对象的默认构造函数调用。
+fn emit_class_default_ctor(&mut self, class_name: &str, offset: i32, loc: &SourceLoc) {
+    let ctor_name = format!("__ctor__{}", class_name);
+    if let Some(&idx) = self.func_index.get(&ctor_name) {
+        self.emit(OpCode::GetFrameBase, 0, loc);
+        self.emit(OpCode::PushConst, offset, loc);
+        self.emit(OpCode::Add, 0, loc);
+        self.emit(OpCode::Call, idx, loc);
+    }
+}
+```
+
+#### 7.3.4 正常块退出析构
+
+当 Block 结束、调用 `exit_scope` 时，先逆序调用当前 scope 内所有类对象的析构函数，再恢复被 shadow 的外部变量：
+
+```rust
+fn exit_scope(&mut self) {
+    if let Some(frame) = self.local_scope_stack.pop() {
+        // 逆序调用析构函数（C++ 销毁顺序与构造顺序相反）
+        for cv in frame.class_vars.iter().rev() {
+            self.emit_class_dtor(&cv.class_name, cv.offset, &SourceLoc { line: 0, column: 0 });
+        }
+        for entry in frame.shadows { /* 恢复 shadow 变量 */ }
+    }
+}
+```
+
+#### 7.3.5 提前退出控制流的统一析构
+
+`return`、`break`、`continue` 都会跳转出若干作用域。统一入口是 `emit_dtors_for_scope_exit(target_depth, loc)`：
+
+```rust
+/// target_depth 是目标 scope 在 `local_scope_stack` 中的索引：
+/// - 0 表示函数最外层 block 之前的 scope（函数参数）
+/// - 1 表示函数最外层 block
+fn emit_dtors_for_scope_exit(&mut self, target_depth: usize, loc: &SourceLoc) {
+    let current_depth = self.local_scope_stack.len();
+    if current_depth == 0 || current_depth < target_depth {
+        return;
+    }
+    // 收集待析构对象，先按 scope 从外到内收集，每层内部逆序
+    let start_frame_idx = target_depth;
+    let mut dtors: Vec<(String, i32)> = Vec::new();
+    for frame_idx in (start_frame_idx..current_depth).rev() {
+        let frame = &self.local_scope_stack[frame_idx];
+        for cv in frame.class_vars.iter().rev() {
+            dtors.push((cv.class_name.clone(), cv.offset));
+        }
+    }
+    // 统一生成析构调用
+    for (class_name, offset) in dtors {
+        self.emit_class_dtor(&class_name, offset, loc);
+    }
+}
+```
+
+##### `return`
+
+`return` 需要析构函数内所有活跃作用域中的对象，因此 `target_depth = 0`：
+
+```rust
+Stmt::Return { value, loc } => {
+    if let Some(ref mut v) = value {
+        // 1. 计算返回值（必须在析构之前，可能依赖局部对象）
+        self.gen_expr(v);
+        // 2. 析构所有活跃 scope
+        self.emit_dtors_for_scope_exit(0, loc);
+        self.emit(OpCode::Ret, 0, loc);
+    } else {
+        self.emit_dtors_for_scope_exit(0, loc);
+        self.emit(OpCode::RetVoid, 0, loc);
+    }
+}
+```
+
+##### `break` / `continue`
+
+`break` 和 `continue` 只退出当前循环内部的作用域，因此 `target_depth` 等于进入循环体时记录的 scope 深度：
+
+```rust
+Stmt::Break { loc } => {
+    let target_depth = self.loop_scope_depths.last().copied().unwrap_or(1);
+    self.emit_dtors_for_scope_exit(target_depth, loc);
+    let ip = self.current_ip();
+    self.emit(OpCode::Jump, 0, loc);
+    self.break_patches.push(ip);
+}
+
+Stmt::Continue { loc } => {
+    let target_depth = self.loop_scope_depths.last().copied().unwrap_or(1);
+    self.emit_dtors_for_scope_exit(target_depth, loc);
+    let ip = self.current_ip();
+    self.emit(OpCode::Jump, 0, loc);
+    self.continue_patches.push(ip);
+}
+```
+
+循环进入时同步记录深度：
+
+```rust
+Stmt::While { cond, body, loc } => {
+    // ...
+    self.loop_scope_depths.push(self.local_scope_stack.len());
+    self.gen_stmt(body);
+    // ...
+    self.loop_scope_depths.pop();
+}
+```
+
+#### 7.3.6 嵌套作用域 LIFO 示例
+
+```cpp
+void bar() {
+    A a;          // 深度 1
+    {
+        B b;      // 深度 2
+        {
+            C c;  // 深度 3
+        }         // __dtor__C(&c)
+    }             // __dtor__B(&b)
+}                 // __dtor__A(&a)
+```
+
+若 `return` 发生在 `C c;` 之后：
+
+1. `emit_dtors_for_scope_exit(0)` 收集深度 3、2、1 的所有类对象；
+2. 收集顺序（由外到内，每层逆序）：`c`、`b`、`a`；
+3. 生成调用：`__dtor__C(&c)` → `__dtor__B(&b)` → `__dtor__A(&a)`。
+
+#### 7.3.7 与 TypeChecker 的协作
+
+- TypeChecker 在 `cpp_class_layout.rs` 中为每个 class 注册显式析构函数，若未声明默认构造函数则**自动注册隐式默认构造函数** `__ctor__{ClassName}`。
+- `cpp_overload.rs` 将 `Constructor` / `Destructor` / `Method` 体转换为普通 `FuncDecl`（mangled 名称）并追加到 `program.funcs`，供 BytecodeGen 统一生成代码。
+- 隐式移动构造函数 `__ctor__{ClassName}__move` 在 Stage 5 自动生成，用于 `std::move` 初始化时的源对象资源转移。
+
+#### 7.3.8 测试覆盖矩阵
+
+| 测试 | 场景 | 预期 |
+|------|------|------|
+| `test_cpp_stack_ctor_dtor_basic` | 栈对象默认构造/析构 | 输出构造+析构顺序 |
+| `test_cpp_nested_scope_dtors_lifo` | 嵌套作用域 LIFO | 输出 `21` |
+| `test_cpp_early_return_dtors` | `return` 前自动析构 | 输出 `21` |
+| `test_cpp_break_dtors` | `break` 前自动析构 | 输出 `12` |
+| `test_cpp_continue_dtors` | `continue` 前自动析构 | 输出 `123` |
+| `test_cpp_deep_nested_scope_raii` | 深层嵌套 `return` | 输出 `321` |
+| `test_cpp_goto_with_dtor_scope` | `goto` 跳过 scope | 行为与 GCC -O0 一致 |
+
+#### 7.3.9 与 AST 降解方案对比
+
+| 维度 | AST 降解方案 | BytecodeGen 内嵌 ScopeFrame 方案（当前实现） |
+|------|-------------|------------------------------------------|
+| SourceLoc | 需要 Source Map 回查 | **天然保留**（析构调用 loc 指向原始跳转语句） |
+| 实现位置 | 独立 `implicit_dtor.rs` | 内嵌 `codegen/mod.rs` + `codegen/stmt.rs` |
+| 控制流 | 需处理全部跳转边 | 统一 `emit_dtors_for_scope_exit` 入口 |
+| 嵌套/循环 | 复杂 | `loop_scope_depths` 栈直接索引 |
+| 编译速度 | 慢（额外 AST 遍历） | 快（与代码生成同阶段完成） |
+
+
 
 ---
 
@@ -1058,9 +1279,9 @@ fn generate_implicit_dtors(stmt: &Stmt) -> Stmt {
 
 | 周 | 任务 | 产出 |
 |----|------|------|
-| W13 | 右值引用 / 移动语义 | `cpp_rvalue_ref.rs` |
-| W14 | unique_ptr / shared_ptr（简化版） | `cpp_smart_ptr.rs` |
-| W15 | CppImplicit 模式（作用域守卫） | `implicit_dtor.rs` |
+| W13 | 右值引用 / 移动语义 | `cpp_overload.rs`（隐式移动构造） |
+| W14 | unique_ptr / shared_ptr（简化版） | `cpp_dogfooding_test.rs` + `native/tests/dogfooding/` |
+| W15 | CppImplicit 模式（全面作用域守卫） | `codegen/mod.rs`（`ScopeFrame` / `emit_dtors_for_scope_exit`）|
 
 ### 8.6 Phase 5：测试防线 + 教材回归（3 周）
 
@@ -1133,7 +1354,7 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 
 ## 十、Dogfooding 与 C++ 容器验证
 
-> **当前状态（2026-06-10）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。Stage 4 引用声明与基本语义已完成：`int& r = x` 全链路通过；`T&` 函数参数/返回值支持；引用自动解引用；引用参数隐式取地址；返回引用的函数调用识别为左值。Stage 5 Dogfooding 基础设施已完成：`native/tests/test_utils.rs` 提供 `compile_cpp_bytecode` + `assert_bytecode_equivalent`（Jump/Call 归一化 + diff 输出）；`native/tests/cpp_dogfooding_test.rs` 提供 harness 和工具自验证。Stage 6 `vector<int>` Dogfooding 已启动：C++ 模板类 `vector<int>`（使用 `new[]/delete[]` + 循环复制）编译通过并运行正确，stdout 与 C 基线 `cide_vec_int` 一致（`3\n1\n4\n`）。**构造函数成员初始化列表 `Class() : field(val) {}` 已修复**：Parser 在两个构造函数分支增加 `parse_ctor_init_list()`，降解为 `this->field = expr;` 赋值语句插入 `Block` 开头。**Stage 1 Dogfooding 验证推进**：
+> **当前状态（2026-06-12）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数（即第 7.3 节所述的 CppImplicit 全面作用域守卫）。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。Stage 4 引用声明与基本语义已完成：`int& r = x` 全链路通过；`T&` 函数参数/返回值支持；引用自动解引用；引用参数隐式取地址；返回引用的函数调用识别为左值。Stage 5 Dogfooding 基础设施已完成：`native/tests/test_utils.rs` 提供 `compile_cpp_bytecode` + `assert_bytecode_equivalent`（Jump/Call 归一化 + diff 输出）；`native/tests/cpp_dogfooding_test.rs` 提供 harness 和工具自验证。Stage 6 `vector<int>` Dogfooding 已启动：C++ 模板类 `vector<int>`（使用 `new[]/delete[]` + 循环复制）编译通过并运行正确，stdout 与 C 基线 `cide_vec_int` 一致（`3\n1\n4\n`）。**构造函数成员初始化列表 `Class() : field(val) {}` 已修复**：Parser 在两个构造函数分支增加 `parse_ctor_init_list()`，降解为 `this->field = expr;` 赋值语句插入 `Block` 开头。**Stage 1 Dogfooding 验证推进**：
 > - `vector<int/float/char>`、`string`、`list<int>` C++ 纯实现运行时 stdout 与 C 基线完全一致
 > - `sort_int` C++ 模板函数实现运行时 stdout 与 C 基线完全一致（排序结果 `1\n1\n3\n4\n5\n`）
 > - **字节码等价验证**：`get`/`size` 等简单访问方法在 C++ class 与 C struct 字段布局对齐后，逐指令等价（StepEvent 行号归一化 + Call 目标名归一化 + 启动代码排除）
@@ -1248,8 +1469,8 @@ public:
 | M4：容器库集成完成 | T+10 周 | vector<int> / string 预编译通过，`v.push_back` 生成正确字节码 |
 | M4.5：Stage 2 栈 RAII 完成 | T+1 周 | 局部类对象自动调用默认构造函数；scope exit / return / break / continue 自动按 LIFO 调用析构函数；嵌套 scope + early return + loop 跳转测试全绿 |
 | M4.6：Stage 3 `new[]/delete[]` 元素构造析构完成 | T+0 周 | `new A[n]` 逐元素调用构造函数；`delete[]` 从 `base[-4]` 读取 count 并逆序调用析构函数；临时变量槽位扩展至 4 个；新增 2 个数组构造析构测试全绿 |
-| M5：高级特性完成 | T+13 周 | **移动语义 ✅（隐式移动构造函数自动生成）** / **`unique_ptr<T>` ✅（简化版 dogfooding）** / CppImplicit 模式通过测试 |
-| M6：测试防线完成 | T+16 周 | 五层测试防线全部通过，50 道教材题目回归通过 |
+| M5：高级特性完成 | T+13 周 | **移动语义 ✅（隐式移动构造函数自动生成）** / **`unique_ptr<T>` ✅（简化版 dogfooding）** / **CppImplicit 模式 ✅（全面作用域守卫，块结束 / return / break / continue / 嵌套作用域 LIFO 析构）** |
+| **M6：测试防线完成** | **T+16 周** | **✅ 五层测试防线全部通过，59 道 C++ 教材/OJ 题目回归通过（超过计划的 50 道）** |
 | M7：Beta 发布 | T+18 周 | 内部试用，收集反馈 |
 | M8：正式发布 | T+22 周 | 文档完整，教学场景验证通过 |
 | **M9：容器 Dogfooding（Stage 1）** | **T+26 周** | **用 Cide C++ 编译器编译 C++ 容器源码，字节码与 C 版本逐指令一致** |
