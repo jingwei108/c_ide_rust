@@ -7,12 +7,52 @@ impl TypeChecker {
             self.register_single_class_layout(&c.name, c);
         }
 
+        // Second pass: compute has_resource for all registered classes (including builtins)
+        let class_names: Vec<String> = self.classes.keys().cloned().collect();
+        for name in class_names {
+            let has_resource = self.compute_class_has_resource(&name);
+            if let Some(sym) = self.classes.get_mut(&name) {
+                sym.has_resource = has_resource;
+            }
+        }
+
         // Write vtables back to program.classes for BytecodeGen
         for c in &mut program.classes {
             if let Some(sym) = self.classes.get(&c.name) {
                 c.vtable = sym.vtable.clone();
             }
         }
+    }
+
+    /// Check whether a type contains resources (pointers, references, or class fields
+    /// that themselves contain resources).
+    fn type_contains_resource(&self, ty: &Type) -> bool {
+        match ty {
+            Type::Pointer { .. } | Type::Reference { .. } | Type::RValueRef { .. } => true,
+            Type::Class { name, .. } => self.compute_class_has_resource(name),
+            Type::Array { element, .. } => self.type_contains_resource(element),
+            _ => false,
+        }
+    }
+
+    /// Compute whether a class (by name) contains resource fields.
+    fn compute_class_has_resource(&self, name: &str) -> bool {
+        let sym = match self.classes.get(name) {
+            Some(s) => s,
+            None => return false,
+        };
+        // Check base class
+        if let Some(ref base_name) = sym.base {
+            if self.compute_class_has_resource(base_name) {
+                return true;
+            }
+        }
+        for (ty, _, _) in &sym.fields {
+            if self.type_contains_resource(ty) {
+                return true;
+            }
+        }
+        false
     }
 
     pub(crate) fn register_single_class_layout(&mut self, name: &str, c: &ClassDecl) {
@@ -165,6 +205,7 @@ impl TypeChecker {
             base: c.base.clone(),
             vtable,
             size: 0,
+            has_resource: false,
         };
         self.classes.insert(name.to_string(), sym);
         // Now compute actual size (static fields are NOT part of instance)
@@ -210,6 +251,7 @@ impl TypeChecker {
                             base: None,
                             vtable: None,
                             size: layout.size,
+                            has_resource: false,
                         },
                     );
                 }

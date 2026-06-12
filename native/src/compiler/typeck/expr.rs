@@ -545,6 +545,22 @@ impl TypeChecker {
                         *ty = Type::int();
                         return ty.clone();
                     }
+                } else if let Type::Reference { base, .. } | Type::RValueRef { base } = &obj_type {
+                    if let Type::Struct { name, .. } = base.as_ref() {
+                        (name.clone(), "struct")
+                    } else if let Type::Union { name, .. } = base.as_ref() {
+                        (name.clone(), "union")
+                    } else if let Type::Class { name, .. } = base.as_ref() {
+                        (name.clone(), "class")
+                    } else {
+                        self.report_error(
+                            "'.' 和 '->' 只能用于结构体、联合体或类类型",
+                            loc,
+                            ErrorCode::E3041_MemberNonStruct,
+                        );
+                        *ty = Type::int();
+                        return ty.clone();
+                    }
                 } else {
                     self.report_error(
                         "'.' 和 '->' 只能用于结构体、联合体或类类型",
@@ -929,6 +945,7 @@ impl TypeChecker {
                             base: None,
                             vtable: None,
                             size,
+                            has_resource: false,
                         },
                     );
                 }

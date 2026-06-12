@@ -730,6 +730,13 @@ impl ExprGen for BytecodeGen {
                 }
             }
             Expr::CallPtr { callee, args, ty, .. } => {
+                // std::move(x) is a compile-time cast to RValueRef; no function call.
+                if let Expr::Identifier { name, .. } = callee.as_ref() {
+                    if name == "std__move" && args.len() == 1 {
+                        self.gen_expr(&mut args[0]);
+                        return;
+                    }
+                }
                 // Determine if this CallPtr will resolve to a user function call (needs SplitD/SplitQ)
                 // or a host/built-in call (passes 64-bit values directly).
                 let is_user_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
@@ -1091,6 +1098,10 @@ impl ExprGen for BytecodeGen {
     fn gen_member_addr(&mut self, object: &mut Expr, member: &str, loc: &SourceLoc) {
         if object.ty().is_pointer() {
             self.gen_expr(object);
+        } else if object.ty().is_reference() || object.ty().is_rvalue_ref() {
+            // Reference/RValueRef: gen_addr yields the address it stores,
+            // which is the object address we need for member access.
+            self.gen_addr(object, loc);
         } else if let Expr::Index { array, index, ty, .. } = object {
             self.gen_index(array, index, ty, loc, true);
         } else if let Expr::Member { object: inner, member: m, .. } = object {
@@ -1294,12 +1305,26 @@ impl ExprGen for BytecodeGen {
                 self.gen_expr(operand);
             }
             Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } if ty.is_struct() || ty.is_reference() || ty.is_rvalue_ref() => {
+                // For std::move(x), gen_addr should yield the address of x,
+                // not the value that gen_expr would leave.
+                if let Expr::CallPtr { callee, args, .. } = expr {
+                    if let Expr::Identifier { name, .. } = callee.as_ref() {
+                        if name == "std__move" && args.len() == 1 {
+                            self.gen_addr(&mut args[0], loc);
+                            return;
+                        }
+                    }
+                }
                 // 函数按值返回结构体 / 返回引用，gen_expr 已在栈顶留下地址
                 self.gen_expr(expr);
             }
             Expr::Lambda { .. } => {
                 // Lambda 表达式已在栈顶留下临时闭包对象的地址
                 self.gen_expr(expr);
+            }
+            Expr::Move { expr: inner, .. } => {
+                // std::move(x) — address of the moved-from object
+                self.gen_addr(inner, loc);
             }
             _ => {
                 self.report_error("不支持的地址生成", loc);

@@ -51,6 +51,9 @@ pub(crate) struct ClassSymbol {
     pub base: Option<String>,
     pub vtable: Option<VTable>,
     pub size: i32,
+    /// True if the class contains pointer/reference/RValueRef fields or class fields
+    /// that themselves have resources. Triggers implicit move ctor generation.
+    pub has_resource: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -428,6 +431,9 @@ impl TypeChecker {
 
         // Pass 3.5: Check class method / constructor / destructor bodies
         self.check_class_methods(program);
+
+        // Pass 3.55: Generate implicit move constructors for resource-holding classes
+        self.generate_implicit_move_ctors(program);
 
         // Pass 3.6: Check pending function template instantiations recursively.
         // Function template instantiations discovered during Pass 3/3.5 may contain
@@ -905,6 +911,12 @@ impl TypeChecker {
                 }
             }
             return false;
+        }
+        // RValueRef value binding to class type: implicit move construction
+        if let Type::RValueRef { base: v_base } = value {
+            if target.is_class() && v_base.as_ref() == target {
+                return true;
+            }
         }
         if let Type::RValueRef { base: t_base } = target {
             if t_base.as_ref() == value {

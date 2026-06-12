@@ -50,6 +50,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **zero-size 类 zero-init 跳过**：`sz == 0` 时不 emit `StoreLocal`，避免 `STACK_START` 边界越界
 - **集成测试 +5**：`Box<int>` 字段访问、`Adder<int>` 方法调用、`Wrapper<int>` 构造函数 + `new`、`Ptr<int>` 指针字段、类型不匹配负向测试
 
+### Added (C++ 扩展 Stage 5 — 隐式移动构造函数自动生成)
+- **资源检测**：`ClassSymbol` 新增 `has_resource` 字段；`typeck/cpp_class_layout.rs` 在类布局注册后第二遍计算，递归检测指针、`Reference`/`RValueRef`、含资源 class/struct、数组元素等资源字段
+- **隐式移动构造函数生成**：`typeck/cpp_overload.rs` 新增 `generate_implicit_move_ctors`，为含资源且无显式移动构造的类自动生成 `__ctor__{Class}__move`；函数体逐字段拷贝，并将源对象指针字段置 `nullptr`，防止双重释放
+- **类型系统适配**：
+  - `check_assignable` 允许 `RValueRef<Class>` 赋值给 `Class`（触发移动构造）
+  - `Expr::Member` 类型检查支持 `Reference`/`RValueRef` 对象访问
+- **BytecodeGen 调用路径**：
+  - `VarDecl` 初始化时检测到 `RValueRef`/`Expr::Move` 调用 `__ctor__{Class}__move`，按 VM 参数弹出顺序右-to-left 压入 `this`/`other`
+  - `gen_member_addr` 与 `get_member_offset` 支持 `Reference`/`RValueRef` 对象地址计算
+  - `gen_addr` 对 `std::move(x)` 返回 `x` 的地址而非值；`CallPtr(std__move)` 在 `gen_expr` 中透传参数
+  - 调用移动构造函数后记录 `class_vars`，确保作用域退出时析构被调用
+- **测试 +2**：`test_implicit_move_ctor_pointer_nulls_source`、`test_implicit_move_ctor_builtin_vector`，Dogfooding 测试总数达 28 个，全绿
+
 ### Added (C++ 扩展 Stage 0.5 — Phase 3 收口)
 - **容器库编译器支持补全**：
   - `builtin_layout.rs` 新增 `cide_list_int` 布局；`layouts.toml` 新增 `[vector_char]`、`[list_int]`

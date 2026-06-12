@@ -2,7 +2,7 @@
 
 **版本**: 2.6  
 **日期**: 2026-06-10  
-**状态**: Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>` 运行时 stdout 与 C 基线完全一致；`get`/`size` 等简单方法字节码逐指令等价验证通过（StepEvent 归一化 + 启动代码排除）；`sort_int` C++ 全局函数实现运行时一致性验证通过；新增 15 个 Dogfooding 测试（总计 26 个，全绿）；全部 600+ Rust 单元测试保持全绿，C++ 三 tier 已纳入 CI  
+**状态**: Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>` 运行时 stdout 与 C 基线完全一致；`get`/`size` 等简单方法字节码逐指令等价验证通过（StepEvent 归一化 + 启动代码排除）；`sort_int` C++ 全局函数实现运行时一致性验证通过；**M5 隐式移动构造函数自动生成已实现**：类定义含指针/资源字段时，编译器自动生成 `__ctor__{Class}__move`，`std::move` 初始化对象时调用，并将源对象指针字段置空防止双重释放；新增 17 个 Dogfooding 测试（总计 28 个，全绿）；全部 600+ Rust 单元测试保持全绿，C++ 三 tier 已纳入 CI  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
@@ -1144,6 +1144,7 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 >   3. 递归模板调用已实例化回退失败：`try_monomorphize_func` 对已实例化函数返回 `None`，caller 无法获取 mangled 名称 → 改为返回 `Some((mangled, None))`
 >   4. 模板实例化函数体未检查：`pending_instantiations` 在 `exit_scope` 后才 drain，函数体从未被 TypeChecker 遍历 → 增加 Pass 3.6 循环检查直至收敛
 > - Dogfooding 测试总计 25 个（10 个原有 + 15 个新增），全部通过；600+ Rust 单元测试保持全绿
+> - **M5 隐式移动构造函数自动生成（Stage 5）**：类含指针/资源字段时自动生成 `__ctor__{Class}__move`；`std::move` 初始化调用移动构造并置空源指针；Dogfooding 测试 +2（总计 28 个，全绿）
 
 ### 10.1 Stage 0：验证 BytecodeGen（已完成 ✅）
 
@@ -1246,7 +1247,7 @@ public:
 | M4：容器库集成完成 | T+10 周 | vector<int> / string 预编译通过，`v.push_back` 生成正确字节码 |
 | M4.5：Stage 2 栈 RAII 完成 | T+1 周 | 局部类对象自动调用默认构造函数；scope exit / return / break / continue 自动按 LIFO 调用析构函数；嵌套 scope + early return + loop 跳转测试全绿 |
 | M4.6：Stage 3 `new[]/delete[]` 元素构造析构完成 | T+0 周 | `new A[n]` 逐元素调用构造函数；`delete[]` 从 `base[-4]` 读取 count 并逆序调用析构函数；临时变量槽位扩展至 4 个；新增 2 个数组构造析构测试全绿 |
-| M5：高级特性完成 | T+13 周 | 移动语义 / unique_ptr / CppImplicit 模式通过测试 |
+| M5：高级特性完成 | T+13 周 | **移动语义 ✅（隐式移动构造函数自动生成）** / unique_ptr / CppImplicit 模式通过测试 |
 | M6：测试防线完成 | T+16 周 | 五层测试防线全部通过，50 道教材题目回归通过 |
 | M7：Beta 发布 | T+18 周 | 内部试用，收集反馈 |
 | M8：正式发布 | T+22 周 | 文档完整，教学场景验证通过 |

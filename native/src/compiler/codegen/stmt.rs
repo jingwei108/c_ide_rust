@@ -478,6 +478,30 @@ impl StmtGen for BytecodeGen {
                             if matches!(e, Expr::Lambda { .. }) {
                                 self.gen_expr(e);
                                 self.emit(OpCode::StoreLocal, local_offset, loc);
+                            } else if e.ty().is_rvalue_ref() || matches!(e, Expr::Move { .. }) {
+                                // C++ implicit move ctor: call __ctor__{Class}__move when
+                                // initializing from an rvalue (std::move or RValueRef).
+                                if let Type::Class { name: class_name, .. } = vty {
+                                    let move_ctor_name = format!("__ctor__{}__move", class_name);
+                                    if self.func_index.contains_key(&move_ctor_name) {
+                                        // VM do_call pops args in parameter-declaration order.
+                                        // We must push them right-to-left so the first pop() gets 'this'.
+                                        // other = source address (pushed first)
+                                        self.gen_addr(e, loc);
+                                        // this = &local_var (pushed second, popped first)
+                                        self.emit(OpCode::GetFrameBase, 0, loc);
+                                        self.emit(OpCode::PushConst, local_offset, loc);
+                                        self.emit(OpCode::Add, 0, loc);
+                                        if let Some(&idx) = self.func_index.get(&move_ctor_name) {
+                                            self.emit(OpCode::Call, idx, loc);
+                                        }
+                                        self.record_class_var(name, local_offset, class_name);
+                                    } else {
+                                        self.gen_struct_copy_to_local(local_offset, e, loc);
+                                    }
+                                } else {
+                                    self.gen_struct_copy_to_local(local_offset, e, loc);
+                                }
                             } else {
                                 self.gen_struct_copy_to_local(local_offset, e, loc);
                             }

@@ -80,6 +80,7 @@ docs/                   设计文档、事故报告
 | Phase 35 | C++ 扩展 Stage 2：栈对象 RAII（默认构造函数自动调用 / scope exit / return / break / continue 自动析构） | ✅ 完成 |
 | Phase 36 | C++ 扩展 Stage 3：`new[]/delete[]` 元素构造析构（base[-4] 存 count、逆序 dtor、temp slot 扩展至 4 个） | ✅ 完成 |
 | Phase 37 | C++ 扩展 Stage 4：引用声明与基本语义（`int& r = x` 全链路；`T&` 参数/返回值；引用自动解引用；隐式取地址；返回引用左值识别） | ✅ 完成 |
+| Phase 38 | C++ 扩展 Stage 5：隐式移动构造函数自动生成（类含指针/资源字段时自动生成 `__ctor__{Class}__move`；`std::move` 初始化调用移动构造；源指针字段置空防双重释放） | ✅ 完成 |
 
 ## 测试防线
 

@@ -762,6 +762,13 @@ impl BytecodeGen {
             TypeKind::Class | TypeKind::Pointer if base_kind(object_type) == TypeKind::Class => {
                 self.get_class_member_offset(object_type.name(), member_name)
             }
+            TypeKind::Reference | TypeKind::RValueRef => {
+                if let Some(base) = object_type.reference_base() {
+                    self.get_member_offset(base, member_name)
+                } else {
+                    0
+                }
+            }
             _ => 0,
         }
     }

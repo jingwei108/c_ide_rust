@@ -703,3 +703,58 @@ fn test_cpp_string_size_bytecode_equivalent() {
     let c = compile_cpp_bytecode(c_string_inline_src()).unwrap();
     assert_bytecode_equivalent_named(&cpp, "string__size", &c, "cide_string_size");
 }
+
+// ============================================================================
+// M5: Implicit move constructor generation
+// ============================================================================
+
+#[test]
+fn test_implicit_move_ctor_pointer_nulls_source() {
+    let src = r#"
+#include <stdio.h>
+
+class Buffer {
+    int* data;
+    int size_;
+public:
+    Buffer() : data((int*)0), size_(0) {}
+    void alloc(int n) {
+        data = new int[n];
+        size_ = n;
+    }
+    int get_size() { return size_; }
+    ~Buffer() { delete[] data; }
+};
+
+int main() {
+    Buffer a;
+    a.alloc(5);
+    Buffer b = std::move(a);
+    printf("%d\n", b.get_size());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["5"], "Move ctor should transfer size correctly");
+}
+
+#[test]
+fn test_implicit_move_ctor_builtin_vector() {
+    // Verify that built-in container types (which have pointer fields)
+    // also get implicit move constructors registered.
+    let src = r#"
+#include <stdio.h>
+int main() {
+    cide_vec_int v;
+    cide_vec_init_int(&v);
+    cide_vec_push_int(&v, 42);
+    printf("%d\n", cide_vec_size_int(&v));
+    cide_vec_destroy_int(&v);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(outputs, vec!["1"], "Builtin vector should still work");
+}

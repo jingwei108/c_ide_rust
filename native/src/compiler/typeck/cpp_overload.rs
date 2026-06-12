@@ -139,4 +139,165 @@ impl TypeChecker {
         }
         None
     }
+
+    /// Generate implicit move constructors for classes that contain resources
+    /// (pointers, references, or class fields with resources) and do not already
+    /// have an explicit move constructor.
+    pub(crate) fn generate_implicit_move_ctors(&mut self, program: &mut ProgramNode) {
+        let mut move_ctors: Vec<(String, FuncDecl)> = Vec::new();
+
+        for (class_name, sym) in &self.classes {
+            if !sym.has_resource {
+                continue;
+            }
+            let move_ctor_name = format!("__ctor__{}__move", class_name);
+            if self.funcs.contains_key(&move_ctor_name) {
+                continue;
+            }
+
+            let body = Self::build_implicit_move_ctor_body(class_name, &sym.fields);
+            let func_decl = FuncDecl {
+                loc: SourceLoc { line: 0, column: 0 },
+                return_type: Type::void(),
+                name: move_ctor_name.clone(),
+                params: vec![
+                    Param {
+                        name: "this".to_string(),
+                        ty: Type::Pointer {
+                            pointee: Box::new(Type::Class {
+                                name: class_name.clone(),
+                                is_const: false,
+                            }),
+                            is_const: false,
+                        },
+                        loc: SourceLoc { line: 0, column: 0 },
+                    },
+                    Param {
+                        name: "other".to_string(),
+                        ty: Type::RValueRef {
+                            base: Box::new(Type::Class {
+                                name: class_name.clone(),
+                                is_const: false,
+                            }),
+                        },
+                        loc: SourceLoc { line: 0, column: 0 },
+                    },
+                ],
+                body: Some(body),
+                is_static: false,
+                is_extern: false,
+                source_file: String::new(),
+            };
+
+            self.funcs.insert(
+                move_ctor_name.clone(),
+                FuncSymbol {
+                    return_type: Type::void(),
+                    param_types: func_decl.params.iter().map(|p| p.ty.clone()).collect(),
+                },
+            );
+            move_ctors.push((class_name.clone(), func_decl));
+        }
+
+        // Register move ctor signatures in ClassSymbol.methods
+        for (class_name, func) in &move_ctors {
+            if let Some(sym) = self.classes.get_mut(class_name) {
+                sym.methods.insert(
+                    func.name.clone(),
+                    MethodSig {
+                        ret: Type::void(),
+                        param_types: func.params.iter().map(|p| p.ty.clone()).collect(),
+                        is_virtual: false,
+                        is_static: false,
+                        is_explicit: false,
+                        is_const: false,
+                        access: AccessSpec::Public,
+                    },
+                );
+            }
+        }
+
+        program.funcs.extend(move_ctors.into_iter().map(|(_, f)| f));
+    }
+
+    fn build_implicit_move_ctor_body(
+        class_name: &str,
+        fields: &[(Type, String, AccessSpec)],
+    ) -> Stmt {
+        let loc = SourceLoc { line: 0, column: 0 };
+        let this_ty = Type::Pointer {
+            pointee: Box::new(Type::Class {
+                name: class_name.to_string(),
+                is_const: false,
+            }),
+            is_const: false,
+        };
+        let other_ty = Type::RValueRef {
+            base: Box::new(Type::Class {
+                name: class_name.to_string(),
+                is_const: false,
+            }),
+        };
+
+        let mut stmts = Vec::new();
+        for (fty, fname, _) in fields {
+            // this->field = other.field;
+            stmts.push(Stmt::Expr {
+                expr: Expr::Assign {
+                    left: Box::new(Expr::Member {
+                        object: Box::new(Expr::This {
+                            loc,
+                            ty: this_ty.clone(),
+                        }),
+                        member: fname.clone(),
+                        loc,
+                        ty: fty.clone(),
+                    }),
+                    op: AssignOp::Assign,
+                    right: Box::new(Expr::Member {
+                        object: Box::new(Expr::Identifier {
+                            name: "other".to_string(),
+                            loc,
+                            ty: other_ty.clone(),
+                        }),
+                        member: fname.clone(),
+                        loc,
+                        ty: fty.clone(),
+                    }),
+                    loc,
+                    ty: fty.clone(),
+                },
+                loc,
+            });
+
+            // For pointer fields, null out the source to prevent double-free.
+            if fty.is_pointer() {
+                stmts.push(Stmt::Expr {
+                    expr: Expr::Assign {
+                        left: Box::new(Expr::Member {
+                            object: Box::new(Expr::Identifier {
+                                name: "other".to_string(),
+                                loc,
+                                ty: other_ty.clone(),
+                            }),
+                            member: fname.clone(),
+                            loc,
+                            ty: fty.clone(),
+                        }),
+                        op: AssignOp::Assign,
+                        right: Box::new(Expr::Literal {
+                            value: 0,
+                            loc,
+                            ty: Type::int(),
+                        }),
+                        loc,
+                        ty: fty.clone(),
+                    },
+                    loc,
+                });
+            }
+        }
+
+        Stmt::Block { stmts, loc }
+    }
 }
