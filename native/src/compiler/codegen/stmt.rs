@@ -474,6 +474,30 @@ impl StmtGen for BytecodeGen {
                                 }
                             }
                         } else if vty.is_struct() || vty.is_class() {
+                            // C++ 构造函数初始化语法：Type name(args);
+                            // TypeChecker 已在 args 前插入 &name 作为 this 指针。
+                            if let Expr::Call { name: ctor_name, args: ctor_args, .. } = e {
+                                if ctor_name.starts_with("__ctor__") {
+                                    if let Type::Class { name: class_name, .. } = vty {
+                                        // VM do_call pops args in parameter-declaration order.
+                                        // Args already include this as the first parameter.
+                                        for arg in ctor_args.iter_mut().rev() {
+                                            // RValueRef arguments (e.g. std::move) must be passed
+                                            // as the address of the source object.
+                                            if arg.ty().is_rvalue_ref() {
+                                                self.gen_addr(arg, loc);
+                                            } else {
+                                                self.gen_expr(arg);
+                                            }
+                                        }
+                                        if let Some(&idx) = self.func_index.get(ctor_name) {
+                                            self.emit(OpCode::Call, idx, loc);
+                                        }
+                                        self.record_class_var(name, local_offset, class_name);
+                                    }
+                                    return;
+                                }
+                            }
                             // Lambda 闭包：gen_lambda 在栈上推闭包对象地址，直接保存地址（不逐字段拷贝）
                             if matches!(e, Expr::Lambda { .. }) {
                                 self.gen_expr(e);

@@ -612,7 +612,7 @@ impl Parser {
 
     pub(crate) fn parse_abstract_declarator(&mut self) -> Option<DeclaratorNode> {
         let mut guard = DeclaratorGuard::default();
-        let (node, _) = self.parse_declarator_node(&mut guard, true);
+        let (node, _) = self.parse_declarator_node(&mut guard, true, true);
         if matches!(node, DeclaratorNode::Base) {
             None
         } else {
@@ -711,7 +711,7 @@ impl Parser {
             if self.check(TokenType::RParen) {
                 // Empty parens: treat as default constructor call
                 init = Some(Box::new(Expr::Call {
-                    name: elem_type.name().to_string(),
+                    name: format!("__ctor__{}", elem_type.name()),
                     args: Vec::new(),
                     loc: loc.clone(),
                     ty: Type::void(),
@@ -721,7 +721,7 @@ impl Parser {
                 if is_class {
                     let ctor_args = self.parse_arg_list();
                     init = Some(Box::new(Expr::Call {
-                        name: elem_type.name().to_string(),
+                        name: format!("__ctor__{}__{}", elem_type.name(), ctor_args.len()),
                         args: ctor_args,
                         loc: loc.clone(),
                         ty: Type::void(),

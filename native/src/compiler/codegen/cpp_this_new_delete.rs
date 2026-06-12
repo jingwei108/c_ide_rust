@@ -59,7 +59,15 @@ impl BytecodeGen {
                 self.emit(OpCode::StoreMem, 0, loc);
 
                 if let Type::Class { name, .. } = elem_type {
-                    let ctor_name = format!("__ctor__{}", name);
+                    let ctor_name = if let Some(ref init_expr) = init {
+                        if let Expr::Call { name: ctor_name, .. } = init_expr.as_ref() {
+                            ctor_name.clone()
+                        } else {
+                            format!("__ctor__{}", name)
+                        }
+                    } else {
+                        format!("__ctor__{}", name)
+                    };
                     if self.func_index.contains_key(&ctor_name) {
                         // for (int i = 0; i < count; i++)
                         self.emit(OpCode::PushConst, 0, loc);
@@ -115,7 +123,15 @@ impl BytecodeGen {
                     self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + vtable_offset as i32, loc);
                     self.emit(OpCode::StoreMem, 0, loc);
                 }
-                let ctor_name = format!("__ctor__{}", name);
+                let ctor_name = if let Some(ref init_expr) = init {
+                    if let Expr::Call { name: ctor_name, .. } = init_expr.as_ref() {
+                        ctor_name.clone()
+                    } else {
+                        format!("__ctor__{}", name)
+                    }
+                } else {
+                    format!("__ctor__{}", name)
+                };
                 if self.func_index.contains_key(&ctor_name) {
                     if let Some(init_expr) = init {
                         if let Expr::Call { args, .. } = init_expr.as_mut() {

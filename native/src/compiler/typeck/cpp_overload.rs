@@ -59,10 +59,15 @@ impl TypeChecker {
                     }
                     ClassMember::Constructor { params, body, .. } => {
                         if let Some(ref b) = body {
+                            let ctor_name = if params.is_empty() {
+                                format!("__ctor__{}", c.name)
+                            } else {
+                                format!("__ctor__{}__{}", c.name, params.len())
+                            };
                             let mut func_decl = FuncDecl {
                                 loc: c.loc,
                                 return_type: Type::void(),
-                                name: format!("__ctor__{}", c.name),
+                                name: ctor_name,
                                 params: std::iter::once(Param {
                                     name: "this".to_string(),
                                     ty: Type::Pointer {
@@ -120,19 +125,28 @@ impl TypeChecker {
     }
 
     /// 重载决议：从候选构造函数中选择最佳匹配。
-    /// 当前为简化实现：返回第一个参数数量匹配的构造函数名称。
+    /// 当前为简化实现：根据参数数量选择构造函数。默认（零参数）构造函数保持
+    /// `__ctor__{Class}` 名称；带 N 个参数的构造函数编码为 `__ctor__{Class}__N`。
     /// TODO: 完善为基于类型相似度的优先级排序（移动构造 > 拷贝构造 > 普通构造）。
-    #[allow(dead_code)]
     pub(crate) fn resolve_constructor_overload(
         &self,
         class_name: &str,
-        arg_types: &[Type],
+        arg_count: usize,
     ) -> Option<String> {
         let sym = self.classes.get(class_name)?;
+        let target = if arg_count == 0 {
+            format!("__ctor__{}", class_name)
+        } else {
+            format!("__ctor__{}__{}", class_name, arg_count)
+        };
+        if sym.methods.contains_key(&target) {
+            return Some(target);
+        }
+        // Fallback: scan methods for any ctor with matching user param count
         for (name, sig) in &sym.methods {
-            if name.starts_with("__ctor__") {
+            if name.starts_with("__ctor__") && !name.ends_with("__move") {
                 let user_params = sig.param_types.len().saturating_sub(1);
-                if user_params == arg_types.len() {
+                if user_params == arg_count {
                     return Some(name.clone());
                 }
             }

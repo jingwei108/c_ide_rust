@@ -758,3 +758,52 @@ int main() {
     assert_eq!(ret, 0, "Exit code should be 0");
     assert_eq!(outputs, vec!["1"], "Builtin vector should still work");
 }
+
+// ============================================================================
+// M5: Dogfooding — unique_ptr<int>
+// ============================================================================
+
+#[test]
+fn test_cpp_unique_ptr_int_dogfooding_runs() {
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+
+template<class T>
+class unique_ptr {
+    T* ptr;
+public:
+    unique_ptr() : ptr((T*)0) {}
+    unique_ptr(T* p) : ptr(p) {}
+    T* get() { return ptr; }
+    void reset(T* p) { delete ptr; ptr = p; }
+    T* release() { T* t = ptr; ptr = (T*)0; return t; }
+    ~unique_ptr() { delete ptr; }
+};
+
+int main() {
+    unique_ptr<int> p(new int(42));
+    printf("%d\n", *p.get());
+
+    unique_ptr<int> q = std::move(p);
+    printf("%d\n", *q.get());
+    printf("p=%p\n", p.get());
+
+    int* raw = q.release();
+    printf("raw=%d\n", *raw);
+    free(raw);
+
+    q.reset(new int(100));
+    printf("reset=%d\n", *q.get());
+
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0, "Exit code should be 0");
+    assert_eq!(
+        outputs,
+        vec!["42", "42", "p=0x0", "raw=42", "reset=100"],
+        "unique_ptr<int> should manage ownership correctly"
+    );
+}

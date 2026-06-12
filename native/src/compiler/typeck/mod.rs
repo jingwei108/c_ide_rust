@@ -306,7 +306,11 @@ impl TypeChecker {
                     self.funcs.insert(mangled, new_sym);
                 }
                 if let ClassMember::Constructor { params, .. } = member {
-                    let mangled = format!("__ctor__{}", c.name);
+                    let mangled = if params.is_empty() {
+                        format!("__ctor__{}", c.name)
+                    } else {
+                        format!("__ctor__{}__{}", c.name, params.len())
+                    };
                     let param_types: Vec<Type> = std::iter::once(Type::Pointer {
                         pointee: Box::new(Type::Class {
                             name: c.name.clone(),

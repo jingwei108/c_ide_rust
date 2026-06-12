@@ -50,6 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **zero-size 类 zero-init 跳过**：`sz == 0` 时不 emit `StoreLocal`，避免 `STACK_START` 边界越界
 - **集成测试 +5**：`Box<int>` 字段访问、`Adder<int>` 方法调用、`Wrapper<int>` 构造函数 + `new`、`Ptr<int>` 指针字段、类型不匹配负向测试
 
+### Added (C++ 扩展 Stage 6 — `unique_ptr<T>` dogfooding 与构造函数初始化语法)
+- **`unique_ptr<T>` 简化版全管线跑通**：模板类 `unique_ptr<T>`（单 `T*` 字段）支持构造、`get()`、`release()`、`reset()`、析构，以及 `std::move` 触发的隐式移动构造转移所有权并置空源对象
+  - 新增 `native/tests/cpp_dogfooding_test.rs::test_cpp_unique_ptr_int_dogfooding_runs` 作为 M5 dogfooding 用例
+  - 同步更新 `native/runtime_libc/cide/unique_ptr_int.{c,cpp}` 运行时布局与 `bytecode_libc_sig.rs` 签名（内置 `unique_ptr<int>` 容器走 Bytecode Libc 路径）
+- **构造函数初始化语法 `Type name(args);`**：Parser `parse_var_decl_stmt` 识别类/模板类变量后的 `(...)` 为构造参数列表，生成占位 `__ctor__{Class}__{N}`；TypeChecker 解析为实际 mangled 构造函数并在参数列表前插入 `&name` 作为 `this`
+- **构造函数重载与隐式默认构造**：
+  - 显式构造函数按参数数量编码为 `__ctor__{Class}__{N}`，零参数保持 `__ctor__{Class}`
+  - 无显式默认构造的类自动注册隐式默认构造函数，支持 `Class c;` 和 `new Class()`
+  - `resolve_constructor_overload` 按参数数量匹配，带 fallback 扫描
+- **`new` 表达式类型检查修复**：类类型 `new` 的 init 中尚未包含 `this`，改为根据类方法签名直接检查用户参数，避免参数数量不匹配报错
+- **函数指针声明解析修复**：`parse_var_decl_stmt` 通过预读 `Identifier (` 精确区分构造初始化与函数指针后缀，恢复 `int (*fp)(int, int);` 等复杂声明符解析
+- **Range-for 数组大小推断修复**：`VarDecl` 仅在构造初始化时提前 `declare_var`，避免数组初始化后推断出的大小与符号表类型不一致
+- **Dogfooding 测试 +1**：`cpp_dogfooding_test` 总数达 29 个，全绿
+
 ### Added (C++ 扩展 Stage 5 — 隐式移动构造函数自动生成)
 - **资源检测**：`ClassSymbol` 新增 `has_resource` 字段；`typeck/cpp_class_layout.rs` 在类布局注册后第二遍计算，递归检测指针、`Reference`/`RValueRef`、含资源 class/struct、数组元素等资源字段
 - **隐式移动构造函数生成**：`typeck/cpp_overload.rs` 新增 `generate_implicit_move_ctors`，为含资源且无显式移动构造的类自动生成 `__ctor__{Class}__move`；函数体逐字段拷贝，并将源对象指针字段置 `nullptr`，防止双重释放

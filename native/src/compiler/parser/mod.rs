@@ -502,7 +502,7 @@ impl Parser {
             });
             self.consume(TokenType::Semicolon, "静态成员定义后预期 ';'");
         } else {
-            let (ty, name) = self.parse_declarator(&base_type);
+            let (ty, name) = self.parse_var_declarator(&base_type);
             let init = if is_extern {
                 None
             } else if self.match_token(TokenType::Assign) {
@@ -527,7 +527,7 @@ impl Parser {
                 source_file: String::new(),
             });
             while self.match_token(TokenType::Comma) {
-                let (extra_ty, extra_name) = self.parse_declarator(&base_type);
+                let (extra_ty, extra_name) = self.parse_var_declarator(&base_type);
                 let extra_init = if is_extern {
                     None
                 } else if self.match_token(TokenType::Assign) {
@@ -1199,7 +1199,17 @@ impl Parser {
 
     fn parse_declarator(&mut self, base_type: &Type) -> (Type, String) {
         let mut guard = DeclaratorGuard::default();
-        let (node, name) = self.parse_declarator_node(&mut guard, false);
+        let (node, name) = self.parse_declarator_node(&mut guard, false, true);
+        let name = name.unwrap_or_default();
+        let ty = Self::interpret_declarator_node(&node, base_type);
+        (ty, name)
+    }
+
+    /// 解析变量声明符：允许指针/引用/数组后缀，但不把 '(' 当作函数声明符后缀，
+    /// 以便支持 C++ 构造函数初始化语法 `Type name(args);`。
+    fn parse_var_declarator(&mut self, base_type: &Type) -> (Type, String) {
+        let mut guard = DeclaratorGuard::default();
+        let (node, name) = self.parse_declarator_node(&mut guard, false, true);
         let name = name.unwrap_or_default();
         let ty = Self::interpret_declarator_node(&node, base_type);
         (ty, name)
@@ -1212,6 +1222,7 @@ impl Parser {
         &mut self,
         guard: &mut DeclaratorGuard,
         is_abstract: bool,
+        allow_function_suffix: bool,
     ) -> (DeclaratorNode, Option<String>) {
         #[derive(Debug, Clone)]
         enum Prefix {
@@ -1265,7 +1276,7 @@ impl Parser {
                     return (DeclaratorNode::Base, Some(String::new()));
                 }
             }
-            let (inner_node, inner_name) = self.parse_declarator_node(guard, is_abstract);
+            let (inner_node, inner_name) = self.parse_declarator_node(guard, is_abstract, allow_function_suffix);
             self.consume(TokenType::RParen, "预期 ')'");
             if !is_abstract {
                 guard.paren_depth -= 1;
@@ -1293,7 +1304,7 @@ impl Parser {
                 };
                 self.consume(TokenType::RBracket, "预期 ']'");
                 suffixes.push(DeclaratorSuffix::Array(size_expr));
-            } else if self.match_token(TokenType::LParen) {
+            } else if allow_function_suffix && self.match_token(TokenType::LParen) {
                 if !is_abstract {
                     guard.suffix_count += 1;
                 }
@@ -1719,21 +1730,41 @@ impl Parser {
     fn parse_var_decl_stmt(&mut self, is_static: bool) -> Stmt {
         let loc = self.current().clone();
         let base_type = self.parse_base_type();
-        let (var_type, name) = self.parse_declarator(&base_type);
-        let init = if self.match_token(TokenType::Assign) {
-            if self.check(TokenType::LBrace) {
-                Some(self.parse_init_list())
-            } else {
-                Some(self.parse_assign())
-            }
-        } else {
-            None
-        };
+        // Detect C++ constructor initialization syntax: `Type name(args);`
+        // We must only treat it as a constructor call when the declarator is a
+        // plain identifier (no pointer/reference/function-pointer suffix).
+        // Function-pointer declarations such as `int (*fp)(int);` are parsed
+        // normally by parse_var_declarator.
+        let is_simple_ctor_init = (base_type.kind() == TypeKind::Class || base_type.kind() == TypeKind::TemplateId)
+            && self.check(TokenType::Identifier)
+            && self.peek(1).ty == TokenType::LParen;
 
-        let mut extra_vars = Vec::new();
-        while self.match_token(TokenType::Comma) {
-            let (extra_ty, extra_name) = self.parse_declarator(&base_type);
-            let extra_init = if self.match_token(TokenType::Assign) {
+        let (var_type, name, init) = if is_simple_ctor_init {
+            let name_tok = self.advance().clone();
+            self.advance(); // consume '('
+            let args = self.parse_arg_list();
+            self.consume(TokenType::RParen, "构造函数初始化预期 ')'");
+            let ctor_name = if args.is_empty() {
+                format!("__ctor__{}", base_type.name())
+            } else {
+                format!("__ctor__{}__{}", base_type.name(), args.len())
+            };
+            (
+                base_type.clone(),
+                name_tok.text,
+                Some(Expr::Call {
+                    name: ctor_name,
+                    args,
+                    loc: SourceLoc {
+                        line: loc.line,
+                        column: loc.column,
+                    },
+                    ty: Type::void(),
+                }),
+            )
+        } else {
+            let (var_type, name) = self.parse_var_declarator(&base_type);
+            let init = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
                 } else {
@@ -1741,6 +1772,50 @@ impl Parser {
                 }
             } else {
                 None
+            };
+            (var_type, name, init)
+        };
+
+        let mut extra_vars = Vec::new();
+        while self.match_token(TokenType::Comma) {
+            let is_extra_ctor_init = (base_type.kind() == TypeKind::Class || base_type.kind() == TypeKind::TemplateId)
+                && self.check(TokenType::Identifier)
+                && self.peek(1).ty == TokenType::LParen;
+            let (extra_ty, extra_name, extra_init) = if is_extra_ctor_init {
+                let name_tok = self.advance().clone();
+                self.advance(); // consume '('
+                let args = self.parse_arg_list();
+                self.consume(TokenType::RParen, "构造函数初始化预期 ')'");
+                let ctor_name = if args.is_empty() {
+                    format!("__ctor__{}", base_type.name())
+                } else {
+                    format!("__ctor__{}__{}", base_type.name(), args.len())
+                };
+                (
+                    base_type.clone(),
+                    name_tok.text,
+                    Some(Expr::Call {
+                        name: ctor_name,
+                        args,
+                        loc: SourceLoc {
+                            line: loc.line,
+                            column: loc.column,
+                        },
+                        ty: Type::void(),
+                    }),
+                )
+            } else {
+                let (extra_ty, extra_name) = self.parse_var_declarator(&base_type);
+                let extra_init = if self.match_token(TokenType::Assign) {
+                    if self.check(TokenType::LBrace) {
+                        Some(self.parse_init_list())
+                    } else {
+                        Some(self.parse_assign())
+                    }
+                } else {
+                    None
+                };
+                (extra_ty, extra_name, extra_init)
             };
             extra_vars.push((extra_ty, extra_name, extra_init));
         }
@@ -1936,7 +2011,7 @@ impl Parser {
         let init: Option<Box<Stmt>> = if self.is_type_token() {
             let var_loc = self.current().clone();
             let base_type = self.parse_base_type();
-            let (var_type, name) = self.parse_declarator(&base_type);
+            let (var_type, name) = self.parse_var_declarator(&base_type);
             let init_expr = if self.match_token(TokenType::Assign) {
                 if self.check(TokenType::LBrace) {
                     Some(self.parse_init_list())
@@ -1948,7 +2023,7 @@ impl Parser {
             };
             let mut extra_vars = Vec::new();
             while self.match_token(TokenType::Comma) {
-                let (extra_ty, extra_name) = self.parse_declarator(&base_type);
+                let (extra_ty, extra_name) = self.parse_var_declarator(&base_type);
                 let extra_init = if self.match_token(TokenType::Assign) {
                     if self.check(TokenType::LBrace) {
                         Some(self.parse_init_list())

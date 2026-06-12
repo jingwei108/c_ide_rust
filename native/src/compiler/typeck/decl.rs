@@ -72,11 +72,99 @@ impl TypeChecker {
                 }
                 // Class template instantiation
                 *var_type = self.resolve_template_id(var_type, loc);
+                let var_name = name.clone();
+                // 只有 C++ 构造函数初始化语法需要提前声明变量，以便 this 指针（&var_name）能正确解析。
+                // 普通变量（尤其是数组）必须在初始化表达式处理完成后再声明，否则符号表中的类型
+                // 无法反映 check_array_initializer 推断出的数组大小。
+                let is_ctor_init = init.as_ref().map(|e| {
+                    matches!(e, Expr::Call { name: n, .. } if n.starts_with("__ctor__") && var_type.is_class())
+                }).unwrap_or(false);
+
+                if is_ctor_init {
+                    self.declare_var(name, var_type, false, false, *is_static);
+                    // C++ 构造函数初始化语法：将占位符 __ctor__* 解析为具体 mangled 构造函数名，
+                    // 并在参数列表前插入 this 指针（&var_name），使后续 resolve_expr_type 能按普通函数调用检查。
+                    if let Some(ref mut init_expr) = init {
+                        if let Expr::Call { name, args, loc: ctor_loc, .. } = init_expr {
+                            if let Type::Class { name: class_name, .. } = var_type {
+                                // 如果初始化表达式是右值引用（如 std::move），优先选择移动构造函数
+                                let is_rvalue_init = args.len() == 1
+                                    && (matches!(&args[0], Expr::Call { name, .. } if name == "std__move")
+                                        || matches!(&args[0], Expr::CallPtr { callee, .. } if matches!(callee.as_ref(), Expr::Identifier { name, .. } if name == "std__move"))
+                                        || args[0].ty().is_rvalue_ref());
+                                let ctor_name = if is_rvalue_init {
+                                    // 优先使用移动构造函数；即使它尚未在 funcs 中注册
+                                    // （隐式移动构造在 Pass 3.55 生成），也要让后续阶段能找到它。
+                                    Some(format!("__ctor__{}__move", class_name))
+                                } else {
+                                    self.resolve_constructor_overload(class_name, args.len())
+                                };
+                                if let Some(ctor_name) = ctor_name {
+                                    *name = ctor_name;
+                                    let this_expr = Expr::Unary {
+                                        op: crate::compiler::ast::UnaryOp::Addr,
+                                        operand: Box::new(Expr::Identifier {
+                                            name: var_name.clone(),
+                                            loc: *ctor_loc,
+                                            ty: var_type.clone(),
+                                        }),
+                                        loc: *ctor_loc,
+                                        ty: Type::pointer_to(var_type.clone()),
+                                    };
+                                    args.insert(0, this_expr);
+                                } else {
+                                    self.report_error(
+                                        &format!("类 '{}' 没有接受 {} 个参数的构造函数", class_name, args.len()),
+                                        loc,
+                                        ErrorCode::E3003_FuncRedeclared,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
                 if let Some(ref mut init_expr) = init {
                     if var_type.is_array() {
                         self.check_array_initializer(var_type, init_expr, loc);
                     } else if var_type.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
                         self.check_struct_initializer(var_type, init_expr, loc);
+                    } else if let Expr::Call { name, .. } = init_expr {
+                        if name.starts_with("__ctor__") && var_type.is_class() {
+                            // 移动构造函数在 Pass 3.55 才生成，此时 funcs 中可能还没有，
+                            // 因此跳过完整的函数调用检查；但仍需解析参数表达式以获得正确类型，
+                            // 这样 code generation 阶段才能识别 RValueRef 并按地址传递。
+                            if name.ends_with("__move") {
+                                if let Expr::Call { args, .. } = init_expr {
+                                    for arg in args.iter_mut() {
+                                        self.resolve_expr_type(arg);
+                                    }
+                                }
+                            } else {
+                                self.resolve_expr_type(init_expr);
+                            }
+                        } else {
+                            let init_type = self.resolve_expr_type(init_expr);
+                            if !self.check_assignable(var_type, &init_type, loc) {
+                                self.report_error(
+                                    &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type),
+                                    loc,
+                                    ErrorCode::E3004_TypeMismatch,
+                                );
+                            } else {
+                                // C++ reference binding lvalue check
+                                if let Type::Reference { base, is_const } = var_type {
+                                    let is_const_ref = *is_const || base.is_const();
+                                    if !is_const_ref && !self.is_lvalue(init_expr) {
+                                        self.report_error(
+                                            "非 const 引用必须绑定到左值",
+                                            loc,
+                                            ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                        );
+                                    }
+                                }
+                                insert_implicit_cast(init_expr, var_type);
+                            }
+                        }
                     } else {
                         let init_type = self.resolve_expr_type(init_expr);
                         if !self.check_assignable(var_type, &init_type, loc) {
@@ -101,7 +189,9 @@ impl TypeChecker {
                         }
                     }
                 }
-                self.declare_var(name, var_type, false, false, *is_static);
+                if !is_ctor_init {
+                    self.declare_var(name, var_type, false, false, *is_static);
+                }
                 for (ety, ename, einit) in extra_vars.iter_mut() {
                     *ety = self.resolve_template_id(ety, loc);
                     if let Some(ref mut init_expr) = einit {

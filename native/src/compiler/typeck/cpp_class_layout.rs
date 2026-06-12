@@ -151,14 +151,19 @@ impl TypeChecker {
                     let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
                     let sig = MethodSig {
                         ret: Type::void(),
-                        param_types,
+                        param_types: param_types.clone(),
                         is_virtual: false,
                         is_static: false,
                         is_explicit: is_exp,
                         is_const: false,
                         access: acc,
                     };
-                    methods.insert(format!("__ctor__{}", name), sig);
+                    let ctor_key = if param_types.is_empty() {
+                        format!("__ctor__{}", name)
+                    } else {
+                        format!("__ctor__{}__{}", name, param_types.len())
+                    };
+                    methods.insert(ctor_key, sig);
                 }
                 ClassMember::Destructor { access, .. } => {
                     let acc = *access;
@@ -210,7 +215,133 @@ impl TypeChecker {
         self.classes.insert(name.to_string(), sym);
         // Now compute actual size (static fields are NOT part of instance)
         let total_field_size: i32 = fields.iter().map(|(ty, _, _)| self.compute_type_size(ty)).sum();
-        self.classes.get_mut(name).unwrap().size = total_field_size;
+        // Compute has_resource immediately so implicit move ctor generation works
+        // for class template instantiations created during Pass 3.
+        let has_resource = self.compute_class_has_resource(name);
+        let class_sym = self.classes.get_mut(name).unwrap();
+        class_sym.size = total_field_size;
+        class_sym.has_resource = has_resource;
+
+        // Register mangled function symbols for methods, constructors, and destructor
+        // so that constructor-style initialization and explicit calls can resolve them.
+        for member in &c.members {
+            match member {
+                ClassMember::Method {
+                    name: method_name,
+                    ret,
+                    params,
+                    is_const,
+                    is_static,
+                    ..
+                } => {
+                    let mangled = format!("{}__{}", name, method_name);
+                    if self.funcs.contains_key(&mangled) || self.static_func_sigs.contains_key(&mangled) {
+                        continue;
+                    }
+                    let param_types: Vec<Type> = if *is_static {
+                        params.iter().map(|p| p.ty.clone()).collect()
+                    } else {
+                        std::iter::once(Type::Pointer {
+                            pointee: Box::new(Type::Class {
+                                name: name.to_string(),
+                                is_const: *is_const,
+                            }),
+                            is_const: *is_const,
+                        })
+                        .chain(params.iter().map(|p| p.ty.clone()))
+                        .collect()
+                    };
+                    self.funcs.insert(
+                        mangled,
+                        FuncSymbol {
+                            return_type: ret.clone(),
+                            param_types,
+                        },
+                    );
+                }
+                ClassMember::Constructor { params, .. } => {
+                    let mangled = if params.is_empty() {
+                        format!("__ctor__{}", name)
+                    } else {
+                        format!("__ctor__{}__{}", name, params.len())
+                    };
+                    if self.funcs.contains_key(&mangled) {
+                        continue;
+                    }
+                    let param_types: Vec<Type> = std::iter::once(Type::Pointer {
+                        pointee: Box::new(Type::Class {
+                            name: name.to_string(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    })
+                    .chain(params.iter().map(|p| p.ty.clone()))
+                    .collect();
+                    self.funcs.insert(
+                        mangled,
+                        FuncSymbol {
+                            return_type: Type::void(),
+                            param_types,
+                        },
+                    );
+                }
+                ClassMember::Destructor { .. } => {
+                    let mangled = format!("__dtor__{}", name);
+                    if self.funcs.contains_key(&mangled) {
+                        continue;
+                    }
+                    let param_types = vec![Type::Pointer {
+                        pointee: Box::new(Type::Class {
+                            name: name.to_string(),
+                            is_const: false,
+                        }),
+                        is_const: false,
+                    }];
+                    self.funcs.insert(
+                        mangled,
+                        FuncSymbol {
+                            return_type: Type::void(),
+                            param_types,
+                        },
+                    );
+                }
+                _ => {}
+            }
+        }
+
+        // Register an implicit default constructor for classes that do not declare one.
+        // This allows `new Derived()` and `Derived d;` to resolve even when the class
+        // has no user-defined default constructor.
+        let default_ctor_name = format!("__ctor__{}", name);
+        if !class_sym.methods.contains_key(&default_ctor_name) {
+            class_sym.methods.insert(
+                default_ctor_name.clone(),
+                MethodSig {
+                    ret: Type::void(),
+                    param_types: vec![],
+                    is_virtual: false,
+                    is_static: false,
+                    is_explicit: false,
+                    is_const: false,
+                    access: AccessSpec::Public,
+                },
+            );
+            if !self.funcs.contains_key(&default_ctor_name) {
+                self.funcs.insert(
+                    default_ctor_name,
+                    FuncSymbol {
+                        return_type: Type::void(),
+                        param_types: vec![Type::Pointer {
+                            pointee: Box::new(Type::Class {
+                                name: name.to_string(),
+                                is_const: false,
+                            }),
+                            is_const: false,
+                        }],
+                    },
+                );
+            }
+        }
 
         // Register builtin container layouts so TypeChecker knows their sizes
         for (cpp_name, cide_name) in crate::compiler::cpp_frontend::builtin_layout::builtin_class_mappings() {

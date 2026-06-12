@@ -872,9 +872,68 @@ impl TypeChecker {
                     }
                 }
                 if let Some(ref mut i) = init {
-                    // For class types, allow any init expression (constructor args)
-                    let skip_check = matches!(elem_type, Type::Class { .. });
-                    if !skip_check {
+                    // C++ 类类型 new：将占位符 __ctor__* 解析为具体 mangled 构造函数名
+                    if matches!(elem_type, Type::Class { .. }) {
+                        let mut ctor_class_name = String::new();
+                        let mut ctor_name = String::new();
+                        if let Expr::Call { name, args, .. } = i.as_mut() {
+                            if name.starts_with("__ctor__") {
+                                if let Type::Class { name: class_name, .. } = elem_type {
+                                    let arg_count = args.len();
+                                    if let Some(resolved) = self.resolve_constructor_overload(class_name, arg_count) {
+                                        *name = resolved.clone();
+                                        ctor_class_name = class_name.clone();
+                                        ctor_name = resolved;
+                                    } else {
+                                        self.report_error(
+                                            &format!("类 '{}' 没有接受 {} 个参数的构造函数", class_name, arg_count),
+                                            loc,
+                                            ErrorCode::E3003_FuncRedeclared,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        // 构造函数符号包含隐式 this 指针，但 new 表达式的 init 中尚未插入。
+                        // 因此这里直接根据类方法签名检查用户参数，避免 resolve_expr_type 因缺少 this 而报错。
+                        if !ctor_name.is_empty() {
+                            if let Some(sig) = self.find_class_method(&ctor_class_name, &ctor_name) {
+                                // Constructor MethodSig stores only user parameter types
+                                // (the implicit this pointer is added by the caller).
+                                let expected = &sig.param_types;
+                                if let Expr::Call { args, .. } = i.as_mut() {
+                                    if expected.len() != args.len() {
+                                        self.report_error(
+                                            &format!(
+                                                "构造函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                                                ctor_name,
+                                                expected.len(),
+                                                args.len()
+                                            ),
+                                            loc,
+                                            ErrorCode::E3037_FuncArgCount,
+                                        );
+                                    } else {
+                                        for (arg, exp) in args.iter_mut().zip(expected.iter()) {
+                                            let arg_ty = self.resolve_expr_type(arg);
+                                            if !self.check_assignable(exp, &arg_ty, loc) {
+                                                self.report_error(
+                                                    &format!(
+                                                        "构造函数参数类型不匹配：期望 '{}'，实际 '{}'",
+                                                        exp, arg_ty
+                                                    ),
+                                                    loc,
+                                                    ErrorCode::E3004_TypeMismatch,
+                                                );
+                                            } else {
+                                                insert_implicit_cast(arg, exp);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } else {
                         let init_ty = self.resolve_expr_type(i);
                         if !self.check_assignable(elem_type, &init_ty, loc) {
                             self.report_error(
