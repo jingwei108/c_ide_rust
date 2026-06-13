@@ -175,8 +175,11 @@ pub struct RuntimeState {
 }
 
 impl RuntimeState {
+    /// 拼接所有输出片段为完整输出字符串。
+    /// output_lines 中每个元素是独立的输出单元（如一次 printf/putchar 调用产生的字节），
+    /// 不再自动添加换行符；换行由格式字符串或 puts 等函数显式提供，与 C 标准一致。
     pub fn output(&self) -> String {
-        self.output_lines.join("\n")
+        self.output_lines.join("")
     }
 }
 

@@ -316,6 +316,22 @@ impl Parser {
                     self.pos = s_checkpoint;
                     self.errors.truncate(s_errors_checkpoint);
                 }
+                if self.check(TokenType::Enum) {
+                    let e_checkpoint = self.pos;
+                    let e_errors_checkpoint = self.errors.len();
+                    self.advance();
+                    if self.check(TokenType::Identifier) {
+                        self.advance();
+                    }
+                    if self.check(TokenType::LBrace) {
+                        self.pos = checkpoint;
+                        self.errors.truncate(errors_checkpoint);
+                        self.parse_typedef_enum_decl(&mut program);
+                        continue;
+                    }
+                    self.pos = e_checkpoint;
+                    self.errors.truncate(e_errors_checkpoint);
+                }
                 self.pos = checkpoint;
                 self.errors.truncate(errors_checkpoint);
                 self.parse_typedef();
@@ -323,7 +339,9 @@ impl Parser {
                 let checkpoint = self.pos;
                 let errors_checkpoint = self.errors.len();
                 self.advance();
-                self.consume(TokenType::Identifier, "预期 enum 名称");
+                if self.check(TokenType::Identifier) {
+                    self.advance();
+                }
                 let is_enum_decl = self.check(TokenType::LBrace);
                 self.pos = checkpoint;
                 self.errors.truncate(errors_checkpoint);
@@ -645,13 +663,21 @@ impl Parser {
         let mut fields = Vec::new();
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             let field_checkpoint = self.pos;
-            let (fty, fname) = self.parse_type_and_name();
+            let base_type = self.parse_base_type();
+            let (fty, fname) = self.parse_declarator(&base_type);
             if self.pos == field_checkpoint {
                 self.advance();
                 break;
             }
-            self.consume(TokenType::Semicolon, "预期 ';'");
             fields.push(StructField { ty: fty, name: fname });
+            while self.match_token(TokenType::Comma) {
+                let (extra_ty, extra_name) = self.parse_declarator(&base_type);
+                fields.push(StructField {
+                    ty: extra_ty,
+                    name: extra_name,
+                });
+            }
+            self.consume(TokenType::Semicolon, "预期 ';'");
         }
         self.consume(TokenType::RBrace, "预期 '}'");
         StructDecl { loc, name, fields }
@@ -1127,6 +1153,58 @@ impl Parser {
         self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
         program.structs.push(decl);
         self.typedef_names.insert(alias_tok.text, Type::struct_type(name));
+    }
+
+    fn parse_typedef_enum_decl(&mut self, program: &mut ProgramNode) {
+        let loc = self.current().clone();
+        self.advance(); // typedef
+        self.advance(); // enum
+        let mut enum_name = String::new();
+        if self.check(TokenType::Identifier) {
+            enum_name = self.current().text.clone();
+            self.advance();
+        }
+        self.consume(TokenType::LBrace, "enum 后预期 '{'");
+        let mut next_value = 0;
+        while !self.check(TokenType::RBrace) && !self.is_at_end() {
+            let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
+            if self.match_token(TokenType::Assign) {
+                let val_expr = self.parse_assign();
+                if let Expr::Literal { value, .. } = val_expr {
+                    next_value = value;
+                }
+            }
+            program.globals.push(GlobalDecl {
+                loc: SourceLoc {
+                    line: loc.line,
+                    column: loc.column,
+                },
+                ty: Type::int(),
+                name: member_tok.text,
+                init: Some(Expr::Literal {
+                    value: next_value,
+                    loc: SourceLoc {
+                        line: member_tok.line,
+                        column: member_tok.column,
+                    },
+                    ty: Type::int(),
+                }),
+                is_static: false,
+                is_extern: false,
+                source_file: String::new(),
+            });
+            next_value += 1;
+            if !self.match_token(TokenType::Comma) {
+                break;
+            }
+        }
+        self.consume(TokenType::RBrace, "enum 成员后预期 '}'");
+        let alias_tok = self.consume(TokenType::Identifier, "typedef 后预期标识符名称").clone();
+        self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
+        self.typedef_names.insert(alias_tok.text, Type::int());
+        if !enum_name.is_empty() {
+            self.typedef_names.insert(enum_name, Type::int());
+        }
     }
 
     fn parse_func_decl(&mut self, is_static: bool, is_extern: bool) -> FuncDecl {
@@ -1699,11 +1777,6 @@ impl Parser {
                 }
             }
         }
-    }
-
-    fn parse_type_and_name(&mut self) -> (Type, String) {
-        let base_type = self.parse_base_type();
-        self.parse_declarator(&base_type)
     }
 
     fn parse_param_list(&mut self) -> Vec<Param> {

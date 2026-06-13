@@ -266,13 +266,24 @@ impl TypeChecker {
                 }
                 let then_type = self.resolve_expr_type(then_branch);
                 let else_type = self.resolve_expr_type(else_branch);
-                if then_type.kind() != else_type.kind()
-                    || then_type.name() != else_type.name()
-                    || then_type != else_type
+                // 对数组类型执行通常转换：数组在大多数表达式中退化为指向首元素的指针。
+                // 例如 `" "`（char[2]）和 `""`（char[1]）在三目运算符中应统一为 char*。
+                let decay = |t: &Type| -> Type {
+                    if let Type::Array { element, .. } = t {
+                        Type::pointer_to(*element.clone())
+                    } else {
+                        t.clone()
+                    }
+                };
+                let then_decayed = decay(&then_type);
+                let else_decayed = decay(&else_type);
+                if then_decayed.kind() != else_decayed.kind()
+                    || then_decayed.name() != else_decayed.name()
+                    || then_decayed != else_decayed
                 {
                     self.report_error("三目运算符分支类型不匹配", loc, ErrorCode::E3004_TypeMismatch);
                 }
-                *ty = then_type;
+                *ty = then_decayed.clone();
                 ty.clone()
             }
             Expr::Unary { op, operand, loc, ty } => {
