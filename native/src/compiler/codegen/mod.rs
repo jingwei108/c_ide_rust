@@ -43,8 +43,6 @@ struct ShadowEntry {
 
 #[derive(Debug, Clone)]
 struct ClassVarEntry {
-    #[allow(dead_code)]
-    name: String,
     offset: i32,
     class_name: String,
 }
@@ -653,10 +651,9 @@ impl BytecodeGen {
     }
 
     /// 记录当前 scope 中声明的类类型局部变量，供作用域退出时析构。
-    fn record_class_var(&mut self, name: &str, offset: i32, class_name: &str) {
+    fn record_class_var(&mut self, offset: i32, class_name: &str) {
         if let Some(frame) = self.local_scope_stack.last_mut() {
             frame.class_vars.push(ClassVarEntry {
-                name: name.to_string(),
                 offset,
                 class_name: class_name.to_string(),
             });

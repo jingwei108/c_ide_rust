@@ -999,16 +999,6 @@ impl TypeChecker {
         }
         None
     }
-    #[allow(dead_code)]
-    pub(crate) fn get_class_field_type(&self, class_name: &str, field_name: &str) -> Option<Type> {
-        let sym = self.classes.get(class_name)?;
-        for (fty, fname, _) in &sym.fields {
-            if fname == field_name {
-                return Some(fty.clone());
-            }
-        }
-        None
-    }
     pub(crate) fn get_class_field_type_with_access(
         &self,
         class_name: &str,

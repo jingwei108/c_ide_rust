@@ -498,7 +498,7 @@ impl StmtGen for BytecodeGen {
                                         if let Some(&idx) = self.func_index.get(ctor_name) {
                                             self.emit(OpCode::Call, idx, loc);
                                         }
-                                        self.record_class_var(name, local_offset, class_name);
+                                        self.record_class_var(local_offset, class_name);
                                     }
                                     return;
                                 }
@@ -524,7 +524,7 @@ impl StmtGen for BytecodeGen {
                                         if let Some(&idx) = self.func_index.get(&move_ctor_name) {
                                             self.emit(OpCode::Call, idx, loc);
                                         }
-                                        self.record_class_var(name, local_offset, class_name);
+                                        self.record_class_var(local_offset, class_name);
                                     } else {
                                         self.gen_struct_copy_to_local(local_offset, e, loc);
                                     }
@@ -631,7 +631,7 @@ impl StmtGen for BytecodeGen {
                         // C++ 栈对象 RAII：对 class 类型调用默认构造函数
                         if vty.is_class() {
                             if let Type::Class { name: class_name, .. } = vty {
-                                self.record_class_var(name, local_offset, class_name);
+                                self.record_class_var(local_offset, class_name);
                                 self.emit_class_default_ctor(class_name, local_offset, loc);
                             }
                         }

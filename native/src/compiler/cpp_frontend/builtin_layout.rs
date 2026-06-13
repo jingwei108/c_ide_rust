@@ -25,8 +25,6 @@ struct MethodSigJson {
 #[derive(Debug, Clone, Deserialize)]
 struct ClassLayoutJson {
     cpp_name: String,
-    #[allow(dead_code)]
-    source_file: String,
     size: i32,
     fields: Vec<FieldJson>,
     methods: Vec<MethodSigJson>,
@@ -34,12 +32,9 @@ struct ClassLayoutJson {
 
 #[derive(Debug, Clone, Deserialize)]
 struct LayoutData {
-    #[allow(dead_code)]
-    version: i32,
-    #[allow(dead_code)]
-    #[serde(rename = "generated_at")]
-    generated_at: String,
     classes: HashMap<String, ClassLayoutJson>,
+    #[serde(rename = "method_map")]
+    method_map: HashMap<String, HashMap<String, String>>,
 }
 
 // =============================================================================
@@ -126,11 +121,7 @@ pub fn builtin_method_sig(class_name: &str, method_name: &str) -> Option<MethodS
         .cloned()
 }
 
-/// Return all (cpp_name, cide_name) pairs known to the builtin layout system.
-/// Useful for codegen / type-checker loops that pre-register container metadata.
-pub fn builtin_class_mappings() -> Vec<(&'static str, &'static str)> {
-    // We leak the strings once so we can hand out 'static references.
-    // This is fine because the data lives for the entire process lifetime.
+static CPP_TO_CIDE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     LAYOUT_DATA
         .classes
         .iter()
@@ -140,4 +131,47 @@ pub fn builtin_class_mappings() -> Vec<(&'static str, &'static str)> {
             (cpp, cide)
         })
         .collect()
+});
+
+static METHOD_MAP: LazyLock<HashMap<&'static str, HashMap<&'static str, &'static str>>> =
+    LazyLock::new(|| {
+        LAYOUT_DATA
+            .method_map
+            .iter()
+            .map(|(class_name, methods)| {
+                let class_key: &'static str = Box::leak(class_name.clone().into_boxed_str());
+                let method_entries: HashMap<&'static str, &'static str> = methods
+                    .iter()
+                    .map(|(method_name, func_name)| {
+                        let method_key: &'static str = Box::leak(method_name.clone().into_boxed_str());
+                        let func_value: &'static str = Box::leak(func_name.clone().into_boxed_str());
+                        (method_key, func_value)
+                    })
+                    .collect();
+                (class_key, method_entries)
+            })
+            .collect()
+    });
+
+/// Return all (cpp_name, cide_name) pairs known to the builtin layout system.
+/// Useful for codegen / type-checker loops that pre-register container metadata.
+pub fn builtin_class_mappings() -> Vec<(&'static str, &'static str)> {
+    CPP_TO_CIDE.iter().map(|(&k, &v)| (k, v)).collect()
+}
+
+/// Map a C++ standard container type name to its Cide internal type name.
+/// e.g. `vector<int>` → `cide_vec_int`.
+pub fn cpp_type_to_cide(name: &str) -> Option<&'static str> {
+    CPP_TO_CIDE.get(name).copied()
+}
+
+/// Check whether the given type name is a builtin container type.
+pub fn is_builtin_container(name: &str) -> bool {
+    cpp_type_to_cide(name).is_some()
+}
+
+/// Map a builtin container method call to the underlying Cide container library
+/// function name.  The mapping is read from builtin_layout_data.json.
+pub fn map_container_method(class_name: &str, method: &str) -> Option<&'static str> {
+    METHOD_MAP.get(class_name)?.get(method).copied()
 }
