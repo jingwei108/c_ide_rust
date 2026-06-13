@@ -126,10 +126,8 @@ impl BytecodeGen {
         use crate::vm::vm::GLOBAL_START;
 
         let mut func_index = HashMap::new();
-        let next_func_idx;
-
-        if is_library_mode {
-            next_func_idx = 0;
+        let next_func_idx = if is_library_mode {
+            0
         } else {
             // 预注册 Bytecode Libc 函数到固定索引段
             for &name in BYTECODE_LIBC_ALL_FUNCS.iter() {
@@ -137,8 +135,8 @@ impl BytecodeGen {
                     func_index.insert(name.to_string(), idx);
                 }
             }
-            next_func_idx = BYTECODE_LIBC_BASE_INDEX + BYTECODE_LIBC_FUNC_COUNT as i32 + 1;
-        }
+            BYTECODE_LIBC_BASE_INDEX + BYTECODE_LIBC_FUNC_COUNT as i32 + 1
+        };
 
         Self{
             code: Vec::new(),

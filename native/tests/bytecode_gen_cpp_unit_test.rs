@@ -120,6 +120,55 @@ int main() {
 }
 
 #[test]
+fn test_cpp_range_for_ref_modify() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int arr[] = {1, 2, 3};
+    for (auto& x : arr) {
+        x = x * 2;
+    }
+    printf("%d %d %d\n", arr[0], arr[1], arr[2]);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["2 4 6"]);
+}
+
+#[test]
+fn test_cpp_rvalue_ref() {
+    let src = r#"
+#include <stdio.h>
+int foo() { return 42; }
+int main() {
+    int&& r = foo();
+    printf("%d\n", r);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["42"]);
+}
+
+#[test]
+fn test_cpp_const_ref_rvalue() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    const int& r = 5;
+    printf("%d\n", r);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["5"]);
+}
+
+#[test]
 fn test_cpp_virtual_call() {
     let src = r#"
 #include <stdio.h>

@@ -2,7 +2,7 @@
 
 **版本**: 2.8  
 **日期**: 2026-06-13  
-**状态**: **M6 完成后的边界清零已完成**：`native/tests/cases/cpp/` 60 个 C++ E2E 用例（原计划 50 个）全部通过， stdout 与 Clang++ (`-std=c++14 -O0`) 逐行一致；M6 阶段记录的 10 项 Cide C++ 子集边界已在提交 `fd9bb54` 中全部消除（指针/数组逻辑运算、类内方法重载、构造初始化列表、字符字面量、浮点精度等）。Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>`、`sort_int` 的 C++ 模板实现运行时 stdout 与 C 基线一致，`get`/`size` 等简单方法字节码逐指令等价。Rust 单元测试全绿，clippy 0 警告，C++ 三 tier 已纳入 CI。**下一阶段目标：Stage 2 全面迁移——用 `runtime_libc/cide/*.cpp` 中的纯 C++ 实现替换当前的 C 手写实现，并删除 `.c` 文件。**  
+**状态**: **M6 + Stage 2b 完成**：`native/tests/cases/cpp/` 60 个 C++ E2E 用例（原计划 50 个）全部通过，stdout 与 Clang++ (`-std=c++14 -O0`) 逐行一致；M6 阶段记录的 10 项 Cide C++ 子集边界已在提交 `fd9bb54` 中全部消除（指针/数组逻辑运算、类内方法重载、构造初始化列表、字符字面量、浮点精度等）。Stage 2b 内置容器全面迁移已完成：提交 `a16b489` 将 `runtime_libc/cide/*.c` 全部替换为标准模板 C++ 实现（`template <class T> class cide_vec<T>` 等），`method_map` 已指向 mangled 方法名，force-instantiate 桩已删除，`.c` 手写实现已删除。Stage 1 Dogfooding 验证完成：`vector<int/float/char>`、`string`、`list<int>`、`sort_int` 的 C++ 模板实现运行时 stdout 与 C 基线一致，`get`/`size` 等简单方法字节码逐指令等价。Rust 单元测试全绿，clippy 0 警告，C++ 三 tier 已纳入 CI。**下一阶段目标：M7 Beta 发布准备——内部试用、文档完整化、教学场景验证。**  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
@@ -342,24 +342,24 @@ void cide_vec_destroy_int(cide_vec_int *v) {
 | `kv_A(v, i)` | `cide_vec_get_int(&v, i)` |
 | `kv_destroy(v)` | `cide_vec_destroy_int(&v)` |
 
-### 4.4 集成目录结构
+### 4.4 集成目录结构（Stage 2b 已更新）
 
 ```
 native/runtime_libc/
 ├── include/                    # 已有：stdio.h / stdlib.h / ctype.h / math.h / string.h
 ├── src/                        # 已有：ctype.c / stdlib.c / string.c
-└── cide/                       # 新增：Cide 容器库（.c 文件，直接编译）
-    ├── vec_int.c               # 动态数组 int 型
-    ├── vec_float.c             # 动态数组 float 型
-    ├── vec_char.c              # 动态数组 char 型
-    ├── list_int.c              # 单向链表 int 型
-    ├── string.c                # 动态字符串
-    └── sort_int.c              # int 数组排序
+└── cide/                       # Cide 内置容器库（.cpp 文件，标准模板 C++ 实现）
+    ├── vector.cpp              # template <class T> class cide_vec<T>；显式实例化 int/float/char
+    ├── list.cpp                # template <class T> class cide_list<T>；显式实例化 int
+    ├── string.cpp              # template <class T> class cide_string<T>；显式实例化 char
+    └── sort_int.cpp            # 函数模板 cide_sort_int<T>
 ```
+
+> 历史：Stage 0 使用手写 `.c` 文件；Stage 2b 已全部替换为 `.cpp` 模板实现，并删除旧 `.c` 文件。
 
 ### 4.5 预编译流程
 
-复用现有 `scripts/precompile_bytecode_libc.py`：**零改动**。脚本已支持编译 `runtime_libc/src/*.c`，只需将 glob 模式扩展为包含 `runtime_libc/cide/*.c`。
+复用并扩展 `scripts/precompile_bytecode_libc.py`：脚本同时编译 `runtime_libc/src/*.c` 与 `runtime_libc/cide/*.cpp`，统一生成 `bytecode_libc_data.json`。Stage 2b 中已增加对 `.cpp` 文件及模板显式实例化的支持。
 
 ```python
 # scripts/precompile_bytecode_libc.py（无需修改逻辑，只需扩展路径）
@@ -1354,19 +1354,7 @@ auto x = v[100];   // 越界访问 → E3001 TrapBounds
 
 ## 十、Dogfooding 与 C++ 容器验证
 
-> **当前状态（2026-06-12）**：Stage 0 已完成，`runtime_libc/cide/*.c` 全部预编译通过；`vector<int/float/char>`、`string`、`list<int>`、`sort_int`  layouts.toml / builtin_layout.rs / type_map.rs / cpp_container.rs 已对齐。Stage 2 栈 RAII 已完成：`Class c;` 自动调用默认构造函数，scope exit / return / break / continue 自动按 LIFO 调用析构函数（即第 7.3 节所述的 CppImplicit 全面作用域守卫）。Stage 3 `new[]/delete[]` 元素构造析构已完成：`new A[n]` 在 `base[-4]` 存元素 count，`delete[]` 逆序调用析构函数；临时变量槽位从 3 个扩展至 4 个。Stage 4 引用声明与基本语义已完成：`int& r = x` 全链路通过；`T&` 函数参数/返回值支持；引用自动解引用；引用参数隐式取地址；返回引用的函数调用识别为左值。Stage 5 Dogfooding 基础设施已完成：`native/tests/test_utils.rs` 提供 `compile_cpp_bytecode` + `assert_bytecode_equivalent`（Jump/Call 归一化 + diff 输出）；`native/tests/cpp_dogfooding_test.rs` 提供 harness 和工具自验证。Stage 6 `vector<int>` Dogfooding 已启动：C++ 模板类 `vector<int>`（使用 `new[]/delete[]` + 循环复制）编译通过并运行正确，stdout 与 C 基线 `cide_vec_int` 一致（`3\n1\n4\n`）。**构造函数成员初始化列表 `Class() : field(val) {}` 已修复**：Parser 在两个构造函数分支增加 `parse_ctor_init_list()`，降解为 `this->field = expr;` 赋值语句插入 `Block` 开头。**Stage 1 Dogfooding 验证推进**：
-> - `vector<int/float/char>`、`string`、`list<int>` C++ 纯实现运行时 stdout 与 C 基线完全一致
-> - `sort_int` C++ 模板函数实现运行时 stdout 与 C 基线完全一致（排序结果 `1\n1\n3\n4\n5\n`）
-> - **字节码等价验证**：`get`/`size` 等简单访问方法在 C++ class 与 C struct 字段布局对齐后，逐指令等价（StepEvent 行号归一化 + Call 目标名归一化 + 启动代码排除）
-> - **已知差异（诚实记录）**：`push_back`/`pop_back` 等方法因 C++ 使用 `new[]/delete[]` + 循环复制，C 使用 `realloc`，算法实现不同，字节码不等价；`list<int>::get` 因 C++ 使用 `if/return` 而 C 使用三元运算符 `?:`，控制流结构不同，字节码不等价
-> - **P0 编译器 bug 修复（Dogfooding 过程中发现）**：
->   1. 函数模板隐式实例化：`Array` 实际参数无法匹配 `Pointer` 形式参数进行模板参数推断 → 修复 `infer_template_arg` 增加 `Array → Pointer` 退化分支
->   2. 函数模板实例化后 AST 未重写：`CallPtr { callee: "foo" }` 实例化为 `foo__int` 后，BytecodeGen 仍看到原始名称 → 修复 `resolve_expr_type` 将 `CallPtr` 重写为 `Call { name: mangled }`
->   3. 递归模板调用已实例化回退失败：`try_monomorphize_func` 对已实例化函数返回 `None`，caller 无法获取 mangled 名称 → 改为返回 `Some((mangled, None))`
->   4. 模板实例化函数体未检查：`pending_instantiations` 在 `exit_scope` 后才 drain，函数体从未被 TypeChecker 遍历 → 增加 Pass 3.6 循环检查直至收敛
-> - Dogfooding 测试总计 25 个（10 个原有 + 15 个新增），全部通过；600+ Rust 单元测试保持全绿
-> - **M5 隐式移动构造函数自动生成（Stage 5）**：类含指针/资源字段时自动生成 `__ctor__{Class}__move`；`std::move` 初始化调用移动构造并置空源指针；Dogfooding 测试 +2（总计 28 个，全绿）
-> - **M5 `unique_ptr<T>` 简化版 dogfooding（Stage 6）**：模板类 `unique_ptr<T>`（单 `T*` 字段）支持构造/`get`/`release`/`reset`/`std::move` 转移/析构；新增 `test_cpp_unique_ptr_int_dogfooding_runs`；Dogfooding 测试 +1（总计 29 个，全绿）
+> **当前状态（2026-06-13）**：Stage 0/1/2 全部完成。`runtime_libc/cide/*.c` 已在提交 `a16b489` 中全部替换为标准模板 C++ 实现（`.cpp`），旧 `.c` 文件已删除，force-instantiate 桩已删除。Stage 2 栈 RAII 已完成；Stage 3 `new[]/delete[]` 元素构造析构已完成；Stage 4 引用语义已完成；Stage 5 隐式移动构造已完成；Stage 6 `unique_ptr<T>` dogfooding 已完成。Stage 2b 内置容器全面迁移：`vector<int/float/char>` 合并为 `vector.cpp`，`list<int>` 合并为 `list.cpp`，`string` 改写为模板，通过 `template class cide_vec<int>;` 显式实例化导出方法，`method_map` 指向 mangled 方法名。Dogfooding 测试 28 个全部通过；C++ E2E 60 个全部通过；C++ Shadow Verification 82 用例全部一致、0 gap；Parser/TypeChecker/BytecodeGen CPP 单元测试 104 个全部通过；clippy 0 警告。原 3 个 `compile_gap`（`cpp_rvalue_ref`、`cpp_const_ref_rvalue`、`cpp_range_for_ref_modify`）已消除。
 
 ### 10.1 Stage 0：验证 BytecodeGen（已完成 ✅）
 
@@ -1394,7 +1382,7 @@ public:
 2. 手写等价的 C 代码（直接调用 `cide_vec_*`）→ 生成字节码 B
 3. 对比 A ≡ B（逐指令一致）→ 证明 BytecodeGen 正确
 
-### 10.2 Stage 1：Dogfooding 验证（进行中 🔄，核心验证通过）
+### 10.2 Stage 1：Dogfooding 验证（已完成 ✅）
 
 当 Cide C++ 编译器成熟后，用 Cide C++ 子集写**不依赖 C 容器函数**的纯 C++ 容器：
 
@@ -1434,12 +1422,13 @@ public:
 1. 用 Cide C++ 编译器编译 `stage1_vec_cpp.h` → 生成字节码 C
 2. 对比 C ≡ B（Stage 0 的 C 版本字节码）
 3. 如果 C ≡ B → **Dogfooding 通过**，Cide C++ 编译器可以正确编译 C++ 项目（容器库）
-4. 进入 Stage 2：用 `stage1_vec_cpp.h` 替换 `cide_vec_int.c`，删除 C 实现
+4. 进入 Stage 2：用 `stage1_vec_cpp.h` 替换 `cide_vec_int.c`，删除 C 实现（已于提交 `a16b489` 完成）
 
-**Dogfooding 失败处理**：
-- 若 C ≠ B → 分析差异，修复 BytecodeGen/TypeChecker
-- 循环 1-4 直到 C ≡ B
-- Dogfooding 是编译器正确性的**终极测试**，不通过不发布 Stage 2
+**Dogfooding 完成结论**：
+- `vector<int/float/char>`、`string`、`list<int>`、`sort_int` 的 C++ 模板实现运行时 stdout 与 C 基线完全一致。
+- `get`/`size` 等简单访问方法在 C++ class 与 C struct 字段布局对齐后逐指令等价。
+- `push_back`/`pop_back` 等因算法实现不同（`new[]/delete[]` + 循环复制 vs `realloc`）字节码不等价，但运行结果一致。
+- Dogfooding 是编译器正确性的**终极测试**，已通过后进入 Stage 2。
 
 ---
 
@@ -1454,7 +1443,7 @@ public:
 | 学生混淆 C/C++ 语法 | 高 | 教学体验下降 | IDE 层面区分模式提示，错误消息标注 "C++ 模式" |
 | klib 参照实现偏差 | 低 | 容器行为与预期不一致 | 逐函数对照 klib 源码，Differential 测试验证 |
 | `Auto` Token 语义冲突 | 中 | C-auto 与 C++-auto 解析歧义 | Parser 根据上下文区分（C 模式 vs C++ 模式） |
-| **Dogfooding 失败** | **中** | **C++ 编译器无法正确编译 C++ 容器，Stage 2 无法实现** | **Stage 0 C 容器永久保留作为 fallback；Dogfooding 不阻塞 M8 发布** |
+| Dogfooding 失败 | 低 | C++ 编译器无法正确编译 C++ 容器 | 已通过 Stage 1/2 验证；若未来失败可保留 Stage 0 C 容器作为 fallback |
 
 ---
 
@@ -1473,8 +1462,8 @@ public:
 | **M6：测试防线完成** | **T+16 周** | **✅ 五层测试防线全部通过，59 道 C++ 教材/OJ 题目回归通过（超过计划的 50 道）** |
 | M7：Beta 发布 | T+18 周 | 内部试用，收集反馈 |
 | M8：正式发布 | T+22 周 | 文档完整，教学场景验证通过 |
-| **M9：容器 Dogfooding（Stage 1）** | **T+26 周** | **用 Cide C++ 编译器编译 C++ 容器源码，字节码与 C 版本逐指令一致** |
-| **M10：全面迁移（Stage 2）** | **T+30 周** | **运行时库全部替换为 C++ 实现，删除所有手写 C 容器** |
+| **M9：容器 Dogfooding（Stage 1）** | **T+26 周** | **✅ 用 Cide C++ 编译器编译 C++ 容器源码，运行时 stdout 与 C 版本一致，`get`/`size` 等方法逐指令等价** |
+| **M10：全面迁移（Stage 2）** | **T+30 周** | **✅ 运行时库全部替换为 C++ 实现，删除所有手写 C 容器；`method_map` 指向 mangled 方法名** |
 
 ---
 
@@ -1547,90 +1536,68 @@ cide_cli compile hello.cpp --show-ast       # 显示 C++ AST
 ---
 
 **计划制定**: Kimi Code CLI  
-**状态更新**: 2026-06-13 — M6 完成，10 项边界清零；Stage 2b 彻底迁移进行中  
-**下一步**: 完成 Stage 2b 彻底迁移：将内置容器实现切换为纯 C++ 类方法，method_map 指向 mangled 方法名，更新测试与文档。
+**状态更新**: 2026-06-13 — M6 完成，10 项边界清零；Stage 2b 彻底迁移完成  
+**下一步**: M7 Beta 发布准备：内部试用、文档完整化、教学场景验证。详见 `docs/current/STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md`。
 
 ---
 
-## 十五、Stage 2b 实施中发现的编译器/工具链约束
+## 十五、Stage 2b 实施约束与最终方案
 
 > 记录时间：2026-06-13  
 > 记录位置：`docs/current/CPLUSPLUS_EXTENSION_PLAN.md`
 
-在将 `native/runtime_libc/cide/*.c` 手写容器迁移为纯 C++ 实现的过程中，发现以下约束。这些约束决定了 `.cpp` 文件的写法、`extract_cpp_builtin_layout.py` 的解析策略以及 `precompile_bytecode_libc.py` 的预编译方式。
+`native/runtime_libc/cide/*.c` 手写容器迁移为纯 C++ 实现的工作已完成（提交 `a16b489`）。本节记录迁移过程中遇到/曾遇到的编译器/工具链约束，以及最终采用的解决方案。
 
-### 15.1 Cide C++ Parser 不支持类外方法定义
+### 15.1 最终目录结构
 
-**现象**：`void cide_vec_int::push_back(int x) { ... }` 报 `E2005` 语法错误。
+```
+native/runtime_libc/cide/
+├── vector.cpp   # template <class T> class cide_vec<T>；显式实例化 int/float/char
+├── list.cpp     # template <class T> class cide_list<T> / cide_list_node<T>；显式实例化 int
+├── string.cpp   # template <class T> class cide_string<T>；显式实例化 char
+└── sort_int.cpp # 自由函数模板 cide_sort_int<T>（仍用调用桩触发实例化）
+```
 
-**根因**：Cide Parser 目前只支持类内 inline 方法定义，不支持 `ClassName::methodName` 形式的类外定义。
+已删除：所有 `.c` 实现（`vec_int.c` / `vec_float.c` / `vec_char.c` / `list_int.c` / `string.c` / `sort_int.c`）以及早期 `.cpp` 单类型实现（`vector_int.cpp` 等）。
 
-**影响**：所有内置容器方法必须在 `class cide_xxx { ... };` 大括号内直接实现。
+### 15.2 曾被认为不支持但已解决的约束
 
-**缓解**：`.cpp` 文件采用类内 inline 实现；`extract_cpp_builtin_layout.py` 必须能正确区分类体顶层字段声明与方法体内的局部变量声明。
+| 约束 | 原状态 | 解决方式 | 验证测试 |
+|------|--------|----------|----------|
+| 类外方法定义 `Class::method()` | ❌ 不支持 | Parser 已实现类外方法定义解析，支持 `Bar::set`、`Box<T>::set` 形式 | `test_parser_cpp_member_func_outside_class`<br>`test_cpp_out_of_line_method_definition` |
+| 类模板显式实例化 `template class X<Y>;` | ❌ 不支持 | Parser 已支持类模板显式实例化 | `test_cpp_explicit_class_template_instantiation` |
+| force-instantiate 桩强制导出方法 | 临时必要 | 通过显式实例化替代，已删除所有容器 force-instantiate 桩 | `cpp_dogfooding_test`（28 个全绿） |
 
-### 15.2 `cide_cli export` 不会导出未使用的类/方法
+### 15.3 仍然有效的约束与当前写法
 
-**现象**：即使 `.cpp` 中定义了完整的 `class cide_vec_int`，若没有任何代码创建 `cide_vec_int` 对象或调用其方法，`export` 产物中不会出现 `cide_vec_int__push_back` 等函数。
+| 约束 | 说明 | 当前缓解写法 |
+|------|------|--------------|
+| `T()` 值初始化不被支持 | Parser 将 `T()` 解析为对非函数指针的调用 | 使用 `(T)0` 对 POD 类型做零初始化 |
+| 函数模板显式实例化不支持 | 仅类模板显式实例化已支持 | `sort_int.cpp` 保留 `__cide_force_instantiate_cide_sort_int()` 调用桩 |
+| 同一模板类不能跨文件重复定义 | Bytecode Libc 多文件一起编译 | `vector<int/float/char>` 合并到单个 `vector.cpp` |
+| 嵌套模板类需显式实例化 | TypeChecker 不会自动注册隐式实例化的节点类 | `list.cpp` 末尾同时写 `template class cide_list_node<int>;` |
+| `method_map` 必须指向 mangled 方法名 | MemberCall 路径生成 `Class__method` | `extract_cpp_builtin_layout.py` 已输出 mangled 名；`bytecode_libc_sig.rs` 已同步 |
 
-**根因**：BytecodeGen 只生成被实际调用的函数；`cide_cli export` 会过滤掉未被调用的函数。
+### 15.4 布局提取与预编译流程
 
-**影响**：必须提供显式的 force-instantiate 桩函数，确保所有容器方法都被编译进 Bytecode Libc。
+1. `extract_cpp_builtin_layout.py` 从 `.cpp` 提取类布局，输出 `native/src/compiler/cpp_frontend/builtin_layout_data.json`。
+2. 脚本已升级为 brace-aware，能正确区分 class 顶层字段与方法体内的局部变量。
+3. 脚本内置 `FILE_RULES`，将 `cide_vec`/`cide_list`/`cide_string` 等模板基名映射到用户可见名（`vector<int>` / `list<int>` / `string`）。
+4. `precompile_bytecode_libc.py` 编译 `runtime_libc/cide/*.cpp`，生成 `bytecode_libc_data.json` / `bytecode_libc_index.rs`。
+5. 由于 `cide_cli export` 会链接已嵌入的 Bytecode Libc，迁移过程中需删除旧 `.c` 文件后重新预编译，确保产物干净。
 
-**缓解**：每个 `.cpp` 文件末尾添加 `void __cide_force_instantiate_cide_xxx() { ... }`，在桩函数中创建容器实例并调用全部 public 方法。
+### 15.5 验证结果
 
-### 15.3 Cide 不支持 `template class X<Y>;` 显式实例化
+- **Dogfooding 测试**：28 个全部通过（`cargo test --test cpp_dogfooding_test`）
+- **C++ E2E 测试**：60 个全部通过（`cargo test --test cide_e2e cpp`）
+- **C++ Shadow Verification**：82 个用例全部一致，0 gap（原 3 个 gap 已消除）
+- **Parser/TypeChecker/BytecodeGen CPP 单元测试**：33 + 28 + 40 = 101 个全部通过
+- **clippy**：0 警告
 
-**现象**：`template class vector<int>;` 报 `E2005` 语法错误。
-
-**根因**：Parser 未实现显式模板实例化语法。
-
-**影响**：无法通过显式实例化强制模板类方法导出；容器类必须直接以 `class cide_vec_int { ... };` 形式定义，而不是 `template<class T> class vector { ... };` + `template class vector<int>;`。
-
-**缓解**：`.cpp` 文件直接定义 `class cide_vec_int`、`class cide_vec_float` 等具名类；`extract_cpp_builtin_layout.py` 通过文件名 `FILE_RULES` 映射到 `cpp_name`（如 `vector<int>`）。
-
-### 15.4 内置容器类名必须与 `cide_name` 一致
-
-**现象**：TypeChecker 为内置容器注册的默认构造函数/析构函数名为 `__ctor__cide_vec_int` / `__dtor__cide_vec_int`（基于 builtin_layout_data.json 的 key）。
-
-**根因**：`typeck/cpp_class_layout.rs` 使用 builtin layout 的 key 作为类名注册隐式构造/析构。
-
-**影响**：如果 `.cpp` 中定义的类名为 `vector` 并通过实例化得到 `vector__int`，则导出的构造/析构函数名为 `__ctor__vector__int`，与 TypeChecker 期望的 `__ctor__cide_vec_int` 不一致，导致栈对象 `cide_vec_int v;` 无法正确调用构造/析构。
-
-**缓解**：`.cpp` 中容器类直接使用 `class cide_vec_int { ... };` 等 Cide 内部名称，确保 mangling 与 TypeChecker 注册名一致。
-
-### 15.5 `extract_cpp_builtin_layout.py` 必须 brace-aware
-
-**现象**：当方法在类内 inline 实现时，方法体内的 `int* na = new int[m];` 等局部变量声明会被旧版正则误识别为类字段。
-
-**根因**：旧版脚本用全局正则扫描 `type name;`，不区分类顶层和方法体。
-
-**影响**：生成的 `builtin_layout_data.json` 字段数和 size 错误，进而导致 `sizeof(cide_vec_int)` 等计算错误。
-
-**缓解**：重写解析器，先按顶层大括号深度将类体 split 为顶层 segment，只在深度为 0 的 segment 中识别字段声明。
-
-### 15.6 `method_map` 必须指向 mangled 方法名
-
-**现象**：Stage 2b 要让容器方法调用走真正的 C++ MemberCall 路径，BytecodeGen 实际生成的函数名为 `cide_vec_int__push_back`（`Class__method` mangling）。
-
-**根因**：Cide 的类方法 mangling 规则为 `{class_name}__{method_name}`。
-
-**影响**：`builtin_layout_data.json` 的 `method_map` 必须从旧的 C 风格函数名（如 `cide_vec_push_int`）改为 mangled 方法名（如 `cide_vec_int__push_back`）；`bytecode_libc_sig.rs` 也必须同步更新签名。
-
-**缓解**：修改 `extract_cpp_builtin_layout.py` 的 `derive_method_c_name` 为 `derive_mangled_method_name`；同步更新 `bytecode_libc_sig.rs` 中所有容器函数签名。
-
-### 15.7 `cide_cli export` 自动链接现有 Bytecode Libc
-
-**现象**：导出的 JSON 中同时出现新的 mangled 方法名和旧的 C 函数名（来自上一次预编译产物）。
-
-**根因**：`run_multi_file_pipeline` 在编译传入源文件前会加载已嵌入的 Bytecode Libc。
-
-**影响**：在迁移过程中，新旧函数可能共存；只有删除 `.c` 文件并重新生成后，产物才干净。
-
-**缓解**：删除 `runtime_libc/cide/*.c` 后重新运行 `precompile_bytecode_libc.py`，确保 Bytecode Libc 只包含 `.cpp` 中的 C++ 实现。
+更多实现细节见 `docs/current/STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md`。
 
 ---
 
 **计划制定**: Kimi Code CLI  
-**状态更新**: 2026-06-13 — M6 完成，10 项边界清零；Stage 2b 彻底迁移进行中  
-**下一步**: 完成 Stage 2b 彻底迁移：将内置容器实现切换为纯 C++ 类方法，method_map 指向 mangled 方法名，更新测试与文档。
+**状态更新**: 2026-06-13 — M6 完成，10 项边界清零；Stage 2b 彻底迁移完成  
+**下一步**: M7 Beta 发布准备：内部试用、文档完整化、教学场景验证。

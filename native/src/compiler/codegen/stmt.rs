@@ -553,7 +553,24 @@ impl StmtGen for BytecodeGen {
                             }
                         } else if vty.is_reference() || vty.is_rvalue_ref() {
                             // C++ reference initialization: store address of initializer
-                            self.gen_addr(e, loc);
+                            if e.ty().is_reference() || e.ty().is_rvalue_ref() {
+                                // The initializer itself is a reference expression; gen_expr
+                                // already leaves the target address on the stack.
+                                self.gen_expr(e);
+                            } else if super::expr::is_lvalue_expr(e) {
+                                self.gen_addr(e, loc);
+                            } else {
+                                // Rvalue: extend lifetime by storing into a temporary local,
+                                // then bind the reference to that temporary's address.
+                                let temp_offset = self.next_local_offset;
+                                let temp_sz = (self.type_size(e.ty()) + 3) & !3;
+                                self.next_local_offset += temp_sz;
+                                self.gen_expr(e);
+                                self.emit(OpCode::StoreLocal, temp_offset, loc);
+                                self.emit(OpCode::GetFrameBase, 0, loc);
+                                self.emit(OpCode::PushConst, temp_offset, loc);
+                                self.emit(OpCode::Add, 0, loc);
+                            }
                             self.emit(OpCode::StoreLocal, local_offset, loc);
                         } else {
                             self.gen_expr(e);
@@ -941,8 +958,13 @@ impl StmtGen for BytecodeGen {
                     self.emit(OpCode::PushConst, elem_sz, &loc);
                     self.emit(OpCode::Mul, 0, &loc);
                     self.emit(OpCode::Add, 0, &loc);
-                    self.emit(OpCode::LoadMem, 0, &loc);
-                    self.emit(OpCode::StoreLocal, var_offset, &loc);
+                    if var_type.is_reference() || var_type.is_rvalue_ref() {
+                        // Reference loop variable for array: bind to element address
+                        self.emit(OpCode::StoreLocal, var_offset, &loc);
+                    } else {
+                        self.emit(OpCode::LoadMem, 0, &loc);
+                        self.emit(OpCode::StoreLocal, var_offset, &loc);
+                    }
                 } else {
                     // Container: call {container}__get(&iter, idx)
                     let class_name = iter_ty.name();

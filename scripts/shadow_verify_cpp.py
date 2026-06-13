@@ -253,7 +253,7 @@ int main() {
     printf("%d\n", r);
     return 0;
 }
-''', "gap"),
+''', "baseline"),
     ShadowCase("cpp_const_ref_rvalue", r'''
 #include <stdio.h>
 int main() {
@@ -261,7 +261,7 @@ int main() {
     printf("%d\n", r);
     return 0;
 }
-''', "gap"),
+''', "baseline"),
     ShadowCase("cpp_auto_ref", r'''
 #include <stdio.h>
 int main() {
@@ -324,7 +324,7 @@ int main() {
     printf("%d %d %d\n", arr[0], arr[1], arr[2]);
     return 0;
 }
-''', "gap"),
+''', "baseline"),
     ShadowCase("cpp_template_struct", r'''
 #include <stdio.h>
 template<class T> struct Pair { T a, b; };

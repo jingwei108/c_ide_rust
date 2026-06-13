@@ -65,6 +65,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 新增 E2E 用例 `cpp_method_overload.cpp`（BST 公有 `insert(int)` + 私有递归 `insert(Node*, int)` + `print` 重载）
 - **M6 10 项 C++ 子集边界全部消除**：`CPP_FAILURES.md` 中记录的边界全部修复，`native/tests/cases/cpp/` 60 个用例全部使用标准 C++14 语法，`KNOWN_CPP_FAILURES` 为空
 
+### Fixed (C++ Shadow Verification 3 gap 清零)
+- **右值引用绑定函数返回值 `int&& r = foo();`**：`VarDecl` 引用初始化分支区分左值 / 引用表达式 / 纯右值；纯右值创建临时局部变量延长生命周期，再绑定引用地址
+- **`const int& r = 5` 绑定字面量右值**：同上临时变量方案，常量左值引用可接受字面量右值
+- **`for (auto& x : arr)` 修改数组元素**：
+  - `typeck/decl.rs` 修正 `RangeFor` 变量类型推导：`auto&` 推导为 `Reference { base: elem_type }`，`auto&&` 推导为 `RValueRef { base: elem_type }`
+  - `codegen/stmt.rs` 数组形式的 `RangeFor` 在循环变量为引用时存储元素地址而非元素值
+- **测试扩展**：`bytecode_gen_cpp_unit_test` +3（`test_cpp_rvalue_ref`、`test_cpp_const_ref_rvalue`、`test_cpp_range_for_ref_modify`），`typeck_cpp_unit_test` +1（`test_cpp_auto_ref_range_for`）
+- **Shadow Verify 状态**：`scripts/shadow_verify_cpp.py` 中 3 个用例从 `gap` 改为 `baseline`，C++ Shadow Verification 82/82 全绿，0 gap
+
 ### Added (C++ 扩展 Stage 1 — 类模板实例化)
 - **Parser 模板 id 类型解析**：新增 `Type::TemplateId { base, args }`，`Parser` 维护 `template_names` 集合，`parse_base_type` 识别 `vector<int>` 语法
 - **TypeChecker 类模板实例化**：`try_monomorphize_class` 镜像函数模板单态化逻辑，支持字段/方法/构造函数/析构函数中的模板参数替换

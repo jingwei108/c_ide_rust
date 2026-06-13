@@ -376,6 +376,21 @@ int main() {
 }
 
 #[test]
+fn test_cpp_auto_ref_range_for() {
+    let src = r#"
+int main() {
+    int arr[] = {1, 2, 3};
+    for (auto& x : arr) {
+        x = x * 2;
+    }
+    return 0;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
 fn test_cpp_const_ref_bind_rvalue() {
     let src = r#"
 int main() {

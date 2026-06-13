@@ -1,5 +1,17 @@
 use super::*;
 
+/// Returns true if `expr` denotes an object with storage (an lvalue in C++ terms).
+pub(crate) fn is_lvalue_expr(expr: &Expr) -> bool {
+    matches!(
+        expr,
+        Expr::Identifier { .. }
+            | Expr::Index { .. }
+            | Expr::Member { .. }
+            | Expr::Unary { op: UnaryOp::Deref, .. }
+            | Expr::This { .. }
+    )
+}
+
 pub(crate) trait ExprGen {
     fn gen_expr(&mut self, expr: &mut Expr);
     fn gen_nested_init(&mut self, base_temp: i32, offset: i32, target_ty: &Type, init: &mut Expr, loc: &SourceLoc);

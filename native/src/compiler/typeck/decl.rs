@@ -367,10 +367,14 @@ impl TypeChecker {
                     );
                     Type::int()
                 };
-                let deduced_var_type = if var_type.is_auto() {
-                    elem_type
-                } else {
-                    var_type.clone()
+                let deduced_var_type = match var_type {
+                    Type::Auto => elem_type,
+                    Type::Reference { is_const, .. } => Type::Reference {
+                        base: Box::new(elem_type),
+                        is_const: *is_const,
+                    },
+                    Type::RValueRef { .. } => Type::RValueRef { base: Box::new(elem_type) },
+                    _ => var_type.clone(),
                 };
                 *var_type = deduced_var_type.clone();
                 self.declare_var(var, &deduced_var_type, false, false, false);

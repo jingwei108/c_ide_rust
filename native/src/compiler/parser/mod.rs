@@ -1150,7 +1150,6 @@ impl Parser {
 
         let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
         let mut func_name = name_tok.text.clone();
-        let mut ret_type = ret_type;
         // C++ 类外成员函数定义: Bar::set → Bar__set
         // 同时支持模板形式 Box<T>::set（模板参数仅用于消耗 token，名字仍用 Box__set）。
         if self.is_cpp_mode {
