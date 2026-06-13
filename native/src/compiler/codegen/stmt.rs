@@ -879,20 +879,10 @@ impl StmtGen for BytecodeGen {
                     };
                     self.emit(OpCode::PushConst, elem_count, &loc);
                 } else {
-                    // Container: call cide_vec_size_*(&iter)
-                    let size_func = match iter_ty.name() {
-                        "cide_vec_int" => "cide_vec_size_int",
-                        "cide_vec_float" => "cide_vec_size_float",
-                        "cide_vec_char" => "cide_vec_size_char",
-                        "cide_string" => "cide_string_size",
-                        "cide_list_int" => "cide_list_size_int",
-                        _ => {
-                            self.report_error("RangeFor: 不支持的内置容器类型", &loc);
-                            self.exit_scope();
-                            return;
-                        }
-                    };
-                    if let Some(&idx) = self.func_index.get(size_func) {
+                    // Container: call {container}__size(&iter)
+                    let class_name = iter_ty.name();
+                    let size_func = format!("{}__size", class_name);
+                    if let Some(&idx) = self.func_index.get(&size_func) {
                         // Push &iter
                         if let Expr::Identifier { name, .. } = iter.as_ref() {
                             if let Some(&offset) = self.local_indices.get(name) {
@@ -954,20 +944,10 @@ impl StmtGen for BytecodeGen {
                     self.emit(OpCode::LoadMem, 0, &loc);
                     self.emit(OpCode::StoreLocal, var_offset, &loc);
                 } else {
-                    // Container: call cide_vec_get_*(&iter, idx)
-                    let get_func = match iter_ty.name() {
-                        "cide_vec_int" => "cide_vec_get_int",
-                        "cide_vec_float" => "cide_vec_get_float",
-                        "cide_vec_char" => "cide_vec_get_char",
-                        "cide_string" => "cide_string_get",
-                        "cide_list_int" => "cide_list_get_int",
-                        _ => {
-                            self.report_error("RangeFor: 不支持的内置容器类型", &loc);
-                            self.exit_scope();
-                            return;
-                        }
-                    };
-                    if let Some(&idx) = self.func_index.get(get_func) {
+                    // Container: call {container}__get(&iter, idx)
+                    let class_name = iter_ty.name();
+                    let get_func = format!("{}__get", class_name);
+                    if let Some(&idx) = self.func_index.get(&get_func) {
                         // Push idx first (will be second on stack after &iter)
                         self.emit(OpCode::LoadLocal, idx_offset, &loc);
                         // Push &iter

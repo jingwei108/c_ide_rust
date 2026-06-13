@@ -376,7 +376,12 @@ impl TypeChecker {
             });
         }
 
-        // Register builtin container layouts so TypeChecker knows their sizes
+        // Register builtin container layouts so TypeChecker knows their sizes.
+        // In library mode we are compiling the builtin container implementations themselves,
+        // so their ClassDecls are already present in program.classes; do not re-register them.
+        if self.is_library_mode {
+            return;
+        }
         for (cpp_name, cide_name) in crate::compiler::cpp_frontend::builtin_layout::builtin_class_mappings() {
             if let Some(layout) = crate::compiler::cpp_frontend::builtin_layout::builtin_class_layout(cide_name) {
                 for name in [cpp_name, cide_name] {

@@ -114,7 +114,7 @@ fn run_consistency_case(driver_name: &str, lib_sources: &[&str]) {
     }
 
     let mut session = Session::default();
-    let compile_result = run_multi_file_pipeline(&mut session, units);
+    let compile_result = run_multi_file_pipeline(&mut session, units, false);
     if let Err(e) = compile_result {
         let diags: Vec<String> = session
             .compile

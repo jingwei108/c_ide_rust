@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-提取 Cide 内置 C++ 容器接口声明，生成 builtin_layout_data.json。
+提取 Cide 内置 C++ 容器类定义，生成 builtin_layout_data.json。
 输入: native/runtime_libc/cide/*.cpp
 输出: native/src/compiler/cpp_frontend/builtin_layout_data.json
+
+约定:
+- 容器类使用标准模板写法，如 `template <class T> class cide_vec { ... };`
+- 文件名到 (base_cide_name, base_cpp_name, type_args) 的映射由 FILE_RULES 维护
+- method_map 输出 mangled 方法名: {cide_name}__{method}
+- sort_int.cpp 是自由函数模板，不参与布局提取
 """
 
 import json
@@ -29,19 +35,18 @@ TYPE_SIZE = {
     "double*": 4,
 }
 
-# C++ 类名 → cide 前缀/命名规则
-CLASS_RULES = {
-    "vector": ("vec", True),   # (prefix, has_type_suffix)
-    "list":   ("list", True),
-    "string": ("string", False),
+# 文件名 -> (base_cide_name, base_cpp_name, [type_arg, ...])
+# sort_int.cpp 是自由函数模板，不在这里注册
+FILE_RULES = {
+    "vector.cpp": ("cide_vec", "vector<T>", ["int", "float", "char"]),
+    "list.cpp": ("cide_list", "list<T>", ["int"]),
+    "string.cpp": ("cide_string", "string", ["char"]),
 }
 
 
 def strip_comments(text: str) -> str:
     """移除 C/C++ 风格的 // 和 /* */ 注释。"""
-    # 移除 // 行尾注释
     text = re.sub(r'//.*?$', '', text, flags=re.MULTILINE)
-    # 移除 /* */ 块注释
     text = re.sub(r'/\*.*?\*/', '', text, flags=re.DOTALL)
     return text
 
@@ -53,73 +58,44 @@ def parse_type_size(ty: str) -> int:
         return TYPE_SIZE[ty]
     if ty.endswith("*"):
         return 4
-    # 未知类型 fallback
     return 4
 
 
-def cpp_name_to_cide(cpp_name: str) -> str:
-    """
-    将 C++ 类型名推导为 Cide 内部类型名。
-    e.g. vector<int> -> cide_vec_int
-         string -> cide_string
-    """
-    m = re.match(r'^(\w+)<(\w+)>$', cpp_name)
-    if m:
-        cls, inst = m.group(1), m.group(2)
-        prefix, has_suffix = CLASS_RULES.get(cls, (cls, True))
-        if has_suffix:
-            return f"cide_{prefix}_{inst}"
-        return f"cide_{prefix}"
-    # 非模板类
-    prefix, _ = CLASS_RULES.get(cpp_name, (cpp_name, False))
-    return f"cide_{prefix}"
+def parse_type_str(s: str) -> str:
+    """标准化类型字符串，目前直接返回原始字符串。"""
+    return s.strip()
 
 
-# 历史遗留：vector 的 push_back/pop_back 在 C 函数名中省略了 _back
-VEC_METHOD_MAP = {
-    "push_back": "push",
-    "pop_back": "pop",
-}
+def mangle_template_name(base_cide: str, type_arg: str) -> str:
+    """与编译器 TypeChecker::mangle_template_name 保持一致的内置容器短名规则。"""
+    special = {
+        ("cide_vec", "int"): "cide_vec_int",
+        ("cide_vec", "float"): "cide_vec_float",
+        ("cide_vec", "char"): "cide_vec_char",
+        ("cide_list", "int"): "cide_list_int",
+        ("cide_string", "char"): "cide_string",
+    }
+    if (base_cide, type_arg) in special:
+        return special[(base_cide, type_arg)]
+    return f"{base_cide}__{type_arg}"
 
 
-def derive_method_c_name(cide_class: str, method: str, inst_type: str | None) -> str:
-    """
-    根据实际 type_map.rs 中的映射规则推导 C 函数名。
-    """
-    if cide_class == "cide_string":
-        return f"cide_string_{method}"
-    if cide_class.startswith("cide_vec_"):
-        mapped = VEC_METHOD_MAP.get(method, method)
-        return f"cide_vec_{mapped}_{inst_type}"
-    if cide_class.startswith("cide_list_"):
-        return f"cide_list_{method}_{inst_type}"
-    # fallback
-    if inst_type:
-        return f"{cide_class}_{method}_{inst_type}"
-    return f"{cide_class}_{method}"
+def cpp_type_name(base_cpp: str, type_arg: str) -> str:
+    """根据 base_cpp 模板形式和类型参数生成用户可见的 C++ 类型名。"""
+    if "<T>" in base_cpp:
+        return base_cpp.replace("<T>", f"<{type_arg}>")
+    return base_cpp
 
 
-def extract_explicit_instantiations(text: str) -> list[tuple[str, str, str]]:
-    """
-    提取显式模板实例化。
-    返回: [(cpp_name, class_name, inst_type), ...]
-    e.g. ("vector<int>", "vector", "int")
-    """
-    results = []
-    # template class vector<int>;
-    for m in re.finditer(r'template\s+class\s+(\w+)<(\w+)>\s*;', text):
-        cls, inst = m.group(1), m.group(2)
-        results.append((f"{cls}<{inst}>", cls, inst))
-    return results
+def replace_type_param(text: str, param: str, replacement: str) -> str:
+    """将类体中的模板参数 T 替换为实际类型（按单词边界匹配）。"""
+    return re.sub(rf'\b{re.escape(param)}\b', replacement, text)
 
 
 def extract_class_definition(text: str, class_name: str) -> str | None:
-    """
-    从文本中提取 class/struct 定义体（大括号内内容）。
-    支持 template<class T> class Foo { ... };
-    """
-    # 匹配 template...class class_name { ... };
-    pattern = rf'(?:template\s*<\s*class\s+\w+\s*>\s*)?\bclass\s+{re.escape(class_name)}\s*\{{'
+    """从文本中提取模板类/普通类定义体（大括号内内容）。"""
+    # 支持 "template <class T> class Foo {" 或 "class Foo {"
+    pattern = rf'(?:template\s*<[^>]+>\s+)?\bclass\s+{re.escape(class_name)}\s*\{{'
     m = re.search(pattern, text)
     if not m:
         return None
@@ -138,169 +114,199 @@ def extract_class_definition(text: str, class_name: str) -> str | None:
     return None
 
 
-def parse_fields(body: str, inst_type: str | None) -> list[dict]:
-    """解析 class 体内的字段声明。"""
+def split_top_level(body: str) -> list[str]:
+    """
+    将类体按顶层分号或访问说明符分割。
+    返回每个顶层语句的字符串（不包含末尾分号）。
+    方法体内部的大括号会被整体保留在一个 segment 中。
+    """
+    segments = []
+    current = []
+    brace_depth = 0
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == '{':
+            brace_depth += 1
+            current.append(ch)
+        elif ch == '}':
+            brace_depth -= 1
+            current.append(ch)
+            if brace_depth == 0:
+                # inline 方法定义以 '}' 结尾，没有顶层分号
+                seg = ''.join(current).strip()
+                if seg:
+                    segments.append(seg)
+                current = []
+                i += 1
+                # 跳过 '}' 后面的空白
+                while i < len(body) and body[i] in ' \t\n\r':
+                    i += 1
+                continue
+        elif ch == ';' and brace_depth == 0:
+            seg = ''.join(current).strip()
+            if seg:
+                segments.append(seg)
+            current = []
+        elif brace_depth == 0:
+            # 检测访问说明符，遇到时先结束当前 segment
+            rest = body[i:]
+            if rest.startswith('public:') or rest.startswith('private:') or rest.startswith('protected:'):
+                seg = ''.join(current).strip()
+                if seg:
+                    segments.append(seg)
+                current = []
+                # 把 access specifier 单独作为一段
+                end = i + rest.index(':') + 1
+                segments.append(body[i:end].strip())
+                i = end
+                continue
+            current.append(ch)
+        else:
+            current.append(ch)
+        i += 1
+    # 末尾无分号的 segment（理论上不应该有）
+    seg = ''.join(current).strip()
+    if seg:
+        segments.append(seg)
+    return segments
+
+
+def parse_fields_and_methods(body: str, class_name: str, base_class_name: str) -> tuple[list[dict], list[dict]]:
+    """
+    解析类体中的字段和方法声明。
+    假设方法在类内 inline 实现。
+
+    class_name 用于输出 method_map 中的 mangled 名；
+    base_class_name 是源码中的模板类名（如 cide_vec），用于识别构造函数。
+    """
     fields = []
-    # 简单正则：匹配 type name;  或 type* name;
-    # 避开方法括号
-    for m in re.finditer(r'\b(\w+(?:\s*\*)?)\s+(\w+)\s*;', body):
-        ty, name = m.group(1).strip(), m.group(2).strip()
-        # 跳过在方法参数列表内的匹配（简单启发：前面有 ( ）
-        before = body[:m.start()]
-        if before.rstrip().endswith('('):
-            continue
-        # 替换模板参数 T
-        if inst_type:
-            ty = re.sub(r'\bT\b', inst_type, ty)
-            ty = re.sub(r'\bT\s*\*', inst_type + '*', ty)
-        fields.append({"name": name, "type": ty})
-    return fields
-
-
-def parse_methods(body: str, inst_type: str | None) -> list[dict]:
-    """解析 public 方法声明。"""
     methods = []
-    # 先按 public:/private:/protected: 分段
-    parts = re.split(r'\b(public|private|protected)\s*:', body)
-    current_access = "private"
-    for part in parts:
-        part = part.strip()
-        if part in ("public", "private", "protected"):
-            current_access = part
+    access = "private"
+
+    segments = split_top_level(body)
+    for seg in segments:
+        # 访问说明符（可能带冒号）
+        seg_no_colon = seg.rstrip(":")
+        if seg_no_colon in ("public", "private", "protected"):
+            access = seg_no_colon
             continue
-        if current_access != "public":
+
+        # 字段声明: type name;（支持模板指针类型如 cide_list_node<int>*）
+        field_m = re.match(r'^([^(]+?)\s+(\w+)\s*$', seg)
+        if field_m and '(' not in seg and ')' not in seg:
+            ty = field_m.group(1).strip()
+            name = field_m.group(2).strip()
+            fields.append({"name": name, "type": parse_type_str(ty)})
             continue
 
-        # 逐句提取（以 ; 结尾）
-        stmts = [s.strip() for s in part.split(';') if s.strip()]
-        for stmt in stmts:
-            # 跳过字段（无括号）
-            if '(' not in stmt:
+        if access != "public":
+            continue
+
+        # 方法需要包含 '('
+        if '(' not in seg:
+            continue
+
+        # 析构函数: ~ClassName() { ... }
+        dm = re.match(r'~\s*(\w+)\s*\(\s*\)', seg)
+        if dm:
+            methods.append({
+                "name": "destroy",
+                "params": [],
+                "ret": "void",
+                "is_virtual": False,
+            })
+            continue
+
+        # 普通方法: ret name(params) { ... }
+        # 支持返回类型如: void, int, float*, cide_list_node_int*
+        mm = re.match(r'((?:[\w:]+(?:\s*\*)?\s+)+)(\w+)\s*\(([^)]*)\)', seg)
+        if mm:
+            ret_raw = mm.group(1).strip()
+            name = mm.group(2).strip()
+            params_raw = mm.group(3).strip()
+
+            if name in ("return", "if", "while", "for"):
                 continue
-            # 析构函数
-            dm = re.match(r'~\s*(\w+)\s*\(\s*\)', stmt)
-            if dm:
-                methods.append({
-                    "name": "destroy",
-                    "params": [],
-                    "ret": "void",
-                    "is_virtual": False,
-                })
+
+            # 跳过构造函数（与模板类同名且无返回类型）
+            if not ret_raw and name == base_class_name:
                 continue
 
-            # 构造函数: ClassName()
-            cm = re.match(r'(\w+)\s*\(\s*\)', stmt)
-            if cm:
-                ctor_name = cm.group(1)
-                # 如果 stmt 前面没有返回类型关键字，且名字与类名匹配，则是构造函数
-                prefix = stmt[:stmt.find('(')].strip()
-                if prefix == ctor_name and ctor_name not in ("void", "int", "float", "char", "double", "bool"):
-                    continue  # 构造函数不加入列表
+            ret = ret_raw if ret_raw else "void"
 
-            # 普通方法: ret name(params)
-            mm = re.match(r'((?:\w+(?:\s*\*)?\s+)?)(\w+)\s*\(([^)]*)\)', stmt)
-            if mm:
-                ret_raw = mm.group(1).strip()
-                name = mm.group(2).strip()
-                params_raw = mm.group(3).strip()
+            params = []
+            if params_raw:
+                for p in params_raw.split(','):
+                    p = p.strip()
+                    if not p:
+                        continue
+                    pm = re.match(r'((?:[\w:]+(?:\s*\*)?\s+)+)(?:\w+)', p)
+                    if pm:
+                        pty = pm.group(1).strip()
+                    else:
+                        pty = p
+                    params.append(parse_type_str(pty))
 
-                # 跳过非方法
-                if name in ("return", "if", "while", "for"):
-                    continue
+            methods.append({
+                "name": name,
+                "params": params,
+                "ret": parse_type_str(ret),
+                "is_virtual": False,
+            })
 
-                # 处理返回类型
-                if not ret_raw:
-                    ret = "void"
-                else:
-                    ret = ret_raw
-                    if inst_type:
-                        ret = re.sub(r'\bT\b', inst_type, ret)
-                        ret = re.sub(r'\bT\s*\*', inst_type + '*', ret)
-
-                # 处理参数
-                params = []
-                if params_raw:
-                    for p in params_raw.split(','):
-                        p = p.strip()
-                        if not p:
-                            continue
-                        # 提取类型（忽略参数名）
-                        pm = re.match(r'(\w+(?:\s*\*)?)\s+(?:\w+)', p)
-                        if pm:
-                            pty = pm.group(1).strip()
-                        else:
-                            pty = p
-                        if inst_type:
-                            pty = re.sub(r'\bT\b', inst_type, pty)
-                            pty = re.sub(r'\bT\s*\*', inst_type + '*', pty)
-                        params.append(pty)
-
-                methods.append({
-                    "name": name,
-                    "params": params,
-                    "ret": ret,
-                    "is_virtual": False,
-                })
-
-    return methods
+    return fields, methods
 
 
-def process_cpp_file(path: Path) -> dict:
-    """处理单个 .cpp 文件，返回 {cide_name: class_data, ...}"""
+def derive_mangled_method_name(cide_class: str, method: str) -> str:
+    """根据 Cide mangling 规则生成方法函数名。
+
+    普通方法: {class}__{method}
+    析构函数 (源码 ~Class()): __dtor__{class}
+    """
+    if method == "destroy":
+        return f"__dtor__{cide_class}"
+    return f"{cide_class}__{method}"
+
+
+def process_cpp_file(path: Path) -> list[dict] | None:
+    """处理单个 .cpp 文件，返回每个显式实例化的 class_data 列表；非容器文件返回 None。"""
+    if path.name not in FILE_RULES:
+        return None
+
+    base_cide, base_cpp, type_args = FILE_RULES[path.name]
     text = path.read_text(encoding='utf-8')
     text = strip_comments(text)
 
-    insts = extract_explicit_instantiations(text)
-    results = {}
+    body = extract_class_definition(text, base_cide)
+    if not body:
+        print(f"Warning: class {base_cide} not found in {path}", file=sys.stderr)
+        return None
 
-    # 如果没有显式实例化（如 string），尝试直接提取 class
-    if not insts:
-        cm = re.search(r'\bclass\s+(\w+)\s*\{', text)
-        if cm:
-            cls_name = cm.group(1)
-            body = extract_class_definition(text, cls_name)
-            if body:
-                cpp_name = cls_name
-                cide_name = cpp_name_to_cide(cpp_name)
-                fields = parse_fields(body, None)
-                methods = parse_methods(body, None)
-                size = sum(parse_type_size(f["type"]) for f in fields)
-                # 方法映射
-                method_map = {}
-                for m in methods:
-                    c_fn = derive_method_c_name(cide_name, m["name"], None)
-                    method_map[m["name"]] = c_fn
-                results[cide_name] = {
-                    "cpp_name": cpp_name,
-                    "source_file": str(path).replace("\\", "/"),
-                    "size": size,
-                    "fields": fields,
-                    "methods": methods,
-                    "method_map": method_map,
-                }
-        return results
+    results = []
+    for type_arg in type_args:
+        cide_name = mangle_template_name(base_cide, type_arg)
+        cpp_name = cpp_type_name(base_cpp, type_arg)
 
-    # 有显式实例化的模板类
-    for cpp_name, cls_name, inst_type in insts:
-        body = extract_class_definition(text, cls_name)
-        if not body:
-            continue
-        cide_name = cpp_name_to_cide(cpp_name)
-        fields = parse_fields(body, inst_type)
-        methods = parse_methods(body, inst_type)
+        # 替换字段和方法中的模板参数 T
+        replaced_body = replace_type_param(body, "T", type_arg)
+        fields, methods = parse_fields_and_methods(replaced_body, cide_name, base_cide)
         size = sum(parse_type_size(f["type"]) for f in fields)
+
         method_map = {}
         for m in methods:
-            c_fn = derive_method_c_name(cide_name, m["name"], inst_type)
-            method_map[m["name"]] = c_fn
-        results[cide_name] = {
+            mangled = derive_mangled_method_name(cide_name, m["name"])
+            method_map[m["name"]] = mangled
+
+        results.append({
+            "cide_name": cide_name,
             "cpp_name": cpp_name,
             "source_file": str(path).replace("\\", "/"),
             "size": size,
             "fields": fields,
             "methods": methods,
             "method_map": method_map,
-        }
+        })
 
     return results
 
@@ -310,8 +316,11 @@ def main():
     all_method_map = {}
 
     for cpp_path in sorted(INPUT_DIR.glob("*.cpp")):
-        classes = process_cpp_file(cpp_path)
-        for cide_name, data in classes.items():
+        results = process_cpp_file(cpp_path)
+        if results is None:
+            continue
+        for data in results:
+            cide_name = data["cide_name"]
             all_classes[cide_name] = {
                 "cpp_name": data["cpp_name"],
                 "source_file": data["source_file"],
@@ -322,7 +331,7 @@ def main():
             all_method_map[cide_name] = data["method_map"]
 
     output = {
-        "version": 1,
+        "version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "classes": all_classes,
         "method_map": all_method_map,

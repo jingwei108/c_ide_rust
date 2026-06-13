@@ -1174,6 +1174,13 @@ pub struct TemplateDecl {
     pub decl: Templateable,
 }
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct TemplateInstantiation {
+    pub loc: SourceLoc,
+    pub base: String,
+    pub args: Vec<Type>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum CaptureMode {
     ByValue(String),
@@ -1202,6 +1209,7 @@ pub struct ProgramNode {
     // === C++ 新增 ===
     pub classes: Vec<ClassDecl>,
     pub templates: Vec<TemplateDecl>,
+    pub template_instantiations: Vec<TemplateInstantiation>,
 }
 
 use std::collections::HashMap;

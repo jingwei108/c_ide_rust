@@ -34,7 +34,7 @@ fn prepare_bc_vm(sources: &[(&str, &str)]) -> (CideVM, Session) {
     }
 
     let mut session = Session::default();
-    run_multi_file_pipeline(&mut session, units).expect("Bytecode Libc 编译失败");
+    run_multi_file_pipeline(&mut session, units, false).expect("Bytecode Libc 编译失败");
 
     let mut vm = CideVM::new();
     setup_vm(&mut vm, &session);

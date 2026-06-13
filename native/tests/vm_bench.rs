@@ -12,7 +12,7 @@ fn bench_source(source: &str) -> (f64, f64, i32) {
     });
     reset_runtime(&mut session);
     let units = session.compile.compile_units.clone();
-    run_multi_file_pipeline(&mut session, units).expect("compile");
+    run_multi_file_pipeline(&mut session, units, false).expect("compile");
 
     let start = Instant::now();
     let result = execute_run(&mut session);
@@ -28,7 +28,7 @@ fn bench_source(source: &str) -> (f64, f64, i32) {
     });
     reset_runtime(&mut session2);
     let units2 = session2.compile.compile_units.clone();
-    run_multi_file_pipeline(&mut session2, units2).expect("compile");
+    run_multi_file_pipeline(&mut session2, units2, false).expect("compile");
     {
         let mut vm = session2.vm.take().unwrap_or_default();
         setup_vm(&mut vm, &session2);

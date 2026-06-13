@@ -158,7 +158,15 @@ impl TypeChecker {
     pub(crate) fn generate_implicit_move_ctors(&mut self, program: &mut ProgramNode) {
         let mut move_ctors: Vec<(String, FuncDecl)> = Vec::new();
 
-        for (class_name, sym) in &self.classes {
+        // 只为当前编译单元中实际定义的类生成隐式移动构造函数。
+        // builtin_layout 预注册的类若未被使用，不应产生额外的移动构造。
+        let program_class_names: std::collections::HashSet<String> =
+            program.classes.iter().map(|c| c.name.clone()).collect();
+        for class_name in program_class_names {
+            let sym = match self.classes.get(&class_name) {
+                Some(s) => s,
+                None => continue,
+            };
             if !sym.has_resource {
                 continue;
             }
@@ -167,7 +175,7 @@ impl TypeChecker {
                 continue;
             }
 
-            let body = Self::build_implicit_move_ctor_body(class_name, &sym.fields);
+            let body = Self::build_implicit_move_ctor_body(&class_name, &sym.fields);
             let func_decl = FuncDecl {
                 loc: SourceLoc { line: 0, column: 0 },
                 return_type: Type::void(),

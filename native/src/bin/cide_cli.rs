@@ -21,7 +21,7 @@ fn print_usage() {
     eprintln!("  cide_cli run    <file.c> [-i <in>]  编译并全速运行");
     eprintln!("  cide_cli step   <file.c> [-i <in>]  交互式单步调试");
     eprintln!("  cide_cli unified <file.c> [-i <in>] 统一模式（时间旅行）执行并摘要");
-    eprintln!("  cide_cli export <file1.c> [file2.c ...] -o <out.json>  预编译为字节码产物");
+    eprintln!("  cide_cli export <file1.c> [file2.c ...] -o <out.json> [--builtin-libc]  预编译为字节码产物");
     eprintln!();
     eprintln!("特殊文件名:");
     eprintln!("  -          从标准输入读取源代码（如 echo '...' | cide_cli run -）");
@@ -29,6 +29,7 @@ fn print_usage() {
     eprintln!("选项:");
     eprintln!("  -i <file>   从文件读取标准输入（多行输入）");
     eprintln!("  -o <file>   指定输出文件（仅 export 命令需要）");
+    eprintln!("  --builtin-libc  库模式导出（export 命令）：不混入已有 Bytecode Libc 符号");
 }
 
 fn read_source(path: &str) -> String {
@@ -230,7 +231,7 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
     }
 }
 
-fn cmd_export(source_paths: &[String], output_path: &str) {
+fn cmd_export(source_paths: &[String], output_path: &str, is_builtin_libc: bool) {
     use cide_native::engine::compile_pipeline::run_multi_file_pipeline;
     use cide_native::session::{CompileUnit, Session};
 
@@ -247,7 +248,7 @@ fn cmd_export(source_paths: &[String], output_path: &str) {
     });
 
     let mut session = Session::default();
-    if let Err(e) = run_multi_file_pipeline(&mut session, units) {
+    if let Err(e) = run_multi_file_pipeline(&mut session, units, is_builtin_libc) {
         eprintln!("编译失败: {}", e);
         let diags: Vec<String> = session
             .compile
@@ -282,6 +283,23 @@ fn cmd_export(source_paths: &[String], output_path: &str) {
     let mut func_index = session.compile.func_index.clone();
     func_table.remove("main");
     func_index.remove("main");
+
+    // --builtin-libc 模式：移除 BytecodeGen 预注册的旧 Bytecode Libc 函数。
+    // 这些函数只在 func_index 中有条目（用于用户代码调用固定索引），
+    // 但没有 func_table 条目（不是当前源码实际定义的）。
+    if is_builtin_libc {
+        use cide_native::vm::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS;
+        let old_names: Vec<String> = func_index
+            .keys()
+            .filter(|name| {
+                BYTECODE_LIBC_ALL_FUNCS.contains(&name.as_str()) && !func_table.contains_key(name.as_str())
+            })
+            .cloned()
+            .collect();
+        for name in old_names {
+            func_index.remove(&name);
+        }
+    }
 
     // 移除 BytecodeGen 生成的入口 wrapper（Jump + Call main + Ret）
     // code[0] 是 Jump 到 wrapper_ip，wrapper_ip 位置是 Call main 和 Ret
@@ -358,7 +376,7 @@ fn cmd_unified(path: &str, input_lines: Vec<String>) {
     });
 
     let units = session.compile.compile_units.clone();
-    if run_multi_file_pipeline(&mut session, units).is_err() {
+    if run_multi_file_pipeline(&mut session, units, false).is_err() {
         eprintln!("编译失败。");
         std::process::exit(1);
     }
@@ -478,12 +496,16 @@ fn main() {
         "export" => {
             // export 命令需要至少一个源文件和 -o 选项
             let mut output_path = String::new();
+            let mut is_builtin_libc = false;
             let mut source_paths = vec![file_path.clone()];
             let mut i = 3;
             while i < args.len() {
                 if args[i] == "-o" && i + 1 < args.len() {
                     output_path = args[i + 1].clone();
                     i += 2;
+                } else if args[i] == "--builtin-libc" {
+                    is_builtin_libc = true;
+                    i += 1;
                 } else {
                     source_paths.push(args[i].clone());
                     i += 1;
@@ -494,7 +516,7 @@ fn main() {
                 print_usage();
                 std::process::exit(1);
             }
-            cmd_export(&source_paths, &output_path);
+            cmd_export(&source_paths, &output_path, is_builtin_libc);
         }
         _ => {
             eprintln!("未知命令: {}", cmd);

@@ -120,7 +120,7 @@ pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
 
     // 运行多文件编译管线
     let units = session.compile.compile_units.clone();
-    if run_multi_file_pipeline(&mut session, units).is_err() {
+    if run_multi_file_pipeline(&mut session, units, false).is_err() {
         return CompileResult {
             success: false,
             diagnostics: session.compile.diagnostics.clone(),
@@ -504,7 +504,7 @@ pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
     }
 
     let units = session.compile.compile_units.clone();
-    if run_multi_file_pipeline(&mut session, units).is_err() {
+    if run_multi_file_pipeline(&mut session, units, false).is_err() {
         return UnifiedRunResult {
             success: false,
             error: Some(session.compile.errors.clone()),

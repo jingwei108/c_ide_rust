@@ -67,6 +67,8 @@ pub(crate) struct TemplateSymbol {
 
 #[derive(Default)]
 pub struct TypeChecker {
+    /// 库模式：当前正在预编译 Bytecode Libc 本身，不应再混入 builtin_layout 预注册类。
+    pub is_library_mode: bool,
     errors: Vec<TypeError>,
     warnings: Vec<TypeError>,
     hints: Vec<TypeError>,
@@ -203,6 +205,59 @@ impl TypeChecker {
         crate::compiler::ast::compute_type_size(ty, &struct_defs, &union_defs, &class_size_map)
     }
 
+    /// 将类外方法定义（`void Foo::bar() { ... }`、`Foo::Foo() { ... }`）合并到对应
+    /// ClassDecl 的成员声明中，避免产生重复的函数符号，同时让方法体能访问类字段。
+    fn merge_out_of_line_method_definitions(&mut self, program: &mut ProgramNode) {
+        let mut merged_indices = std::collections::HashSet::new();
+        for (i, f) in program.funcs.iter().enumerate() {
+            if f.body.is_none() {
+                continue;
+            }
+
+            // 普通方法: ClassName__methodName(...)
+            if let Some((class_name, method_name)) = f.name.split_once("__") {
+                if !class_name.is_empty() && !method_name.is_empty() && !method_name.starts_with("ctor__") {
+                    if let Some(c) = program.classes.iter_mut().find(|c| c.name == class_name) {
+                        for member in &mut c.members {
+                            if let ClassMember::Method { name, body, .. } = member {
+                                if name == method_name && body.is_none() {
+                                    *body = f.body.clone();
+                                    merged_indices.insert(i);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 构造函数: __ctor__ClassName 或 __ctor__ClassName__N
+            if f.name.starts_with("__ctor__") {
+                let rest = &f.name["__ctor__".len()..];
+                let class_name = rest.split("__").next().unwrap_or(rest);
+                if let Some(c) = program.classes.iter_mut().find(|c| c.name == class_name) {
+                    for member in &mut c.members {
+                        if let ClassMember::Constructor { body, .. } = member {
+                            if body.is_none() {
+                                *body = f.body.clone();
+                                merged_indices.insert(i);
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        program.funcs = program
+            .funcs
+            .drain(..)
+            .enumerate()
+            .filter(|(i, _)| !merged_indices.contains(i))
+            .map(|(_, f)| f)
+            .collect();
+    }
+
     pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
         // Pass 1: Register structs and unions
         for s in &program.structs {
@@ -236,6 +291,12 @@ impl TypeChecker {
 
         // Pass 1.5: Register classes and compute layouts
         self.register_class_layouts(program);
+
+        // Pass 1.6: Merge out-of-line method definitions into class declarations.
+        // This handles C++ idiom `void Foo::bar() { ... }` and `Foo::Foo() { ... }`
+        // by attaching the body to the in-class declaration, avoiding duplicate
+        // function symbols and giving method bodies access to class fields.
+        self.merge_out_of_line_method_definitions(program);
 
         // Pass 2: Register function signatures (including class methods as mangled funcs)
         for f in &program.funcs {
@@ -321,6 +382,20 @@ impl TypeChecker {
                 decl: t.decl.clone(),
             };
             self.templates.insert(name, sym);
+        }
+
+        // Pass 2.65: Process explicit template class instantiations
+        // (e.g. `template class cide_vec<int>;`).
+        for inst in &program.template_instantiations {
+            if let Some((mangled, new_class)) = self.try_monomorphize_class(&inst.base, &inst.args) {
+                self.pending_class_instantiations.push((mangled, new_class));
+            } else if !self.templates.contains_key(&inst.base) {
+                self.report_error(
+                    &format!("未知模板类 '{}'", inst.base),
+                    &inst.loc,
+                    ErrorCode::E3023_UndeclaredVar,
+                );
+            }
         }
 
         // Pass 2.5: Register globals and check initializers

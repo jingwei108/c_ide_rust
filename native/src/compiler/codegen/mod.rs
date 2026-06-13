@@ -113,6 +113,12 @@ impl Default for BytecodeGen {
 
 impl BytecodeGen {
     pub fn new() -> Self {
+        Self::with_mode(false)
+    }
+
+    /// `is_library_mode` 为 true 时（预编译 Bytecode Libc 本身），不预注册固定索引，
+    /// 让函数索引从 0 开始顺序分配，避免与当前内嵌的 bytecode_libc_index.rs 产生循环依赖。
+    pub fn with_mode(is_library_mode: bool) -> Self {
         use crate::vm::bytecode_libc_index::{
             bytecode_libc_index, BYTECODE_LIBC_ALL_FUNCS, BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT,
             BYTECODE_LIBC_GLOBALS_RESERVED,
@@ -120,16 +126,21 @@ impl BytecodeGen {
         use crate::vm::vm::GLOBAL_START;
 
         let mut func_index = HashMap::new();
+        let next_func_idx;
 
-        // 预注册 Bytecode Libc 函数到固定索引段
-        for &name in BYTECODE_LIBC_ALL_FUNCS.iter() {
-            if let Some(idx) = bytecode_libc_index(name) {
-                func_index.insert(name.to_string(), idx);
+        if is_library_mode {
+            next_func_idx = 0;
+        } else {
+            // 预注册 Bytecode Libc 函数到固定索引段
+            for &name in BYTECODE_LIBC_ALL_FUNCS.iter() {
+                if let Some(idx) = bytecode_libc_index(name) {
+                    func_index.insert(name.to_string(), idx);
+                }
             }
+            next_func_idx = BYTECODE_LIBC_BASE_INDEX + BYTECODE_LIBC_FUNC_COUNT as i32 + 1;
         }
-        let next_func_idx = BYTECODE_LIBC_BASE_INDEX + BYTECODE_LIBC_FUNC_COUNT as i32 + 1;
 
-        Self {
+        Self{
             code: Vec::new(),
             errors: Vec::new(),
             func_table: HashMap::new(),

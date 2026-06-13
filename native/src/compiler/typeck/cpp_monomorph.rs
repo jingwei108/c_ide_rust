@@ -64,7 +64,18 @@ impl TypeChecker {
     }
 
     /// Mangling rule: func__T1_T2_...
+    /// 内置容器模板保持历史短名，与现有测试及标准库存根兼容。
     fn mangle_template_name(base: &str, type_args: &[Type]) -> String {
+        if type_args.len() == 1 {
+            match (base, type_args[0].clone()) {
+                ("cide_vec", Type::Int { .. }) => return "cide_vec_int".to_string(),
+                ("cide_vec", Type::Float { .. }) => return "cide_vec_float".to_string(),
+                ("cide_vec", Type::Char { .. }) => return "cide_vec_char".to_string(),
+                ("cide_list", Type::Int { .. }) => return "cide_list_int".to_string(),
+                ("cide_string", Type::Char { .. }) => return "cide_string".to_string(),
+                _ => {}
+            }
+        }
         let mut result = base.to_string();
         for t in type_args {
             result.push_str("__");
@@ -248,11 +259,7 @@ impl TypeChecker {
                     self.report_error(&format!("未知模板类 '{}'", base), loc, ErrorCode::E3023_UndeclaredVar);
                     Type::int()
                 } else {
-                    let mangled = format!(
-                        "{}__{}",
-                        base,
-                        args.iter().map(|a| a.mangle_name()).collect::<Vec<_>>().join("__")
-                    );
+                    let mangled = Self::mangle_template_name(&base, &args);
                     Type::Class { name: mangled, is_const: false }
                 }
             }

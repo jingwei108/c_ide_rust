@@ -35,7 +35,7 @@ int add(int a, int b) {
         },
     ];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(result.is_ok(), "多文件基本编译失败: {:?}", session.compile.errors);
 }
 
@@ -67,7 +67,7 @@ static int secret_add(int a, int b) {
         },
     ];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(result.is_err(), "static 函数跨文件调用应该编译失败");
 
     let has_static_error = session
@@ -99,7 +99,7 @@ int main() {
         .to_string(),
     }];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(result.is_ok(), "同一文件内 static 函数调用应成功: {:?}", session.compile.errors);
 }
 
@@ -139,7 +139,7 @@ int use_helper(int x) {
         },
     ];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(
         result.is_ok(),
         "同名 static 函数在不同文件应互不干扰: {:?}",
@@ -169,7 +169,7 @@ int main() {
         },
     ];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(result.is_err());
 
     let diag = session.compile.diagnostics.first().unwrap();
@@ -203,7 +203,7 @@ static int secret_val = 42;
         },
     ];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(result.is_err(), "static 全局变量跨文件访问应该编译失败");
 
     let has_static_error = session
@@ -237,7 +237,7 @@ int main() {
         .to_string(),
     }];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(
         result.is_ok(),
         "同一文件内 static 全局变量访问应成功: {:?}",
@@ -280,7 +280,7 @@ int get_utils_val() {
         },
     ];
 
-    let result = run_multi_file_pipeline(&mut session, units);
+    let result = run_multi_file_pipeline(&mut session, units, false);
     assert!(
         result.is_ok(),
         "同名 static 全局变量在不同文件应互不干扰: {:?}",

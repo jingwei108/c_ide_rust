@@ -212,24 +212,8 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     // ── 4. 注册 Bytecode Libc 函数 ──
     use crate::vm::bytecode_libc_index::bytecode_libc_index;
 
-    // 4a. 注册原始索引（供 Bytecode Libc 内部调用使用）
-    for (name, meta) in &libc.func_table {
-        if let Some(&raw_idx) = libc.func_index.get(name) {
-            vm.register_function(
-                raw_idx as u32,
-                FuncMeta {
-                    ip: meta.ip,
-                    arg_count: meta.arg_count,
-                    param_count: meta.param_count,
-                    local_count: meta.local_count,
-                    param_sizes: meta.param_sizes.clone(),
-                },
-            );
-            vm.register_function_name(raw_idx as u32, name.clone());
-        }
-    }
-
-    // 4b. 注册固定索引（供用户代码调用使用）
+    // 预编译产物中的 Call/CallPtr operand 已经被重定位为固定索引，
+    // 因此只需注册固定索引即可同时满足内部调用和外部调用。
     for (name, meta) in &libc.func_table {
         if let Some(idx) = bytecode_libc_index(name) {
             vm.register_function(
@@ -364,7 +348,9 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     };
 
     // 3. TypeChecker
-    let (type_errors, type_warnings, type_hints) = TypeChecker::default().check(&mut program);
+    let mut type_checker = TypeChecker::default();
+    type_checker.is_library_mode = false;
+    let (type_errors, type_warnings, type_hints) = type_checker.check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, full_source, None);
         return Err("类型错误".to_string());
@@ -382,7 +368,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         println!("DEBUG: func name={}, body_is_some={}", f.name, f.body.is_some());
     }
     // 4. BytecodeGen
-    let gen = BytecodeGen::new();
+    let gen = BytecodeGen::with_mode(false);
     let output = match gen.generate(&mut program) {
         Ok(o) => o,
         Err(gen_errors) => {
@@ -516,7 +502,11 @@ fn merge_compile_units(units: &[CompileUnit]) -> (String, Vec<FileRange>) {
 /// - 支持多个 CompileUnit（多文件）
 /// - 诊断信息携带 `filename` 字段
 /// - AST 节点附加 `source_file` 信息（供 TypeChecker static 隔离使用）
-pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -> Result<(), String> {
+pub fn run_multi_file_pipeline(
+    session: &mut Session,
+    units: Vec<CompileUnit>,
+    is_library_mode: bool,
+) -> Result<(), String> {
     // 清空编译状态
     session.compile.bytecode.clear();
     session.compile.globals_init.clear();
@@ -573,7 +563,9 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
     }
 
     // 3. TypeChecker
-    let (type_errors, type_warnings, type_hints) = TypeChecker::default().check(&mut program);
+    let mut type_checker = TypeChecker::default();
+    type_checker.is_library_mode = is_library_mode;
+    let (type_errors, type_warnings, type_hints) = type_checker.check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, &full_source, Some(&file_ranges));
         return Err("类型错误".to_string());
@@ -594,7 +586,7 @@ pub fn run_multi_file_pipeline(session: &mut Session, units: Vec<CompileUnit>) -
     }
 
     // 4. BytecodeGen
-    let gen = BytecodeGen::new();
+    let gen = BytecodeGen::with_mode(is_library_mode);
     let output = match gen.generate(&mut program) {
         Ok(o) => o,
         Err(gen_errors) => {

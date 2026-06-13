@@ -157,7 +157,7 @@ pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
 
     let units = session.compile.compile_units.clone();
     println!("CAPI: calling run_multi_file_pipeline with {} units", units.len());
-    if run_multi_file_pipeline(session, units).is_err() {
+    if run_multi_file_pipeline(session, units, false).is_err() {
         return -1;
     }
     0

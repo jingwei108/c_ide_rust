@@ -738,10 +738,17 @@ impl Lexer {
             }
         }
 
-        // check for float literal (e.g. 3.14)
-        if !is_hex_or_octal && self.peek(0) == '.' && self.peek(1).is_ascii_digit() {
+        // check for float literal (e.g. 3.14, 3.14f, 3.f)
+        let is_float_prefix = !is_hex_or_octal
+            && self.peek(0) == '.'
+            && (self.peek(1).is_ascii_digit() || self.peek(1) == 'f' || self.peek(1) == 'F');
+        if is_float_prefix {
             self.advance(); // '.'
             while self.pos < self.chars.len() && self.peek(0).is_ascii_digit() {
+                self.advance();
+            }
+            // Optional float suffix: f/F
+            if self.peek(0) == 'f' || self.peek(0) == 'F' {
                 self.advance();
             }
             let text: String = self.chars[start..self.pos].iter().collect();

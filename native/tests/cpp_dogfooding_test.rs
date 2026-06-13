@@ -128,14 +128,12 @@ fn c_vector_int_src() -> &'static str {
 #include <stdio.h>
 int main() {
     cide_vec_int v;
-    cide_vec_init_int(&v);
-    cide_vec_push_int(&v, 3);
-    cide_vec_push_int(&v, 1);
-    cide_vec_push_int(&v, 4);
-    for (int i = 0; i < cide_vec_size_int(&v); i++) {
-        printf("%d\n", cide_vec_get_int(&v, i));
+    v.push_back(3);
+    v.push_back(1);
+    v.push_back(4);
+    for (int i = 0; i < v.size(); i++) {
+        printf("%d\n", v.get(i));
     }
-    cide_vec_destroy_int(&v);
     return 0;
 }
 "#
@@ -231,15 +229,13 @@ fn c_list_int_src() -> &'static str {
 #include <stdio.h>
 int main() {
     cide_list_int l;
-    cide_list_init_int(&l);
-    cide_list_push_back_int(&l, 1);
-    cide_list_push_back_int(&l, 2);
-    cide_list_push_front_int(&l, 0);
-    printf("%d\n", cide_list_size_int(&l));
-    for (int i = 0; i < cide_list_size_int(&l); i++) {
-        printf("%d\n", cide_list_get_int(&l, i));
+    l.push_back(1);
+    l.push_back(2);
+    l.push_front(0);
+    printf("%d\n", l.size());
+    for (int i = 0; i < l.size(); i++) {
+        printf("%d\n", l.get(i));
     }
-    cide_list_destroy_int(&l);
     return 0;
 }
 "#
@@ -310,15 +306,13 @@ fn c_string_baseline_src() -> &'static str {
 #include <stdio.h>
 int main() {
     cide_string s;
-    cide_string_init(&s);
-    cide_string_push_back(&s, 'h');
-    cide_string_push_back(&s, 'e');
-    cide_string_push_back(&s, 'l');
-    cide_string_push_back(&s, 'l');
-    cide_string_push_back(&s, 'o');
-    printf("%d\n", cide_string_size(&s));
-    printf("%s\n", cide_string_c_str(&s));
-    cide_string_destroy(&s);
+    s.push_back('h');
+    s.push_back('e');
+    s.push_back('l');
+    s.push_back('l');
+    s.push_back('o');
+    printf("%d\n", s.size());
+    printf("%s\n", s.c_str());
     return 0;
 }
 "#
@@ -387,14 +381,12 @@ fn c_vector_float_src() -> &'static str {
 #include <stdio.h>
 int main() {
     cide_vec_float v;
-    cide_vec_init_float(&v);
-    cide_vec_push_float(&v, 3.0);
-    cide_vec_push_float(&v, 1.0);
-    cide_vec_push_float(&v, 4.0);
-    for (int i = 0; i < cide_vec_size_float(&v); i++) {
-        printf("%.1f\n", cide_vec_get_float(&v, i));
+    v.push_back(3.0);
+    v.push_back(1.0);
+    v.push_back(4.0);
+    for (int i = 0; i < v.size(); i++) {
+        printf("%.1f\n", v.get(i));
     }
-    cide_vec_destroy_float(&v);
     return 0;
 }
 "#
@@ -490,14 +482,12 @@ fn c_vector_char_src() -> &'static str {
 #include <stdio.h>
 int main() {
     cide_vec_char v;
-    cide_vec_init_char(&v);
-    cide_vec_push_char(&v, 'a');
-    cide_vec_push_char(&v, 'b');
-    cide_vec_push_char(&v, 'c');
-    for (int i = 0; i < cide_vec_size_char(&v); i++) {
-        printf("%c\n", cide_vec_get_char(&v, i));
+    v.push_back('a');
+    v.push_back('b');
+    v.push_back('c');
+    for (int i = 0; i < v.size(); i++) {
+        printf("%c\n", v.get(i));
     }
-    cide_vec_destroy_char(&v);
     return 0;
 }
 "#
@@ -597,9 +587,41 @@ int main() {
 fn c_sort_int_src() -> &'static str {
     r#"
 #include <stdio.h>
+
+template<class T>
+void sort_swap(T *a, T *b) {
+    T t = *a;
+    *a = *b;
+    *b = t;
+}
+
+template<class T>
+void sort_rec(T *a, int left, int right) {
+    if (left >= right) return;
+    T pivot = a[(left + right) / 2];
+    int i = left;
+    int j = right;
+    while (i <= j) {
+        while (a[i] < pivot) i++;
+        while (a[j] > pivot) j--;
+        if (i <= j) {
+            sort_swap(&a[i], &a[j]);
+            i++;
+            j--;
+        }
+    }
+    if (left < j) sort_rec(a, left, j);
+    if (i < right) sort_rec(a, i, right);
+}
+
+template<class T>
+void sort(T *a, int n) {
+    if (n > 1) sort_rec(a, 0, n - 1);
+}
+
 int main() {
     int a[5] = {3, 1, 4, 1, 5};
-    cide_sort_int(a, 5);
+    sort(a, 5);
     for (int i = 0; i < 5; i++) {
         printf("%d\n", a[i]);
     }
@@ -739,10 +761,8 @@ fn test_implicit_move_ctor_builtin_vector() {
 #include <stdio.h>
 int main() {
     cide_vec_int v;
-    cide_vec_init_int(&v);
-    cide_vec_push_int(&v, 42);
-    printf("%d\n", cide_vec_size_int(&v));
-    cide_vec_destroy_int(&v);
+    v.push_back(42);
+    printf("%d\n", v.size());
     return 0;
 }
 "#;

@@ -1,27 +1,93 @@
 // native/runtime_libc/cide/string.cpp
-// Cide 内置容器 string 的 C++ 接口声明
-// 当前实现由 cide_string.c 提供，未来替换为纯 C++ 实现
+// Cide 内置容器 string 的 C++ 模板实现
 
-#ifndef CIDE_BUILTIN_CONTAINER
-#define CIDE_BUILTIN_CONTAINER
-
-class string {
+template <class T>
+class cide_string {
     int n;
     int m;
-    char* s;
+    T* s;
+
 public:
-    string();
-    void push_back(char c);
-    char pop_back();
-    int size();
-    int capacity();
-    char front();
-    char back();
-    char get(int i);
-    char* c_str();
-    void pop_front();
-    void clear();
-    ~string();
+    cide_string() {
+        n = 0;
+        m = 0;
+        s = (T*)0;
+    }
+
+    void push_back(T c) {
+        if (n + 1 >= m) {
+            m = m ? m * 2 : 2;
+            T* ns = new T[m];
+            for (int i = 0; i < n; i++) {
+                ns[i] = s[i];
+            }
+            delete[] s;
+            s = ns;
+        }
+        s[n++] = c;
+        s[n] = (T)0;
+    }
+
+    T pop_back() {
+        if (n == 0) {
+            return (T)0;
+        }
+        T c = s[--n];
+        s[n] = (T)0;
+        return c;
+    }
+
+    int size() {
+        return n;
+    }
+
+    int capacity() {
+        return m;
+    }
+
+    T get(int i) {
+        return s[i];
+    }
+
+    T* c_str() {
+        return s;
+    }
+
+    T front() {
+        if (n == 0) {
+            return (T)0;
+        }
+        return s[0];
+    }
+
+    T back() {
+        if (n == 0) {
+            return (T)0;
+        }
+        return s[n - 1];
+    }
+
+    void pop_front() {
+        if (n == 0) {
+            return;
+        }
+        for (int i = 0; i < n - 1; i++) {
+            s[i] = s[i + 1];
+        }
+        n--;
+        s[n] = (T)0;
+    }
+
+    void clear() {
+        n = 0;
+        if (s) {
+            s[0] = (T)0;
+        }
+    }
+
+    ~cide_string() {
+        delete[] s;
+    }
 };
 
-#endif
+template class cide_string<char>;

@@ -1,8 +1,8 @@
 # Cide C++14 教学子集拓展实施计划
 
-**版本**: 2.7  
-**日期**: 2026-06-12  
-**状态**: **M6 测试防线收尾已完成**：新增 `native/tests/cases/cpp/` 59 个 C++ E2E 回归用例（超过计划 50 个），覆盖核心语言、容器算法、教学/OJ 题目三大类，全部用例 stdout 与 Clang++ (`-std=c++14 -O0`) 输出逐行一致；`test_cide_e2e_cpp` / `test_cide_e2e_cpp_known_failures` 已纳入 E2E 测试框架；`TEST_REPORT.md` 已汇总 C++ 统计；`CPP_FAILURES.md` 已记录 M6 过程中识别的 Cide C++ 子集边界（用例已规避，无已知失败）。此前 Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>` 运行时 stdout 与 C 基线完全一致；`get`/`size` 等简单方法字节码逐指令等价验证通过；`sort_int` C++ 全局函数实现运行时一致性验证通过；M5 隐式移动构造函数自动生成、`unique_ptr<T>` 简化版 dogfooding、CppImplicit 全面作用域守卫均已完成；全部 Rust 单元测试保持全绿，C++ 三 tier 已纳入 CI  
+**版本**: 2.8  
+**日期**: 2026-06-13  
+**状态**: **M6 完成后的边界清零已完成**：`native/tests/cases/cpp/` 60 个 C++ E2E 用例（原计划 50 个）全部通过， stdout 与 Clang++ (`-std=c++14 -O0`) 逐行一致；M6 阶段记录的 10 项 Cide C++ 子集边界已在提交 `fd9bb54` 中全部消除（指针/数组逻辑运算、类内方法重载、构造初始化列表、字符字面量、浮点精度等）。Stage 1 Dogfooding 验证推进完成：`vector<int/float/char>`、`string`、`list<int>`、`sort_int` 的 C++ 模板实现运行时 stdout 与 C 基线一致，`get`/`size` 等简单方法字节码逐指令等价。Rust 单元测试全绿，clippy 0 警告，C++ 三 tier 已纳入 CI。**下一阶段目标：Stage 2 全面迁移——用 `runtime_libc/cide/*.cpp` 中的纯 C++ 实现替换当前的 C 手写实现，并删除 `.c` 文件。**  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
@@ -1547,5 +1547,90 @@ cide_cli compile hello.cpp --show-ast       # 显示 C++ AST
 ---
 
 **计划制定**: Kimi Code CLI  
-**待审批**: 项目负责人  
-**下一步**: 召开技术评审会，确认 Phase 1 启动日期。
+**状态更新**: 2026-06-13 — M6 完成，10 项边界清零；Stage 2b 彻底迁移进行中  
+**下一步**: 完成 Stage 2b 彻底迁移：将内置容器实现切换为纯 C++ 类方法，method_map 指向 mangled 方法名，更新测试与文档。
+
+---
+
+## 十五、Stage 2b 实施中发现的编译器/工具链约束
+
+> 记录时间：2026-06-13  
+> 记录位置：`docs/current/CPLUSPLUS_EXTENSION_PLAN.md`
+
+在将 `native/runtime_libc/cide/*.c` 手写容器迁移为纯 C++ 实现的过程中，发现以下约束。这些约束决定了 `.cpp` 文件的写法、`extract_cpp_builtin_layout.py` 的解析策略以及 `precompile_bytecode_libc.py` 的预编译方式。
+
+### 15.1 Cide C++ Parser 不支持类外方法定义
+
+**现象**：`void cide_vec_int::push_back(int x) { ... }` 报 `E2005` 语法错误。
+
+**根因**：Cide Parser 目前只支持类内 inline 方法定义，不支持 `ClassName::methodName` 形式的类外定义。
+
+**影响**：所有内置容器方法必须在 `class cide_xxx { ... };` 大括号内直接实现。
+
+**缓解**：`.cpp` 文件采用类内 inline 实现；`extract_cpp_builtin_layout.py` 必须能正确区分类体顶层字段声明与方法体内的局部变量声明。
+
+### 15.2 `cide_cli export` 不会导出未使用的类/方法
+
+**现象**：即使 `.cpp` 中定义了完整的 `class cide_vec_int`，若没有任何代码创建 `cide_vec_int` 对象或调用其方法，`export` 产物中不会出现 `cide_vec_int__push_back` 等函数。
+
+**根因**：BytecodeGen 只生成被实际调用的函数；`cide_cli export` 会过滤掉未被调用的函数。
+
+**影响**：必须提供显式的 force-instantiate 桩函数，确保所有容器方法都被编译进 Bytecode Libc。
+
+**缓解**：每个 `.cpp` 文件末尾添加 `void __cide_force_instantiate_cide_xxx() { ... }`，在桩函数中创建容器实例并调用全部 public 方法。
+
+### 15.3 Cide 不支持 `template class X<Y>;` 显式实例化
+
+**现象**：`template class vector<int>;` 报 `E2005` 语法错误。
+
+**根因**：Parser 未实现显式模板实例化语法。
+
+**影响**：无法通过显式实例化强制模板类方法导出；容器类必须直接以 `class cide_vec_int { ... };` 形式定义，而不是 `template<class T> class vector { ... };` + `template class vector<int>;`。
+
+**缓解**：`.cpp` 文件直接定义 `class cide_vec_int`、`class cide_vec_float` 等具名类；`extract_cpp_builtin_layout.py` 通过文件名 `FILE_RULES` 映射到 `cpp_name`（如 `vector<int>`）。
+
+### 15.4 内置容器类名必须与 `cide_name` 一致
+
+**现象**：TypeChecker 为内置容器注册的默认构造函数/析构函数名为 `__ctor__cide_vec_int` / `__dtor__cide_vec_int`（基于 builtin_layout_data.json 的 key）。
+
+**根因**：`typeck/cpp_class_layout.rs` 使用 builtin layout 的 key 作为类名注册隐式构造/析构。
+
+**影响**：如果 `.cpp` 中定义的类名为 `vector` 并通过实例化得到 `vector__int`，则导出的构造/析构函数名为 `__ctor__vector__int`，与 TypeChecker 期望的 `__ctor__cide_vec_int` 不一致，导致栈对象 `cide_vec_int v;` 无法正确调用构造/析构。
+
+**缓解**：`.cpp` 中容器类直接使用 `class cide_vec_int { ... };` 等 Cide 内部名称，确保 mangling 与 TypeChecker 注册名一致。
+
+### 15.5 `extract_cpp_builtin_layout.py` 必须 brace-aware
+
+**现象**：当方法在类内 inline 实现时，方法体内的 `int* na = new int[m];` 等局部变量声明会被旧版正则误识别为类字段。
+
+**根因**：旧版脚本用全局正则扫描 `type name;`，不区分类顶层和方法体。
+
+**影响**：生成的 `builtin_layout_data.json` 字段数和 size 错误，进而导致 `sizeof(cide_vec_int)` 等计算错误。
+
+**缓解**：重写解析器，先按顶层大括号深度将类体 split 为顶层 segment，只在深度为 0 的 segment 中识别字段声明。
+
+### 15.6 `method_map` 必须指向 mangled 方法名
+
+**现象**：Stage 2b 要让容器方法调用走真正的 C++ MemberCall 路径，BytecodeGen 实际生成的函数名为 `cide_vec_int__push_back`（`Class__method` mangling）。
+
+**根因**：Cide 的类方法 mangling 规则为 `{class_name}__{method_name}`。
+
+**影响**：`builtin_layout_data.json` 的 `method_map` 必须从旧的 C 风格函数名（如 `cide_vec_push_int`）改为 mangled 方法名（如 `cide_vec_int__push_back`）；`bytecode_libc_sig.rs` 也必须同步更新签名。
+
+**缓解**：修改 `extract_cpp_builtin_layout.py` 的 `derive_method_c_name` 为 `derive_mangled_method_name`；同步更新 `bytecode_libc_sig.rs` 中所有容器函数签名。
+
+### 15.7 `cide_cli export` 自动链接现有 Bytecode Libc
+
+**现象**：导出的 JSON 中同时出现新的 mangled 方法名和旧的 C 函数名（来自上一次预编译产物）。
+
+**根因**：`run_multi_file_pipeline` 在编译传入源文件前会加载已嵌入的 Bytecode Libc。
+
+**影响**：在迁移过程中，新旧函数可能共存；只有删除 `.c` 文件并重新生成后，产物才干净。
+
+**缓解**：删除 `runtime_libc/cide/*.c` 后重新运行 `precompile_bytecode_libc.py`，确保 Bytecode Libc 只包含 `.cpp` 中的 C++ 实现。
+
+---
+
+**计划制定**: Kimi Code CLI  
+**状态更新**: 2026-06-13 — M6 完成，10 项边界清零；Stage 2b 彻底迁移进行中  
+**下一步**: 完成 Stage 2b 彻底迁移：将内置容器实现切换为纯 C++ 类方法，method_map 指向 mangled 方法名，更新测试与文档。

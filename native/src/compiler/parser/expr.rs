@@ -1024,7 +1024,8 @@ impl Parser {
         }
         if self.match_token(TokenType::FloatLiteral) {
             let prev = self.previous().clone();
-            let value: f64 = prev.text.parse().unwrap_or_else(|_| {
+            let text = prev.text.trim_end_matches('f').trim_end_matches('F');
+            let value: f64 = text.parse().unwrap_or_else(|_| {
                 self.errors.push(ParseError {
                     message: format!("浮点常量 '{}' 格式无效", prev.text),
                     line: prev.line,

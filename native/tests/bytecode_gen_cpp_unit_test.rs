@@ -205,16 +205,14 @@ fn test_cpp_range_for_vector() {
 #include <stdio.h>
 int main() {
     cide_vec_int v;
-    cide_vec_init_int(&v);
-    cide_vec_push_int(&v, 1);
-    cide_vec_push_int(&v, 2);
-    cide_vec_push_int(&v, 3);
+    v.push_back(1);
+    v.push_back(2);
+    v.push_back(3);
     int sum = 0;
     for (auto x : v) {
         sum = sum + x;
     }
     printf("%d\n", sum);
-    cide_vec_destroy_int(&v);
     return 0;
 }
 "#;
@@ -229,15 +227,13 @@ fn test_cpp_range_for_string() {
 #include <stdio.h>
 int main() {
     cide_string s;
-    cide_string_init(&s);
-    cide_string_push_back(&s, 'a');
-    cide_string_push_back(&s, 'b');
-    cide_string_push_back(&s, 'c');
+    s.push_back('a');
+    s.push_back('b');
+    s.push_back('c');
     for (auto c : s) {
         putchar(c);
     }
     putchar('\n');
-    cide_string_destroy(&s);
     return 0;
 }
 "#;
@@ -350,15 +346,13 @@ fn test_cpp_container_vec_int() {
 #include <stdio.h>
 int main() {
     cide_vec_int v;
-    cide_vec_init_int(&v);
-    cide_vec_push_int(&v, 10);
-    cide_vec_push_int(&v, 20);
-    printf("%d\n", cide_vec_size_int(&v));
-    printf("%d\n", cide_vec_get_int(&v, 0));
-    printf("%d\n", cide_vec_get_int(&v, 1));
-    cide_vec_pop_int(&v);
-    printf("%d\n", cide_vec_size_int(&v));
-    cide_vec_destroy_int(&v);
+    v.push_back(10);
+    v.push_back(20);
+    printf("%d\n", v.size());
+    printf("%d\n", v.get(0));
+    printf("%d\n", v.get(1));
+    v.pop_back();
+    printf("%d\n", v.size());
     return 0;
 }
 "#;
@@ -373,12 +367,10 @@ fn test_cpp_container_vec_float() {
 #include <stdio.h>
 int main() {
     cide_vec_float v;
-    cide_vec_init_float(&v);
-    cide_vec_push_float(&v, 15);
-    cide_vec_push_float(&v, 25);
-    printf("%.1f\n", cide_vec_get_float(&v, 0));
-    printf("%.1f\n", cide_vec_get_float(&v, 1));
-    cide_vec_destroy_float(&v);
+    v.push_back(15);
+    v.push_back(25);
+    printf("%.1f\n", v.get(0));
+    printf("%.1f\n", v.get(1));
     return 0;
 }
 "#;
@@ -393,15 +385,13 @@ fn test_cpp_container_string() {
 #include <stdio.h>
 int main() {
     cide_string s;
-    cide_string_init(&s);
-    cide_string_push_back(&s, 'h');
-    cide_string_push_back(&s, 'i');
-    printf("%d\n", cide_string_size(&s));
-    printf("%c\n", cide_string_get(&s, 0));
-    printf("%c\n", cide_string_get(&s, 1));
-    cide_string_pop_back(&s);
-    printf("%d\n", cide_string_size(&s));
-    cide_string_destroy(&s);
+    s.push_back('h');
+    s.push_back('i');
+    printf("%d\n", s.size());
+    printf("%c\n", s.get(0));
+    printf("%c\n", s.get(1));
+    s.pop_back();
+    printf("%d\n", s.size());
     return 0;
 }
 "#;
@@ -429,15 +419,13 @@ fn test_cpp_container_vec_char() {
 #include <stdio.h>
 int main() {
     cide_vec_char v;
-    cide_vec_init_char(&v);
-    cide_vec_push_char(&v, 'a');
-    cide_vec_push_char(&v, 'b');
-    printf("%d\n", cide_vec_size_char(&v));
-    printf("%c\n", cide_vec_get_char(&v, 0));
-    printf("%c\n", cide_vec_get_char(&v, 1));
-    cide_vec_pop_char(&v);
-    printf("%d\n", cide_vec_size_char(&v));
-    cide_vec_destroy_char(&v);
+    v.push_back('a');
+    v.push_back('b');
+    printf("%d\n", v.size());
+    printf("%c\n", v.get(0));
+    printf("%c\n", v.get(1));
+    v.pop_back();
+    printf("%d\n", v.size());
     return 0;
 }
 "#;
@@ -452,17 +440,15 @@ fn test_cpp_container_list_int() {
 #include <stdio.h>
 int main() {
     cide_list_int l;
-    cide_list_init_int(&l);
-    cide_list_push_back_int(&l, 1);
-    cide_list_push_back_int(&l, 2);
-    cide_list_push_front_int(&l, 0);
-    printf("%d\n", cide_list_size_int(&l));
-    printf("%d\n", cide_list_get_int(&l, 0));
-    printf("%d\n", cide_list_get_int(&l, 1));
-    printf("%d\n", cide_list_get_int(&l, 2));
-    cide_list_pop_back_int(&l);
-    printf("%d\n", cide_list_size_int(&l));
-    cide_list_destroy_int(&l);
+    l.push_back(1);
+    l.push_back(2);
+    l.push_front(0);
+    printf("%d\n", l.size());
+    printf("%d\n", l.get(0));
+    printf("%d\n", l.get(1));
+    printf("%d\n", l.get(2));
+    l.pop_back();
+    printf("%d\n", l.size());
     return 0;
 }
 "#;
@@ -475,9 +461,41 @@ int main() {
 fn test_cpp_sort_int() {
     let src = r#"
 #include <stdio.h>
+
+template<class T>
+void sort_swap(T *a, T *b) {
+    T t = *a;
+    *a = *b;
+    *b = t;
+}
+
+template<class T>
+void sort_rec(T *a, int left, int right) {
+    if (left >= right) return;
+    T pivot = a[(left + right) / 2];
+    int i = left;
+    int j = right;
+    while (i <= j) {
+        while (a[i] < pivot) i++;
+        while (a[j] > pivot) j--;
+        if (i <= j) {
+            sort_swap(&a[i], &a[j]);
+            i++;
+            j--;
+        }
+    }
+    if (left < j) sort_rec(a, left, j);
+    if (i < right) sort_rec(a, i, right);
+}
+
+template<class T>
+void sort(T *a, int n) {
+    if (n > 1) sort_rec(a, 0, n - 1);
+}
+
 int main() {
     int arr[] = {5, 2, 8, 1, 9};
-    cide_sort_int(arr, 5);
+    sort(arr, 5);
     for (int i = 0; i < 5; i++) {
         printf("%d\n", arr[i]);
     }
@@ -505,11 +523,11 @@ fn test_cpp_type_map_lookup() {
     );
     assert_eq!(
         cide_native::compiler::cpp_frontend::type_map::map_container_method("cide_vec_int", "push_back"),
-        Some("cide_vec_push_int")
+        Some("cide_vec_int__push_back")
     );
     assert_eq!(
         cide_native::compiler::cpp_frontend::type_map::map_container_method("cide_string", "push_back"),
-        Some("cide_string_push_back")
+        Some("cide_string__push_back")
     );
 }
 
@@ -989,4 +1007,62 @@ int main() {
     let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
     assert_eq!(ret, 0);
     assert_eq!(outputs, vec!["1"]);
+}
+
+
+// ============================================================================
+// Stage 2b: 类外方法定义 + 显式模板实例化
+// ============================================================================
+
+#[test]
+fn test_cpp_out_of_line_method_definition() {
+    let src = r#"
+#include <stdio.h>
+class Counter {
+public:
+    int value;
+    Counter();
+    void inc();
+    int get();
+};
+Counter::Counter() { value = 0; }
+void Counter::inc() { value = value + 1; }
+int Counter::get() { return value; }
+int main() {
+    Counter c;
+    c.inc();
+    c.inc();
+    printf("%d\n", c.get());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["2"]);
+}
+
+#[test]
+fn test_cpp_explicit_class_template_instantiation() {
+    let src = r#"
+#include <stdio.h>
+template <class T>
+class Box {
+public:
+    T v;
+    void set(T x);
+    T get();
+};
+template <class T> void Box<T>::set(T x) { v = x; }
+template <class T> T Box<T>::get() { return v; }
+template class Box<int>;
+int main() {
+    Box<int> b;
+    b.set(42);
+    printf("%d\n", b.get());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["42"]);
 }

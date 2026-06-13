@@ -8,7 +8,7 @@ Cide 是一个跨平台 C 语言 IDE，包含：
 - **后端**：共享 Rust native 编译器/VM (`cide_native`)
 - **编译管线**：Lexer → Parser → TypeChecker → BytecodeGen → CideVM
 - **桥接**：flutter_rust_bridge v2 (`native/src/api/cide.rs` → `CideFlutter/lib/src/rust`)
-
+- **必须中文输出思考以及回答问题**
 ## 技术栈
 
 | 层级 | 技术 |

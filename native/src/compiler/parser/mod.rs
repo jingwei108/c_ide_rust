@@ -67,6 +67,7 @@ impl Parser {
 
     pub fn with_mode(tokens: Vec<Token>, is_cpp_mode: bool) -> Self {
         let mut typedef_names = HashMap::new();
+        let mut template_names = std::collections::HashSet::new();
         // 预定义 FILE 类型（stdio.h 中的不透明结构体指针）
         typedef_names.insert("FILE".to_string(), Type::void());
         // 预注册 C++ 内置容器类型名
@@ -86,12 +87,18 @@ impl Parser {
                     },
                 );
             }
+            // 预注册内置容器模板名，支持显式实例化写法。
+            // 注意：cide_string 本身是最终类名，不在这里作为模板基名注册，
+            // 避免与用户代码中的 typedef struct cide_string { ... } 冲突。
+            for name in ["cide_vec", "cide_list"] {
+                template_names.insert(name.to_string());
+            }
         }
         Self {
             tokens,
             errors: Vec::new(),
             typedef_names,
-            template_names: std::collections::HashSet::new(),
+            template_names,
             pos: 0,
             anonymous_structs: Vec::new(),
             is_cpp_mode,
@@ -397,18 +404,54 @@ impl Parser {
                 );
                 program.classes.push(class_decl);
             } else if self.is_cpp_mode && self.check(TokenType::Template) {
-                let template_decl = self.parse_template_decl();
-                // 将类模板名加入 typedef_names
-                if let crate::compiler::ast::Templateable::Class(ref c) = template_decl.decl {
-                    self.typedef_names.insert(
-                        c.name.clone(),
-                        Type::Class {
-                            name: c.name.clone(),
-                            is_const: false,
-                        },
-                    );
+                if self.is_template_explicit_instantiation() {
+                    let inst = self.parse_template_instantiation();
+                    program.template_instantiations.push(inst);
+                } else {
+                    let template_decl = self.parse_template_decl();
+                    // 将类模板名加入 typedef_names
+                    if let crate::compiler::ast::Templateable::Class(ref c) = template_decl.decl {
+                        self.typedef_names.insert(
+                            c.name.clone(),
+                            Type::Class {
+                                name: c.name.clone(),
+                                is_const: false,
+                            },
+                        );
+                    }
+                    // 类模板方法类外定义：如 template<class T> void Box<T>::set(T x) { ... }
+                    // 已把 body 合并到对应类模板的 method 声明中，避免生成独立函数模板。
+                    let mut merged = false;
+                    if let crate::compiler::ast::Templateable::Func(ref f) = template_decl.decl {
+                        if f.body.is_some() {
+                            if let Some((class_name, method_name)) = f.name.split_once("__") {
+                                for t in program.templates.iter_mut() {
+                                    if let crate::compiler::ast::Templateable::Class(ref mut c) = t.decl {
+                                        if c.name == class_name {
+                                            for member in &mut c.members {
+                                                if let crate::compiler::ast::ClassMember::Method {
+                                                    name,
+                                                    body,
+                                                    ..
+                                                } = member
+                                                {
+                                                    if name == method_name && body.is_none() {
+                                                        *body = f.body.clone();
+                                                        merged = true;
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if !merged {
+                        program.templates.push(template_decl);
+                    }
                 }
-                program.templates.push(template_decl);
             } else if self.check(TokenType::Extern) {
                 self.advance(); // consume 'extern'
                 self.parse_global_var_or_func(&mut program, false, true);
@@ -448,6 +491,41 @@ impl Parser {
     fn parse_global_var_or_func(&mut self, program: &mut ProgramNode, is_static: bool, is_extern: bool) {
         let checkpoint = self.pos;
         let base_type = self.parse_base_type();
+        // C++ 构造函数类外定义：Counter::Counter() { ... }
+        // parse_base_type 已经把类名 'Counter' 作为返回类型读入，当前 token 是 '::'。
+        if self.is_cpp_mode
+            && matches!(&base_type, Type::Class { name, .. } if !name.is_empty())
+            && self.check(TokenType::ColonColon)
+            && self.peek(1).ty == TokenType::Identifier
+            && self.peek(2).ty == TokenType::LParen
+            && self.peek(1).text == base_type.name()
+        {
+            self.consume(TokenType::ColonColon, "预期 '::'");
+            let name_tok = self.consume(TokenType::Identifier, "预期构造函数名").clone();
+            self.consume(TokenType::LParen, "预期 '('");
+            let params = self.parse_param_list();
+            self.consume(TokenType::RParen, "预期 ')'");
+            let body = if self.check(TokenType::LBrace) {
+                Some(self.parse_block())
+            } else {
+                self.consume(TokenType::Semicolon, "构造函数声明后预期 ';' 或 '{'");
+                None
+            };
+            program.funcs.push(FuncDecl {
+                loc: SourceLoc {
+                    line: name_tok.line,
+                    column: name_tok.column,
+                },
+                return_type: Type::void(),
+                name: format!("__ctor__{}", name_tok.text),
+                params,
+                body,
+                is_static,
+                is_extern,
+                source_file: String::new(),
+            });
+            return;
+        }
         // 前瞻：跳过前导 *，检查是否是 identifier (
         let lookahead = self.look_ahead_skip_stars();
         let is_func_decl = if lookahead < self.tokens.len() && self.tokens[lookahead].ty == TokenType::Identifier {
@@ -901,6 +979,69 @@ impl Parser {
     // C++ Template Declaration (Phase 31)
     // =========================================================================
 
+    /// 判断当前 `template` 开头是否为显式实例化声明：
+    /// `template class Name<args>;`（无模板参数列表）。
+    fn is_template_explicit_instantiation(&self) -> bool {
+        let mut i = self.pos;
+        if i >= self.tokens.len() || self.tokens[i].ty != TokenType::Template {
+            return false;
+        }
+        i += 1;
+        if i >= self.tokens.len()
+            || (self.tokens[i].ty != TokenType::Class && self.tokens[i].ty != TokenType::Struct)
+        {
+            return false;
+        }
+        i += 1;
+        if i >= self.tokens.len() || self.tokens[i].ty != TokenType::Identifier {
+            return false;
+        }
+        i += 1;
+        if i >= self.tokens.len() || self.tokens[i].ty != TokenType::Lt {
+            return false;
+        }
+        i += 1;
+        let mut depth = 1;
+        while i < self.tokens.len() && depth > 0 {
+            match self.tokens[i].ty {
+                TokenType::Lt => depth += 1,
+                TokenType::Gt => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            return false;
+        }
+        i + 1 < self.tokens.len() && self.tokens[i + 1].ty == TokenType::Semicolon
+    }
+
+    fn parse_template_instantiation(&mut self) -> TemplateInstantiation {
+        let loc = SourceLoc {
+            line: self.current().line,
+            column: self.current().column,
+        };
+        self.consume(TokenType::Template, "预期 'template'");
+        self.consume(TokenType::Class, "预期 'class'");
+        let base = self.consume(TokenType::Identifier, "预期模板类名").text.clone();
+        self.consume(TokenType::Lt, "预期 '<'");
+        let mut args = Vec::new();
+        while !self.check(TokenType::Gt) && !self.is_at_end() {
+            args.push(self.parse_base_type());
+            if !self.match_token(TokenType::Comma) {
+                break;
+            }
+        }
+        self.consume(TokenType::Gt, "预期 '>'");
+        self.consume(TokenType::Semicolon, "预期 ';'");
+        TemplateInstantiation { loc, base, args }
+    }
+
     fn parse_template_decl(&mut self) -> TemplateDecl {
         let loc = SourceLoc {
             line: self.current().line,
@@ -954,7 +1095,13 @@ impl Parser {
                 Templateable::Class(Box::new(class_decl))
             }
         } else {
-            Templateable::Func(Box::new(self.parse_func_decl(false, false)))
+            // C++ 允许 template<class T> static void foo(...)
+            let mut is_template_static = false;
+            if self.is_cpp_mode && self.is_static_token() {
+                is_template_static = true;
+                self.advance(); // consume 'static'
+            }
+            Templateable::Func(Box::new(self.parse_func_decl(is_template_static, false)))
         };
         TemplateDecl { loc, params, decl }
     }
@@ -1003,10 +1150,31 @@ impl Parser {
 
         let name_tok = self.consume(TokenType::Identifier, "预期函数名称").clone();
         let mut func_name = name_tok.text.clone();
+        let mut ret_type = ret_type;
         // C++ 类外成员函数定义: Bar::set → Bar__set
-        if self.is_cpp_mode && self.match_token(TokenType::ColonColon) {
-            let method_tok = self.consume(TokenType::Identifier, "预期方法名").clone();
-            func_name = format!("{}__{}", func_name, method_tok.text);
+        // 同时支持模板形式 Box<T>::set（模板参数仅用于消耗 token，名字仍用 Box__set）。
+        if self.is_cpp_mode {
+            if self.check(TokenType::Lt) {
+                // 消耗可选的模板实参列表，例如 Box<T>::set 中的 <T>
+                self.advance(); // '<'
+                while !self.check(TokenType::Gt) && !self.is_at_end() {
+                    self.parse_base_type();
+                    if !self.match_token(TokenType::Comma) {
+                        break;
+                    }
+                }
+                self.consume(TokenType::Gt, "预期 '>'");
+            }
+            if self.match_token(TokenType::ColonColon) {
+                let method_tok = self.consume(TokenType::Identifier, "预期方法名").clone();
+                if method_tok.text == func_name {
+                    // 构造函数类外定义: Counter::Counter() { ... }
+                    func_name = format!("__ctor__{}", func_name);
+                    ret_type = Type::void();
+                } else {
+                    func_name = format!("{}__{}", func_name, method_tok.text);
+                }
+            }
         }
         self.consume(TokenType::LParen, "预期 '('");
 
