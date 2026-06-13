@@ -263,7 +263,7 @@ impl StmtGen for BytecodeGen {
                                     let inner_ty = vty.subscript_type();
                                     let has_nested_init =
                                         elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. }));
-                                    if has_nested_init && (inner_ty.is_struct() || inner_ty.is_array()) {
+                                    if has_nested_init && (inner_ty.is_struct() || inner_ty.is_class() || inner_ty.is_array()) {
                                         // Nested struct/array init: each element is an inner_ty value
                                         let elem_stride = self.type_size(&inner_ty);
                                         for (i, elem) in elements.iter_mut().enumerate() {
@@ -387,7 +387,7 @@ impl StmtGen for BytecodeGen {
                                     }
                                 }
                             }
-                        } else if vty.is_struct() && matches!(e, Expr::InitList { .. }) {
+                        } else if (vty.is_struct() || vty.is_class()) && matches!(e, Expr::InitList { .. }) {
                             if let Expr::InitList { ref mut elements, .. } = e {
                                 let base_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::GetFrameBase, 0, loc);
@@ -420,7 +420,7 @@ impl StmtGen for BytecodeGen {
                                         let offset =
                                             fields.iter().take(field_idx).map(|f| self.type_size(&f.ty)).sum::<i32>();
                                         if matches!(&elem.value, Expr::InitList { .. })
-                                            && (fields[field_idx].ty.is_struct() || fields[field_idx].ty.is_array())
+                                            && (fields[field_idx].ty.is_struct() || fields[field_idx].ty.is_class() || fields[field_idx].ty.is_array())
                                         {
                                             self.gen_nested_init(
                                                 base_temp,
@@ -452,7 +452,7 @@ impl StmtGen for BytecodeGen {
                                         }
                                         let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
                                         if matches!(&elem.value, Expr::InitList { .. })
-                                            && (fields[i].ty.is_struct() || fields[i].ty.is_array())
+                                            && (fields[i].ty.is_struct() || fields[i].ty.is_class() || fields[i].ty.is_array())
                                         {
                                             self.gen_nested_init(base_temp, offset, &fields[i].ty, elem, loc);
                                         } else {
@@ -644,7 +644,7 @@ impl StmtGen for BytecodeGen {
             }
             Stmt::Expr { expr, .. } => {
                 self.gen_expr(expr);
-                if !expr.ty().is_void() && !expr.ty().is_struct() {
+                if !expr.ty().is_void() && !expr.ty().is_struct() && !expr.ty().is_class() {
                     self.emit(OpCode::Pop, 0, &loc);
                 }
             }
@@ -758,7 +758,7 @@ impl StmtGen for BytecodeGen {
                     let ret_is_struct = self
                         .func_table
                         .get(&self.current_func)
-                        .map(|m| m.return_type.is_struct())
+                        .map(|m| m.return_type.is_struct() || m.return_type.is_class())
                         .unwrap_or(false);
                     if ret_is_struct {
                         let ret_ptr_offset = self.resolve_local("__ret_ptr");

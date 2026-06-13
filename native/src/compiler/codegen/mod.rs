@@ -314,6 +314,7 @@ impl BytecodeGen {
                                     .push((offset as u32 + i as u32, values.get(i).copied().unwrap_or(0)));
                             }
                         } else if g.ty.is_struct()
+                            || g.ty.is_class()
                             || (g.ty.is_array() && elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. })))
                         {
                             // Struct or nested array init: use recursive expansion
@@ -549,7 +550,7 @@ impl BytecodeGen {
         self.next_local_offset = 0;
         let mut offset = 0;
         let mut param_sizes = Vec::new();
-        let returns_struct = self.func_table.get(name).map(|m| m.return_type.is_struct()).unwrap_or(false);
+        let returns_struct = self.func_table.get(name).map(|m| m.return_type.is_struct() || m.return_type.is_class()).unwrap_or(false);
         if returns_struct {
             param_sizes.push(1);
             self.local_indices.insert("__ret_ptr".to_string(), offset);
@@ -874,6 +875,7 @@ impl BytecodeGen {
                 .get(elem_type.name())
                 .map(|f| f.iter().map(|field| self.type_size(&field.ty)).sum())
                 .unwrap_or(4),
+            TypeKind::Class => self.class_sizes.get(elem_type.name()).copied().unwrap_or(4),
             TypeKind::Union => self
                 .union_defs
                 .get(elem_type.name())
@@ -899,8 +901,25 @@ impl BytecodeGen {
     fn flatten_global_init(&mut self, target_ty: &Type, init: &Expr, base_offset: u32) {
         match init {
             Expr::InitList { elements, .. } => {
-                if target_ty.is_struct() {
-                    let fields = self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default();
+                if target_ty.is_struct() || target_ty.is_class() {
+                    let fields = if target_ty.is_struct() {
+                        self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default()
+                    } else {
+                        self.class_defs
+                            .get(target_ty.name())
+                            .map(|c| {
+                                c.members
+                                    .iter()
+                                    .filter_map(|m| match m {
+                                        ClassMember::Field { name, ty, .. } => {
+                                            Some(StructField { name: name.clone(), ty: ty.clone() })
+                                        }
+                                        _ => None,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    };
                     for (i, elem) in elements.iter().enumerate() {
                         if i >= fields.len() {
                             break;

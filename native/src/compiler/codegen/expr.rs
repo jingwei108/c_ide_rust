@@ -641,7 +641,7 @@ impl ExprGen for BytecodeGen {
                 }
             }
             Expr::Call { name, args, ty, .. } => {
-                let is_struct_ret = ty.is_struct();
+                let is_struct_ret = ty.is_struct() || ty.is_class();
                 let ret_temp_offset = if is_struct_ret {
                     let sz = (self.type_size(ty) + 3) & !3;
                     let offset = self.next_local_offset;
@@ -653,27 +653,41 @@ impl ExprGen for BytecodeGen {
                 for arg in args.iter_mut().rev() {
                     let arg_ty_kind = arg.ty().kind();
                     let arg_ty = arg.ty();
-                    if arg_ty.is_struct() {
+                    if arg_ty.is_struct() || arg_ty.is_class() {
+                        let is_lambda = arg_ty.is_class() && arg_ty.name().starts_with("__lambda_");
                         let sz = self.type_size(arg_ty);
                         let words = (sz + 3) / 4;
                         if let Expr::Identifier { name: arg_name, .. } = arg {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
-                                for i in (0..words).rev() {
-                                    self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                if is_lambda {
+                                    // Lambda closure variables store the closure address, not the object itself.
+                                    self.emit(OpCode::LoadLocal, offset, &loc);
+                                } else {
+                                    for i in 0..words {
+                                        self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                    }
                                 }
                             } else if let Some(&offset) = self.static_local_indices.get(arg_name) {
-                                for i in (0..words).rev() {
-                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                if is_lambda {
+                                    self.emit(OpCode::LoadGlobal, offset, &loc);
+                                } else {
+                                    for i in 0..words {
+                                        self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                    }
                                 }
                             } else if let Some(&offset) = self.global_indices.get(arg_name) {
-                                for i in (0..words).rev() {
-                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                if is_lambda {
+                                    self.emit(OpCode::LoadGlobal, offset, &loc);
+                                } else {
+                                    for i in 0..words {
+                                        self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                    }
                                 }
                             } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
                                 self.gen_expr(arg);
                                 let addr_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::StoreLocal, addr_temp, &loc);
-                                for i in (0..words).rev() {
+                                for i in 0..words {
                                     self.emit(OpCode::LoadLocal, addr_temp, &loc);
                                     if i > 0 {
                                         self.emit(OpCode::PushConst, i * 4, &loc);
@@ -691,7 +705,7 @@ impl ExprGen for BytecodeGen {
                             self.gen_expr(arg);
                             let addr_temp = self.get_temp_slot(0);
                             self.emit(OpCode::StoreLocal, addr_temp, &loc);
-                            for i in (0..words).rev() {
+                            for i in 0..words {
                                 self.emit(OpCode::LoadLocal, addr_temp, &loc);
                                 if i > 0 {
                                     self.emit(OpCode::PushConst, i * 4, &loc);
@@ -744,6 +758,7 @@ impl ExprGen for BytecodeGen {
                 }
             }
             Expr::CallPtr { callee, args, ty, .. } => {
+                let is_struct_ret = ty.is_struct() || ty.is_class();
                 // std::move(x) is a compile-time cast to RValueRef; no function call.
                 if let Expr::Identifier { name, .. } = callee.as_ref() {
                     if name == "std__move" && args.len() == 1 {
@@ -751,14 +766,6 @@ impl ExprGen for BytecodeGen {
                         return;
                     }
                 }
-                // Determine if this CallPtr will resolve to a user function call (needs SplitD/SplitQ)
-                // or a host/built-in call (passes 64-bit values directly).
-                let is_user_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
-                    self.func_index.contains_key(name) || self.resolve_host_func_id(name) < 0
-                } else {
-                    true // indirect calls are always user calls
-                };
-                let is_struct_ret = ty.is_struct();
                 let ret_temp_offset = if is_struct_ret {
                     let sz = (self.type_size(ty) + 3) & !3;
                     let offset = self.next_local_offset;
@@ -767,29 +774,49 @@ impl ExprGen for BytecodeGen {
                 } else {
                     None
                 };
+                // Determine if this CallPtr will resolve to a user function call (needs SplitD/SplitQ)
+                // or a host/built-in call (passes 64-bit values directly).
+                let is_user_call = if let Expr::Identifier { name, .. } = callee.as_ref() {
+                    self.func_index.contains_key(name) || self.resolve_host_func_id(name) < 0
+                } else {
+                    true // indirect calls are always user calls
+                };
                 for arg in args.iter_mut().rev() {
                     let arg_ty = arg.ty().clone();
-                    if arg_ty.is_struct() {
+                    if arg_ty.is_struct() || arg_ty.is_class() {
+                        let is_lambda = arg_ty.is_class() && arg_ty.name().starts_with("__lambda_");
                         let sz = self.type_size(&arg_ty);
                         let words = (sz + 3) / 4;
                         if let Expr::Identifier { name: arg_name, .. } = arg {
                             if let Some(&offset) = self.local_indices.get(arg_name) {
-                                for i in (0..words).rev() {
-                                    self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                if is_lambda {
+                                    self.emit(OpCode::LoadLocal, offset, &loc);
+                                } else {
+                                    for i in 0..words {
+                                        self.emit(OpCode::LoadLocal, offset + i * 4, &loc);
+                                    }
                                 }
                             } else if let Some(&offset) = self.static_local_indices.get(arg_name) {
-                                for i in (0..words).rev() {
-                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                if is_lambda {
+                                    self.emit(OpCode::LoadGlobal, offset, &loc);
+                                } else {
+                                    for i in 0..words {
+                                        self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                    }
                                 }
                             } else if let Some(&offset) = self.global_indices.get(arg_name) {
-                                for i in (0..words).rev() {
-                                    self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                if is_lambda {
+                                    self.emit(OpCode::LoadGlobal, offset, &loc);
+                                } else {
+                                    for i in 0..words {
+                                        self.emit(OpCode::LoadGlobal, offset + i * 4, &loc);
+                                    }
                                 }
                             } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
                                 self.gen_expr(arg);
                                 let addr_temp = self.get_temp_slot(0);
                                 self.emit(OpCode::StoreLocal, addr_temp, &loc);
-                                for i in (0..words).rev() {
+                                for i in 0..words {
                                     self.emit(OpCode::LoadLocal, addr_temp, &loc);
                                     if i > 0 {
                                         self.emit(OpCode::PushConst, i * 4, &loc);
@@ -807,7 +834,7 @@ impl ExprGen for BytecodeGen {
                             self.gen_expr(arg);
                             let addr_temp = self.get_temp_slot(0);
                             self.emit(OpCode::StoreLocal, addr_temp, &loc);
-                            for i in (0..words).rev() {
+                            for i in 0..words {
                                 self.emit(OpCode::LoadLocal, addr_temp, &loc);
                                 if i > 0 {
                                     self.emit(OpCode::PushConst, i * 4, &loc);
@@ -1070,8 +1097,25 @@ impl ExprGen for BytecodeGen {
     fn gen_nested_init(&mut self, base_temp: i32, offset: i32, target_ty: &Type, init: &mut Expr, loc: &SourceLoc) {
         match init {
             Expr::InitList { elements, .. } => {
-                if target_ty.is_struct() {
-                    let fields = self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default();
+                if target_ty.is_struct() || target_ty.is_class() {
+                    let fields = if target_ty.is_struct() {
+                        self.struct_defs.get(target_ty.name()).cloned().unwrap_or_default()
+                    } else {
+                        self.class_defs
+                            .get(target_ty.name())
+                            .map(|c| {
+                                c.members
+                                    .iter()
+                                    .filter_map(|m| match m {
+                                        ClassMember::Field { name, ty, .. } => {
+                                            Some(StructField { name: name.clone(), ty: ty.clone() })
+                                        }
+                                        _ => None,
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default()
+                    };
                     for (i, elem) in elements.iter_mut().enumerate() {
                         if i >= fields.len() {
                             break;
@@ -1140,8 +1184,8 @@ impl ExprGen for BytecodeGen {
                 self.report_error("未声明的结构体变量", loc);
                 self.emit(OpCode::PushConst, 0, loc);
             }
-        } else if object.ty().is_struct() {
-            // 函数按值返回结构体等复杂表达式，gen_expr 会留下地址
+        } else if object.ty().is_struct() || object.ty().is_class() {
+            // 函数按值返回结构体/类等复杂表达式，gen_expr 会留下地址
             self.gen_expr(object);
         } else {
             self.report_error("复杂结构体表达式暂不支持", loc);
@@ -1328,7 +1372,7 @@ impl ExprGen for BytecodeGen {
                 self.gen_expr(operand);
             }
             Expr::Call { ty, .. } | Expr::CallPtr { ty, .. }
-                if ty.is_struct() || ty.is_reference() || ty.is_rvalue_ref() =>
+                if ty.is_struct() || ty.is_class() || ty.is_reference() || ty.is_rvalue_ref() =>
             {
                 // For std::move(x), gen_addr should yield the address of x,
                 // not the value that gen_expr would leave.
@@ -1345,6 +1389,10 @@ impl ExprGen for BytecodeGen {
             }
             Expr::MemberCall { ty, .. } if ty.is_reference() || ty.is_rvalue_ref() => {
                 // 成员函数返回引用：gen_expr 已在栈顶留下目标地址
+                self.gen_expr(expr);
+            }
+            Expr::MemberCall { ty, .. } if ty.is_struct() || ty.is_class() => {
+                // 成员函数按值返回结构体/类：gen_expr 已在栈顶留下临时对象地址
                 self.gen_expr(expr);
             }
             Expr::Lambda { .. } => {
@@ -1426,7 +1474,7 @@ impl ExprGen for BytecodeGen {
         let left_is_long_long = left.ty().kind() == TypeKind::LongLong;
         let left_is_unsigned = left.ty().is_unsigned();
         let left_is_fp = left_is_double || left_is_float;
-        if left.ty().is_struct() && *op == AssignOp::Assign {
+        if (left.ty().is_struct() || left.ty().is_class()) && *op == AssignOp::Assign {
             self.gen_struct_copy(left, right, loc);
             return;
         }

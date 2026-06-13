@@ -27,7 +27,7 @@ impl BytecodeGen {
                 return;
             }
         };
-        let is_struct_ret = ty.is_struct();
+        let is_struct_ret = ty.is_struct() || ty.is_class();
         let ret_temp_offset = if is_struct_ret {
             let sz = (self.type_size(ty) + 3) & !3;
             let offset = self.next_local_offset;
@@ -39,12 +39,70 @@ impl BytecodeGen {
         // Generate args in reverse order (excluding this)
         for arg in args.iter_mut().rev() {
             let arg_ty = arg.ty().clone();
-            if arg_ty.is_struct() {
+            if arg_ty.is_struct() || arg_ty.is_class() {
+                let is_lambda = arg_ty.is_class() && arg_ty.name().starts_with("__lambda_");
                 let sz = self.type_size(&arg_ty);
                 let words = (sz + 3) / 4;
-                self.gen_expr(arg);
-                for _ in 1..words {
-                    self.emit(OpCode::PushConst, 0, loc);
+                if let Expr::Identifier { name: arg_name, .. } = arg {
+                    if let Some(&offset) = self.local_indices.get(arg_name) {
+                        if is_lambda {
+                            self.emit(OpCode::LoadLocal, offset, loc);
+                        } else {
+                            for i in 0..words {
+                                self.emit(OpCode::LoadLocal, offset + i * 4, loc);
+                            }
+                        }
+                    } else if let Some(&offset) = self.static_local_indices.get(arg_name) {
+                        if is_lambda {
+                            self.emit(OpCode::LoadGlobal, offset, loc);
+                        } else {
+                            for i in 0..words {
+                                self.emit(OpCode::LoadGlobal, offset + i * 4, loc);
+                            }
+                        }
+                    } else if let Some(&offset) = self.global_indices.get(arg_name) {
+                        if is_lambda {
+                            self.emit(OpCode::LoadGlobal, offset, loc);
+                        } else {
+                            for i in 0..words {
+                                self.emit(OpCode::LoadGlobal, offset + i * 4, loc);
+                            }
+                        }
+                    } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                        self.gen_expr(arg);
+                        let addr_temp = self.get_temp_slot(0);
+                        self.emit(OpCode::StoreLocal, addr_temp, loc);
+                        for i in 0..words {
+                            self.emit(OpCode::LoadLocal, addr_temp, loc);
+                            if i > 0 {
+                                self.emit(OpCode::PushConst, i * 4, loc);
+                                self.emit(OpCode::Add, 0, loc);
+                            }
+                            self.emit(OpCode::LoadMem, 0, loc);
+                        }
+                    } else {
+                        self.gen_expr(arg);
+                        for _ in 1..words {
+                            self.emit(OpCode::PushConst, 0, loc);
+                        }
+                    }
+                } else if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                    self.gen_expr(arg);
+                    let addr_temp = self.get_temp_slot(0);
+                    self.emit(OpCode::StoreLocal, addr_temp, loc);
+                    for i in 0..words {
+                        self.emit(OpCode::LoadLocal, addr_temp, loc);
+                        if i > 0 {
+                            self.emit(OpCode::PushConst, i * 4, loc);
+                            self.emit(OpCode::Add, 0, loc);
+                        }
+                        self.emit(OpCode::LoadMem, 0, loc);
+                    }
+                } else {
+                    self.gen_expr(arg);
+                    for _ in 1..words {
+                        self.emit(OpCode::PushConst, 0, loc);
+                    }
                 }
             } else if arg_ty.kind() == TypeKind::Double {
                 self.gen_expr(arg);
