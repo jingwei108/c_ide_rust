@@ -2,7 +2,7 @@
 
 **版本**: 2.8  
 **日期**: 2026-06-13  
-**状态**: **M6 + Stage 2b 完成**：`native/tests/cases/cpp/` 60 个 C++ E2E 用例（原计划 50 个）全部通过，stdout 与 Clang++ (`-std=c++14 -O0`) 逐行一致；M6 阶段记录的 10 项 Cide C++ 子集边界已在提交 `fd9bb54` 中全部消除（指针/数组逻辑运算、类内方法重载、构造初始化列表、字符字面量、浮点精度等）。Stage 2b 内置容器全面迁移已完成：提交 `a16b489` 将 `runtime_libc/cide/*.c` 全部替换为标准模板 C++ 实现（`template <class T> class cide_vec<T>` 等），`method_map` 已指向 mangled 方法名，force-instantiate 桩已删除，`.c` 手写实现已删除。Stage 1 Dogfooding 验证完成：`vector<int/float/char>`、`string`、`list<int>`、`sort_int` 的 C++ 模板实现运行时 stdout 与 C 基线一致，`get`/`size` 等简单方法字节码逐指令等价。Rust 单元测试全绿，clippy 0 警告，C++ 三 tier 已纳入 CI。**下一阶段目标：M7 Beta 发布准备——内部试用、文档完整化、教学场景验证。**  
+**状态**: **M7 Beta Readiness 已就绪**：M6 + Stage 2b 已完成，`native/tests/cases/cpp/` 60 个 C++ E2E 用例全部通过，C++ Shadow Verification 82/82 一致、0 gap；全量 `cargo test` 690 passed、clippy 0 警告；`scripts/ci_three_tier_check.py` 误报已修复；同参数个数不同类型的构造函数重载已报告 `E4031` 而不是静默错误。已新增 5 个 C++ 教学模板（`cpp_hello` / `cpp_class_basic` / `cpp_vector_int` / `cpp_unique_ptr` / `cpp_range_for`）与学生版 `CPP_SUBSET_SPEC.md`。内置容器已全面迁移为 `runtime_libc/cide/*.cpp` 标准模板实现。详见 `docs/current/M7_BETA_READINESS.md`。**当前目标：启动内部试用并收集反馈。**  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---

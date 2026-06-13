@@ -120,4 +120,5 @@ pub enum ErrorCode {
     E4028_InvalidDeleteType = 4028,
     E4029_ReferenceBindLvalueRequired = 4029,
     E4030_ConstructorNotFound = 4030,
+    E4031_ConstructorOverloadAmbiguous = 4031,
 }

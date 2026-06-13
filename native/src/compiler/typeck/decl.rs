@@ -102,7 +102,7 @@ impl TypeChecker {
                                     // （隐式移动构造在 Pass 3.55 生成），也要让后续阶段能找到它。
                                     Some(format!("__ctor__{}__move", class_name))
                                 } else {
-                                    self.resolve_constructor_overload(class_name, args.len())
+                                    self.resolve_constructor_overload(class_name, args.len(), *ctor_loc)
                                 };
                                 if let Some(ctor_name) = ctor_name {
                                     *name = ctor_name;

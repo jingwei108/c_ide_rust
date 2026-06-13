@@ -61,7 +61,7 @@ impl TypeChecker {
                         class_methods.push(func_decl);
                     }
                     ClassMember::Constructor { params, body: Some(ref b), .. } => {
-                        let ctor_name = self.resolve_constructor_overload(&c.name, params.len()).unwrap_or_else(|| {
+                        let ctor_name = self.resolve_constructor_overload(&c.name, params.len(), c.loc).unwrap_or_else(|| {
                             if params.is_empty() {
                                 format!("__ctor__{}", c.name)
                             } else {
@@ -126,19 +126,36 @@ impl TypeChecker {
     }
 
     /// 重载决议：从候选构造函数中选择最佳匹配。
-    /// 当前为简化实现：根据参数数量选择构造函数。默认（零参数）构造函数保持
+    /// 当前实现根据参数数量选择构造函数。默认（零参数）构造函数保持
     /// `__ctor__{Class}` 名称；带 N 个参数的构造函数编码为 `__ctor__{Class}__N`。
-    /// TODO: 完善为基于类型相似度的优先级排序（移动构造 > 拷贝构造 > 普通构造）。
-    pub(crate) fn resolve_constructor_overload(&self, class_name: &str, arg_count: usize) -> Option<String> {
+    /// 如果同一个类存在多个**同参数个数但参数类型不同**的构造函数，当前 mangling
+    /// 方案无法区分，会报告 E4031 歧义错误而不是静默选择错误路径。
+    pub(crate) fn resolve_constructor_overload(&mut self, class_name: &str, arg_count: usize, loc: SourceLoc) -> Option<String> {
         let sym = self.classes.get(class_name)?;
         let target = if arg_count == 0 {
             format!("__ctor__{}", class_name)
         } else {
             format!("__ctor__{}__{}", class_name, arg_count)
         };
-        if sym.methods.get(&target).map(|v| !v.is_empty()).unwrap_or(false) {
-            return Some(target);
+
+        // 检查是否存在同参数个数但不同类型的构造函数重载（当前不支持）
+        if let Some(sigs) = sym.methods.get(&target) {
+            if sigs.len() > 1 {
+                self.report_error(
+                    &format!(
+                        "类 '{}' 的构造函数存在歧义：存在多个接受 {} 个参数的构造函数（当前 Cide C++ 子集不支持同参数个数不同类型的构造函数重载）",
+                        class_name, arg_count
+                    ),
+                    &loc,
+                    ErrorCode::E4031_ConstructorOverloadAmbiguous,
+                );
+                return None;
+            }
+            if !sigs.is_empty() {
+                return Some(target);
+            }
         }
+
         // Fallback: scan methods for any ctor with matching user param count
         for (name, sigs) in &sym.methods {
             if name.starts_with("__ctor__") && !name.ends_with("__move") {

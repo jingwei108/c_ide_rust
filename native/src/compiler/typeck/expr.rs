@@ -990,7 +990,7 @@ impl TypeChecker {
                             if name.starts_with("__ctor__") {
                                 if let Type::Class { name: class_name, .. } = elem_type {
                                     let arg_count = args.len();
-                                    if let Some(resolved) = self.resolve_constructor_overload(class_name, arg_count) {
+                                    if let Some(resolved) = self.resolve_constructor_overload(class_name, arg_count, *loc) {
                                         *name = resolved.clone();
                                         ctor_class_name = class_name.clone();
                                         ctor_name = resolved;

@@ -532,3 +532,26 @@ int main() {
     let (_program, errors) = parse_and_typecheck_cpp(src);
     assert!(errors.is_empty(), "Type errors: {:?}", errors);
 }
+
+
+#[test]
+fn test_cpp_ctor_overload_same_count_different_type_rejected() {
+    let src = r#"
+class Box {
+public:
+    int x;
+    Box(int v) { x = v; }
+    Box(float v) { x = (int)v + 100; }
+};
+int main() {
+    Box b(5);
+    return b.x;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(
+        errors.iter().any(|e| e.code == 4031),
+        "Expected E4031 ConstructorOverloadAmbiguous, got: {:?}",
+        errors
+    );
+}

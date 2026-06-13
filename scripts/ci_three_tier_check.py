@@ -139,28 +139,52 @@ def extract_md_status(md_path: Path) -> dict:
         return {"missing": True, "entries": []}
 
     content = md_path.read_text(encoding="utf-8")
+
+    # 先移除 HTML 注释（包括多行），避免占位符 <case_name> 被误判
+    content = re.sub(r"<!--[\s\S]*?-->", "", content)
+
     entries = []
 
-    # 提取带有 ~~删除线~~ 的标题，通常表示"已修复"
-    for m in re.finditer(r"^###\s+~~(.+?)~~\s*→\s*已修复", content, re.MULTILINE):
-        entries.append({
-            "title": m.group(1).strip(),
-            "status": "FIXED",
-        })
+    # 按二级标题拆分文档，逐个 section 解析
+    section_pattern = re.compile(r"^##\s+", re.MULTILINE)
+    parts = section_pattern.split(content)
+    for part in parts[1:]:
+        lines = part.splitlines()
+        if not lines:
+            continue
+        section_title = lines[0].strip()
+        section_text = "\n".join(lines[1:])
 
-    # 提取 KNOWN_FAILURE / KNOWN_DIVERGENCE
-    for m in re.finditer(r"^##\s+(已知失败|KNOWN_FAILURE|已知偏差|KNOWN_DIVERGENCE)", content, re.MULTILINE):
-        section = m.group(1).strip()
+        is_known_failure = "KNOWN_FAILURE" in section_title or "已知失败" in section_title
+        is_divergence = "KNOWN_DIVERGENCE" in section_title or "已知偏差" in section_title
+
         # 提取该 section 下的所有三级标题
-        section_start = m.end()
-        next_section = re.search(r"^##\s+", content[section_start:], re.MULTILINE)
-        section_end = section_start + next_section.start() if next_section else len(content)
-        section_text = content[section_start:section_end]
         for tm in re.finditer(r"^###\s+(.+)$", section_text, re.MULTILINE):
-            entries.append({
-                "title": tm.group(1).strip(),
-                "status": "KNOWN" if "偏差" not in section else "DIVERGENCE",
-            })
+            title = tm.group(1).strip()
+
+            # 标题本身带删除线 → 已修复
+            fixed_match = re.match(r"~~(.+?)~~\s*(?:→\s*(?:已修复|FIXED))?", title)
+            if fixed_match:
+                entries.append({
+                    "title": fixed_match.group(1).strip(),
+                    "status": "FIXED",
+                })
+                continue
+
+            # 检查该标题所在段落是否包含"已修复"字样
+            paragraph_start = tm.end()
+            next_heading = re.search(r"^###\s+", section_text[paragraph_start:], re.MULTILINE)
+            paragraph_end = paragraph_start + next_heading.start() if next_heading else len(section_text)
+            paragraph = section_text[paragraph_start:paragraph_end]
+            if "已修复" in paragraph or "FIXED" in paragraph:
+                entries.append({"title": title, "status": "FIXED"})
+                continue
+
+            # 根据 section 类型分类
+            if is_divergence:
+                entries.append({"title": title, "status": "DIVERGENCE"})
+            elif is_known_failure:
+                entries.append({"title": title, "status": "KNOWN"})
 
     return {"missing": False, "entries": entries}
 

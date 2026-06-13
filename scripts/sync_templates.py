@@ -7,7 +7,7 @@ sync_templates.py — 模板同步脚本
 2. 渲染 /*__PARAM_*/ → native/tests/cases_template_generated/*.c
 3. 用 Clang 编译运行生成 Golden .out → native/tests/cases_golden/
 4. 生成 Flutter JSON Index → CideFlutter/assets/templates/index.json
-5. 复制 source.c → CideFlutter/assets/templates/<key>.c
+5. 复制 source.c / source.cpp → CideFlutter/assets/templates/<key>.c / <key>.cpp
 
 用法：
     python scripts/sync_templates.py
@@ -204,13 +204,24 @@ def sync():
         if not d.is_dir():
             continue
 
+        # 支持 C 模板（source.c）和 C++ 模板（source.cpp）
         source_c_path = d / "source.c"
+        source_cpp_path = d / "source.cpp"
         meta_path = d / "meta.yaml"
-        if not source_c_path.exists() or not meta_path.exists():
-            print(f"[SKIP] {d.name}: missing source.c or meta.yaml")
+        if source_c_path.exists():
+            source_path = source_c_path
+            ext = "c"
+        elif source_cpp_path.exists():
+            source_path = source_cpp_path
+            ext = "cpp"
+        else:
+            print(f"[SKIP] {d.name}: missing source.c or source.cpp")
+            continue
+        if not meta_path.exists():
+            print(f"[SKIP] {d.name}: missing meta.yaml")
             continue
 
-        source_c = source_c_path.read_text(encoding="utf-8")
+        source_c = source_path.read_text(encoding="utf-8")
         meta = load_meta_yaml(meta_path)
         anchors = scan_tutorial_anchors(source_c)
         key = meta.get("key", d.name)
@@ -242,8 +253,13 @@ def sync():
         index["templates"].append(tpl_entry)
 
         # 复制源码到 Flutter assets
-        flutter_c_path = FLUTTER_DIR / f"{meta['key']}.c"
-        flutter_c_path.write_bytes(source_c.encode("utf-8"))
+        flutter_source_path = FLUTTER_DIR / f"{meta['key']}.{ext}"
+        flutter_source_path.write_bytes(source_c.encode("utf-8"))
+
+        # C++ 模板暂不参与 C 模式 shadow 用例生成与 golden 生成
+        if ext == "cpp":
+            print(f"[CPP TEMPLATE] {meta['key']}: skipped shadow case generation")
+            continue
 
         # 生成默认参数的 shadow 用例
         default_args = {k: v.get("default", "") for k, v in meta.get("params", {}).items()}
