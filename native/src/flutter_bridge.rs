@@ -7,19 +7,30 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::session::{CodeFile, *};
 use crate::unified::engine::UnifiedEngine;
 use crate::unified::types::*;
+use crate::vm::vm::NULL_TRAP_SIZE;
 
 // ========== 多 Session 管理 ==========
 
 use std::sync::LazyLock;
 
-static SESSIONS: LazyLock<Mutex<HashMap<u64, &'static Mutex<Session>>>> = LazyLock::new(|| {
+/// 锁定 Arc<Mutex<T>>；若 Mutex 已被 poison，则重置为默认值后返回 guard，
+/// 避免继续使用可能已损坏的状态。
+fn lock_or_reset<T: Default>(arc: &Arc<Mutex<T>>) -> std::sync::MutexGuard<'_, T> {
+    arc.lock().unwrap_or_else(|e| {
+        let mut guard = e.into_inner();
+        *guard = T::default();
+        guard
+    })
+}
+
+static SESSIONS: LazyLock<Mutex<HashMap<u64, Arc<Mutex<Session>>>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
-    let session: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
+    let session = Arc::new(Mutex::new(Session::default()));
     map.insert(0, session);
     Mutex::new(map)
 });
@@ -27,30 +38,32 @@ static SESSIONS: LazyLock<Mutex<HashMap<u64, &'static Mutex<Session>>>> = LazyLo
 static NEXT_SESSION_ID: AtomicU64 = AtomicU64::new(1);
 static CURRENT_SESSION_ID: AtomicU64 = AtomicU64::new(0);
 
-static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, &'static Mutex<UnifiedEngine>>>> = LazyLock::new(|| {
+static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, Arc<Mutex<UnifiedEngine>>>>> = LazyLock::new(|| {
     let mut map = HashMap::new();
-    let engine: &'static Mutex<UnifiedEngine> = &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())));
+    let engine = Arc::new(Mutex::new(UnifiedEngine::new()));
     map.insert(0, engine);
     Mutex::new(map)
 });
 
-fn current_unified_engine() -> std::sync::MutexGuard<'static, UnifiedEngine> {
+fn current_unified_engine() -> Arc<Mutex<UnifiedEngine>> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
-    let engine_ref: &'static Mutex<UnifiedEngine> =
-        engines.get(&id).or_else(|| engines.get(&0)).copied().unwrap_or_else(|| {
-            let e: &'static Mutex<UnifiedEngine> = &*Box::leak(Box::new(Mutex::new(UnifiedEngine::new())));
-            engines.insert(id, e);
+    let engine_ref: Arc<Mutex<UnifiedEngine>> = engines
+        .get(&id)
+        .or_else(|| engines.get(&0))
+        .cloned()
+        .unwrap_or_else(|| {
+            let e = Arc::new(Mutex::new(UnifiedEngine::new()));
+            engines.insert(id, e.clone());
             e
         });
-    drop(engines);
-    engine_ref.lock().unwrap_or_else(|e| e.into_inner())
+    engine_ref
 }
 
 /// 创建新 Session，返回唯一 ID
 pub fn create_session() -> u64 {
     let id = NEXT_SESSION_ID.fetch_add(1, Ordering::SeqCst);
-    let session: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
+    let session = Arc::new(Mutex::new(Session::default()));
     let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
     sessions.insert(id, session);
     id
@@ -62,9 +75,6 @@ pub fn destroy_session(session_id: u64) {
     sessions.remove(&session_id);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
     engines.remove(&session_id);
-    // 注意：Box::leak 的内存不会真正释放。实际场景中 session 是全局单例，此限制可接受。
-    // 若未来需频繁创建/销毁 session，需将 HashMap 改为 Arc<Mutex<T>> 存储，
-    // 并同步修改 current_session() / current_unified_engine() 的返回类型（不再返回 'static guard）。
 }
 
 /// 切换当前操作的 Session ID
@@ -77,17 +87,19 @@ pub fn get_current_session_id() -> u64 {
     CURRENT_SESSION_ID.load(Ordering::SeqCst)
 }
 
-fn current_session() -> std::sync::MutexGuard<'static, Session> {
+fn current_session() -> Arc<Mutex<Session>> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
-    let session_ref: &'static Mutex<Session> =
-        sessions.get(&id).or_else(|| sessions.get(&0)).copied().unwrap_or_else(|| {
-            let s: &'static Mutex<Session> = &*Box::leak(Box::new(Mutex::new(Session::default())));
-            sessions.insert(id, s);
+    let session_ref: Arc<Mutex<Session>> = sessions
+        .get(&id)
+        .or_else(|| sessions.get(&0))
+        .cloned()
+        .unwrap_or_else(|| {
+            let s = Arc::new(Mutex::new(Session::default()));
+            sessions.insert(id, s.clone());
             s
         });
-    drop(sessions);
-    session_ref.lock().unwrap_or_else(|e| e.into_inner())
+    session_ref
 }
 
 // ========== 辅助函数 ==========
@@ -107,7 +119,8 @@ pub fn compile(source: String) -> CompileResult {
 
 /// 多文件编译
 pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
-    let mut session = current_session();
+    let session_arc_l111 = current_session();
+    let mut session = lock_or_reset(&session_arc_l111);
 
     // 设置编译单元
     session.compile.compile_units.clear();
@@ -137,7 +150,8 @@ pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
 
 /// 全速运行已编译的程序
 pub fn run_code() -> RunResult {
-    let mut session = current_session();
+    let session_arc_l141 = current_session();
+    let mut session = lock_or_reset(&session_arc_l141);
 
     if !session.compile.compiled {
         return RunResult {
@@ -172,7 +186,8 @@ pub fn run_code() -> RunResult {
 
 /// 单步执行
 pub fn step_next() -> StepResult {
-    let mut session = current_session();
+    let session_arc_l176 = current_session();
+    let mut session = lock_or_reset(&session_arc_l176);
 
     if !session.compile.compiled {
         return StepResult {
@@ -303,31 +318,36 @@ pub fn step_next() -> StepResult {
 
 /// 获取诊断信息
 pub fn get_diagnostics() -> Vec<Diagnostic> {
-    let session = current_session();
+    let session_arc_l307 = current_session();
+    let session = lock_or_reset(&session_arc_l307);
     session.compile.diagnostics.clone()
 }
 
 /// 获取算法匹配
 pub fn get_algorithm_matches() -> Vec<AlgorithmMatch> {
-    let session = current_session();
+    let session_arc_l313 = current_session();
+    let session = lock_or_reset(&session_arc_l313);
     session.compile.algorithm_matches.clone()
 }
 
 /// 获取变量列表
 pub fn get_variables() -> Vec<VariableSnapshot> {
-    let session = current_session();
+    let session_arc_l319 = current_session();
+    let session = lock_or_reset(&session_arc_l319);
     session.vm.as_ref().map(|vm| vm.get_variable_snapshot()).unwrap_or_default()
 }
 
 /// 获取内存区域
 pub fn get_memory_regions() -> Vec<MemoryRegion> {
-    let session = current_session();
+    let session_arc_l325 = current_session();
+    let session = lock_or_reset(&session_arc_l325);
     session.memory.regions.clone()
 }
 
 /// 获取当前空闲碎片块（外部碎片）
 pub fn get_memory_fragments() -> Vec<crate::session::MemoryFragment> {
-    let session = current_session();
+    let session_arc_l331 = current_session();
+    let session = lock_or_reset(&session_arc_l331);
     session
         .memory
         .free_list
@@ -338,7 +358,8 @@ pub fn get_memory_fragments() -> Vec<crate::session::MemoryFragment> {
 
 /// 获取堆内存统计信息（总空间、已分配、碎片、碎片率）
 pub fn get_heap_stats() -> crate::session::HeapStats {
-    let session = current_session();
+    let session_arc_l342 = current_session();
+    let session = lock_or_reset(&session_arc_l342);
     let mem = &session.memory;
     let heap_start = crate::vm::vm::HEAP_START as i32;
     let total_heap = (mem.heap_offset as i32).saturating_sub(heap_start);
@@ -359,37 +380,43 @@ pub fn get_heap_stats() -> crate::session::HeapStats {
 
 /// 获取 VM 内存总大小（字节）
 pub fn get_memory_size() -> u32 {
-    let session = current_session();
+    let session_arc_l363 = current_session();
+    let session = lock_or_reset(&session_arc_l363);
     session.vm.as_ref().map(|v| v.get_memory_size()).unwrap_or(0)
 }
 
 /// 获取调用栈
 pub fn get_callstack() -> Vec<TraceEntry> {
-    let session = current_session();
+    let session_arc_l369 = current_session();
+    let session = lock_or_reset(&session_arc_l369);
     session.runtime.trace.clone()
 }
 
 /// 获取输出
 pub fn get_output() -> String {
-    let session = current_session();
+    let session_arc_l375 = current_session();
+    let session = lock_or_reset(&session_arc_l375);
     session.runtime.output()
 }
 
 /// 获取当前行
 pub fn get_current_line() -> i32 {
-    let session = current_session();
+    let session_arc_l381 = current_session();
+    let session = lock_or_reset(&session_arc_l381);
     session.runtime.current_line
 }
 
 /// 是否等待输入
 pub fn is_waiting_input() -> bool {
-    let session = current_session();
+    let session_arc_l387 = current_session();
+    let session = lock_or_reset(&session_arc_l387);
     session.runtime.waiting_input
 }
 
 /// 添加断点
 pub fn add_breakpoint(line: i32) {
-    let mut session = current_session();
+    let session_arc_l393 = current_session();
+    let mut session = lock_or_reset(&session_arc_l393);
     if let Some(ref mut vm) = session.vm {
         vm.add_breakpoint(line);
     }
@@ -397,7 +424,8 @@ pub fn add_breakpoint(line: i32) {
 
 /// 清除所有断点
 pub fn clear_breakpoints() {
-    let mut session = current_session();
+    let session_arc_l401 = current_session();
+    let mut session = lock_or_reset(&session_arc_l401);
     if let Some(ref mut vm) = session.vm {
         vm.clear_breakpoints();
     }
@@ -405,7 +433,8 @@ pub fn clear_breakpoints() {
 
 /// 批量设置断点（清除后重新添加）
 pub fn set_breakpoints(lines: Vec<i32>) {
-    let mut session = current_session();
+    let session_arc_l409 = current_session();
+    let mut session = lock_or_reset(&session_arc_l409);
     if let Some(ref mut vm) = session.vm {
         vm.clear_breakpoints();
         for line in lines {
@@ -416,7 +445,8 @@ pub fn set_breakpoints(lines: Vec<i32>) {
 
 /// 设置输入（用于 scanf）
 pub fn set_input(input: String) {
-    let mut session = current_session();
+    let session_arc_l420 = current_session();
+    let mut session = lock_or_reset(&session_arc_l420);
     session.runtime.input_lines = input.lines().map(|l| l.trim_end_matches('\r').to_string()).collect();
     session.runtime.input_index = 0;
     session.runtime.input_char_offset = 0;
@@ -424,7 +454,8 @@ pub fn set_input(input: String) {
 
 /// 提供单行输入（恢复执行）
 pub fn provide_input_line(line: String) {
-    let mut session = current_session();
+    let session_arc_l428 = current_session();
+    let mut session = lock_or_reset(&session_arc_l428);
     session.runtime.input_lines.push(line);
     session.runtime.waiting_input = false;
     if let Some(ref mut vm) = session.vm {
@@ -434,25 +465,30 @@ pub fn provide_input_line(line: String) {
 
 /// 获取可视化事件
 pub fn get_vis_events() -> Vec<VisEvent> {
-    let session = current_session();
+    let session_arc_l438 = current_session();
+    let session = lock_or_reset(&session_arc_l438);
     session.runtime.vis_event_cache.clone()
 }
 
 /// 清除可视化事件
 pub fn clear_vis_events() {
-    let mut session = current_session();
+    let session_arc_l444 = current_session();
+    let mut session = lock_or_reset(&session_arc_l444);
     session.runtime.vis_event_cache.clear();
 }
 
 /// 读取 VM 内存（按 i32 数组返回）
 pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
-    let session = current_session();
+    let session_arc_l450 = current_session();
+    let session = lock_or_reset(&session_arc_l450);
     if let Some(ref vm) = session.vm {
         let mem = vm.memory_ref();
         let mut result = Vec::new();
         for i in 0..count {
-            let offset = (addr + i * 4) as usize;
-            if offset + 4 <= mem.len() {
+            let word_addr = addr + i * 4;
+            // 统一 NULL 区检查；越界返回 0。
+            if word_addr >= NULL_TRAP_SIZE && word_addr as u64 + 4 <= mem.len() as u64 {
+                let offset = word_addr as usize;
                 let bytes = &mem[offset..offset + 4];
                 let val = i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
                 result.push(val);
@@ -468,15 +504,18 @@ pub fn read_memory(addr: u32, count: u32) -> Vec<i32> {
 
 /// 获取结构体字段定义（字段名, 偏移量）
 pub fn get_struct_fields(name: String) -> Vec<(String, i32)> {
-    let session = current_session();
+    let session_arc_l474 = current_session();
+    let session = lock_or_reset(&session_arc_l474);
     session.compile.struct_fields.get(&name).cloned().unwrap_or_default()
 }
 
 /// 重置会话
 pub fn reset_session() {
-    let mut session = current_session();
+    let session_arc_l480 = current_session();
+    let mut session = lock_or_reset(&session_arc_l480);
     *session = Session::default();
-    let mut engine = current_unified_engine();
+    let engine_arc_l482 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l482);
     engine.reset();
 }
 
@@ -492,7 +531,8 @@ pub fn compile_and_run(source: String) -> UnifiedRunResult {
 
 /// 多文件编译并初始化统一模式执行环境
 pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
-    let mut session = current_session();
+    let session_arc_l498 = current_session();
+    let mut session = lock_or_reset(&session_arc_l498);
 
     // 编译
     session.compile.compile_units.clear();
@@ -514,7 +554,8 @@ pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
     }
 
     // 重置统一模式引擎
-    let mut engine = current_unified_engine();
+    let engine_arc_l520 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l520);
     engine.reset();
 
     // 初始化 VM
@@ -539,8 +580,10 @@ pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
 
 /// 批量自动执行。
 pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
-    let mut session = current_session();
-    let mut engine = current_unified_engine();
+    let session_arc_l545 = current_session();
+    let mut session = lock_or_reset(&session_arc_l545);
+    let engine_arc_l546 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l546);
 
     let mut vm = session.vm.take().unwrap_or_default();
     let result = match engine.run_batch(&mut vm, &mut session, batch_size) {
@@ -566,8 +609,10 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
 
 /// Seek 到指定步。
 pub fn seek_to_step(target: i32) -> SeekResult {
-    let mut session = current_session();
-    let mut engine = current_unified_engine();
+    let session_arc_l572 = current_session();
+    let mut session = lock_or_reset(&session_arc_l572);
+    let engine_arc_l573 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l573);
 
     let mut vm = session.vm.take().unwrap_or_default();
     let result = engine.seek_to(target, &mut vm, &mut session);
@@ -578,8 +623,10 @@ pub fn seek_to_step(target: i32) -> SeekResult {
 
 /// 单步执行（统一模式）。
 pub fn step_next_unified() -> Option<StepPayload> {
-    let mut session = current_session();
-    let mut engine = current_unified_engine();
+    let session_arc_l584 = current_session();
+    let mut session = lock_or_reset(&session_arc_l584);
+    let engine_arc_l585 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l585);
 
     let mut vm = session.vm.take().unwrap_or_default();
     let step = vm.get_executed_steps();
@@ -606,19 +653,22 @@ pub fn step_next_unified() -> Option<StepPayload> {
 
 /// 暂停自动执行。
 pub fn pause_execution() {
-    let mut engine = current_unified_engine();
+    let engine_arc_l612 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l612);
     engine.pause();
 }
 
 /// 恢复自动执行。
 pub fn resume_execution() {
-    let mut engine = current_unified_engine();
+    let engine_arc_l618 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l618);
     engine.resume();
 }
 
 /// 获取执行热力图。
 pub fn get_heatmap() -> HeatmapData {
-    let session = current_session();
+    let session_arc_l624 = current_session();
+    let session = lock_or_reset(&session_arc_l624);
     let line_counts: Vec<(i32, u64)> = session.runtime.heatmap.line_counts.iter().map(|(&k, &v)| (k, v)).collect();
     let max_count = session.runtime.heatmap.max_count();
     HeatmapData { line_counts, max_count }
@@ -626,7 +676,8 @@ pub fn get_heatmap() -> HeatmapData {
 
 /// 获取指定范围的 StepPayload。
 pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
-    let engine = current_unified_engine();
+    let engine_arc_l632 = current_unified_engine();
+    let engine = lock_or_reset(&engine_arc_l632);
     engine.get_payloads(start, end)
 }
 
@@ -661,8 +712,10 @@ pub fn run_auto_steps_stream(
 
 /// 从指定步继续执行。
 pub fn continue_from_step(step: i32) -> UnifiedRunResult {
-    let mut session = current_session();
-    let mut engine = current_unified_engine();
+    let session_arc_l667 = current_session();
+    let mut session = lock_or_reset(&session_arc_l667);
+    let engine_arc_l668 = current_unified_engine();
+    let mut engine = lock_or_reset(&engine_arc_l668);
 
     let mut vm = session.vm.take().unwrap_or_default();
 
@@ -694,6 +747,7 @@ use crate::engine::completion::CompletionCandidate;
 
 /// 获取光标位置的语义补全候选
 pub fn get_completion_candidates(source: String, line: i32, column: i32, prefix: String) -> Vec<CompletionCandidate> {
-    let session = current_session();
+    let session_arc_l700 = current_session();
+    let session = lock_or_reset(&session_arc_l700);
     crate::engine::completion::get_completion_candidates(&session, &source, line as usize, column as usize, &prefix)
 }

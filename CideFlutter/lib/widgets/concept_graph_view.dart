@@ -217,7 +217,6 @@ class _ConceptGraphPainter extends CustomPainter {
       ("控制流", _domainColor("ControlFlow")),
     ];
     double x = 12;
-    const y = 12.0;
     final List<_LegendItem> result = [];
     for (final (label, color) in raw) {
       final tp = TextPainter(

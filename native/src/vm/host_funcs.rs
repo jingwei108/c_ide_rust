@@ -384,6 +384,8 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
         host_func_id::TIME => host_time(vm, session),
         host_func_id::CLOCK => host_clock(vm, session),
         host_func_id::ASSERT_FAIL => host_cide_assert_fail(vm, session),
+        host_func_id::SET_ARRAY_GUARD => host_set_array_guard(vm, session),
+        host_func_id::CLEAR_ARRAY_GUARD => host_clear_array_guard(vm, session),
         host_func_id::REMOVE => host_remove(vm, session),
         host_func_id::RENAME => host_rename(vm, session),
         host_func_id::STRPBRK => host_strpbrk(vm, session),
@@ -2433,6 +2435,18 @@ pub fn host_clock(vm: &mut CideVM, _session: &mut Session) {
 pub fn host_cide_assert_fail(vm: &mut CideVM, session: &mut Session) {
     session.runtime.output_lines.push("🚫 断言失败 (assertion failed)".to_string());
     vm.set_finished(1);
+}
+
+pub fn host_set_array_guard(vm: &mut CideVM, _session: &mut Session) {
+    let base_addr = vm.pop() as u32;
+    vm.pending_array_construction = Some(crate::vm::vm::ArrayConstructionGuard {
+        base_addr,
+        frame_depth: vm.call_stack_len(),
+    });
+}
+
+pub fn host_clear_array_guard(vm: &mut CideVM, _session: &mut Session) {
+    vm.pending_array_construction = None;
 }
 
 pub fn host_remove(vm: &mut CideVM, session: &mut Session) {

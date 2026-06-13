@@ -493,8 +493,14 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     // 同步外部 source 变更（如文件切换、修复应用）
     // 当 document 正被本地编辑时（IME / 自绘键盘），禁止把滞后的 state.source 回写，
     // 否则会和输入发生 race condition，导致文本错乱或光标跳回。
+    // 在 build 期间直接调用 setText 可能触发 notifyListeners()，因此延迟到帧末执行。
     if (!_documentDirty && _document.text != state.source) {
-      _document.setText(state.source);
+      final newSource = state.source;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_documentDirty && _document.text != newSource) {
+          _document.setText(newSource);
+        }
+      });
     }
 
     // 更新运行时高亮状态

@@ -83,6 +83,14 @@ pub enum StepResult {
     WaitingInput,
 }
 
+#[derive(Debug, Clone)]
+pub struct ArrayConstructionGuard {
+    /// `new[]` 分配返回给用户的指针之前 4 字节的 base 地址（存储 count）。
+    pub base_addr: u32,
+    /// 设置 guard 时的 call_stack 深度，用于确认 guard 设置者的栈帧仍然存在。
+    pub frame_depth: usize,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AccessType {
     Read,
@@ -127,6 +135,8 @@ pub struct CideVM {
     local_sym_map: HashMap<i32, String>,
     global_sym_map: HashMap<i32, String>,
     pub(crate) freed_logs: Vec<FreedRegionInfo>,
+    /// 当前未完成的 `new T[n]` 构造守卫。若构造过程中 trap，用于回滚释放内存。
+    pub pending_array_construction: Option<ArrayConstructionGuard>,
     // --- 增量快照脏页追踪 ---
     dirty_pages: [u64; 4], // 256 页 bitmap（4 × 64bit）
     // --- JIT ---
@@ -176,6 +186,7 @@ impl CideVM {
             local_sym_map: HashMap::new(),
             global_sym_map: HashMap::new(),
             freed_logs: Vec::new(),
+            pending_array_construction: None,
             dirty_pages: [0; 4],
             ip_hits: HashMap::new(),
             trace_recorder: TraceRecorder::new(),
@@ -501,7 +512,7 @@ impl CideVM {
         // VM Call convention: first param is at locals_base + 0
         // 当前 call_user_function 仅用于 qsort 回调（参数均为 4 字节指针）。
         // 若未来扩展为 8 字节参数（double/long long），需按 type_size 选择 store_i32/store_i64。
-        debug_assert!(
+        assert!(
             meta.param_sizes.iter().all(|&sz| sz == 1),
             "call_user_function 暂不支持非 4 字节参数（param_sizes {:?}）",
             meta.param_sizes
@@ -516,9 +527,8 @@ impl CideVM {
         let zero_end = locals_base + meta.local_count as u32;
         if zero_end > zero_start {
             for addr in zero_start..zero_end {
-                self.memory[addr as usize] = 0;
+                self.store_i8(addr, 0, &SourceLoc::default());
             }
-            self.mark_dirty_page(zero_start, zero_end - zero_start);
         }
         let func_name = if idx < self.func_names.len() {
             self.func_names[idx].clone()
@@ -662,7 +672,8 @@ impl CideVM {
         let a = addr as usize;
         let bytes = s.as_bytes();
         let total = bytes.len() + 1;
-        if a + total > self.memory.len() {
+        // 统一边界检查：NULL 区、上界、UAF。
+        if !self.check_mem_access(addr, total as u32, &SourceLoc::default(), true) {
             return;
         }
         if let Some(log) = self.check_uaf(addr, total as u32) {
@@ -675,12 +686,57 @@ impl CideVM {
         self.mark_dirty_page(addr, total as u32);
     }
 
+    pub(crate) fn call_stack_len(&self) -> usize {
+        self.call_stack.len()
+    }
+
     pub fn memory_ref(&self) -> &[u8] {
         &self.memory
     }
 
     pub fn memory_ref_mut(&mut self) -> &mut [u8] {
         &mut self.memory
+    }
+
+    /// 若存在未完成的 `new T[n]` 构造守卫，释放其底层内存块。
+    /// 在 VM trap 或运行结束时调用，防止构造失败导致内存泄漏。
+    pub fn rollback_pending_array_construction(&mut self, session: &mut Session) {
+        if let Some(guard) = self.pending_array_construction.take() {
+            // 仅当设置 guard 的栈帧仍然存在时才执行回滚（避免跨函数边界误释放）。
+            if self.call_stack.len() >= guard.frame_depth {
+                self.free_memory(session, guard.base_addr);
+            }
+        }
+    }
+
+    fn free_memory(&mut self, session: &mut Session, addr: u32) {
+        if addr == 0 {
+            return;
+        }
+        // 避免 double-free 记录重复（已释放则静默跳过）。
+        if self.freed_logs.iter().any(|log| log.addr == addr) {
+            return;
+        }
+        for r in &mut session.memory.regions {
+            if r.addr == addr && !r.is_freed {
+                r.is_freed = true;
+                let aligned_size = ((r.size as u32) + 3) & !3;
+                self.freed_logs.push(FreedRegionInfo {
+                    addr: r.addr,
+                    size: aligned_size,
+                    alloc_line: r.alloc_line,
+                    freed_line: self.get_current_line(),
+                    alloc_step: 0,
+                    freed_step: self.get_executed_steps(),
+                });
+                session.memory.free_list.push(crate::session::FreeBlock {
+                    addr: r.addr,
+                    size: aligned_size as i32,
+                });
+                session.memory.merge_free_list();
+                break;
+            }
+        }
     }
 
     pub fn qsort_depth(&self) -> i32 {
@@ -1038,7 +1094,9 @@ impl CideVM {
             let mut elements = Vec::with_capacity(array_size as usize);
             for i in 0..array_size {
                 let addr = vaddr + (i as u32) * (elem_size as u32);
-                if addr + (elem_size as u32) > MEM_SIZE {
+                let elem_size_u32 = elem_size as u32;
+                // NULL 区检查；上界在后续索引前已经判断。
+                if addr < NULL_TRAP_SIZE || addr + elem_size_u32 > MEM_SIZE {
                     break;
                 }
                 let val_str = match base_kind {

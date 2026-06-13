@@ -1,29 +1,31 @@
-use cide_native::vm::vm::CideVM;
+use cide_native::vm::vm::{CideVM, NULL_TRAP_SIZE};
 
 #[test]
 fn test_write_cstring_basic() {
     let mut vm = CideVM::default();
-    vm.write_cstring(0, "hello");
-    assert_eq!(&vm.memory_ref()[..6], b"hello\0");
+    let addr = NULL_TRAP_SIZE;
+    vm.write_cstring(addr, "hello");
+    assert_eq!(&vm.memory_ref()[addr as usize..addr as usize + 6], b"hello\0");
 }
 
 #[test]
 fn test_write_cstring_at_offset() {
     let mut vm = CideVM::default();
-    vm.write_cstring(10, "world");
-    assert_eq!(&vm.memory_ref()[10..16], b"world\0");
+    let addr = NULL_TRAP_SIZE + 10;
+    vm.write_cstring(addr, "world");
+    assert_eq!(&vm.memory_ref()[addr as usize..addr as usize + 6], b"world\0");
     // 之前的区域不应被修改
-    assert_eq!(vm.memory_ref()[0..10].iter().sum::<u8>(), 0);
+    assert_eq!(vm.memory_ref()[NULL_TRAP_SIZE as usize..addr as usize].iter().sum::<u8>(), 0);
 }
 
 #[test]
 fn test_write_cstring_exact_fit() {
     let mut vm = CideVM::default();
-    let addr = 100;
-    vm.write_cstring(addr as u32, "hello");
+    let addr = NULL_TRAP_SIZE + 100;
+    vm.write_cstring(addr, "hello");
     // "hello" is 5 bytes + null = 6
     let mem = vm.memory_ref();
-    assert_eq!(&mem[addr..addr + 6], b"hello\0");
+    assert_eq!(&mem[addr as usize..addr as usize + 6], b"hello\0");
 }
 
 #[test]
@@ -49,17 +51,28 @@ fn test_write_cstring_offset_boundary() {
 #[test]
 fn test_write_cstring_empty_string() {
     let mut vm = CideVM::default();
-    vm.write_cstring(0, "");
-    // empty string writes just '\0' at addr 0
-    assert_eq!(vm.memory_ref()[0], 0);
+    let addr = NULL_TRAP_SIZE;
+    vm.write_cstring(addr, "");
+    // empty string writes just '\0' at addr
+    assert_eq!(vm.memory_ref()[addr as usize], 0);
+}
+
+#[test]
+fn test_write_cstring_null_trap_rejected() {
+    let mut vm = CideVM::default();
+    let before = vm.memory_ref()[0..16].to_vec();
+    vm.write_cstring(0, "hello"); // NULL 区应拒绝写入
+    assert_eq!(&vm.memory_ref()[0..16], &before[..]);
 }
 
 #[test]
 fn test_write_cstring_chinese() {
     let mut vm = CideVM::default();
     let s = "你好";
-    vm.write_cstring(0, s);
-    let written = &vm.memory_ref()[..s.len() + 1];
+    let addr = NULL_TRAP_SIZE;
+    vm.write_cstring(addr, s);
+    let base = addr as usize;
+    let written = &vm.memory_ref()[base..base + s.len() + 1];
     assert_eq!(&written[..s.len()], s.as_bytes());
     assert_eq!(written[s.len()], 0);
 }

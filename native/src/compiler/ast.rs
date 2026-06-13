@@ -534,67 +534,6 @@ impl Type {
         }
     }
 
-    /// 从 TypeKind 和可选名称重建基础类型。仅用于旧代码兼容路径。
-    pub fn from_base_kind(base_kind: TypeKind, name: String) -> Self {
-        match base_kind {
-            TypeKind::Void => Type::Void { is_const: false },
-            TypeKind::Int => Type::Int {
-                is_unsigned: false,
-                is_const: false,
-            },
-            TypeKind::Char => Type::Char {
-                is_unsigned: false,
-                is_const: false,
-            },
-            TypeKind::Float => Type::Float { is_const: false },
-            TypeKind::Double => Type::Double { is_const: false },
-            TypeKind::LongLong => Type::LongLong {
-                is_unsigned: false,
-                is_const: false,
-            },
-            TypeKind::Struct => Type::Struct { name, is_const: false },
-            TypeKind::Union => Type::Union { name, is_const: false },
-            TypeKind::Class => Type::Class { name, is_const: false },
-            TypeKind::TemplateId => Type::Class { name, is_const: false },
-            TypeKind::Pointer => {
-                let inferred_base = match name.as_str() {
-                    "char" => Type::Char {
-                        is_unsigned: false,
-                        is_const: false,
-                    },
-                    "float" => Type::Float { is_const: false },
-                    "void" => Type::Void { is_const: false },
-                    _ => Type::Int {
-                        is_unsigned: false,
-                        is_const: false,
-                    },
-                };
-                Type::Pointer {
-                    pointee: Box::new(inferred_base),
-                    is_const: false,
-                }
-            }
-            TypeKind::Array => Type::Array {
-                element: Box::new(Type::Void { is_const: false }),
-                array_size: 0,
-                dims: vec![],
-                is_const: false,
-                is_vla: false,
-                vla_dims: vec![],
-            },
-            TypeKind::Function => Type::Function {
-                return_type: Box::new(Type::int()),
-                param_types: vec![],
-                is_const: false,
-            },
-            TypeKind::Reference => Type::Reference {
-                base: Box::new(Type::int()),
-                is_const: false,
-            },
-            TypeKind::RValueRef => Type::RValueRef { base: Box::new(Type::int()) },
-            TypeKind::Auto => Type::Auto,
-        }
-    }
 }
 
 impl std::fmt::Display for Type {
@@ -900,6 +839,7 @@ pub enum Expr {
         ty: Type,
     },
 }
+
 
 impl Default for Expr {
     fn default() -> Self {

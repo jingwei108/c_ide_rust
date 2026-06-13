@@ -58,6 +58,10 @@ impl BytecodeGen {
                 self.emit(OpCode::LoadLocal, count_temp, loc);
                 self.emit(OpCode::StoreMem, 0, loc);
 
+                // 设置构造守卫：构造失败时 VM 可回滚释放 base 内存。
+                self.emit(OpCode::LoadLocal, ptr_temp, loc);
+                self.emit(OpCode::CallHost, crate::vm::host_func_id::SET_ARRAY_GUARD as i32, loc);
+
                 if let Type::Class { name, .. } = elem_type {
                     let ctor_name = if let Some(ref init_expr) = init {
                         if let Expr::Call { name: ctor_name, .. } = init_expr.as_ref() {
@@ -101,6 +105,9 @@ impl BytecodeGen {
                         self.patch_jump(cond_jump, loop_end);
                     }
                 }
+
+                // 构造成功，清除守卫
+                self.emit(OpCode::CallHost, crate::vm::host_func_id::CLEAR_ARRAY_GUARD as i32, loc);
 
                 // 返回 user_ptr
                 self.emit(OpCode::LoadLocal, user_ptr_temp, loc);

@@ -1127,6 +1127,10 @@ impl Parser {
             line: self.current().line,
             column: self.current().column,
         };
+        // 消费当前 token，防止外层 parse_statement 在相同位置无限循环。
+        if !self.is_at_end() {
+            self.advance();
+        }
         Expr::Literal { value: 0, loc, ty: Type::int() }
     }
 }

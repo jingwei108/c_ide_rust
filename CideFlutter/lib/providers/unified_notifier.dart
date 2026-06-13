@@ -7,18 +7,15 @@ import 'package:cide/src/rust/unified/types.dart' as types;
 import '../models/unified_state.dart';
 import 'ide_provider.dart';
 
-class UnifiedNotifier extends Notifier<UnifiedState> {
+class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   StreamSubscription<stream.StepStreamBatch>? _streamSubscription;
 
   @override
   UnifiedState build() {
+    ref.onDispose(() {
+      _streamSubscription?.cancel();
+    });
     return const UnifiedState();
-  }
-
-  @override
-  void dispose() {
-    _streamSubscription?.cancel();
-    super.dispose();
   }
 
   // ========== 编译与启动 ==========

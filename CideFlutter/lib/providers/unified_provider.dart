@@ -5,4 +5,4 @@ import 'unified_notifier.dart';
 export 'unified_notifier.dart';
 export '../models/unified_state.dart';
 
-final unifiedProvider = NotifierProvider<UnifiedNotifier, UnifiedState>(UnifiedNotifier.new);
+final unifiedProvider = AutoDisposeNotifierProvider<UnifiedNotifier, UnifiedState>(UnifiedNotifier.new);

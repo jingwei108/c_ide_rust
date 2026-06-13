@@ -5,6 +5,7 @@ use crate::vm::vfs::VirtualFileSystem;
 use crate::vm::vm::CideVM;
 use flutter_rust_bridge::frb;
 use std::collections::HashMap;
+use std::ffi::CString;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct CompileUnit {
@@ -72,6 +73,8 @@ pub struct AlgorithmMatch {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CompileState {
     pub errors: String,
+    /// 最近一次 `cide_get_compile_errors` 返回的 C 字符串缓存，避免返回 `String` 内部指针导致悬垂。
+    pub last_errors_cstring: Option<CString>,
     pub compile_units: Vec<CompileUnit>,
     pub compiled: bool,
     pub bytecode: Vec<Instruction>,
@@ -150,6 +153,8 @@ pub enum InputMode {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct RuntimeState {
     pub error: String,
+    /// 最近一次 `cide_get_runtime_error` 返回的 C 字符串缓存，避免返回 `String` 内部指针导致悬垂。
+    pub last_error_cstring: Option<CString>,
     pub error_buffer: String,
     pub output_lines: Vec<String>,
     pub running: bool,

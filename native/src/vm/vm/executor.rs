@@ -16,7 +16,10 @@ impl CideVM {
                                 self.stack.last().copied().unwrap_or(0) as i32
                             };
                         }
-                        StepResult::Trap => return 0,
+                        StepResult::Trap => {
+                    self.rollback_pending_array_construction(session);
+                    return 0;
+                }
                         StepResult::Paused => {
                             self.trap("完整运行模式下遇到暂停状态（可能是断点配置不一致）", &SourceLoc::default());
                             return 0;
@@ -40,7 +43,10 @@ impl CideVM {
                         self.stack.last().copied().unwrap_or(0) as i32
                     };
                 }
-                StepResult::Trap => return 0,
+                StepResult::Trap => {
+                    self.rollback_pending_array_construction(session);
+                    return 0;
+                }
                 StepResult::Paused => {
                     self.trap("完整运行模式下遇到暂停状态（可能是断点配置不一致）", &SourceLoc::default());
                     return 0;
@@ -382,11 +388,27 @@ impl CideVM {
                 let dest = self.pop() as u32;
                 let src = self.pop() as u32;
                 let n = self.pop();
-                let mem_size = self.memory_ref().len();
-                if dest as usize >= mem_size || src as usize >= mem_size {
+                let n_u32 = n as u32;
+                // 统一边界检查：NULL 区、上界、UAF。
+                if !self.check_mem_access(dest, n_u32, loc, true)
+                    || !self.check_mem_access(src, n_u32, loc, false)
+                {
                     self.push(dest as u64);
                     return;
                 }
+                if let Some(log) = self.check_uaf(dest, n_u32) {
+                    let msg = self.format_uaf_message(log, true);
+                    self.trap(&msg, loc);
+                    self.push(dest as u64);
+                    return;
+                }
+                if let Some(log) = self.check_uaf(src, n_u32) {
+                    let msg = self.format_uaf_message(log, false);
+                    self.trap(&msg, loc);
+                    self.push(dest as u64);
+                    return;
+                }
+                let mem_size = self.memory_ref().len();
                 let copy_len = (n as usize).min(mem_size - dest as usize).min(mem_size - src as usize);
                 if copy_len > 0 {
                     let buf = {
@@ -404,20 +426,19 @@ impl CideVM {
                 let ptr = self.pop() as u32;
                 let value = self.pop();
                 let size = self.pop();
+                let size_u32 = size as u32;
+                // 统一边界检查：NULL 区、上界、UAF；越界时 trap 而非静默截断。
+                if !self.check_mem_access(ptr, size_u32, loc, true) {
+                    self.push(ptr as u64);
+                    return;
+                }
+                if let Some(log) = self.check_uaf(ptr, size_u32) {
+                    let msg = self.format_uaf_message(log, true);
+                    self.trap(&msg, loc);
+                    self.push(ptr as u64);
+                    return;
+                }
                 let mem_size = self.memory_ref().len();
-                if ptr as usize >= mem_size {
-                    self.push(ptr as u64);
-                    return;
-                }
-                // NULL 指针安全检查（与 host_memset 保持一致）
-                if ptr < NULL_TRAP_SIZE && size > 0 {
-                    self.trap(
-                        &format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", ptr),
-                        loc,
-                    );
-                    self.push(ptr as u64);
-                    return;
-                }
                 let max_write = mem_size - ptr as usize;
                 let write_len = (size as usize).min(max_write);
                 let byte_val = (value & 0xFF) as u8;
@@ -427,13 +448,22 @@ impl CideVM {
             }
             OpCode::Strlen => {
                 let addr = self.pop() as u32;
-                let mem = self.memory_ref();
-                let start = addr as usize;
-                if start >= mem.len() {
+                // 统一 NULL 区检查；上界在扫描时自然处理。
+                if addr < NULL_TRAP_SIZE {
+                    self.trap(
+                        &format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr),
+                        loc,
+                    );
                     self.push(0);
                 } else {
-                    let len = mem[start..].iter().take_while(|&&b| b != 0).count();
-                    self.push(len as u64);
+                    let mem = self.memory_ref();
+                    let start = addr as usize;
+                    if start >= mem.len() {
+                        self.push(0);
+                    } else {
+                        let len = mem[start..].iter().take_while(|&&b| b != 0).count();
+                        self.push(len as u64);
+                    }
                 }
             }
             _ => {}
@@ -976,7 +1006,7 @@ impl CideVM {
         }
         let arg_bytes = word_offset * 4;
         for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
-            self.memory[addr as usize] = 0;
+            self.store_i8(addr, 0, loc);
         }
         self.call_stack.push(CallFrame {
             return_ip: self.ip,
@@ -1366,10 +1396,12 @@ impl CideVM {
         if self.step_count >= self.max_steps {
             let msg = self.format_infinite_loop_error();
             self.trap(&msg, &SourceLoc::default());
+            self.rollback_pending_array_construction(session);
             return StepResult::Trap;
         }
         if self.cancelled {
             self.trap("执行已取消。", &SourceLoc::default());
+            self.rollback_pending_array_construction(session);
             return StepResult::Trap;
         }
 
@@ -1408,6 +1440,9 @@ impl CideVM {
             if self.trace_recorder.is_recording() {
                 self.trace_recorder.reset();
             }
+            if matches!(r, StepResult::Trap) {
+                self.rollback_pending_array_construction(session);
+            }
             return r;
         }
 
@@ -1426,6 +1461,7 @@ impl CideVM {
         }
 
         if !self.error.is_empty() {
+            self.rollback_pending_array_construction(session);
             StepResult::Trap
         } else {
             StepResult::Ok

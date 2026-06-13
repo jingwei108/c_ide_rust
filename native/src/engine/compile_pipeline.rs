@@ -362,11 +362,6 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         push_hints(session, &type_hints, full_source, None);
     }
 
-    // Debug: check f's init in main
-    println!("DEBUG: program.funcs count={}", program.funcs.len());
-    for f in &program.funcs {
-        println!("DEBUG: func name={}, body_is_some={}", f.name, f.body.is_some());
-    }
     // 4. BytecodeGen
     let gen = BytecodeGen::with_mode(false);
     let output = match gen.generate(&mut program) {

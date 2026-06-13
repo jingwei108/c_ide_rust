@@ -206,6 +206,7 @@ class _LearningPathPanelState extends ConsumerState<LearningPathPanel> {
         // Switch to knowledge card tab would be handled by parent or state
         break;
       case 'StudyTemplate':
+        final navigator = Navigator.of(context);
         final templates = await getDynamicTemplates();
         final template = templates.firstWhere(
           (t) => t.key == step.targetId,
@@ -218,7 +219,7 @@ class _LearningPathPanelState extends ConsumerState<LearningPathPanel> {
         if (template.tutorialSteps.isNotEmpty) {
           notifier.startTutorial(template, generated);
         }
-        Navigator.pop(context);
+        navigator.pop();
         break;
       case 'CompleteExercise':
         // Show a snackbar with exercise description for now

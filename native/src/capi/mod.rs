@@ -1,8 +1,8 @@
 #![allow(clippy::missing_safety_doc)]
 
 use crate::session::*;
-use crate::vm::vm::CideVM;
-use std::ffi::{c_char, c_int, CStr};
+use crate::vm::vm::{CideVM, NULL_TRAP_SIZE};
+use std::ffi::{c_char, c_int, CStr, CString};
 use std::ptr;
 use std::slice;
 
@@ -191,7 +191,7 @@ pub fn dump_var_decls(stmt: &crate::compiler::ast::Stmt, _depth: i32) {
 /// 返回指向编译错误字符串的指针。
 ///
 /// # 安全性
-/// 返回的指针仅在下次调用 `cide_compile` / `cide_compile_all` 之前有效。
+/// 返回的指针由 `Session` 内部 `CString` 缓存持有，在下次调用本函数或销毁 Session 之前有效。
 /// 调用方应立即复制数据，不要长期保存此指针。
 #[no_mangle]
 pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_char {
@@ -202,7 +202,14 @@ pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_ch
     if session.compile.errors.is_empty() {
         return ptr::null();
     }
-    session.compile.errors.as_ptr() as *const c_char
+    match CString::new(session.compile.errors.clone()) {
+        Ok(cstring) => {
+            let ptr = cstring.as_ptr();
+            session.compile.last_errors_cstring = Some(cstring);
+            ptr
+        }
+        Err(_) => ptr::null(),
+    }
 }
 
 #[no_mangle]
@@ -437,7 +444,7 @@ pub unsafe extern "C" fn cide_breakpoint_clear(s: *mut Session) {
 }
 
 /// # 安全性
-/// 返回的指针仅在下次调用 `cide_run` / `cide_step_next` / `cide_compile` 之前有效。
+/// 返回的指针由 `Session` 内部 `CString` 缓存持有，在下次调用本函数或销毁 Session 之前有效。
 /// 调用方应立即复制数据，不要长期保存此指针。
 #[no_mangle]
 pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_char {
@@ -448,10 +455,14 @@ pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_cha
     if session.runtime.error.is_empty() {
         return ptr::null();
     }
-    if session.runtime.error_buffer != session.runtime.error {
-        session.runtime.error_buffer = session.runtime.error.clone();
+    match CString::new(session.runtime.error.clone()) {
+        Ok(cstring) => {
+            let ptr = cstring.as_ptr();
+            session.runtime.last_error_cstring = Some(cstring);
+            ptr
+        }
+        Err(_) => ptr::null(),
     }
-    session.runtime.error_buffer.as_ptr() as *const c_char
 }
 
 #[no_mangle]
@@ -609,7 +620,7 @@ pub unsafe extern "C" fn cide_memory_get_value(s: *mut Session, addr: u32, out_v
     let session = &*s;
     if let Some(ref vm) = session.vm {
         let mem = vm.memory_ref();
-        if addr as u64 + 4 <= mem.len() as u64 {
+        if addr >= NULL_TRAP_SIZE && addr as u64 + 4 <= mem.len() as u64 {
             let val = i32::from_le_bytes([
                 mem[addr as usize],
                 mem[addr as usize + 1],
@@ -632,7 +643,7 @@ pub unsafe extern "C" fn cide_memory_get_pointer_target(s: *mut Session, addr: u
     let session = &*s;
     if let Some(ref vm) = session.vm {
         let mem = vm.memory_ref();
-        if addr as u64 + 4 <= mem.len() as u64 {
+        if addr >= NULL_TRAP_SIZE && addr as u64 + 4 <= mem.len() as u64 {
             let target = i32::from_le_bytes([
                 mem[addr as usize],
                 mem[addr as usize + 1],

@@ -123,6 +123,10 @@ pub const TIME: u32 = 123;
 pub const CLOCK: u32 = 124;
 pub const ASSERT_FAIL: u32 = 125;
 
+// C++ new[] 构造守卫（构造失败时回滚释放内存）
+pub const SET_ARRAY_GUARD: u32 = 131;
+pub const CLEAR_ARRAY_GUARD: u32 = 132;
+
 // stdio 扩展
 pub const REMOVE: u32 = 126;
 pub const RENAME: u32 = 127;

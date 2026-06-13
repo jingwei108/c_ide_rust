@@ -11,14 +11,15 @@ import '../models/learning_progress.dart';
 import '../services/learning_progress_service.dart';
 import 'unified_provider.dart';
 
-class IdeNotifier extends Notifier<IdeState> {
-  // 当前使用全局单例 Notifier，dispose() 不会被调用；
-  // 若未来改为 AutoDisposeNotifier，需通过 ref.onDispose 释放 _outputController。
+class IdeNotifier extends AutoDisposeNotifier<IdeState> {
   final _outputController = TextEditingController();
   TextEditingController get outputController => _outputController;
 
   @override
   IdeState build() {
+    ref.onDispose(() {
+      _outputController.dispose();
+    });
     // 延迟加载持久化进度
     Future.microtask(_loadProgress);
     return const IdeState();
@@ -104,7 +105,9 @@ class IdeNotifier extends Notifier<IdeState> {
     state = state.copyWith(currentFile: filename, source: file.source);
   }
 
-  Future<void> compile() async {
+  /// 仅执行编译并更新状态，不启动统一模式或运行代码。
+  /// run()/step() 等需要编译后执行的场景应调用此方法，避免重复执行。
+  Future<bool> compileOnly() async {
     state = state.copyWith(isCompiling: true, output: '', clearError: true);
     try {
       // 同步当前编辑器内容到 files
@@ -169,20 +172,33 @@ class IdeNotifier extends Notifier<IdeState> {
         learningProgress: newProgress,
       );
       await _saveProgress();
-
-      // 编译成功后启动统一模式
-      if (result.success) {
-        final unifiedNotifier = ref.read(unifiedProvider.notifier);
-        await unifiedNotifier.compileAndRunMulti(syncFiles);
-      }
+      return result.success;
     } catch (e) {
       state = state.copyWith(isCompiling: false, error: '编译异常: $e');
+      return false;
+    }
+  }
+
+  Future<void> compile() async {
+    // 同步当前编辑器内容到 files
+    final syncFiles = state.files.map((f) {
+      if (f.filename == state.currentFile) {
+        return f.copyWith(source: state.source);
+      }
+      return f;
+    }).toList();
+
+    final success = await compileOnly();
+    // 编译成功后启动统一模式
+    if (success) {
+      final unifiedNotifier = ref.read(unifiedProvider.notifier);
+      await unifiedNotifier.compileAndRunMulti(syncFiles);
     }
   }
 
   Future<void> run() async {
     if (!state.isRunning) {
-      await compile();
+      await compileOnly();
       if (state.hasErrors) {
         state = state.copyWith(error: '请先修复编译错误');
         return;
@@ -204,7 +220,7 @@ class IdeNotifier extends Notifier<IdeState> {
 
   Future<void> step() async {
     if (!state.isRunning) {
-      await compile();
+      await compileOnly();
       if (state.hasErrors) {
         state = state.copyWith(error: '请先修复编译错误');
         return;

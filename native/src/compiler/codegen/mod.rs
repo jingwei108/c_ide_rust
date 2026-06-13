@@ -1077,7 +1077,11 @@ fn compute_stride(arr_type: &Type, elem_size: i32) -> i32 {
                 // or corrupted AST. Return 0 as sentinel.
                 return 0;
             }
-            stride *= dim;
+            stride = stride.checked_mul(dim).unwrap_or(0);
+            if stride == 0 {
+                // Overflow: dimension product exceeds i32 range.
+                return 0;
+            }
         }
         stride
     } else if let Type::Pointer { pointee, .. } = arr_type {
@@ -1088,7 +1092,10 @@ fn compute_stride(arr_type: &Type, elem_size: i32) -> i32 {
                 if dim <= 0 {
                     return 0;
                 }
-                stride *= dim;
+                stride = stride.checked_mul(dim).unwrap_or(0);
+                if stride == 0 {
+                    return 0;
+                }
             }
             stride
         } else {
