@@ -294,7 +294,10 @@ impl MemoryState {
                 let head_size = addr - block.addr;
                 self.free_list[i].size = head_size as i32;
                 if tail_size > 0 {
-                    self.free_list.push(FreeBlock { addr: alloc_end, size: tail_size as i32 });
+                    self.free_list.push(FreeBlock {
+                        addr: alloc_end,
+                        size: tail_size as i32,
+                    });
                 }
                 i += 1;
             } else if block.addr < addr {

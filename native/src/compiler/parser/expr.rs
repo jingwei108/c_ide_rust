@@ -881,6 +881,7 @@ impl Parser {
                         method: member_tok.text,
                         args,
                         is_virtual: false,
+                        resolved_mangled: None,
                         loc,
                         ty: Type::default(),
                     };
@@ -1108,11 +1109,7 @@ impl Parser {
                 line: name_tok.line,
                 column: name_tok.column,
             };
-            return Expr::Identifier {
-                name,
-                loc,
-                ty: Type::default(),
-            };
+            return Expr::Identifier { name, loc, ty: Type::default() };
         }
         if self.match_token(TokenType::LParen) {
             let expr = self.parse_expression();

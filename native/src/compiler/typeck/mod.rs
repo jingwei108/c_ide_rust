@@ -47,7 +47,9 @@ pub(crate) struct MethodSig {
 pub(crate) struct ClassSymbol {
     pub fields: Vec<(Type, String, AccessSpec)>,
     pub static_fields: Vec<(Type, String, AccessSpec)>,
-    pub methods: HashMap<String, MethodSig>,
+    /// Method overloads keyed by the un-mangled method name. Each vector holds all
+    /// overloads (including constructors and destructors) sharing that name.
+    pub methods: HashMap<String, Vec<MethodSig>>,
     #[allow(dead_code)]
     pub base: Option<String>,
     pub vtable: Option<VTable>,
@@ -272,90 +274,21 @@ impl TypeChecker {
             }
         }
 
-        // Pass 2.3: Register class methods as mangled global functions
-        for c in &program.classes {
-            for member in &c.members {
-                if let ClassMember::Method { name, ret, params, is_const, is_static, .. } = member {
-                    let mangled = format!("{}__{}", c.name, name);
-                    let param_types: Vec<Type> = if *is_static {
-                        params.iter().map(|p| p.ty.clone()).collect()
-                    } else {
-                        std::iter::once(Type::Pointer {
-                            pointee: Box::new(Type::Class {
-                                name: c.name.clone(),
-                                is_const: *is_const,
-                            }),
-                            is_const: *is_const,
-                        })
-                        .chain(params.iter().map(|p| p.ty.clone()))
-                        .collect()
-                    };
-                    let new_sym = FuncSymbol {
-                        return_type: ret.clone(),
-                        param_types,
-                    };
-                    if let Some(existing) = self.funcs.get(&mangled) {
-                        if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
-                            self.report_error(
-                                &format!("方法 '{}' 的声明与之前定义签名不一致", mangled),
-                                &c.loc,
-                                ErrorCode::E3003_FuncRedeclared,
-                            );
-                        }
-                        continue;
-                    }
-                    self.funcs.insert(mangled, new_sym);
-                }
-                if let ClassMember::Constructor { params, .. } = member {
-                    let mangled = if params.is_empty() {
-                        format!("__ctor__{}", c.name)
-                    } else {
-                        format!("__ctor__{}__{}", c.name, params.len())
-                    };
-                    let param_types: Vec<Type> = std::iter::once(Type::Pointer {
-                        pointee: Box::new(Type::Class {
-                            name: c.name.clone(),
-                            is_const: false,
-                        }),
-                        is_const: false,
-                    })
-                    .chain(params.iter().map(|p| p.ty.clone()))
-                    .collect();
-                    let new_sym = FuncSymbol {
-                        return_type: Type::void(),
-                        param_types,
-                    };
-                    if self.funcs.contains_key(&mangled) {
-                        continue;
-                    }
-                    self.funcs.insert(mangled, new_sym);
-                }
-                if let ClassMember::Destructor { .. } = member {
-                    let mangled = format!("__dtor__{}", c.name);
-                    let param_types = vec![Type::Pointer {
-                        pointee: Box::new(Type::Class {
-                            name: c.name.clone(),
-                            is_const: false,
-                        }),
-                        is_const: false,
-                    }];
-                    let new_sym = FuncSymbol {
-                        return_type: Type::void(),
-                        param_types,
-                    };
-                    if self.funcs.contains_key(&mangled) {
-                        continue;
-                    }
-                    self.funcs.insert(mangled, new_sym);
-                }
-            }
-        }
-
+        // Class methods, constructors, and destructors are already registered as
+        // mangled global function symbols by register_single_class_layout, including
+        // overload-aware names (Class__method__N) when a class contains multiple
+        // overloads of the same method.
         // Pass 2.4: Register class static fields as mangled global variables
         let mut static_field_globals: Vec<GlobalDecl> = Vec::new();
         for c in &program.classes {
             for member in &c.members {
-                if let ClassMember::Field { name: field_name, ty, is_static: true, .. } = member {
+                if let ClassMember::Field {
+                    name: field_name,
+                    ty,
+                    is_static: true,
+                    ..
+                } = member
+                {
                     let mangled = format!("{}__{}", c.name, field_name);
                     if !program.globals.iter().any(|g| g.name == mangled) {
                         static_field_globals.push(GlobalDecl {
@@ -905,7 +838,12 @@ impl TypeChecker {
             if t_base.as_ref() == value {
                 return true;
             }
-            if t_base.kind() == value.kind() && matches!(t_base.kind(), TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong) {
+            if t_base.kind() == value.kind()
+                && matches!(
+                    t_base.kind(),
+                    TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+                )
+            {
                 return true;
             }
             if let Type::Pointer { pointee: t_pt, .. } = t_base.as_ref() {
@@ -949,7 +887,11 @@ impl TypeChecker {
 
     /// 判断表达式是否为左值（可被取地址的表达式）。
     /// 尝试隐式实例化函数模板，返回 (mangled_name, FuncDecl) 但不注册到 program。
-    pub(crate) fn try_instantiate_template(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, Option<FuncDecl>)> {
+    pub(crate) fn try_instantiate_template(
+        &mut self,
+        name: &str,
+        arg_types: &[Type],
+    ) -> Option<(String, Option<FuncDecl>)> {
         self.try_monomorphize_func(name, arg_types)
     }
 
@@ -1013,9 +955,106 @@ impl TypeChecker {
         }
         (None, None)
     }
-    pub(crate) fn find_class_method(&self, class_name: &str, method_name: &str) -> Option<MethodSig> {
+    pub(crate) fn find_class_method_sigs(&self, class_name: &str, method_name: &str) -> Option<Vec<MethodSig>> {
         let sym = self.classes.get(class_name)?;
         sym.methods.get(method_name).cloned()
+    }
+
+    /// Resolve a non-constructor method overload from the given class.
+    /// Returns the matching signature and the mangled function name to call.
+    pub(crate) fn resolve_method_overload(
+        &self,
+        class_name: &str,
+        method_name: &str,
+        arg_types: &[Type],
+    ) -> Option<(MethodSig, String)> {
+        let sigs = self.find_class_method_sigs(class_name, method_name)?;
+        let mut best: Option<(MethodSig, usize)> = None;
+        for sig in &sigs {
+            if sig.param_types.len() != arg_types.len() {
+                continue;
+            }
+            let mut score = 0usize;
+            let mut ok = true;
+            for (param, arg) in sig.param_types.iter().zip(arg_types.iter()) {
+                let s = self.overload_match_score(param, arg);
+                if s == 0 {
+                    ok = false;
+                    break;
+                }
+                score += s;
+            }
+            if !ok {
+                continue;
+            }
+            match &best {
+                None => best = Some((sig.clone(), score)),
+                Some((_, cur)) if score > *cur => best = Some((sig.clone(), score)),
+                _ => {}
+            }
+        }
+        best.map(|(sig, _)| {
+            let mangled = if sigs.len() <= 1 {
+                format!("{}__{}", class_name, method_name)
+            } else {
+                format!("{}__{}__{}", class_name, method_name, sig.param_types.len())
+            };
+            (sig, mangled)
+        })
+    }
+
+    /// Non-reporting compatibility score for overload resolution.
+    fn overload_match_score(&self, param: &Type, arg: &Type) -> usize {
+        if param == arg {
+            return 3;
+        }
+        // Reference binding
+        if let Type::Reference { base, .. } = param {
+            if base.as_ref() == arg {
+                return 3;
+            }
+            if base.kind() == arg.kind()
+                && matches!(
+                    base.kind(),
+                    TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+                )
+            {
+                return 2;
+            }
+            if let Type::Pointer { pointee: pb, .. } = base.as_ref() {
+                if let Type::Pointer { pointee: pa, .. } = arg {
+                    if pb == pa || matches!(pb.as_ref(), Type::Void { .. }) {
+                        return 2;
+                    }
+                }
+            }
+            return 0;
+        }
+        // Numeric promotion / conversion
+        if matches!(
+            param.kind(),
+            TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+        ) && matches!(
+            arg.kind(),
+            TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong
+        ) {
+            return 2;
+        }
+        // Pointer / array compatibility
+        if param.is_pointer() && (arg.is_pointer() || arg.is_array()) {
+            return 2;
+        }
+        // Class type match
+        if param.is_class() && arg.is_class() && param.name() == arg.name() {
+            return 3;
+        }
+        // RValue reference binding to class
+        if let Type::RValueRef { base } = param {
+            if arg.is_class() && base.as_ref() == arg {
+                return 2;
+            }
+        }
+        0
     }
 
     fn expr_involves_array_or_pointer(&self, expr: &Expr) -> bool {
@@ -1190,6 +1229,13 @@ impl TypeChecker {
             return true;
         }
         if !matches!(init, Expr::InitList { .. }) {
+            // C/C++ 允许括号省略：标量可用于初始化当前子数组的第一个元素，其余零填充。
+            // 例如 int a[5][5] = {0}; int b[2][3] = {1, 2}; 都是合法的。
+            let e_type = self.resolve_expr_type(init);
+            if self.check_assignable(element_type, &e_type, loc) {
+                insert_implicit_cast(init, element_type);
+                return true;
+            }
             self.report_error("多维数组初始化需要嵌套初始化列表", loc, ErrorCode::E3009_InvalidArrayInit);
             return false;
         }
@@ -1197,7 +1243,18 @@ impl TypeChecker {
             Expr::InitList { elements, .. } => elements.as_mut_slice(),
             _ => return false,
         };
-        let expected_count = if dims[0] > 0 { dims[0] as usize } else { elements.len() };
+        // 若当前层级遇到纯扁平标量列表（如 int a[2][3] = {1,2,3,4,5,6};），
+        // 允许元素数量达到当前子数组最深层元素总数，按行主序填充。
+        let is_flat_scalar = elements.iter().all(|e| !matches!(e.value, Expr::InitList { .. }));
+        let expected_count = if dims[0] > 0 {
+            if is_flat_scalar && dims.len() > 1 {
+                dims.iter().map(|&d| d as usize).product()
+            } else {
+                dims[0] as usize
+            }
+        } else {
+            elements.len()
+        };
         if elements.len() > expected_count {
             self.report_error("初始化列表元素数量超过数组维度大小", loc, ErrorCode::E3005_ArrayInitTooMany);
         }
@@ -1422,10 +1479,7 @@ impl TypeChecker {
                             is_const: false,
                         };
                         *expr = Expr::Member {
-                            object: Box::new(Expr::This {
-                                loc: *loc,
-                                ty: this_ty.clone(),
-                            }),
+                            object: Box::new(Expr::This { loc: *loc, ty: this_ty.clone() }),
                             member: name.clone(),
                             loc: *loc,
                             ty: cap_ty.clone(),
@@ -1464,7 +1518,9 @@ impl TypeChecker {
                 Self::rewrite_lambda_captures_in_expr(left, captures, lambda_name);
                 Self::rewrite_lambda_captures_in_expr(right, captures, lambda_name);
             }
-            Expr::Ternary { cond, then_branch, else_branch, .. } => {
+            Expr::Ternary {
+                cond, then_branch, else_branch, ..
+            } => {
                 Self::rewrite_lambda_captures_in_expr(cond, captures, lambda_name);
                 Self::rewrite_lambda_captures_in_expr(then_branch, captures, lambda_name);
                 Self::rewrite_lambda_captures_in_expr(else_branch, captures, lambda_name);

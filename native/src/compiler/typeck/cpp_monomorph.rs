@@ -7,7 +7,11 @@ impl TypeChecker {
     /// Returns `Some((mangled_name, Some(func_decl)))` for a new instantiation,
     /// `Some((mangled_name, None))` if already instantiated,
     /// or `None` if the name is not a template or inference failed.
-    pub(crate) fn try_monomorphize_func(&mut self, name: &str, arg_types: &[Type]) -> Option<(String, Option<FuncDecl>)> {
+    pub(crate) fn try_monomorphize_func(
+        &mut self,
+        name: &str,
+        arg_types: &[Type],
+    ) -> Option<(String, Option<FuncDecl>)> {
         let template = self.templates.get(name)?.clone();
         let func_decl = match &template.decl {
             Templateable::Func(f) => f.as_ref(),
@@ -118,6 +122,12 @@ impl TypeChecker {
     fn replace_template_type(ty: &Type, type_map: &HashMap<String, Type>) -> Type {
         match ty {
             Type::Class { name, .. } if type_map.contains_key(name) => type_map[name].clone(),
+            Type::TemplateId { base, args, .. } => {
+                // 类模板体内出现同模板类实例化，如 unique_ptr<T>，需要把参数替换后生成 mangled 类名。
+                let new_args: Vec<Type> = args.iter().map(|a| Self::replace_template_type(a, type_map)).collect();
+                let mangled = Self::mangle_template_name(base, &new_args);
+                Type::Class { name: mangled, is_const: false }
+            }
             Type::Pointer { pointee, is_const } => Type::Pointer {
                 pointee: Box::new(Self::replace_template_type(pointee, type_map)),
                 is_const: *is_const,
@@ -235,28 +245,48 @@ impl TypeChecker {
                     self.pending_class_instantiations.push((mangled.clone(), new_class));
                     Type::Class { name: mangled, is_const: false }
                 } else if !self.templates.contains_key(&base) {
-                    self.report_error(
-                        &format!("未知模板类 '{}'", base),
-                        loc,
-                        ErrorCode::E3023_UndeclaredVar,
-                    );
+                    self.report_error(&format!("未知模板类 '{}'", base), loc, ErrorCode::E3023_UndeclaredVar);
                     Type::int()
                 } else {
-                    let mangled = format!("{}__{}", base, args.iter().map(|a| a.mangle_name()).collect::<Vec<_>>().join("__"));
+                    let mangled = format!(
+                        "{}__{}",
+                        base,
+                        args.iter().map(|a| a.mangle_name()).collect::<Vec<_>>().join("__")
+                    );
                     Type::Class { name: mangled, is_const: false }
                 }
             }
             Type::Pointer { pointee, is_const } => {
                 let new_pointee = self.resolve_template_id(&pointee, loc);
-                Type::Pointer { pointee: Box::new(new_pointee), is_const }
+                Type::Pointer {
+                    pointee: Box::new(new_pointee),
+                    is_const,
+                }
             }
-            Type::Array { element, array_size, dims, is_const, is_vla, vla_dims } => {
+            Type::Array {
+                element,
+                array_size,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+            } => {
                 let new_element = self.resolve_template_id(&element, loc);
-                Type::Array { element: Box::new(new_element), array_size, dims, is_const, is_vla, vla_dims }
+                Type::Array {
+                    element: Box::new(new_element),
+                    array_size,
+                    dims,
+                    is_const,
+                    is_vla,
+                    vla_dims,
+                }
             }
             Type::Reference { base: inner, is_const } => {
                 let new_inner = self.resolve_template_id(&inner, loc);
-                Type::Reference { base: Box::new(new_inner), is_const }
+                Type::Reference {
+                    base: Box::new(new_inner),
+                    is_const,
+                }
             }
             Type::RValueRef { base: inner } => {
                 let new_inner = self.resolve_template_id(&inner, loc);

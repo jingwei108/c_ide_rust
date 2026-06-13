@@ -71,8 +71,20 @@ impl Parser {
         typedef_names.insert("FILE".to_string(), Type::void());
         // 预注册 C++ 内置容器类型名
         if is_cpp_mode {
-            for name in ["cide_vec_int", "cide_vec_float", "cide_vec_char", "cide_string", "cide_list_int"] {
-                typedef_names.insert(name.to_string(), Type::Class { name: name.to_string(), is_const: false });
+            for name in [
+                "cide_vec_int",
+                "cide_vec_float",
+                "cide_vec_char",
+                "cide_string",
+                "cide_list_int",
+            ] {
+                typedef_names.insert(
+                    name.to_string(),
+                    Type::Class {
+                        name: name.to_string(),
+                        is_const: false,
+                    },
+                );
             }
         }
         Self {
@@ -361,10 +373,8 @@ impl Parser {
                         } else {
                             let struct_decl = self.parse_struct_decl();
                             if self.is_cpp_mode {
-                                self.typedef_names.insert(
-                                    struct_decl.name.clone(),
-                                    Type::struct_type(struct_decl.name.clone()),
-                                );
+                                self.typedef_names
+                                    .insert(struct_decl.name.clone(), Type::struct_type(struct_decl.name.clone()));
                             }
                             program.structs.push(struct_decl);
                         }
@@ -440,12 +450,8 @@ impl Parser {
         let base_type = self.parse_base_type();
         // 前瞻：跳过前导 *，检查是否是 identifier (
         let lookahead = self.look_ahead_skip_stars();
-        let is_func_decl = if lookahead < self.tokens.len()
-            && self.tokens[lookahead].ty == TokenType::Identifier
-        {
-            if lookahead + 1 < self.tokens.len()
-                && self.tokens[lookahead + 1].ty == TokenType::LParen
-            {
+        let is_func_decl = if lookahead < self.tokens.len() && self.tokens[lookahead].ty == TokenType::Identifier {
+            if lookahead + 1 < self.tokens.len() && self.tokens[lookahead + 1].ty == TokenType::LParen {
                 true
             } else if self.is_cpp_mode
                 && lookahead + 3 < self.tokens.len()
@@ -594,10 +600,8 @@ impl Parser {
         );
         self.consume(TokenType::Semicolon, "结构体声明后预期 ';'");
         if self.is_cpp_mode && !decl.name.starts_with("__anon_struct_") {
-            self.typedef_names.insert(
-                decl.name.clone(),
-                Type::struct_type(decl.name.clone()),
-            );
+            self.typedef_names
+                .insert(decl.name.clone(), Type::struct_type(decl.name.clone()));
         }
         decl
     }
@@ -657,7 +661,11 @@ impl Parser {
         self.consume(TokenType::LBrace, "预期 '{'");
 
         let mut members = Vec::new();
-        let mut current_access = if is_struct { AccessSpec::Public } else { AccessSpec::Private }; // struct 默认 public，class 默认 private
+        let mut current_access = if is_struct {
+            AccessSpec::Public
+        } else {
+            AccessSpec::Private
+        }; // struct 默认 public，class 默认 private
 
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             // 访问说明符
@@ -698,26 +706,17 @@ impl Parser {
             // 嵌套 struct / class / union / enum
             if self.check(TokenType::Struct) {
                 let decl = self.parse_struct_decl();
-                members.push(ClassMember::NestedStruct {
-                    decl,
-                    access: current_access,
-                });
+                members.push(ClassMember::NestedStruct { decl, access: current_access });
                 continue;
             }
             if self.is_cpp_mode && self.check(TokenType::Class) {
                 let decl = self.parse_class_decl();
-                members.push(ClassMember::NestedClass {
-                    decl,
-                    access: current_access,
-                });
+                members.push(ClassMember::NestedClass { decl, access: current_access });
                 continue;
             }
             if self.check(TokenType::Union) {
                 let decl = self.parse_union_decl();
-                members.push(ClassMember::NestedStruct {
-                    decl,
-                    access: current_access,
-                });
+                members.push(ClassMember::NestedStruct { decl, access: current_access });
                 continue;
             }
             // 析构函数 ~Name()
@@ -745,9 +744,7 @@ impl Parser {
             }
 
             // 构造函数检查（无返回类型）
-            if self.check(TokenType::Identifier)
-                && self.current().text == name
-                && self.peek(1).ty == TokenType::LParen
+            if self.check(TokenType::Identifier) && self.current().text == name && self.peek(1).ty == TokenType::LParen
             {
                 self.advance(); // class name
                 self.consume(TokenType::LParen, "预期 '('");
@@ -804,6 +801,18 @@ impl Parser {
                 for _ in 0..ptr_depth {
                     final_ret = Type::pointer_to(final_ret);
                 }
+                // C++ 引用 / 右值引用返回类型
+                if self.is_cpp_mode {
+                    if self.match_token(TokenType::Ampersand) {
+                        let is_const = self.match_token(TokenType::Const);
+                        final_ret = Type::Reference {
+                            base: Box::new(final_ret),
+                            is_const,
+                        };
+                    } else if self.match_token(TokenType::AndAnd) {
+                        final_ret = Type::RValueRef { base: Box::new(final_ret) };
+                    }
+                }
                 let method_name = self.advance().text.clone();
                 self.consume(TokenType::LParen, "预期 '('");
                 let params = self.parse_param_list();
@@ -853,17 +862,26 @@ impl Parser {
                     });
                 }
             } else {
-                // 字段声明
+                // 字段声明（支持逗号分隔多字段，如 `int head, tail;`）
                 self.pos = checkpoint;
                 let field_type = self.parse_base_type();
                 let (ty, field_name) = self.parse_declarator(&field_type);
-                self.consume(TokenType::Semicolon, "字段声明后预期 ';'");
                 members.push(ClassMember::Field {
                     name: field_name,
                     ty,
                     access: current_access,
                     is_static,
                 });
+                while self.match_token(TokenType::Comma) {
+                    let (extra_ty, extra_name) = self.parse_declarator(&field_type);
+                    members.push(ClassMember::Field {
+                        name: extra_name,
+                        ty: extra_ty,
+                        access: current_access,
+                        is_static,
+                    });
+                }
+                self.consume(TokenType::Semicolon, "字段声明后预期 ';'");
             }
         }
 
@@ -911,14 +929,30 @@ impl Parser {
         self.consume(TokenType::Gt, "预期 '>'");
 
         // 模板后面跟着函数、类或结构体声明
-        let decl = if self.check(TokenType::Class) {
-            let class_decl = self.parse_class_decl();
-            self.template_names.insert(class_decl.name.clone());
-            Templateable::Class(Box::new(class_decl))
-        } else if self.check(TokenType::Struct) {
-            let class_decl = self.parse_class_decl_inner(true);
-            self.template_names.insert(class_decl.name.clone());
-            Templateable::Class(Box::new(class_decl))
+        let decl = if self.check(TokenType::Class) || self.check(TokenType::Struct) {
+            // 在进入类体前就把类模板名加入 template_names，
+            // 使类体内出现 `unique_ptr<T>&` 自身引用参数时能正确解析为 TemplateId。
+            let is_struct = self.check(TokenType::Struct);
+            let checkpoint = self.pos;
+            self.advance(); // class / struct
+            let class_name = if self.check(TokenType::Identifier) {
+                self.advance().text.clone()
+            } else {
+                String::new()
+            };
+            self.pos = checkpoint; // 回退到 class/struct 关键字
+            if !class_name.is_empty() {
+                self.template_names.insert(class_name);
+            }
+            if is_struct {
+                let class_decl = self.parse_class_decl_inner(true);
+                self.template_names.insert(class_decl.name.clone());
+                Templateable::Class(Box::new(class_decl))
+            } else {
+                let class_decl = self.parse_class_decl();
+                self.template_names.insert(class_decl.name.clone());
+                Templateable::Class(Box::new(class_decl))
+            }
         } else {
             Templateable::Func(Box::new(self.parse_func_decl(false, false)))
         };
@@ -958,7 +992,10 @@ impl Parser {
         if self.is_cpp_mode {
             if self.match_token(TokenType::Ampersand) {
                 let is_const = self.match_token(TokenType::Const);
-                ret_type = Type::Reference { base: Box::new(ret_type), is_const };
+                ret_type = Type::Reference {
+                    base: Box::new(ret_type),
+                    is_const,
+                };
             } else if self.match_token(TokenType::AndAnd) {
                 ret_type = Type::RValueRef { base: Box::new(ret_type) };
             }
@@ -1145,20 +1182,14 @@ impl Parser {
                         is_const: false,
                     }
                 } else {
-                    Type::Class {
-                        name,
-                        is_const: false,
-                    }
+                    Type::Class { name, is_const: false }
                 }
             } else if let Some(ty) = self.typedef_names.get(&name).cloned() {
                 self.advance();
                 ty
             } else if self.is_cpp_mode {
                 let name = self.advance().text.clone();
-                Type::Class {
-                    name,
-                    is_const: false,
-                }
+                Type::Class { name, is_const: false }
             } else {
                 if is_unsigned {
                     Type::unsigned_int()
@@ -1371,7 +1402,10 @@ impl Parser {
             DeclaratorNode::Base => base_type.clone(),
             DeclaratorNode::Reference(inner, is_const) => {
                 let inner_ty = Self::interpret_declarator_node(inner, base_type);
-                Type::Reference { base: Box::new(inner_ty), is_const: *is_const }
+                Type::Reference {
+                    base: Box::new(inner_ty),
+                    is_const: *is_const,
+                }
             }
             DeclaratorNode::RValueRef(inner) => {
                 let inner_ty = Self::interpret_declarator_node(inner, base_type);
@@ -1985,7 +2019,10 @@ impl Parser {
                 if self.is_cpp_mode {
                     if self.match_token(TokenType::Ampersand) {
                         let is_const = self.match_token(TokenType::Const);
-                        final_type = Type::Reference { base: Box::new(final_type), is_const };
+                        final_type = Type::Reference {
+                            base: Box::new(final_type),
+                            is_const,
+                        };
                     } else if self.match_token(TokenType::AndAnd) {
                         final_type = Type::RValueRef { base: Box::new(final_type) };
                     }

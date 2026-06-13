@@ -56,19 +56,38 @@ pub fn bytecode_libc_sig(name: &str) -> Option<(Type, Vec<Type>)> {
         "cide_vec_clear_int" => Some((void.clone(), vec![int_ptr.clone()])),
         "cide_vec_destroy_int" => Some((void.clone(), vec![int_ptr.clone()])),
         // ctype
-        "isdigit" | "isalpha" | "islower" | "isupper" | "isspace" | "isalnum" | "isprint" | "iscntrl" | "isxdigit" | "tolower" | "toupper" => Some((int.clone(), vec![int.clone()])),
+        "isdigit" | "isalpha" | "islower" | "isupper" | "isspace" | "isalnum" | "isprint" | "iscntrl" | "isxdigit"
+        | "tolower" | "toupper" => Some((int.clone(), vec![int.clone()])),
         // misc
         "abs" => Some((int.clone(), vec![int.clone()])),
         "atoi" => Some((int.clone(), vec![Type::pointer_to(Type::char())])),
         "srand" => Some((void.clone(), vec![int.clone()])),
         "rand" => Some((int.clone(), vec![])),
         "strlen" => Some((int.clone(), vec![Type::pointer_to(Type::char())])),
-        "strcmp" => Some((int.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())])),
-        "strcpy" => Some((void.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())])),
-        "strcat" => Some((void.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())])),
-        "strncpy" => Some((void.clone(), vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char()), int.clone()])),
-        "memcpy" => Some((void.clone(), vec![Type::pointer_to(Type::void()), Type::pointer_to(Type::void()), int.clone()])),
-        "memmove" => Some((void.clone(), vec![Type::pointer_to(Type::void()), Type::pointer_to(Type::void()), int.clone()])),
+        "strcmp" => Some((
+            int.clone(),
+            vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())],
+        )),
+        "strcpy" => Some((
+            void.clone(),
+            vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())],
+        )),
+        "strcat" => Some((
+            void.clone(),
+            vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char())],
+        )),
+        "strncpy" => Some((
+            void.clone(),
+            vec![Type::pointer_to(Type::char()), Type::pointer_to(Type::char()), int.clone()],
+        )),
+        "memcpy" => Some((
+            void.clone(),
+            vec![Type::pointer_to(Type::void()), Type::pointer_to(Type::void()), int.clone()],
+        )),
+        "memmove" => Some((
+            void.clone(),
+            vec![Type::pointer_to(Type::void()), Type::pointer_to(Type::void()), int.clone()],
+        )),
         _ => None,
     }
 }

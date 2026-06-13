@@ -29,27 +29,19 @@ pub fn compile_cpp_bytecode(source: &str) -> Result<CompileOutput, String> {
     }
 
     let gen = BytecodeGen::new();
-    gen.generate(&mut program)
-        .map_err(|e| format!("BytecodeGen errors: {:?}", e))
+    gen.generate(&mut program).map_err(|e| format!("BytecodeGen errors: {:?}", e))
 }
 
 /// Extract the instruction slice for a named function from a CompileOutput.
 /// Returns `(start_ip, instructions)` where `instructions` is a cloned Vec of the function body.
-pub fn get_function_instructions(
-    output: &CompileOutput,
-    func_name: &str,
-) -> Option<(usize, Vec<Instruction>)> {
+pub fn get_function_instructions(output: &CompileOutput, func_name: &str) -> Option<(usize, Vec<Instruction>)> {
     let meta = output.func_table.get(func_name)?;
     let start_ip = meta.ip;
 
     // Compute end IP by finding the next function's start IP.
     let mut ips: Vec<usize> = output.func_table.values().map(|m| m.ip).collect();
     ips.sort();
-    let mut end_ip = ips
-        .iter()
-        .find(|&&ip| ip > start_ip)
-        .copied()
-        .unwrap_or(output.code.len());
+    let mut end_ip = ips.iter().find(|&&ip| ip > start_ip).copied().unwrap_or(output.code.len());
 
     // If this is the last function, exclude trailing startup code (Call(main), Ret)
     // that the VM appends after all user functions.
@@ -57,9 +49,7 @@ pub fn get_function_instructions(
         if let Some(&main_idx) = output.func_index.get("main") {
             let second_last = &output.code[output.code.len() - 2];
             let last = &output.code[output.code.len() - 1];
-            if second_last.op == OpCode::Call && second_last.operand == main_idx
-                && last.op == OpCode::Ret
-            {
+            if second_last.op == OpCode::Call && second_last.operand == main_idx && last.op == OpCode::Ret {
                 end_ip -= 2;
             }
         }
@@ -88,8 +78,7 @@ fn normalize_instructions(
     start_ip: usize,
     func_index: &HashMap<String, i32>,
 ) -> Vec<(OpCode, NormalizedOperand)> {
-    let rev_index: HashMap<i32, String> =
-        func_index.iter().map(|(k, v)| (*v, k.clone())).collect();
+    let rev_index: HashMap<i32, String> = func_index.iter().map(|(k, v)| (*v, k.clone())).collect();
 
     instrs
         .iter()
@@ -97,9 +86,7 @@ fn normalize_instructions(
         .map(|(idx, instr)| {
             let current_abs_ip = start_ip + idx;
             match instr.op {
-                OpCode::StepEvent => {
-                    (instr.op, NormalizedOperand::Int(0))
-                }
+                OpCode::StepEvent => (instr.op, NormalizedOperand::Int(0)),
                 OpCode::Jump | OpCode::JumpIfZero | OpCode::JumpIfNotZero => {
                     let abs_target = instr.operand as usize;
                     let rel = abs_target as i32 - current_abs_ip as i32;
@@ -138,11 +125,7 @@ pub fn display_normalized_slice(slice: &[(OpCode, NormalizedOperand)]) -> String
 /// Assert that two CompileOutputs contain semantically equivalent bytecode for the given function.
 ///
 /// Panics with a detailed diff on mismatch.
-pub fn assert_bytecode_equivalent(
-    actual_output: &CompileOutput,
-    expected_output: &CompileOutput,
-    func_name: &str,
-) {
+pub fn assert_bytecode_equivalent(actual_output: &CompileOutput, expected_output: &CompileOutput, func_name: &str) {
     assert_bytecode_equivalent_named(actual_output, func_name, expected_output, func_name);
 }
 
@@ -158,13 +141,11 @@ pub fn assert_bytecode_equivalent_named(
 ) {
     let (actual_start, actual_instrs) = get_function_instructions(actual_output, actual_name)
         .unwrap_or_else(|| panic!("Function '{}' not found in actual output", actual_name));
-    let (expected_start, expected_instrs) =
-        get_function_instructions(expected_output, expected_name)
-            .unwrap_or_else(|| panic!("Function '{}' not found in expected output", expected_name));
+    let (expected_start, expected_instrs) = get_function_instructions(expected_output, expected_name)
+        .unwrap_or_else(|| panic!("Function '{}' not found in expected output", expected_name));
 
     let actual_norm = normalize_instructions(&actual_instrs, actual_start, &actual_output.func_index);
-    let expected_norm =
-        normalize_instructions(&expected_instrs, expected_start, &expected_output.func_index);
+    let expected_norm = normalize_instructions(&expected_instrs, expected_start, &expected_output.func_index);
 
     if actual_norm != expected_norm {
         let diff = format_diff(&actual_norm, &expected_norm);
@@ -179,10 +160,7 @@ pub fn assert_bytecode_equivalent_named(
     }
 }
 
-fn format_diff(
-    actual: &[(OpCode, NormalizedOperand)],
-    expected: &[(OpCode, NormalizedOperand)],
-) -> String {
+fn format_diff(actual: &[(OpCode, NormalizedOperand)], expected: &[(OpCode, NormalizedOperand)]) -> String {
     let max_len = actual.len().max(expected.len());
     let mut lines = Vec::new();
     for i in 0..max_len {
@@ -219,11 +197,7 @@ pub fn compile_and_run_cpp(source: &str) -> Result<(i32, Vec<String>), String> {
 
         let src = CString::new(source).map_err(|e| e.to_string())?;
         let fname = CString::new("main.cpp").map_err(|e| e.to_string())?;
-        cide_native::capi::cide_compile_unit(
-            session,
-            fname.as_ptr() as *const c_char,
-            src.as_ptr() as *const c_char,
-        );
+        cide_native::capi::cide_compile_unit(session, fname.as_ptr() as *const c_char, src.as_ptr() as *const c_char);
 
         let compile_ret = cide_native::capi::cide_compile_all(session);
         if compile_ret != 0 {
@@ -231,9 +205,7 @@ pub fn compile_and_run_cpp(source: &str) -> Result<(i32, Vec<String>), String> {
             let err_msg = if err_ptr.is_null() {
                 "Unknown compile error".to_string()
             } else {
-                std::ffi::CStr::from_ptr(err_ptr)
-                    .to_string_lossy()
-                    .to_string()
+                std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string()
             };
             cide_native::capi::cide_session_destroy(session);
             return Err(err_msg);
@@ -245,11 +217,7 @@ pub fn compile_and_run_cpp(source: &str) -> Result<(i32, Vec<String>), String> {
         let out_len = cide_native::capi::cide_get_output_length(session);
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(
-                session,
-                buf.as_mut_ptr() as *mut c_char,
-                buf.len() as i32,
-            );
+            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             let out_str = String::from_utf8_lossy(&buf);
             for line in out_str.lines() {
                 let trimmed = line.trim_matches('\0');
@@ -263,11 +231,7 @@ pub fn compile_and_run_cpp(source: &str) -> Result<(i32, Vec<String>), String> {
         let runtime_err = if err_ptr.is_null() {
             None
         } else {
-            Some(
-                std::ffi::CStr::from_ptr(err_ptr)
-                    .to_string_lossy()
-                    .to_string(),
-            )
+            Some(std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string())
         };
 
         cide_native::capi::cide_session_destroy(session);

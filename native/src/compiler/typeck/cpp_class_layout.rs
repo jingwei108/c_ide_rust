@@ -57,11 +57,7 @@ impl TypeChecker {
 
     pub(crate) fn register_single_class_layout(&mut self, name: &str, c: &ClassDecl) {
         if self.classes.contains_key(name) || self.structs.contains_key(name) {
-            self.report_error(
-                &format!("类 '{}' 重复定义", name),
-                &c.loc,
-                ErrorCode::E3002_StructRedeclared,
-            );
+            self.report_error(&format!("类 '{}' 重复定义", name), &c.loc, ErrorCode::E3002_StructRedeclared);
             return;
         }
         // Check base class exists
@@ -76,8 +72,31 @@ impl TypeChecker {
         }
         let mut fields: Vec<(Type, String, AccessSpec)> = Vec::new();
         let mut static_fields: Vec<(Type, String, AccessSpec)> = Vec::new();
-        let mut methods: HashMap<String, MethodSig> = HashMap::new();
+        let mut methods: HashMap<String, Vec<MethodSig>> = HashMap::new();
         let mut vtable_entries: Vec<(String, Type)> = Vec::new();
+
+        // Names declared by this class. Base-class methods with the same name are
+        // hidden (C++ name hiding), so we do not inherit them as overloads.
+        let mut declared_method_names: HashSet<String> = HashSet::new();
+        for member in &c.members {
+            match member {
+                ClassMember::Method { name, .. } => {
+                    declared_method_names.insert(name.clone());
+                }
+                ClassMember::Constructor { params, .. } => {
+                    let key = if params.is_empty() {
+                        format!("__ctor__{}", name)
+                    } else {
+                        format!("__ctor__{}__{}", name, params.len())
+                    };
+                    declared_method_names.insert(key);
+                }
+                ClassMember::Destructor { .. } => {
+                    declared_method_names.insert(format!("__dtor__{}", name));
+                }
+                _ => {}
+            }
+        }
 
         // Inherit base fields
         if let Some(ref base_name) = c.base {
@@ -85,15 +104,23 @@ impl TypeChecker {
                 for (fty, fname, faccess) in &base_sym.fields {
                     fields.push((fty.clone(), fname.clone(), *faccess));
                 }
-                for (mname, msig) in &base_sym.methods {
-                    methods.insert(mname.clone(), msig.clone());
-                    if msig.is_virtual {
-                        let func_ty = Type::Function {
-                            return_type: Box::new(msig.ret.clone()),
-                            param_types: msig.param_types.clone(),
-                            is_const: false,
-                        };
-                        vtable_entries.push((mname.clone(), func_ty));
+                for (mname, msigs) in &base_sym.methods {
+                    let hidden = declared_method_names.contains(mname);
+                    for msig in msigs {
+                        // C++ name hiding: derived declarations hide inherited overloads,
+                        // but virtual functions still occupy a vtable slot so that overrides
+                        // can be dispatched through a base pointer.
+                        if !hidden {
+                            methods.entry(mname.clone()).or_default().push(msig.clone());
+                        }
+                        if msig.is_virtual && !vtable_entries.iter().any(|(n, _)| n == mname) {
+                            let func_ty = Type::Function {
+                                return_type: Box::new(msig.ret.clone()),
+                                param_types: msig.param_types.clone(),
+                                is_const: false,
+                            };
+                            vtable_entries.push((mname.clone(), func_ty));
+                        }
                     }
                 }
             }
@@ -102,7 +129,12 @@ impl TypeChecker {
         // Class members already have access set by parser
         for member in &c.members {
             match member {
-                ClassMember::Field { name: field_name, ty, access, is_static } => {
+                ClassMember::Field {
+                    name: field_name,
+                    ty,
+                    access,
+                    is_static,
+                } => {
                     if *is_static {
                         static_fields.push((ty.clone(), field_name.clone(), *access));
                     } else {
@@ -121,17 +153,19 @@ impl TypeChecker {
                 } => {
                     let acc = *access;
                     let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
+                    // A method that overrides a base virtual function is itself virtual.
+                    let overrides_virtual = vtable_entries.iter().any(|(n, _)| n == method_name);
                     let sig = MethodSig {
                         ret: ret.clone(),
                         param_types: param_types.clone(),
-                        is_virtual: *is_virtual,
+                        is_virtual: *is_virtual || overrides_virtual,
                         is_static: *is_static,
                         is_explicit: false,
                         is_const: *is_const,
                         access: acc,
                     };
-                    methods.insert(method_name.clone(), sig);
-                    if *is_virtual {
+                    methods.entry(method_name.clone()).or_default().push(sig.clone());
+                    if sig.is_virtual {
                         let func_ty = Type::Function {
                             return_type: Box::new(ret.clone()),
                             param_types,
@@ -145,7 +179,9 @@ impl TypeChecker {
                         }
                     }
                 }
-                ClassMember::Constructor { params, access, is_explicit, .. } => {
+                ClassMember::Constructor {
+                    params, access, is_explicit, ..
+                } => {
                     let acc = *access;
                     let is_exp = *is_explicit;
                     let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
@@ -163,7 +199,7 @@ impl TypeChecker {
                     } else {
                         format!("__ctor__{}__{}", name, param_types.len())
                     };
-                    methods.insert(ctor_key, sig);
+                    methods.entry(ctor_key).or_default().push(sig);
                 }
                 ClassMember::Destructor { access, .. } => {
                     let acc = *access;
@@ -182,7 +218,7 @@ impl TypeChecker {
                         is_const: false,
                         access: acc,
                     };
-                    methods.insert(format!("__dtor__{}", name), sig);
+                    methods.entry(format!("__dtor__{}", name)).or_default().push(sig);
                 }
                 ClassMember::NestedStruct { decl, .. } => {
                     let sym = StructSymbol {
@@ -234,7 +270,12 @@ impl TypeChecker {
                     is_static,
                     ..
                 } => {
-                    let mangled = format!("{}__{}", name, method_name);
+                    let overload_count = class_sym.methods.get(method_name).map(|v| v.len()).unwrap_or(1);
+                    let mangled = if overload_count <= 1 {
+                        format!("{}__{}", name, method_name)
+                    } else {
+                        format!("{}__{}__{}", name, method_name, params.len())
+                    };
                     if self.funcs.contains_key(&mangled) || self.static_func_sigs.contains_key(&mangled) {
                         continue;
                     }
@@ -313,29 +354,26 @@ impl TypeChecker {
         // This allows `new Derived()` and `Derived d;` to resolve even when the class
         // has no user-defined default constructor.
         let default_ctor_name = format!("__ctor__{}", name);
-        if !class_sym.methods.contains_key(&default_ctor_name) {
-            class_sym.methods.insert(
-                default_ctor_name.clone(),
-                MethodSig {
-                    ret: Type::void(),
-                    param_types: vec![],
-                    is_virtual: false,
-                    is_static: false,
-                    is_explicit: false,
-                    is_const: false,
-                    access: AccessSpec::Public,
-                },
-            );
+        if class_sym.methods.get(&default_ctor_name).map(|v| v.is_empty()).unwrap_or(true) {
+            class_sym.methods.entry(default_ctor_name.clone()).or_default().push(MethodSig {
+                ret: Type::void(),
+                param_types: vec![],
+                is_virtual: false,
+                is_static: false,
+                is_explicit: false,
+                is_const: false,
+                access: AccessSpec::Public,
+            });
             self.funcs.entry(default_ctor_name).or_insert_with(|| FuncSymbol {
-                        return_type: Type::void(),
-                        param_types: vec![Type::Pointer {
-                            pointee: Box::new(Type::Class {
-                                name: name.to_string(),
-                                is_const: false,
-                            }),
-                            is_const: false,
-                        }],
-                    });
+                return_type: Type::void(),
+                param_types: vec![Type::Pointer {
+                    pointee: Box::new(Type::Class {
+                        name: name.to_string(),
+                        is_const: false,
+                    }),
+                    is_const: false,
+                }],
+            });
         }
 
         // Register builtin container layouts so TypeChecker knows their sizes
@@ -350,24 +388,18 @@ impl TypeChecker {
                         .iter()
                         .map(|(n, t)| (t.clone(), n.clone(), AccessSpec::Public))
                         .collect();
-                    let methods: HashMap<String, MethodSig> = layout
-                        .methods
-                        .iter()
-                        .map(|m| {
-                            (
-                                m.name.clone(),
-                                MethodSig {
-                                    ret: m.ret.clone(),
-                                    param_types: m.params.clone(),
-                                    is_virtual: m.is_virtual,
-                                    is_static: false,
-                                    is_explicit: false,
-                                    is_const: false,
-                                    access: AccessSpec::Public,
-                                },
-                            )
-                        })
-                        .collect();
+                    let mut methods: HashMap<String, Vec<MethodSig>> = HashMap::new();
+                    for m in &layout.methods {
+                        methods.entry(m.name.clone()).or_default().push(MethodSig {
+                            ret: m.ret.clone(),
+                            param_types: m.params.clone(),
+                            is_virtual: m.is_virtual,
+                            is_static: false,
+                            is_explicit: false,
+                            is_const: false,
+                            access: AccessSpec::Public,
+                        });
+                    }
                     self.classes.insert(
                         name.to_string(),
                         ClassSymbol {

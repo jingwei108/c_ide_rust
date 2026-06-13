@@ -25,6 +25,6 @@ int main() {
     vector<float> v;
     v.push_back(1.5);
     v.push_back(2.5);
-    for (int i = 0; i < v.size(); i++) printf("%f\n", v.get(i));
+    for (int i = 0; i < v.size(); i++) printf("%.1f\n", v.get(i));
     return 0;
 }

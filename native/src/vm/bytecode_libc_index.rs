@@ -148,4 +148,3 @@ pub fn bytecode_libc_index(name: &str) -> Option<i32> {
 pub fn is_bytecode_libc(name: &str) -> bool {
     bytecode_libc_index(name).is_some()
 }
-

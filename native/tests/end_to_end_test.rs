@@ -167,6 +167,41 @@ int main() {
 }
 
 #[test]
+fn test_e2e_multidim_array_zero_init() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a[2][3] = {0};
+    a[1][2] = 42;
+    printf("%d %d %d\n", a[0][0], a[1][0], a[1][2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("0 0 42")), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_multidim_array_flat_init() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    int a[2][3] = {1, 2, 3, 4, 5, 6};
+    printf("%d %d %d %d %d %d\n", a[0][0], a[0][1], a[0][2], a[1][0], a[1][1], a[1][2]);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l.contains("1 2 3 4 5 6")), "Outputs: {:?}", outputs);
+}
+
+#[test]
 fn test_e2e_struct_member() {
     let src = r#"
 #include <stdio.h>

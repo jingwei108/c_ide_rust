@@ -2,7 +2,8 @@ use super::*;
 
 impl TypeChecker {
     pub(crate) fn is_builtin_func(&self, name: &str) -> bool {
-        crate::vm::host_func_id::is_builtin(name) || crate::vm::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS.contains(&name)
+        crate::vm::host_func_id::is_builtin(name)
+            || crate::vm::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS.contains(&name)
     }
 
     pub(crate) fn visit_call(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {
@@ -70,11 +71,7 @@ impl TypeChecker {
             "fmod" => self.check_builtin_fmod(args, loc),
             "std__move" => {
                 if args.len() != 1 {
-                    self.report_error(
-                        "std::move 预期 1 个参数",
-                        loc,
-                        ErrorCode::E3037_FuncArgCount,
-                    );
+                    self.report_error("std::move 预期 1 个参数", loc, ErrorCode::E3037_FuncArgCount);
                     return Type::int();
                 }
                 let arg_ty = self.resolve_expr_type(&mut args[0]);

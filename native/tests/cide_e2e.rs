@@ -34,11 +34,7 @@ fn compile_and_run_with_filename(
 
         let fname = CString::new(filename).map_err(|e| e.to_string())?;
         let src = CString::new(source).map_err(|e| e.to_string())?;
-        cide_native::capi::cide_compile_unit(
-            session,
-            fname.as_ptr() as *const c_char,
-            src.as_ptr() as *const c_char,
-        );
+        cide_native::capi::cide_compile_unit(session, fname.as_ptr() as *const c_char, src.as_ptr() as *const c_char);
         let compile_ret = cide_native::capi::cide_compile_all(session);
         if compile_ret != 0 {
             let err_ptr = cide_native::capi::cide_get_compile_errors(session);
@@ -238,8 +234,6 @@ const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
     "bTree_default",
     "bellmanFord_default",
     "infixEvaluation_default",
-    "polynomialAdd_default",
-    "redBlackTree_default",
     "spfa_default",
     "threadedBinaryTree_default",
 ];

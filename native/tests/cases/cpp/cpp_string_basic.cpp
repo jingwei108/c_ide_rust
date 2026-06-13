@@ -3,12 +3,12 @@ class string {
     char* s;
     int len;
 public:
-    string() { s = new char[1]; s[0] = 0; len = 0; }
+    string() { s = new char[1]; s[0] = '\0'; len = 0; }
     void append(char c) {
         char* ns = new char[len + 2];
         for (int i = 0; i < len; i++) ns[i] = s[i];
         ns[len] = c;
-        ns[len + 1] = 0;
+        ns[len + 1] = '\0';
         delete[] s;
         s = ns;
         len++;

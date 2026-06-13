@@ -1,4 +1,4 @@
-use cide_native::compiler::ast::{AccessSpec, ClassMember, Stmt};
+use cide_native::compiler::ast::{AccessSpec, ClassMember, Stmt, Type, TypeKind};
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 
@@ -65,6 +65,40 @@ int main() { return 0; }
 }
 
 #[test]
+fn test_parser_cpp_class_field_comma_decl() {
+    let src = r#"
+class Point {
+public:
+    int x, y;
+private:
+    int *px, *py;
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    assert_eq!(program.classes.len(), 1);
+    let class = &program.classes[0];
+    assert_eq!(class.members.len(), 4);
+    let expected = [
+        ("x", AccessSpec::Public),
+        ("y", AccessSpec::Public),
+        ("px", AccessSpec::Private),
+        ("py", AccessSpec::Private),
+    ];
+    for (i, (name, access)) in expected.iter().enumerate() {
+        match &class.members[i] {
+            ClassMember::Field { name: n, access: a, .. } => {
+                assert_eq!(n, *name);
+                assert_eq!(a, access);
+            }
+            _ => panic!("Expected Field at index {}", i),
+        }
+    }
+}
+
+#[test]
 fn test_parser_cpp_class_method() {
     let src = r#"
 class Rect {
@@ -86,6 +120,40 @@ int main() { return 0; }
             assert!(body.is_some());
         }
         _ => panic!("Expected Method, got {:?}", class.members[1]),
+    }
+}
+
+#[test]
+fn test_parser_cpp_class_method_ref_return() {
+    let src = r#"
+class Counter {
+public:
+    int x;
+    Counter() { x = 0; }
+    int& get_x() { return x; }
+    Counter& inc() { x++; return *this; }
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let class = &program.classes[0];
+    assert_eq!(class.members.len(), 4);
+    match &class.members[2] {
+        ClassMember::Method { name, ret, .. } => {
+            assert_eq!(name, "get_x");
+            assert!(ret.is_reference(), "Expected reference return, got {:?}", ret);
+            assert_eq!(ret.reference_base().unwrap().kind(), Type::int().kind());
+        }
+        _ => panic!("Expected Method"),
+    }
+    match &class.members[3] {
+        ClassMember::Method { name, ret, .. } => {
+            assert_eq!(name, "inc");
+            assert!(ret.is_reference(), "Expected reference return, got {:?}", ret);
+        }
+        _ => panic!("Expected Method"),
     }
 }
 
@@ -163,6 +231,45 @@ int main() { return 0; }
         cide_native::compiler::ast::Templateable::Class(ref c) => {
             assert_eq!(c.name, "Box");
             assert_eq!(c.members.len(), 1);
+        }
+        _ => panic!("Expected Class template"),
+    }
+}
+
+#[test]
+fn test_parser_cpp_template_class_self_ref_param() {
+    let src = r#"
+template<class T>
+class unique_ptr {
+    T* p;
+public:
+    unique_ptr(T* x) : p(x) {}
+    void move_from(unique_ptr<T>& o) { p = o.p; o.p = (T*)0; }
+};
+int main() { return 0; }
+"#;
+    let (program, errors) = parse_cpp(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    assert_eq!(program.templates.len(), 1);
+    match &program.templates[0].decl {
+        cide_native::compiler::ast::Templateable::Class(ref c) => {
+            assert_eq!(c.name, "unique_ptr");
+            let method = match &c.members[2] {
+                ClassMember::Method { name, params, .. } => {
+                    assert_eq!(name, "move_from");
+                    assert_eq!(params.len(), 1);
+                    params[0].ty.clone()
+                }
+                _ => panic!("Expected Method"),
+            };
+            assert!(method.is_reference(), "Expected reference param, got {:?}", method);
+            let base = method.reference_base().unwrap();
+            assert!(
+                matches!(base.kind(), TypeKind::TemplateId),
+                "Expected TemplateId base, got {:?}",
+                base
+            );
         }
         _ => panic!("Expected Class template"),
     }
@@ -511,7 +618,7 @@ int main() {
     return 0;
 }
 "#;
-    let (program, errors) = parse_cpp(src);
+    let (_program, errors) = parse_cpp(src);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 }
 
@@ -542,7 +649,7 @@ public:
 };
 int main() { return 0; }
 "#;
-    let (program, errors) = parse_cpp(src);
+    let (_program, errors) = parse_cpp(src);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 }
 
@@ -561,7 +668,7 @@ public:
 };
 int main() { return 0; }
 "#;
-    let (program, errors) = parse_cpp(src);
+    let (_program, errors) = parse_cpp(src);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 }
 
@@ -592,7 +699,7 @@ int main() {
     return 0;
 }
 "#;
-    let (program, errors) = parse_cpp(src);
+    let (_program, errors) = parse_cpp(src);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 }
 
@@ -606,7 +713,7 @@ int main() {
     return 0;
 }
 "#;
-    let (program, errors) = parse_cpp(src);
+    let (_program, errors) = parse_cpp(src);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 }
 
@@ -625,7 +732,11 @@ int main() { return 0; }
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
     let program = program.unwrap();
     let box_class = &program.classes[0];
-    let ctors: Vec<_> = box_class.members.iter().filter(|m| matches!(m, ClassMember::Constructor { .. })).collect();
+    let ctors: Vec<_> = box_class
+        .members
+        .iter()
+        .filter(|m| matches!(m, ClassMember::Constructor { .. }))
+        .collect();
     assert_eq!(ctors.len(), 2);
 }
 
@@ -641,7 +752,7 @@ public:
 };
 int main() { return 0; }
 "#;
-    let (program, errors) = parse_cpp(src);
+    let (_program, errors) = parse_cpp(src);
     assert!(errors.is_empty(), "Parse errors: {:?}", errors);
 }
 

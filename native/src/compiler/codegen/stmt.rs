@@ -476,7 +476,12 @@ impl StmtGen for BytecodeGen {
                         } else if vty.is_struct() || vty.is_class() {
                             // C++ 构造函数初始化语法：Type name(args);
                             // TypeChecker 已在 args 前插入 &name 作为 this 指针。
-                            if let Expr::Call { name: ctor_name, args: ctor_args, .. } = e {
+                            if let Expr::Call {
+                                name: ctor_name,
+                                args: ctor_args,
+                                ..
+                            } = e
+                            {
                                 if ctor_name.starts_with("__ctor__") {
                                     if let Type::Class { name: class_name, .. } = vty {
                                         // VM do_call pops args in parameter-declaration order.
@@ -867,7 +872,11 @@ impl StmtGen for BytecodeGen {
                 // Condition: idx < count
                 self.emit(OpCode::LoadLocal, idx_offset, &loc);
                 if is_array {
-                    let elem_count = if let Type::Array { array_size, .. } = &iter_ty { *array_size } else { 0 };
+                    let elem_count = if let Type::Array { array_size, .. } = &iter_ty {
+                        *array_size
+                    } else {
+                        0
+                    };
                     self.emit(OpCode::PushConst, elem_count, &loc);
                 } else {
                     // Container: call cide_vec_size_*(&iter)
@@ -915,7 +924,11 @@ impl StmtGen for BytecodeGen {
 
                 // Load element: var = iter[idx]
                 if is_array {
-                    let elem_ty = if let Type::Array { element, .. } = &iter_ty { element.clone() } else { Box::new(Type::int()) };
+                    let elem_ty = if let Type::Array { element, .. } = &iter_ty {
+                        element.clone()
+                    } else {
+                        Box::new(Type::int())
+                    };
                     let elem_sz = self.type_size(&elem_ty);
                     if let Expr::Identifier { name, .. } = iter.as_ref() {
                         if let Some(&offset) = self.local_indices.get(name) {

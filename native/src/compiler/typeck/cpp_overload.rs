@@ -23,92 +23,99 @@ impl TypeChecker {
                         is_static,
                         ..
                     } => {
-                            self.current_method_is_const = *is_const && !*is_static;
-                            let func_params: Vec<Param> = if *is_static {
-                                params.to_vec()
-                            } else {
-                                std::iter::once(Param {
-                                    name: "this".to_string(),
-                                    ty: Type::Pointer {
-                                        pointee: Box::new(Type::Class {
-                                            name: c.name.clone(),
-                                            is_const: *is_const,
-                                        }),
+                        self.current_method_is_const = *is_const && !*is_static;
+                        let func_params: Vec<Param> = if *is_static {
+                            params.to_vec()
+                        } else {
+                            std::iter::once(Param {
+                                name: "this".to_string(),
+                                ty: Type::Pointer {
+                                    pointee: Box::new(Type::Class {
+                                        name: c.name.clone(),
                                         is_const: *is_const,
-                                    },
-                                    loc: c.loc,
-                                })
-                                .chain(params.iter().cloned())
-                                .collect()
-                            };
-                            let mut func_decl = FuncDecl {
+                                    }),
+                                    is_const: *is_const,
+                                },
                                 loc: c.loc,
-                                return_type: ret.clone(),
-                                name: format!("{}__{}", c.name, method_name),
-                                params: func_params,
-                                body: Some(b.clone()),
-                                is_static: *is_static,
-                                is_extern: false,
-                                source_file: String::new(),
-                            };
-                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
-                            self.current_method_is_const = false;
-                            class_methods.push(func_decl);
+                            })
+                            .chain(params.iter().cloned())
+                            .collect()
+                        };
+                        let user_param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
+                        let mangled = self
+                            .resolve_method_overload(&c.name, method_name, &user_param_types)
+                            .map(|(_, m)| m)
+                            .unwrap_or_else(|| format!("{}__{}", c.name, method_name));
+                        let mut func_decl = FuncDecl {
+                            loc: c.loc,
+                            return_type: ret.clone(),
+                            name: mangled,
+                            params: func_params,
+                            body: Some(b.clone()),
+                            is_static: *is_static,
+                            is_extern: false,
+                            source_file: String::new(),
+                        };
+                        self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                        self.current_method_is_const = false;
+                        class_methods.push(func_decl);
                     }
                     ClassMember::Constructor { params, body: Some(ref b), .. } => {
-                            let ctor_name = if params.is_empty() {
+                        let ctor_name = self.resolve_constructor_overload(&c.name, params.len()).unwrap_or_else(|| {
+                            if params.is_empty() {
                                 format!("__ctor__{}", c.name)
                             } else {
                                 format!("__ctor__{}__{}", c.name, params.len())
-                            };
-                            let mut func_decl = FuncDecl {
-                                loc: c.loc,
-                                return_type: Type::void(),
-                                name: ctor_name,
-                                params: std::iter::once(Param {
-                                    name: "this".to_string(),
-                                    ty: Type::Pointer {
-                                        pointee: Box::new(Type::Class {
-                                            name: c.name.clone(),
-                                            is_const: false,
-                                        }),
+                            }
+                        });
+                        let mut func_decl = FuncDecl {
+                            loc: c.loc,
+                            return_type: Type::void(),
+                            name: ctor_name,
+                            params: std::iter::once(Param {
+                                name: "this".to_string(),
+                                ty: Type::Pointer {
+                                    pointee: Box::new(Type::Class {
+                                        name: c.name.clone(),
                                         is_const: false,
-                                    },
-                                    loc: c.loc,
-                                })
-                                .chain(params.iter().cloned())
-                                .collect(),
-                                body: Some(b.clone()),
-                                is_static: false,
-                                is_extern: false,
-                                source_file: String::new(),
-                            };
-                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
-                            class_methods.push(func_decl);
+                                    }),
+                                    is_const: false,
+                                },
+                                loc: c.loc,
+                            })
+                            .chain(params.iter().cloned())
+                            .collect(),
+                            body: Some(b.clone()),
+                            is_static: false,
+                            is_extern: false,
+                            source_file: String::new(),
+                        };
+                        self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                        class_methods.push(func_decl);
                     }
                     ClassMember::Destructor { body: Some(ref b), .. } => {
-                            let mut func_decl = FuncDecl {
-                                loc: c.loc,
-                                return_type: Type::void(),
-                                name: format!("__dtor__{}", c.name),
-                                params: vec![Param {
-                                    name: "this".to_string(),
-                                    ty: Type::Pointer {
-                                        pointee: Box::new(Type::Class {
-                                            name: c.name.clone(),
-                                            is_const: false,
-                                        }),
+                        let mut func_decl = FuncDecl {
+                            loc: c.loc,
+                            return_type: Type::void(),
+                            name: format!("__dtor__{}", c.name),
+                            params: vec![Param {
+                                name: "this".to_string(),
+                                ty: Type::Pointer {
+                                    pointee: Box::new(Type::Class {
+                                        name: c.name.clone(),
                                         is_const: false,
-                                    },
-                                    loc: c.loc,
-                                }],
-                                body: Some(b.clone()),
-                                is_static: false,
-                                is_extern: false,
-                                source_file: String::new(),
-                            };
-                            self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
-                            class_methods.push(func_decl);
+                                    }),
+                                    is_const: false,
+                                },
+                                loc: c.loc,
+                            }],
+                            body: Some(b.clone()),
+                            is_static: false,
+                            is_extern: false,
+                            source_file: String::new(),
+                        };
+                        self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
+                        class_methods.push(func_decl);
                     }
                     _ => {}
                 }
@@ -122,26 +129,23 @@ impl TypeChecker {
     /// 当前为简化实现：根据参数数量选择构造函数。默认（零参数）构造函数保持
     /// `__ctor__{Class}` 名称；带 N 个参数的构造函数编码为 `__ctor__{Class}__N`。
     /// TODO: 完善为基于类型相似度的优先级排序（移动构造 > 拷贝构造 > 普通构造）。
-    pub(crate) fn resolve_constructor_overload(
-        &self,
-        class_name: &str,
-        arg_count: usize,
-    ) -> Option<String> {
+    pub(crate) fn resolve_constructor_overload(&self, class_name: &str, arg_count: usize) -> Option<String> {
         let sym = self.classes.get(class_name)?;
         let target = if arg_count == 0 {
             format!("__ctor__{}", class_name)
         } else {
             format!("__ctor__{}__{}", class_name, arg_count)
         };
-        if sym.methods.contains_key(&target) {
+        if sym.methods.get(&target).map(|v| !v.is_empty()).unwrap_or(false) {
             return Some(target);
         }
         // Fallback: scan methods for any ctor with matching user param count
-        for (name, sig) in &sym.methods {
+        for (name, sigs) in &sym.methods {
             if name.starts_with("__ctor__") && !name.ends_with("__move") {
-                let user_params = sig.param_types.len().saturating_sub(1);
-                if user_params == arg_count {
-                    return Some(name.clone());
+                for sig in sigs {
+                    if sig.param_types.len() == arg_count {
+                        return Some(name.clone());
+                    }
                 }
             }
         }
@@ -210,28 +214,22 @@ impl TypeChecker {
         // Register move ctor signatures in ClassSymbol.methods
         for (class_name, func) in &move_ctors {
             if let Some(sym) = self.classes.get_mut(class_name) {
-                sym.methods.insert(
-                    func.name.clone(),
-                    MethodSig {
-                        ret: Type::void(),
-                        param_types: func.params.iter().map(|p| p.ty.clone()).collect(),
-                        is_virtual: false,
-                        is_static: false,
-                        is_explicit: false,
-                        is_const: false,
-                        access: AccessSpec::Public,
-                    },
-                );
+                sym.methods.entry(func.name.clone()).or_default().push(MethodSig {
+                    ret: Type::void(),
+                    param_types: func.params.iter().map(|p| p.ty.clone()).collect(),
+                    is_virtual: false,
+                    is_static: false,
+                    is_explicit: false,
+                    is_const: false,
+                    access: AccessSpec::Public,
+                });
             }
         }
 
         program.funcs.extend(move_ctors.into_iter().map(|(_, f)| f));
     }
 
-    fn build_implicit_move_ctor_body(
-        class_name: &str,
-        fields: &[(Type, String, AccessSpec)],
-    ) -> Stmt {
+    fn build_implicit_move_ctor_body(class_name: &str, fields: &[(Type, String, AccessSpec)]) -> Stmt {
         let loc = SourceLoc { line: 0, column: 0 };
         let this_ty = Type::Pointer {
             pointee: Box::new(Type::Class {
@@ -253,10 +251,7 @@ impl TypeChecker {
             stmts.push(Stmt::Expr {
                 expr: Expr::Assign {
                     left: Box::new(Expr::Member {
-                        object: Box::new(Expr::This {
-                            loc,
-                            ty: this_ty.clone(),
-                        }),
+                        object: Box::new(Expr::This { loc, ty: this_ty.clone() }),
                         member: fname.clone(),
                         loc,
                         ty: fty.clone(),
@@ -293,11 +288,7 @@ impl TypeChecker {
                             ty: fty.clone(),
                         }),
                         op: AssignOp::Assign,
-                        right: Box::new(Expr::Literal {
-                            value: 0,
-                            loc,
-                            ty: Type::int(),
-                        }),
+                        right: Box::new(Expr::Literal { value: 0, loc, ty: Type::int() }),
                         loc,
                         ty: fty.clone(),
                     },

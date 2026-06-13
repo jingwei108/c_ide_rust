@@ -41,8 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 预定义宏 `NULL`/`EOF`/`stdin`/`stdout`/`stderr` 在 Lexer 中内置，兼容 K&R 早期示例
 
 ### Added (C++ 扩展 M6 — 测试防线收尾)
-- **59 个 C++ E2E 回归用例**：新增 `native/tests/cases/cpp/` 目录，覆盖三大类
-  - 核心语言（15）：class / ctor / dtor / 引用 / auto / 范围 for / 模板 / 虚函数 / this
+- **60 个 C++ E2E 回归用例**：新增 `native/tests/cases/cpp/` 目录，覆盖三大类
+  - 核心语言（16）：class / ctor / dtor / 引用 / auto / 范围 for / 模板 / 虚函数 / this / 方法重载
   - 容器与算法（15）：自实现 vector<int/float/char> / list<int> / string / 排序 / 栈 / 队列 / 链表 / 二叉树
   - 教学/OJ 题目（29）：Two Sum / 去重 / 移除元素 / 二分 / 最大子数组 / 股票 / 单数 / 多数 / 旋转 / 移动零 / 回文 / 括号 / 反转链表 / 合并链表 / 树深度 / 相同树 / 翻转树 / 爬楼梯 / 帕斯卡 / 平方根 / 罗马数字 / 缺失数字 / 公共前缀 / 首个唯一字符等
 - **C++ E2E 测试框架**：扩展 `native/tests/cide_e2e.rs`
@@ -50,8 +50,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `load_cpp_cases` / `run_cpp_case` 支持 `.cpp` 用例与 `.in` 输入文件
   - `test_cide_e2e_cpp` / `test_cide_e2e_cpp_known_failures` 及 `KNOWN_CPP_FAILURES` 监控
   - `TEST_REPORT.md` 生成已汇总 C++ 统计
-- **Golden 来源**：所有 59 个 `.out` 文件由 Clang++ (`-std=c++14 -O0`) 生成，Cide 输出与之逐行对比，目前 59/59 全绿
+- **Golden 来源**：所有 60 个 `.out` 文件由 Clang++ (`-std=c++14 -O0`) 生成，Cide 输出与之逐行对比，目前 60/60 全绿
+- **单元测试扩展**：parser_cpp_unit_test（33）、typeck_cpp_unit_test（28）、bytecode_gen_cpp_unit_test（38）全部通过
 - **诚实记录子集边界**：`native/tests/CPP_FAILURES.md` 新增 M6 过程中识别的 Cide C++ 子集边界（如类字段逗号多声明、指针逻辑运算、模板类方法引用参数等），用例已规避，无已知失败
+
+### Fixed (C++ 子集边界消除)
+- **指针逻辑运算 `&&` / `||` 支持指针/数组**：`typeck/expr.rs` 放宽 `And`/`Or` 操作数类型检查；`UnaryOp::Not` 同时支持数组
+  - `cpp_merge_two_lists.cpp` 恢复标准 `while (l1 && l2)` / `while (h)` 写法
+- **类内方法重载**：`ClassSymbol::methods` 从 `HashMap<String, MethodSig>` 改为 `HashMap<String, Vec<MethodSig>>`
+  - 新增 `resolve_method_overload` / `overload_match_score`，按参数数量与类型相似度选择最佳签名
+  - 方法 mangling 在存在多个重载时使用 `Class__method__N`（N 为用户参数个数），单签名保持向后兼容的 `Class__method`
+  - 移除 Pass 2.3 重复注册逻辑；`register_single_class_layout` 统一注册方法/构造/析构函数符号
+  - 支持类成员函数体内无显式 `this->` 的方法调用（C++ name hiding），`Call`/`CallPtr` 均会尝试解析为 `MemberCall`
+  - 新增 E2E 用例 `cpp_method_overload.cpp`（BST 公有 `insert(int)` + 私有递归 `insert(Node*, int)` + `print` 重载）
+- **M6 10 项 C++ 子集边界全部消除**：`CPP_FAILURES.md` 中记录的边界全部修复，`native/tests/cases/cpp/` 60 个用例全部使用标准 C++14 语法，`KNOWN_CPP_FAILURES` 为空
 
 ### Added (C++ 扩展 Stage 1 — 类模板实例化)
 - **Parser 模板 id 类型解析**：新增 `Type::TemplateId { base, args }`，`Parser` 维护 `template_names` 集合，`parse_base_type` 识别 `vector<int>` 语法

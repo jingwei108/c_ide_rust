@@ -26,6 +26,67 @@ fn promote_type(a: &Type, b: &Type) -> Type {
 }
 
 impl TypeChecker {
+    /// Try to resolve an unqualified function call inside a class member function as a
+    /// call to a class method (C++ name hiding). On success, returns the MemberCall
+    /// expression on `this` and the result type so the caller can replace the original.
+    fn try_resolve_unqualified_method_call(
+        &mut self,
+        name: &str,
+        args: &mut [Expr],
+        loc: &SourceLoc,
+    ) -> Option<(Expr, Type)> {
+        let class_name = self.current_class.clone()?;
+        let has_method = self
+            .classes
+            .get(&class_name)
+            .map(|s| s.methods.contains_key(name))
+            .unwrap_or(false);
+        if !has_method {
+            return None;
+        }
+        let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
+        let (sig, mangled) = self.resolve_method_overload(&class_name, name, &arg_types)?;
+        let this_ty = Type::Pointer {
+            pointee: Box::new(Type::Class {
+                name: class_name,
+                is_const: self.current_method_is_const,
+            }),
+            is_const: self.current_method_is_const,
+        };
+        let mut new_args = Vec::with_capacity(args.len());
+        for arg in args.iter_mut() {
+            new_args.push(std::mem::take(arg));
+        }
+        for (arg, expected) in new_args.iter_mut().zip(sig.param_types.iter()) {
+            let arg_type = arg.ty().clone();
+            if !self.check_assignable(expected, &arg_type, loc) {
+                self.report_error(&format!("方法 '{}' 参数类型不匹配", name), loc, ErrorCode::E3038_FuncArgType);
+            } else if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                let arg_loc = *arg.loc();
+                let old = std::mem::take(arg);
+                *arg = Expr::Unary {
+                    op: UnaryOp::Addr,
+                    operand: Box::new(old),
+                    loc: arg_loc,
+                    ty: expected.clone(),
+                };
+            } else {
+                insert_implicit_cast(arg, expected);
+            }
+        }
+        let ret = sig.ret.clone();
+        let new_expr = Expr::MemberCall {
+            object: Box::new(Expr::This { loc: *loc, ty: this_ty }),
+            method: name.to_string(),
+            args: new_args,
+            is_virtual: sig.is_virtual,
+            resolved_mangled: Some(mangled),
+            loc: *loc,
+            ty: ret.clone(),
+        };
+        Some((new_expr, ret))
+    }
+
     pub fn resolve_expr_type(&mut self, expr: &mut Expr) -> Type {
         // Handle offsetof: compute offset at compile time and replace with Literal
         if let Expr::Offsetof { target_type, field, loc, .. } = expr {
@@ -150,9 +211,11 @@ impl TypeChecker {
                         Type::int()
                     }
                     BinaryOp::And | BinaryOp::Or => {
-                        if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
+                        let left_ok = self.is_scalar(&left_type) || left_type.is_pointer() || left_type.is_array();
+                        let right_ok = self.is_scalar(&right_type) || right_type.is_pointer() || right_type.is_array();
+                        if !left_ok || !right_ok {
                             self.report_error(
-                                "逻辑运算要求两边都是 int 或 float 类型",
+                                "逻辑运算要求两边都是标量、指针或数组类型",
                                 loc,
                                 ErrorCode::E3019_LogicTypeError,
                             );
@@ -236,8 +299,12 @@ impl TypeChecker {
                         }
                     }
                     UnaryOp::Not => {
-                        if !self.is_scalar(&operand_type) && !operand_type.is_pointer() {
-                            self.report_error("逻辑非要求操作数是标量或指针类型", loc, ErrorCode::E3020_UnaryTypeError);
+                        if !self.is_scalar(&operand_type) && !operand_type.is_pointer() && !operand_type.is_array() {
+                            self.report_error(
+                                "逻辑非要求操作数是标量、指针或数组类型",
+                                loc,
+                                ErrorCode::E3020_UnaryTypeError,
+                            );
                         }
                         Type::int()
                     }
@@ -340,7 +407,10 @@ impl TypeChecker {
                         if let Some(class_sym) = self.classes.get(&class_name) {
                             if let Some((field_ty, _, _)) = class_sym.fields.iter().find(|(_, n, _)| n == name) {
                                 let this_ty = Type::Pointer {
-                                    pointee: Box::new(Type::Class { name: class_name.clone(), is_const: self.current_method_is_const }),
+                                    pointee: Box::new(Type::Class {
+                                        name: class_name.clone(),
+                                        is_const: self.current_method_is_const,
+                                    }),
                                     is_const: self.current_method_is_const,
                                 };
                                 *expr = Expr::Member {
@@ -363,6 +433,12 @@ impl TypeChecker {
                 ty.clone()
             }
             Expr::Call { name, args, loc, ty } => {
+                // Inside a class member function, an unqualified call may refer to a class
+                // method (C++ name hiding). Try method overload resolution first.
+                if let Some((new_expr, ret)) = self.try_resolve_unqualified_method_call(name, args, loc) {
+                    *expr = new_expr;
+                    return ret;
+                }
                 *ty = self.visit_call(name, args, loc);
                 ty.clone()
             }
@@ -376,6 +452,11 @@ impl TypeChecker {
                     {
                         *ty = self.visit_call(name, args, loc);
                         return ty.clone();
+                    }
+                    // Inside a class member function, an unqualified call may refer to a class method.
+                    if let Some((new_expr, ret)) = self.try_resolve_unqualified_method_call(name, args, loc) {
+                        *expr = new_expr;
+                        return ret;
                     }
                     // Try template implicit instantiation
                     if !args.is_empty() {
@@ -407,7 +488,11 @@ impl TypeChecker {
                                     let expected = func_sym.param_types.clone();
                                     if args.len() + 1 != expected.len() {
                                         self.report_error(
-                                            &format!("Lambda 调用参数数量不匹配：期望 {} 个，实际 {} 个", expected.len() - 1, args.len()),
+                                            &format!(
+                                                "Lambda 调用参数数量不匹配：期望 {} 个，实际 {} 个",
+                                                expected.len() - 1,
+                                                args.len()
+                                            ),
                                             loc,
                                             ErrorCode::E3037_FuncArgCount,
                                         );
@@ -417,7 +502,12 @@ impl TypeChecker {
                                             let expected_ty = &expected[i + 1];
                                             if !self.check_assignable(expected_ty, &arg_ty, loc) {
                                                 self.report_error(
-                                                    &format!("Lambda 调用第 {} 个参数类型不匹配：期望 '{}'，实际 '{}'", i + 1, expected_ty, arg_ty),
+                                                    &format!(
+                                                        "Lambda 调用第 {} 个参数类型不匹配：期望 '{}'，实际 '{}'",
+                                                        i + 1,
+                                                        expected_ty,
+                                                        arg_ty
+                                                    ),
                                                     loc,
                                                     ErrorCode::E3004_TypeMismatch,
                                                 );
@@ -441,7 +531,11 @@ impl TypeChecker {
                                     };
                                     func_sym.return_type.clone()
                                 } else {
-                                    self.report_error(&format!("未找到 Lambda 调用函数 '{}'", call_name), loc, ErrorCode::E3036_UndefinedFunc);
+                                    self.report_error(
+                                        &format!("未找到 Lambda 调用函数 '{}'", call_name),
+                                        loc,
+                                        ErrorCode::E3036_UndefinedFunc,
+                                    );
                                     *ty = Type::int();
                                     Type::int()
                                 };
@@ -615,7 +709,10 @@ impl TypeChecker {
                         | Expr::Index { .. }
                         | Expr::Member { .. }
                         | Expr::Unary { op: UnaryOp::Deref, .. }
-                );
+                ) || (matches!(
+                    left.as_ref(),
+                    Expr::Call { .. } | Expr::CallPtr { .. } | Expr::MemberCall { .. }
+                ) && (left_type.is_reference() || left_type.is_rvalue_ref()));
                 if !is_lvalue {
                     self.report_error("赋值左边必须是可修改的左值", loc, ErrorCode::E3043_AssignToRValue);
                 }
@@ -649,20 +746,12 @@ impl TypeChecker {
                     if let Type::Pointer { pointee, is_const } = &obj_ty {
                         if let Type::Class { is_const: ic, .. } = pointee.as_ref() {
                             if *ic || *is_const {
-                                self.report_error(
-                                    "不能修改 const 对象的成员",
-                                    loc,
-                                    ErrorCode::E3065_ConstViolation,
-                                );
+                                self.report_error("不能修改 const 对象的成员", loc, ErrorCode::E3065_ConstViolation);
                             }
                         }
                     } else if let Type::Class { is_const, .. } = &obj_ty {
                         if *is_const {
-                            self.report_error(
-                                "不能修改 const 对象的成员",
-                                loc,
-                                ErrorCode::E3065_ConstViolation,
-                            );
+                            self.report_error("不能修改 const 对象的成员", loc, ErrorCode::E3065_ConstViolation);
                         }
                     }
                 }
@@ -751,15 +840,24 @@ impl TypeChecker {
                 method,
                 args,
                 is_virtual,
+                resolved_mangled,
                 loc,
                 ty,
             } => {
                 let obj_type = self.resolve_expr_type(object);
-                // Resolve class type from object (value or pointer)
+                // Resolve class type from object (value, pointer, or reference)
                 let class_name = if let Type::Class { name, .. } = &obj_type {
                     name.clone()
                 } else if let Type::Pointer { pointee, .. } = &obj_type {
                     if let Type::Class { name, .. } = pointee.as_ref() {
+                        name.clone()
+                    } else {
+                        self.report_error("成员调用只能用于类类型", loc, ErrorCode::E3041_MemberNonStruct);
+                        *ty = Type::int();
+                        return ty.clone();
+                    }
+                } else if let Type::Reference { base, .. } | Type::RValueRef { base } = &obj_type {
+                    if let Type::Class { name, .. } = base.as_ref() {
                         name.clone()
                     } else {
                         self.report_error("成员调用只能用于类类型", loc, ErrorCode::E3041_MemberNonStruct);
@@ -772,67 +870,7 @@ impl TypeChecker {
                     return ty.clone();
                 };
 
-                let method_sig = self.find_class_method(&class_name, method);
-                if let Some(sig) = method_sig {
-                    // Check access control (simplified: allow public, block private from outside)
-                    if matches!(sig.access, AccessSpec::Private) && self.current_class.as_ref() != Some(&class_name) {
-                        self.report_error(
-                            &format!("无法访问类 '{}' 的私有成员 '{}'", class_name, method),
-                            loc,
-                            ErrorCode::E4024_PrivateMemberAccess,
-                        );
-                    }
-                    // Check const-correctness: const object cannot call non-const method
-                    if !sig.is_const && !sig.is_static {
-                        let obj_is_const = match &obj_type {
-                            Type::Class { is_const, .. } => *is_const,
-                            Type::Pointer { pointee, is_const } => {
-                                if let Type::Class { is_const: ic, .. } = pointee.as_ref() { *ic || *is_const } else { *is_const }
-                            }
-                            Type::Reference { base, is_const } => {
-                                if let Type::Class { is_const: ic, .. } = base.as_ref() { *ic || *is_const } else { *is_const }
-                            }
-                            _ => false,
-                        };
-                        if obj_is_const {
-                            self.report_error(
-                                &format!("不能在 const 对象上调用非 const 方法 '{}'", method),
-                                loc,
-                                ErrorCode::E3065_ConstViolation,
-                            );
-                        }
-                    }
-                    // Check argument count (MemberCall args are user-provided args only)
-                    let user_param_count = sig.param_types.len();
-                    if args.len() != user_param_count {
-                        self.report_error(
-                            &format!(
-                                "方法 '{}' 参数数量不匹配：期望 {}，实际 {}",
-                                method,
-                                user_param_count,
-                                args.len()
-                            ),
-                            loc,
-                            ErrorCode::E3037_FuncArgCount,
-                        );
-                    } else {
-                        for (i, (arg, expected)) in args.iter_mut().zip(sig.param_types.iter()).enumerate() {
-                            let arg_type = self.resolve_expr_type(arg);
-                            if !self.check_assignable(expected, &arg_type, loc) {
-                                self.report_error(
-                                    &format!("方法 '{}' 第 {} 个参数类型不匹配", method, i + 1),
-                                    loc,
-                                    ErrorCode::E3038_FuncArgType,
-                                );
-                            } else {
-                                insert_implicit_cast(arg, expected);
-                            }
-                        }
-                    }
-                    *ty = sig.ret.clone();
-                    *is_virtual = sig.is_virtual;
-                    return ty.clone();
-                }
+                // Builtin container member calls are lowered to host function calls.
                 if let Some((host_func, addr_expr, call_args, result_ty)) =
                     self.try_resolve_container_member_call(&class_name, method, object, args, loc)
                 {
@@ -848,13 +886,85 @@ impl TypeChecker {
                     };
                     return ret;
                 }
-                self.report_error(
-                    &format!("类 '{}' 没有方法 '{}'", class_name, method),
-                    loc,
-                    ErrorCode::E3042_UnknownMember,
-                );
-                *ty = Type::int();
-                ty.clone()
+
+                // Resolve user argument types first for overload resolution.
+                let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
+                match self.resolve_method_overload(&class_name, method, &arg_types) {
+                    None => {
+                        self.report_error(
+                            &format!("类 '{}' 没有与参数匹配的方法 '{}'", class_name, method),
+                            loc,
+                            ErrorCode::E3042_UnknownMember,
+                        );
+                        *ty = Type::int();
+                        ty.clone()
+                    }
+                    Some((sig, mangled)) => {
+                        // Check access control (simplified: allow public, block private from outside)
+                        if matches!(sig.access, AccessSpec::Private) && self.current_class.as_ref() != Some(&class_name)
+                        {
+                            self.report_error(
+                                &format!("无法访问类 '{}' 的私有成员 '{}'", class_name, method),
+                                loc,
+                                ErrorCode::E4024_PrivateMemberAccess,
+                            );
+                        }
+                        // Check const-correctness: const object cannot call non-const method
+                        if !sig.is_const && !sig.is_static {
+                            let obj_is_const = match &obj_type {
+                                Type::Class { is_const, .. } => *is_const,
+                                Type::Pointer { pointee, is_const } => {
+                                    if let Type::Class { is_const: ic, .. } = pointee.as_ref() {
+                                        *ic || *is_const
+                                    } else {
+                                        *is_const
+                                    }
+                                }
+                                Type::Reference { base, is_const } => {
+                                    if let Type::Class { is_const: ic, .. } = base.as_ref() {
+                                        *ic || *is_const
+                                    } else {
+                                        *is_const
+                                    }
+                                }
+                                _ => false,
+                            };
+                            if obj_is_const {
+                                self.report_error(
+                                    &format!("不能在 const 对象上调用非 const 方法 '{}'", method),
+                                    loc,
+                                    ErrorCode::E3065_ConstViolation,
+                                );
+                            }
+                        }
+                        // Apply implicit conversions / reference address-of
+                        for (arg, expected) in args.iter_mut().zip(sig.param_types.iter()) {
+                            let arg_type = arg.ty().clone();
+                            if !self.check_assignable(expected, &arg_type, loc) {
+                                self.report_error(
+                                    &format!("方法 '{}' 参数类型不匹配", method),
+                                    loc,
+                                    ErrorCode::E3038_FuncArgType,
+                                );
+                            } else if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                                let arg_loc = *arg.loc();
+                                let old = std::mem::take(arg);
+                                *arg = Expr::Unary {
+                                    op: UnaryOp::Addr,
+                                    operand: Box::new(old),
+                                    loc: arg_loc,
+                                    ty: expected.clone(),
+                                };
+                            } else {
+                                insert_implicit_cast(arg, expected);
+                            }
+                        }
+                        *ty = sig.ret.clone();
+                        *is_virtual = sig.is_virtual;
+                        *resolved_mangled = Some(mangled);
+                        ty.clone()
+                    }
+                }
             }
             Expr::New {
                 elem_type,
@@ -897,10 +1007,10 @@ impl TypeChecker {
                         // 构造函数符号包含隐式 this 指针，但 new 表达式的 init 中尚未插入。
                         // 因此这里直接根据类方法签名检查用户参数，避免 resolve_expr_type 因缺少 this 而报错。
                         if !ctor_name.is_empty() {
-                            if let Some(sig) = self.find_class_method(&ctor_class_name, &ctor_name) {
+                            if let Some(sigs) = self.find_class_method_sigs(&ctor_class_name, &ctor_name) {
                                 // Constructor MethodSig stores only user parameter types
                                 // (the implicit this pointer is added by the caller).
-                                let expected = &sig.param_types;
+                                let expected = &sigs.first().map(|s| s.param_types.clone()).unwrap_or_default();
                                 if let Expr::Call { args, .. } = i.as_mut() {
                                     if expected.len() != args.len() {
                                         self.report_error(

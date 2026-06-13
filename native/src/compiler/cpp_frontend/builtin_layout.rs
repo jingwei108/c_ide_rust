@@ -84,11 +84,7 @@ fn parse_type_str(s: &str) -> Type {
 fn convert_layout(json: &ClassLayoutJson) -> ClassLayout {
     ClassLayout {
         size: json.size,
-        fields: json
-            .fields
-            .iter()
-            .map(|f| (f.name.clone(), parse_type_str(&f.ty)))
-            .collect(),
+        fields: json.fields.iter().map(|f| (f.name.clone(), parse_type_str(&f.ty))).collect(),
         methods: json
             .methods
             .iter()

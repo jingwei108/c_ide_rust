@@ -228,7 +228,11 @@ impl BytecodeGen {
                     let needs_vptr = class.vtable.is_some();
                     let mut size = if needs_vptr { 4 } else { 0 };
                     if let Some(ref base_name) = class.base {
-                        size = self.class_sizes.get(base_name).copied().unwrap_or(if needs_vptr { 4 } else { 0 });
+                        size = self
+                            .class_sizes
+                            .get(base_name)
+                            .copied()
+                            .unwrap_or(if needs_vptr { 4 } else { 0 });
                     }
                     for member in &class.members {
                         if let ClassMember::Field { ty, .. } = member {
@@ -785,7 +789,11 @@ impl BytecodeGen {
             if base_offset > 0 {
                 return base_offset; // base_offset already includes vptr of base
             }
-            let base_size = self.class_sizes.get(base_name).copied().unwrap_or(if class.vtable.is_some() { 4 } else { 0 });
+            let base_size =
+                self.class_sizes
+                    .get(base_name)
+                    .copied()
+                    .unwrap_or(if class.vtable.is_some() { 4 } else { 0 });
             offset = base_size;
         }
         // Search in current class fields
@@ -835,9 +843,9 @@ impl BytecodeGen {
     fn extract_class_name(&self, ty: &Type) -> Option<String> {
         match ty {
             Type::Class { name, .. } => Some(name.clone()),
-            Type::Pointer { pointee, .. } | Type::Reference { base: pointee, .. } | Type::RValueRef { base: pointee } => {
-                self.extract_class_name(pointee)
-            }
+            Type::Pointer { pointee, .. }
+            | Type::Reference { base: pointee, .. }
+            | Type::RValueRef { base: pointee } => self.extract_class_name(pointee),
             _ => None,
         }
     }

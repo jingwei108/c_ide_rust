@@ -938,6 +938,11 @@ impl CideVM {
             return;
         }
         let meta = self.func_table[idx].clone();
+        let func_name = if idx < self.func_names.len() {
+            self.func_names[idx].clone()
+        } else {
+            format!("func_{}", func_idx)
+        };
         let frame_size = meta.local_count as u64;
         if frame_size > (STACK_START - NULL_TRAP_SIZE) as u64 || frame_size > self.mem_stack_top as u64 {
             self.trap(&format!("{}: 栈溢出", op_name), loc);
@@ -959,7 +964,6 @@ impl CideVM {
         let original_stack_top = self.mem_stack_top;
         self.mem_stack_top -= frame_size_u32;
         let locals_base = self.mem_stack_top;
-
         let mut word_offset = 0;
         for word_count in meta.param_sizes.iter() {
             let words = *word_count as u32;
@@ -974,11 +978,6 @@ impl CideVM {
         for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
             self.memory[addr as usize] = 0;
         }
-        let func_name = if idx < self.func_names.len() {
-            self.func_names[idx].clone()
-        } else {
-            format!("func_{}", func_idx)
-        };
         self.call_stack.push(CallFrame {
             return_ip: self.ip,
             locals_base,

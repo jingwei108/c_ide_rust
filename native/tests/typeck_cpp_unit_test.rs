@@ -102,6 +102,48 @@ int main() {
     assert!(has_this_error, "Expected 'this' outside class error, got: {:?}", errors);
 }
 
+#[test]
+fn test_cpp_method_ref_return_assign() {
+    let src = r#"
+class Box {
+public:
+    int v;
+    Box() { v = 0; }
+    int& get() { return v; }
+    Box& set(int x) { v = x; return *this; }
+};
+int main() {
+    Box b;
+    b.get() = 42;
+    b.set(1).set(2);
+    return b.v;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
+#[test]
+fn test_cpp_ref_param_access_private_member() {
+    let src = r#"
+class Pair {
+    int a;
+public:
+    Pair() { a = 0; }
+    void copy_from(Pair& o) { a = o.a; }
+    int get() { return a; }
+};
+int main() {
+    Pair x;
+    Pair y;
+    y.copy_from(x);
+    return y.get();
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Type errors: {:?}", errors);
+}
+
 // ============================================================================
 // Auto Type Deduction Tests
 // ============================================================================
@@ -167,7 +209,8 @@ int main() {
     let (_, errors) = parse_and_typecheck_cpp(src);
     assert!(
         errors.iter().any(|e| e.message.contains("类型不匹配")),
-        "Expected type mismatch error, got: {:?}", errors
+        "Expected type mismatch error, got: {:?}",
+        errors
     );
 }
 
@@ -401,7 +444,11 @@ int main() { return 0; }
 "#;
     let (_program, errors) = parse_and_typecheck_cpp(src);
     assert!(!errors.is_empty(), "Should report const violation");
-    assert!(errors.iter().any(|e| e.code == 3065), "Expected E3065 ConstViolation, got: {:?}", errors);
+    assert!(
+        errors.iter().any(|e| e.code == 3065),
+        "Expected E3065 ConstViolation, got: {:?}",
+        errors
+    );
 }
 
 #[test]
@@ -415,8 +462,15 @@ public:
 int main() { return 0; }
 "#;
     let (_program, errors) = parse_and_typecheck_cpp(src);
-    assert!(!errors.is_empty(), "Should report const violation for this->x assignment in const method");
-    assert!(errors.iter().any(|e| e.code == 3065), "Expected E3065 ConstViolation, got: {:?}", errors);
+    assert!(
+        !errors.is_empty(),
+        "Should report const violation for this->x assignment in const method"
+    );
+    assert!(
+        errors.iter().any(|e| e.code == 3065),
+        "Expected E3065 ConstViolation, got: {:?}",
+        errors
+    );
 }
 
 #[test]
@@ -435,8 +489,15 @@ int main() {
 }
 "#;
     let (_program, errors) = parse_and_typecheck_cpp(src);
-    assert!(!errors.is_empty(), "Should report error calling non-const method on const object");
-    assert!(errors.iter().any(|e| e.code == 3065), "Expected E3065 ConstViolation, got: {:?}", errors);
+    assert!(
+        !errors.is_empty(),
+        "Should report error calling non-const method on const object"
+    );
+    assert!(
+        errors.iter().any(|e| e.code == 3065),
+        "Expected E3065 ConstViolation, got: {:?}",
+        errors
+    );
 }
 
 #[test]

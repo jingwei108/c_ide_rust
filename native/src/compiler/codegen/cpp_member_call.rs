@@ -3,7 +3,16 @@ use crate::compiler::codegen::expr::ExprGen;
 
 impl BytecodeGen {
     pub(crate) fn gen_member_call(&mut self, expr: &mut Expr, loc: &SourceLoc) {
-        let Expr::MemberCall { object, method, args, is_virtual, ty, .. } = expr else {
+        let Expr::MemberCall {
+            object,
+            method,
+            args,
+            is_virtual,
+            resolved_mangled,
+            ty,
+            ..
+        } = expr
+        else {
             self.report_error("gen_member_call 期望 MemberCall 表达式", loc);
             self.emit(OpCode::PushConst, 0, loc);
             return;
@@ -65,6 +74,9 @@ impl BytecodeGen {
             } else {
                 self.gen_addr(object, loc);
             }
+        } else if obj_type.is_reference() || obj_type.is_rvalue_ref() {
+            // 引用对象：gen_addr 返回其存储的地址
+            self.gen_addr(object, loc);
         } else {
             self.report_error("不支持的类对象表达式", loc);
             self.emit(OpCode::PushConst, 0, loc);
@@ -113,7 +125,9 @@ impl BytecodeGen {
                 self.emit(OpCode::PushConst, offset, loc);
                 self.emit(OpCode::Add, 0, loc);
             }
-            let mangled = format!("{}__{}", class_name, method);
+            let mangled = resolved_mangled
+                .clone()
+                .unwrap_or_else(|| format!("{}__{}", class_name, method));
             if let Some(&idx) = self.func_index.get(&mangled) {
                 self.emit(OpCode::Call, idx, loc);
             } else {

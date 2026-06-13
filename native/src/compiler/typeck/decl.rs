@@ -59,7 +59,7 @@ impl TypeChecker {
                 // Auto type deduction for C++
                 if Self::type_has_auto(var_type) {
                     #[allow(clippy::collapsible_match)]
-                        if let Some(ref mut init_expr) = init {
+                    if let Some(ref mut init_expr) = init {
                         let deduced = self.deduce_auto_type(init_expr);
                         *var_type = Self::replace_auto_in_type(var_type, deduced);
                     } else {
@@ -77,9 +77,12 @@ impl TypeChecker {
                 // 只有 C++ 构造函数初始化语法需要提前声明变量，以便 this 指针（&var_name）能正确解析。
                 // 普通变量（尤其是数组）必须在初始化表达式处理完成后再声明，否则符号表中的类型
                 // 无法反映 check_array_initializer 推断出的数组大小。
-                let is_ctor_init = init.as_ref().map(|e| {
-                    matches!(e, Expr::Call { name: n, .. } if n.starts_with("__ctor__") && var_type.is_class())
-                }).unwrap_or(false);
+                let is_ctor_init = init
+                    .as_ref()
+                    .map(
+                        |e| matches!(e, Expr::Call { name: n, .. } if n.starts_with("__ctor__") && var_type.is_class()),
+                    )
+                    .unwrap_or(false);
 
                 if is_ctor_init {
                     self.declare_var(name, var_type, false, false, *is_static);
@@ -352,11 +355,7 @@ impl TypeChecker {
                         "cide_vec_float" => Type::float(),
                         "cide_vec_char" | "cide_string" => Type::char(),
                         _ => {
-                            self.report_error(
-                                "范围 for 不支持该容器类型",
-                                loc,
-                                ErrorCode::E4020_RangeForNotSupported,
-                            );
+                            self.report_error("范围 for 不支持该容器类型", loc, ErrorCode::E4020_RangeForNotSupported);
                             Type::int()
                         }
                     }
@@ -612,7 +611,14 @@ impl TypeChecker {
             Type::RValueRef { base } => Type::RValueRef {
                 base: Box::new(Self::replace_auto_in_type(base, replacement)),
             },
-            Type::Array { element, array_size, dims, is_const, is_vla, vla_dims } => Type::Array {
+            Type::Array {
+                element,
+                array_size,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+            } => Type::Array {
                 element: Box::new(Self::replace_auto_in_type(element, replacement)),
                 array_size: *array_size,
                 dims: dims.clone(),

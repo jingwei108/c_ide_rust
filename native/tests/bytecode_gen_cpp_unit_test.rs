@@ -9,11 +9,7 @@ fn compile_and_run_cpp(source: &str) -> Result<(i32, Vec<String>), String> {
 
         let src = CString::new(source).map_err(|e| e.to_string())?;
         let fname = CString::new("main.cpp").map_err(|e| e.to_string())?;
-        cide_native::capi::cide_compile_unit(
-            session,
-            fname.as_ptr() as *const c_char,
-            src.as_ptr() as *const c_char,
-        );
+        cide_native::capi::cide_compile_unit(session, fname.as_ptr() as *const c_char, src.as_ptr() as *const c_char);
 
         let compile_ret = cide_native::capi::cide_compile_all(session);
         if compile_ret != 0 {
@@ -495,9 +491,18 @@ int main() {
 
 #[test]
 fn test_cpp_type_map_lookup() {
-    assert_eq!(cide_native::compiler::cpp_frontend::type_map::cpp_type_to_cide("vector<int>"), Some("cide_vec_int"));
-    assert_eq!(cide_native::compiler::cpp_frontend::type_map::cpp_type_to_cide("vector<float>"), Some("cide_vec_float"));
-    assert_eq!(cide_native::compiler::cpp_frontend::type_map::cpp_type_to_cide("string"), Some("cide_string"));
+    assert_eq!(
+        cide_native::compiler::cpp_frontend::type_map::cpp_type_to_cide("vector<int>"),
+        Some("cide_vec_int")
+    );
+    assert_eq!(
+        cide_native::compiler::cpp_frontend::type_map::cpp_type_to_cide("vector<float>"),
+        Some("cide_vec_float")
+    );
+    assert_eq!(
+        cide_native::compiler::cpp_frontend::type_map::cpp_type_to_cide("string"),
+        Some("cide_string")
+    );
     assert_eq!(
         cide_native::compiler::cpp_frontend::type_map::map_container_method("cide_vec_int", "push_back"),
         Some("cide_vec_push_int")
@@ -808,6 +813,54 @@ int main() {
     let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
     assert_eq!(ret, 0);
     assert_eq!(outputs, vec!["42", "100"]);
+}
+
+#[test]
+fn test_cpp_method_ref_return_assign_and_chain() {
+    let src = r#"
+#include <stdio.h>
+class Counter {
+public:
+    int x;
+    Counter() { x = 0; }
+    int& get() { return x; }
+    Counter& add(int v) { x += v; return *this; }
+};
+int main() {
+    Counter c;
+    c.get() = 5;
+    c.add(1).add(2).add(3);
+    printf("%d\n", c.x);
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["11"]);
+}
+
+#[test]
+fn test_cpp_ref_param_access_private_member() {
+    let src = r#"
+#include <stdio.h>
+class Pair {
+    int a;
+public:
+    Pair() { a = 7; }
+    void copy_from(Pair& o) { a = o.a; }
+    int get() { return a; }
+};
+int main() {
+    Pair x;
+    Pair y;
+    y.copy_from(x);
+    printf("%d\n", y.get());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["7"]);
 }
 
 // ============================================================================

@@ -1,8 +1,8 @@
 mod test_utils;
 
 use test_utils::{
-    assert_bytecode_equivalent, assert_bytecode_equivalent_named, compile_and_run_cpp,
-    compile_cpp_bytecode, get_function_instructions,
+    assert_bytecode_equivalent, assert_bytecode_equivalent_named, compile_and_run_cpp, compile_cpp_bytecode,
+    get_function_instructions,
 };
 
 // ============================================================================
@@ -13,10 +13,7 @@ use test_utils::{
 fn test_compile_cpp_bytecode_helper_works() {
     let src = "int main() { return 42; }";
     let output = compile_cpp_bytecode(src).expect("compile_cpp_bytecode should succeed");
-    assert!(
-        output.func_index.contains_key("main"),
-        "Should have main function"
-    );
+    assert!(output.func_index.contains_key("main"), "Should have main function");
     assert!(!output.code.is_empty(), "Bytecode should not be empty");
 }
 
@@ -50,10 +47,7 @@ int main() { return foo(); }
     let result = std::panic::catch_unwind(|| {
         assert_bytecode_equivalent(&output_a, &output_b, "foo");
     });
-    assert!(
-        result.is_err(),
-        "Should detect difference in foo() bytecode"
-    );
+    assert!(result.is_err(), "Should detect difference in foo() bytecode");
 
     // main() may also differ depending on codegen, but at minimum foo() must differ.
 }
@@ -67,10 +61,8 @@ int main() { return 0; }
 "#;
     let output = compile_cpp_bytecode(src).expect("compile should succeed");
 
-    let (foo_start, foo_instrs) =
-        get_function_instructions(&output, "foo").expect("foo should exist");
-    let (bar_start, bar_instrs) =
-        get_function_instructions(&output, "bar").expect("bar should exist");
+    let (foo_start, foo_instrs) = get_function_instructions(&output, "foo").expect("foo should exist");
+    let (bar_start, bar_instrs) = get_function_instructions(&output, "bar").expect("bar should exist");
 
     // foo and bar should have non-empty instruction slices.
     assert!(!foo_instrs.is_empty(), "foo should have instructions");

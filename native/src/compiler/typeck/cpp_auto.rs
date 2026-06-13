@@ -59,12 +59,10 @@ impl TypeChecker {
                 }
             }
             Expr::New { elem_type, .. } => Type::pointer_to(elem_type.clone()),
-            Expr::Lambda { unique_id, .. } => {
-                Type::Class {
-                    name: format!("__lambda_{}", unique_id),
-                    is_const: false,
-                }
-            }
+            Expr::Lambda { unique_id, .. } => Type::Class {
+                name: format!("__lambda_{}", unique_id),
+                is_const: false,
+            },
             Expr::Cast { target_type, .. } => target_type.clone(),
             Expr::Ternary { then_branch, .. } => self.deduce_auto_type(then_branch),
             Expr::Member { ty, .. } => ty.clone(),

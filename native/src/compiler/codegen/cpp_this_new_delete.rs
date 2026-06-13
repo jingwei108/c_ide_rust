@@ -120,7 +120,11 @@ impl BytecodeGen {
                 // Initialize vptr if class has a vtable
                 if let Some(&vtable_offset) = self.class_vtables.get(name) {
                     self.emit(OpCode::LoadLocal, ptr_temp, loc);
-                    self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + vtable_offset as i32, loc);
+                    self.emit(
+                        OpCode::PushConst,
+                        crate::vm::vm::GLOBAL_START as i32 + vtable_offset as i32,
+                        loc,
+                    );
                     self.emit(OpCode::StoreMem, 0, loc);
                 }
                 let ctor_name = if let Some(ref init_expr) = init {

@@ -146,8 +146,16 @@ impl PartialEq for Type {
             (Type::RValueRef { base: a }, Type::RValueRef { base: b }) => a == b,
             (Type::Auto, Type::Auto) => true,
             (
-                Type::TemplateId { base: a, args: a2, is_const: a3 },
-                Type::TemplateId { base: b, args: b2, is_const: b3 },
+                Type::TemplateId {
+                    base: a,
+                    args: a2,
+                    is_const: a3,
+                },
+                Type::TemplateId {
+                    base: b,
+                    args: b2,
+                    is_const: b3,
+                },
             ) => a == b && a2 == b2 && a3 == b3,
             _ => false,
         }
@@ -648,7 +656,9 @@ impl std::fmt::Display for Type {
             Type::TemplateId { base, args, .. } => {
                 write!(f, "{}<", base)?;
                 for (i, a) in args.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", a)?;
                 }
                 write!(f, ">")
@@ -857,6 +867,9 @@ pub enum Expr {
         method: String,
         args: Vec<Expr>,
         is_virtual: bool,
+        /// The mangled function name chosen by overload resolution.
+        /// If `None`, codegen will recompute the fallback name.
+        resolved_mangled: Option<String>,
         loc: SourceLoc,
         ty: Type,
     },
