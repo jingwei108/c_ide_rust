@@ -4880,3 +4880,73 @@ int main() {
     let out = filter_outputs(outputs);
     assert_eq!(out.join(""), "5", "sizeof(int[n]) / sizeof(int) should equal n");
 }
+
+fn compile_and_run_raw_output(source: &str) -> Result<(i32, String), String> {
+    unsafe {
+        let session = cide_native::capi::cide_session_create();
+        if session.is_null() {
+            return Err("Failed to create session".to_string());
+        }
+
+        let src = CString::new(source).map_err(|e| e.to_string())?;
+        let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
+        if compile_ret != 0 {
+            let err_ptr = cide_native::capi::cide_get_compile_errors(session);
+            let err_msg = if err_ptr.is_null() {
+                "Unknown compile error".to_string()
+            } else {
+                std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string()
+            };
+            cide_native::capi::cide_session_destroy(session);
+            return Err(err_msg);
+        }
+
+        let run_ret = cide_native::capi::cide_run(session);
+
+        let out_len = cide_native::capi::cide_get_output_length(session);
+        let mut out_str = if out_len > 0 {
+            let mut buf = vec![0u8; out_len as usize + 1];
+            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            String::from_utf8_lossy(&buf[..out_len as usize]).to_string()
+        } else {
+            String::new()
+        };
+        // 过滤 Cide CLI 风格的后缀提示
+        if let Some(pos) = out_str.find("程序运行完成") {
+            out_str.truncate(pos);
+        }
+
+        let err_ptr = cide_native::capi::cide_get_runtime_error(session);
+        let runtime_err = if err_ptr.is_null() {
+            None
+        } else {
+            Some(std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string())
+        };
+
+        cide_native::capi::cide_session_destroy(session);
+
+        if let Some(e) = runtime_err {
+            if !e.is_empty() {
+                return Err(format!("Runtime error: {}", e));
+            }
+        }
+
+        Ok((run_ret, out_str))
+    }
+}
+
+#[test]
+fn test_e2e_printf_no_auto_newline() {
+    // 修复：printf 连续调用时不应自动添加换行符，行为需与 C 标准一致。
+    let src = r#"
+#include <stdio.h>
+int main() {
+    for (int i = 0; i < 3; i++) printf("%d ", i);
+    return 0;
+}
+"#;
+    let result = compile_and_run_raw_output(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (_, out) = result.unwrap();
+    assert_eq!(out, "0 1 2 ", "printf calls should not automatically add newlines");
+}

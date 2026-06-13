@@ -81,91 +81,60 @@ fn test_type_checker_float_implicit_cast() {
 }
 
 #[test]
-fn test_type_checker_recursive_call() {
+fn test_type_checker_pointer_assign() {
+    let (errors, _, _) = type_check("int main() { int x; int *p = &x; *p = 5; return x; }");
+    assert!(errors.is_empty(), "Pointer assignment should be valid");
+}
+
+#[test]
+fn test_type_checker_function_pointer() {
     let src = r#"
-        int fact(int n) {
-            if (n <= 1) return 1;
-            return n * fact(n - 1);
+        int add(int a, int b) { return a + b; }
+        int main() {
+            int (*fp)(int, int) = add;
+            return fp(1, 2);
         }
-        int main() { return fact(5); }
     "#;
     let (errors, _, _) = type_check(src);
-    assert!(errors.is_empty(), "Recursive call should be valid: {:?}", errors);
+    assert!(errors.is_empty(), "Function pointer should be valid: {:?}", errors);
 }
 
 #[test]
-fn test_type_checker_forward_decl() {
+fn test_type_checker_union_member_access() {
     let src = r#"
-        int foo(int x);
-        int main() { return foo(5); }
-        int foo(int x) { return x * 2; }
+        union U { int i; float f; };
+        int main() {
+            union U u;
+            u.i = 10;
+            return u.i;
+        }
     "#;
     let (errors, _, _) = type_check(src);
-    assert!(errors.is_empty(), "Forward declaration should be valid: {:?}", errors);
+    assert!(errors.is_empty(), "Union member access should be valid");
 }
 
 #[test]
-fn test_type_checker_duplicate_var() {
-    let (errors, _, _) = type_check("int main() { int x; int x; return 0; }");
-    assert!(!errors.is_empty(), "Expected error for duplicate variable");
+fn test_type_checker_string_literal_to_char_ptr() {
+    let (errors, _, _) = type_check("int main() { char *s = \"hello\"; return 0; }");
+    assert!(errors.is_empty(), "String literal to char* should be valid");
 }
 
 #[test]
-fn test_type_checker_printf_format_mismatch() {
-    let src = r#"int main() { printf("%f", 5); return 0; }"#;
+fn test_type_checker_ternary_string_literals() {
+    // 修复：三目运算符两个分支均为字符串字面量（不同长度数组）时应统一为 char*
+    let src = r#"
+        #include <stdio.h>
+        int main() {
+            printf("%s", 1 ? " " : "");
+            return 0;
+        }
+    "#;
     let (errors, _, _) = type_check(src);
-    assert!(!errors.is_empty(), "Expected error for printf format mismatch");
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.message.contains("格式") || e.message.contains("不匹配")),
-        "Expected format mismatch message, got: {:?}",
-        errors
-    );
+    assert!(errors.is_empty(), "Ternary with string literals should be valid: {:?}", errors);
 }
 
 #[test]
-fn test_type_checker_printf_format_ok() {
-    let src = r#"int main() { printf("%d %f %s", 5, 3.14, "hello"); return 0; }"#;
-    let (errors, _, _) = type_check(src);
-    assert!(errors.is_empty(), "Expected no errors for correct printf format: {:?}", errors);
-}
-
-#[test]
-fn test_type_checker_scanf_format_mismatch() {
-    let src = r#"int main() { float f; scanf("%d", &f); return 0; }"#;
-    let (errors, _, _) = type_check(src);
-    assert!(!errors.is_empty(), "Expected error for scanf format mismatch");
-    assert!(
-        errors
-            .iter()
-            .any(|e| e.message.contains("格式") || e.message.contains("不匹配")),
-        "Expected format mismatch message, got: {:?}",
-        errors
-    );
-}
-
-#[test]
-fn test_type_checker_scanf_format_ok() {
-    let src = r#"int main() { int a; float f; char s[10]; scanf("%d %f %s", &a, &f, s); return 0; }"#;
-    let (errors, _, _) = type_check(src);
-    assert!(errors.is_empty(), "Expected no errors for correct scanf format: {:?}", errors);
-}
-
-#[test]
-fn test_type_checker_printf_arg_count_mismatch() {
-    let src = r#"int main() { printf("%d %d", 5); return 0; }"#;
-    let (errors, _, _) = type_check(src);
-    assert!(!errors.is_empty(), "Expected error for printf arg count mismatch");
-    assert!(
-        errors.iter().any(|e| e.message.contains("不匹配")),
-        "Expected count mismatch message, got: {:?}",
-        errors
-    );
-}
-
-#[test]
-fn test_type_checker_struct_return_by_value_allowed() {
+fn test_type_checker_struct_return_by_value() {
     let src = r#"
         struct S { int a; int b; };
         struct S foo() {

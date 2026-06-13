@@ -232,7 +232,6 @@ fn test_cide_e2e_baseline() {
 /// `test_cide_e2e_template_known_failures` below.
 const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
     "bTree_default",
-    "bellmanFord_default",
     "infixEvaluation_default",
     "spfa_default",
     "threadedBinaryTree_default",
@@ -252,7 +251,7 @@ const KNOWN_KR_FAILURES: &[&str] = &[
     "kr_5_10",
     // kr_5_11 已修复 (char*[] 指针数组 elem_type_size / 初始化路径)
     // kr_5_13 已修复 (getchar Batch 模式多行输入)
-    "kr_5_14", "kr_5_16",
+    "kr_5_14",
     "kr_6_1",
     // kr_6_2 已修复 (Parser 指针无名参数 + ungetc)
     // kr_6_3 已修复 (Parser 指针无名参数 + ungetc)

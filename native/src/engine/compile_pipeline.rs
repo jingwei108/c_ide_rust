@@ -572,14 +572,6 @@ pub fn run_multi_file_pipeline(
         push_hints(session, &type_hints, &full_source, Some(&file_ranges));
     }
 
-    for f in &program.funcs {
-        if f.name == "main" {
-            if let Some(ref body) = f.body {
-                crate::capi::dump_var_decls(body, 0);
-            }
-        }
-    }
-
     // 4. BytecodeGen
     let gen = BytecodeGen::with_mode(is_library_mode);
     let output = match gen.generate(&mut program) {
