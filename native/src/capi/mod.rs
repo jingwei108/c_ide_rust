@@ -1,5 +1,3 @@
-#![allow(clippy::missing_safety_doc)]
-
 use crate::session::*;
 use crate::vm::vm::{CideVM, NULL_TRAP_SIZE};
 use std::ffi::{c_char, c_int, CStr, CString};
@@ -40,6 +38,10 @@ pub extern "C" fn cide_session_create() -> *mut Session {
 }
 
 #[no_mangle]
+/// cide_session_destroy 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_session_destroy(s: *mut Session) {
     if !s.is_null() {
         drop(Box::from_raw(s));
@@ -56,6 +58,12 @@ struct SessionSnapshot {
 }
 
 #[no_mangle]
+/// cide_session_save 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `filepath` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+/// - `filepath` 若非空，必须指向以 null 结尾的有效 UTF-8 字符串。
 pub unsafe extern "C" fn cide_session_save(s: *mut Session, filepath: *const c_char) -> c_int {
     if s.is_null() || filepath.is_null() {
         return -1;
@@ -82,6 +90,12 @@ pub unsafe extern "C" fn cide_session_save(s: *mut Session, filepath: *const c_c
 }
 
 #[no_mangle]
+/// cide_session_load 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `filepath` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+/// - `filepath` 若非空，必须指向以 null 结尾的有效 UTF-8 字符串。
 pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_char) -> c_int {
     if s.is_null() || filepath.is_null() {
         return -1;
@@ -110,6 +124,12 @@ pub unsafe extern "C" fn cide_session_load(s: *mut Session, filepath: *const c_c
 }
 
 #[no_mangle]
+/// cide_compile 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `source` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+/// - `source` 若非空，必须指向以 null 结尾的有效 UTF-8 字符串。
 pub unsafe extern "C" fn cide_compile(s: *mut Session, source: *const c_char) -> c_int {
     if s.is_null() || source.is_null() {
         return -1;
@@ -128,6 +148,12 @@ pub unsafe extern "C" fn cide_compile(s: *mut Session, source: *const c_char) ->
 }
 
 #[no_mangle]
+/// cide_compile_unit 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `filename`, `source` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+/// - `filename`, `source` 若非空，必须指向以 null 结尾的有效 UTF-8 字符串。
 pub unsafe extern "C" fn cide_compile_unit(s: *mut Session, filename: *const c_char, source: *const c_char) -> c_int {
     if s.is_null() || filename.is_null() || source.is_null() {
         return -1;
@@ -149,6 +175,10 @@ pub unsafe extern "C" fn cide_compile_unit(s: *mut Session, filename: *const c_c
 }
 
 #[no_mangle]
+/// cide_compile_all 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_compile_all(s: *mut Session) -> c_int {
     if s.is_null() {
         return -1;
@@ -194,6 +224,10 @@ pub fn dump_var_decls(stmt: &crate::compiler::ast::Stmt, _depth: i32) {
 /// 返回的指针由 `Session` 内部 `CString` 缓存持有，在下次调用本函数或销毁 Session 之前有效。
 /// 调用方应立即复制数据，不要长期保存此指针。
 #[no_mangle]
+/// cide_get_compile_errors 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_char {
     if s.is_null() {
         return ptr::null();
@@ -213,6 +247,11 @@ pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_ch
 }
 
 #[no_mangle]
+/// cide_get_compile_errors_buf 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_get_compile_errors_buf(s: *mut Session, buf: *mut c_char, max_len: c_int) -> c_int {
     if s.is_null() || buf.is_null() || max_len <= 0 {
         return -1;
@@ -230,6 +269,10 @@ pub unsafe extern "C" fn cide_get_compile_errors_buf(s: *mut Session, buf: *mut 
 }
 
 #[no_mangle]
+/// cide_run 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
     if s.is_null() || !(*s).compile.compiled {
         if !s.is_null() {
@@ -246,6 +289,10 @@ pub unsafe extern "C" fn cide_run(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_step_next 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
     if s.is_null() || !(*s).compile.compiled {
         if !s.is_null() {
@@ -338,6 +385,10 @@ pub unsafe extern "C" fn cide_step_next(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_get_current_line 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_get_current_line(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -346,6 +397,10 @@ pub unsafe extern "C" fn cide_get_current_line(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_callstack_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_callstack_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -357,6 +412,11 @@ pub unsafe extern "C" fn cide_callstack_count(s: *mut Session) -> c_int {
     }
 }
 
+/// cide_callstack_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `name`, `line` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_callstack_get(
     s: *mut Session,
@@ -417,6 +477,10 @@ pub unsafe extern "C" fn cide_callstack_get(
 }
 
 #[no_mangle]
+/// cide_breakpoint_add 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_breakpoint_add(s: *mut Session, line: c_int) {
     if !s.is_null() && line > 0 {
         if let Some(ref mut vm) = (*s).vm {
@@ -426,6 +490,10 @@ pub unsafe extern "C" fn cide_breakpoint_add(s: *mut Session, line: c_int) {
 }
 
 #[no_mangle]
+/// cide_breakpoint_remove 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_breakpoint_remove(s: *mut Session, line: c_int) {
     if !s.is_null() && line > 0 {
         if let Some(ref mut vm) = (*s).vm {
@@ -435,6 +503,10 @@ pub unsafe extern "C" fn cide_breakpoint_remove(s: *mut Session, line: c_int) {
 }
 
 #[no_mangle]
+/// cide_breakpoint_clear 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_breakpoint_clear(s: *mut Session) {
     if !s.is_null() {
         if let Some(ref mut vm) = (*s).vm {
@@ -447,6 +519,10 @@ pub unsafe extern "C" fn cide_breakpoint_clear(s: *mut Session) {
 /// 返回的指针由 `Session` 内部 `CString` 缓存持有，在下次调用本函数或销毁 Session 之前有效。
 /// 调用方应立即复制数据，不要长期保存此指针。
 #[no_mangle]
+/// cide_get_runtime_error 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_char {
     if s.is_null() {
         return ptr::null();
@@ -466,6 +542,11 @@ pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_cha
 }
 
 #[no_mangle]
+/// cide_get_runtime_error_buf 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_get_runtime_error_buf(s: *mut Session, buf: *mut c_char, max_len: c_int) -> c_int {
     if s.is_null() || buf.is_null() || max_len <= 0 {
         return -1;
@@ -483,6 +564,12 @@ pub unsafe extern "C" fn cide_get_runtime_error_buf(s: *mut Session, buf: *mut c
 }
 
 #[no_mangle]
+/// cide_set_input 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `input` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+/// - `input` 若非空，必须指向以 null 结尾的有效 UTF-8 字符串。
 pub unsafe extern "C" fn cide_set_input(s: *mut Session, input: *const c_char) {
     if s.is_null() {
         return;
@@ -501,6 +588,10 @@ pub unsafe extern "C" fn cide_set_input(s: *mut Session, input: *const c_char) {
 }
 
 #[no_mangle]
+/// cide_is_waiting_input 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_is_waiting_input(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -513,6 +604,12 @@ pub unsafe extern "C" fn cide_is_waiting_input(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_provide_input_line 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `line` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+/// - `line` 若非空，必须指向以 null 结尾的有效 UTF-8 字符串。
 pub unsafe extern "C" fn cide_provide_input_line(s: *mut Session, line: *const c_char) -> c_int {
     if s.is_null() {
         return -1;
@@ -531,6 +628,10 @@ pub unsafe extern "C" fn cide_provide_input_line(s: *mut Session, line: *const c
 }
 
 #[no_mangle]
+/// cide_input_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_input_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -539,6 +640,10 @@ pub unsafe extern "C" fn cide_input_count(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_get_output_length 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_get_output_length(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -547,6 +652,11 @@ pub unsafe extern "C" fn cide_get_output_length(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_get_output 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_get_output(s: *mut Session, buf: *mut c_char, max_len: c_int) {
     if s.is_null() || buf.is_null() || max_len <= 0 {
         return;
@@ -560,6 +670,10 @@ pub unsafe extern "C" fn cide_get_output(s: *mut Session, buf: *mut c_char, max_
 }
 
 #[no_mangle]
+/// cide_memory_region_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_memory_region_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -567,6 +681,11 @@ pub unsafe extern "C" fn cide_memory_region_count(s: *mut Session) -> c_int {
     (*s).memory.regions.len() as c_int
 }
 
+/// cide_memory_region_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `addr`, `size`, `name`, `ty`, `is_heap`, `is_freed` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_memory_region_get(
     s: *mut Session,
@@ -613,6 +732,11 @@ pub unsafe extern "C" fn cide_memory_region_get(
 }
 
 #[no_mangle]
+/// cide_memory_get_value 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `out_val` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_memory_get_value(s: *mut Session, addr: u32, out_val: *mut c_int) -> c_int {
     if s.is_null() || out_val.is_null() {
         return -1;
@@ -636,6 +760,11 @@ pub unsafe extern "C" fn cide_memory_get_value(s: *mut Session, addr: u32, out_v
 }
 
 #[no_mangle]
+/// cide_memory_get_pointer_target 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `out_target` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_memory_get_pointer_target(s: *mut Session, addr: u32, out_target: *mut u32) -> c_int {
     if s.is_null() || out_target.is_null() {
         return -1;
@@ -661,6 +790,10 @@ pub unsafe extern "C" fn cide_memory_get_pointer_target(s: *mut Session, addr: u
 }
 
 #[no_mangle]
+/// cide_diagnostic_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_diagnostic_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -668,6 +801,11 @@ pub unsafe extern "C" fn cide_diagnostic_count(s: *mut Session) -> c_int {
     (*s).compile.diagnostics.len() as c_int
 }
 
+/// cide_diagnostic_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `line`, `column`, `error_code`, `severity`, `message`, `fix_suggestion` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_diagnostic_get(
     s: *mut Session,
@@ -713,6 +851,11 @@ pub unsafe extern "C" fn cide_diagnostic_get(
     write_str(fix_suggestion, fix_size, &d.fix_suggestion);
 }
 
+/// cide_diagnostic_get_fix 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `fix_kind`, `start_line`, `start_column`, `end_line`, `end_column`, `replacement_text` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_diagnostic_get_fix(
     s: *mut Session,
@@ -762,6 +905,11 @@ pub unsafe extern "C" fn cide_diagnostic_get_fix(
     write_str(replacement_text, replacement_size, &d.replacement_text);
 }
 
+/// cide_sourcemap_lookup 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `out_line`, `out_column` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_sourcemap_lookup(
     s: *mut Session,
@@ -795,6 +943,10 @@ pub unsafe extern "C" fn cide_sourcemap_lookup(
 }
 
 #[no_mangle]
+/// cide_trace_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_trace_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -802,6 +954,11 @@ pub unsafe extern "C" fn cide_trace_count(s: *mut Session) -> c_int {
     (*s).runtime.trace.len() as c_int
 }
 
+/// cide_trace_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `line`, `operation` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_trace_get(
     s: *mut Session,
@@ -824,6 +981,10 @@ pub unsafe extern "C" fn cide_trace_get(
 }
 
 #[no_mangle]
+/// cide_variable_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_variable_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -831,6 +992,11 @@ pub unsafe extern "C" fn cide_variable_count(s: *mut Session) -> c_int {
     (*s).runtime.variable_snapshot.len() as c_int
 }
 
+/// cide_variable_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `name`, `addr`, `is_local`, `is_array`, `array_size`, `value` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_variable_get(
     s: *mut Session,
@@ -884,6 +1050,11 @@ pub unsafe extern "C" fn cide_variable_get(
     }
 }
 
+/// cide_variable_get_type 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `type_buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_variable_get_type(
     s: *mut Session,
@@ -903,6 +1074,11 @@ pub unsafe extern "C" fn cide_variable_get_type(
     type_str.len() as c_int
 }
 
+/// cide_variable_find_by_addr 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `name`, `offset` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_variable_find_by_addr(
     s: *mut Session,
@@ -936,6 +1112,11 @@ pub unsafe extern "C" fn cide_variable_find_by_addr(
     -1
 }
 
+/// cide_variable_get_field 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `out_offset`, `name` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_variable_get_field(
     s: *mut Session,
@@ -976,6 +1157,10 @@ pub unsafe extern "C" fn cide_variable_get_field(
 }
 
 #[no_mangle]
+/// cide_vis_event_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_vis_event_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -984,6 +1169,11 @@ pub unsafe extern "C" fn cide_vis_event_count(s: *mut Session) -> c_int {
 }
 
 #[no_mangle]
+/// cide_vis_event_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `ty`, `line` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_vis_event_get(s: *mut Session, index: c_int, ty: *mut c_int, line: *mut c_int) {
     if s.is_null() || index < 0 || index >= (*s).runtime.vis_event_cache.len() as c_int {
         if !ty.is_null() {
@@ -1003,6 +1193,11 @@ pub unsafe extern "C" fn cide_vis_event_get(s: *mut Session, index: c_int, ty: *
     }
 }
 
+/// cide_vis_event_get_ex 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `ty`, `line`, `extra0`, `extra1`, `extra2` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_vis_event_get_ex(
     s: *mut Session,
@@ -1050,6 +1245,10 @@ pub unsafe extern "C" fn cide_vis_event_get_ex(
 }
 
 #[no_mangle]
+/// cide_vis_event_clear 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_vis_event_clear(s: *mut Session) {
     if s.is_null() {
         return;
@@ -1058,6 +1257,10 @@ pub unsafe extern "C" fn cide_vis_event_clear(s: *mut Session) {
 }
 
 #[no_mangle]
+/// cide_algorithm_match_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_algorithm_match_count(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
@@ -1065,6 +1268,11 @@ pub unsafe extern "C" fn cide_algorithm_match_count(s: *mut Session) -> c_int {
     (*s).compile.algorithm_matches.len() as c_int
 }
 
+/// cide_algorithm_match_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `name`, `display_name`, `func_name`, `confidence`, `suggestion`, `line` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_algorithm_match_get(
     s: *mut Session,
@@ -1115,6 +1323,10 @@ pub unsafe extern "C" fn cide_algorithm_match_get(
 }
 
 #[no_mangle]
+/// cide_algorithm_match_vis_event_count 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 pub unsafe extern "C" fn cide_algorithm_match_vis_event_count(s: *mut Session, match_index: c_int) -> c_int {
     if s.is_null() || match_index < 0 || match_index >= (*s).compile.algorithm_matches.len() as c_int {
         return 0;
@@ -1122,6 +1334,11 @@ pub unsafe extern "C" fn cide_algorithm_match_vis_event_count(s: *mut Session, m
     (&(*s).compile.algorithm_matches)[match_index as usize].vis_events.len() as c_int
 }
 
+/// cide_algorithm_match_vis_event_get 的 C API 封装。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `ty`, `line`, `context` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 #[no_mangle]
 pub unsafe extern "C" fn cide_algorithm_match_vis_event_get(
     s: *mut Session,
