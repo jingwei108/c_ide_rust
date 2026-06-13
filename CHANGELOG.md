@@ -18,6 +18,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 删除已废弃的 `native/runtime_libc/cide/layouts.toml`
   - 全部 600+ 测试通过，零回归
 
+### Fixed (代码审查报告推进)
+- **移除生产代码中的调试输出**：删除 `capi/mod.rs` 中 `CAPI: calling run_multi_file_pipeline` 与 `DUMP: VarDecl` 的 `println!`，以及 `engine/compile_pipeline.rs` 中对 `dump_var_decls` 的调用，避免污染程序 stdout 导致 Shadow Verification 误判
+- **修复 `printf`/`putchar` 输出缓冲行为**：`RuntimeState::output()` 从 `output_lines.join("\n")` 改为 `join("")`，与 C 标准一致：只有格式字符串显式包含 `\n` 或调用 `puts` 时才换行，不再为每次 `printf` 自动换行
+- **struct 体支持多字段声明**：`parser/mod.rs` `parse_struct_body` 改为先 `parse_base_type` 再 `parse_declarator`，并支持逗号分隔的多个声明符（如 `int u, v, w;`）
+- **支持 `typedef enum { ... } Alias;`**：新增 `parse_typedef_enum_decl`，解析匿名枚举 typedef；顶层 Enum 分支改为可选消费 `Identifier`
+- **支持匿名 `enum { ... };` 声明**：移除顶层 Enum 分支对枚举名的强制要求
+- **三目运算符支持数组到指针的通常转换**：`typeck/expr.rs` 对三目分支中的 `Array` 类型统一 decay 为指向元素的指针，使 `" "`（char[2]）与 `""`（char[1]）可统一为 `char*`
+- **回归测试扩展**：`parser_unit_test` +3、`type_checker_unit_test` +1、`end_to_end_extra_test` +1
+- **失败记录同步**：`bellmanFord_default` 从 `KNOWN_TEMPLATE_FAILURES` 移除；`kr_5_16` 从 `KNOWN_KR_FAILURES` 移除；更新 `E2E_FAILURES.md` / `KR_FAILURES.md`
+
 ### Added (P0 语法拓展)
 - **通用逗号运算符 `a, b`**：Parser 在 `parse_assign` 前新增 `parse_comma` 层，AST 新增 `BinaryOp::Comma`
   - TypeChecker 取右操作数类型，CodeGen 生成左值计算 + `Pop` 后保留右值
