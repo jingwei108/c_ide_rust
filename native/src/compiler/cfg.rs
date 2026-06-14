@@ -247,7 +247,7 @@ impl CfgBuilder {
     fn build_block(&mut self, stmt: &Stmt) -> BlockId {
         match stmt {
             Stmt::Block { stmts, .. } => self.build_seq(stmts),
-            Stmt::If { cond, then_stmt, else_stmt, .. } => {
+            Stmt::If { cond, then_stmt, else_stmt, loc, .. } => {
                 let then_entry = self.build_block(then_stmt);
                 let else_entry = else_stmt.as_ref().map(|s| self.build_block(s)).unwrap_or_else(|| {
                     let id = self.alloc_id();
@@ -268,8 +268,13 @@ impl CfgBuilder {
                 self.add_edge(then_entry, merge);
                 self.add_edge(else_entry, merge);
 
+                // B35: 条件块只需保留条件表达式与源位置，避免克隆整个 If AST 子树。
+                let cond_stmt = Stmt::Expr {
+                    expr: cond.clone(),
+                    loc: *loc,
+                };
                 let cond_block = self.add_block(
-                    vec![stmt.clone()],
+                    vec![cond_stmt],
                     Terminator::Branch {
                         cond: cond.clone(),
                         then_block: then_entry,
@@ -411,7 +416,8 @@ impl CfgBuilder {
             // Only add fall-through edge if the block doesn't already have a terminator
             // that resolves to a different target.
             let needs_edge = if let Some(block) = self.blocks.iter().find(|b| b.id == from) {
-                matches!(block.terminator, Terminator::FallThrough(_) | Terminator::Return)
+                // B36: Return 块不应再向后 fall-through；仅 FallThrough 需要连接下一块。
+                matches!(block.terminator, Terminator::FallThrough(_))
             } else {
                 false
             };
@@ -480,5 +486,49 @@ mod tests {
         let cfg = ControlFlowGraph::from_func(&func).unwrap();
         let dom = cfg.compute_dominators();
         assert!(dom.contains_key(&cfg.entry));
+    }
+
+    #[test]
+    fn test_cfg_if_cond_block_does_not_clone_whole_if() {
+        // B35: If 条件块的 stmts 应只保留条件表达式，而不是克隆整个 If AST 子树。
+        let func = parse_func("int main() { int x = 1; if (x) { return 1; } else { return 0; } }");
+        let cfg = ControlFlowGraph::from_func(&func).unwrap();
+        let cond_blocks: Vec<_> = cfg
+            .blocks
+            .iter()
+            .filter(|b| matches!(b.terminator, Terminator::Branch { .. }))
+            .collect();
+        assert_eq!(cond_blocks.len(), 1);
+        let cond_block = cond_blocks[0];
+        assert_eq!(cond_block.stmts.len(), 1, "条件块应只包含一个占位语句");
+        assert!(
+            !matches!(cond_block.stmts[0], Stmt::If { .. }),
+            "条件块不应包含完整的 If 语句"
+        );
+        assert!(
+            matches!(cond_block.stmts[0], Stmt::Expr { .. }),
+            "条件块应只包含 Expr 占位语句"
+        );
+    }
+
+    #[test]
+    fn test_cfg_return_no_fall_through_edge() {
+        // B36: return 终结的块不应再向后 fall-through。
+        let func = parse_func("int main() { return 1; int x = 2; return x; }");
+        let cfg = ControlFlowGraph::from_func(&func).unwrap();
+        let return_blocks: Vec<_> = cfg
+            .blocks
+            .iter()
+            .filter(|b| matches!(b.terminator, Terminator::Return))
+            .collect();
+        assert!(!return_blocks.is_empty(), "应存在 Return 终结的块");
+        for rb in &return_blocks {
+            let has_outgoing = cfg.edges.iter().any(|(from, _)| *from == rb.id);
+            assert!(
+                !has_outgoing,
+                "Return 块 {} 不应有任何出边",
+                rb.id
+            );
+        }
     }
 }

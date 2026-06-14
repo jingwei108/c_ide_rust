@@ -3,6 +3,7 @@ use crate::unified::checkpoint::CheckpointManager;
 use crate::unified::collector::StepCollector;
 use crate::unified::trace_analyzer::TraceAnalyzer;
 use crate::unified::types::{AutoStepResult, SeekResult, StepMeta, StepPayload};
+use crate::vm::snapshot::VMSnapshot;
 use crate::vm::vm::{CideVM, StepResult};
 
 /// 统一模式引擎：整合检查点管理、数据收集和批量执行。
@@ -15,6 +16,8 @@ pub struct UnifiedEngine {
     pub max_steps: i32,
     pub is_paused: bool,
     pub is_cancelled: bool,
+    /// 复用的 pre-step 快照容器，避免 `run_batch` 每步分配 1MB Vec。
+    pre_step_snap: Option<VMSnapshot>,
 }
 
 impl Default for UnifiedEngine {
@@ -31,6 +34,7 @@ impl UnifiedEngine {
             max_steps: 100_000,
             is_paused: false,
             is_cancelled: false,
+            pre_step_snap: None,
         }
     }
 
@@ -92,6 +96,7 @@ impl UnifiedEngine {
         self.frame_cache.clear();
         self.is_paused = false;
         self.is_cancelled = false;
+        self.pre_step_snap = None;
     }
 
     pub fn pause(&mut self) {
@@ -141,8 +146,14 @@ impl UnifiedEngine {
                 self.checkpoints.save(step, vm, session);
             }
 
-            // 执行前快照：用于 Trap 时自动回退
-            let pre_step_snap = vm.snapshot(session);
+            // 执行前快照：用于 Trap 时自动回退。
+            // 复用已有 VMSnapshot 的 1MB buffer，避免每步分配新 Vec。
+            if let Some(snap) = self.pre_step_snap.as_mut() {
+                vm.snapshot_into(session, snap);
+            } else {
+                self.pre_step_snap = Some(vm.snapshot(session));
+            }
+            let pre_step_snap = self.pre_step_snap.as_ref().expect("pre_step_snap just set");
 
             // 执行一步
             match vm.step(session) {
@@ -169,7 +180,7 @@ impl UnifiedEngine {
                 }
                 StepResult::Trap => {
                     // 自动回退到上一步状态
-                    vm.restore(&pre_step_snap, session);
+                    vm.restore(pre_step_snap, session);
                     let mut payload = StepCollector::collect(vm, session, step);
 
                     // Build full history for trace analysis.

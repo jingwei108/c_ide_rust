@@ -822,7 +822,7 @@ impl TypeChecker {
             }
             Expr::InitList { elements, ty, .. } => {
                 for elem in elements.iter_mut() {
-                    self.resolve_expr_type(elem);
+                    self.resolve_expr_type(&mut elem.value);
                 }
                 *ty = Type::void();
                 ty.clone()

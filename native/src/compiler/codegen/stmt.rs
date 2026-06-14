@@ -269,7 +269,7 @@ impl StmtGen for BytecodeGen {
                                         let elem_stride = self.type_size(&inner_ty);
                                         for (i, elem) in elements.iter_mut().enumerate() {
                                             let addr_offset = (i as i32) * elem_stride;
-                                            self.gen_nested_init(base_temp, addr_offset, &inner_ty, elem, loc);
+                                            self.gen_nested_init(base_temp, addr_offset, &inner_ty, &mut elem.value, loc);
                                         }
                                         // Zero-fill remaining elements
                                         let expected_count = if !vty.dims().is_empty() && vty.dims()[0] > 0 {
@@ -359,13 +359,13 @@ impl StmtGen for BytecodeGen {
                                                 }
                                                 if let Some(elem) = elements.get_mut(i) {
                                                     if elem_size == 8 {
-                                                        self.gen_expr(elem);
+                                                        self.gen_expr(&mut elem.value);
                                                         self.emit(OpCode::StoreMemD, 0, loc);
                                                     } else if matches!(
                                                         &elem.value,
                                                         Expr::Identifier { .. } | Expr::StringLiteral { .. }
                                                     ) {
-                                                        self.gen_expr(elem);
+                                                        self.gen_expr(&mut elem.value);
                                                         self.emit(OpCode::StoreMem, 0, loc);
                                                     } else {
                                                         let val = values.get(i).copied().unwrap_or(0);
@@ -455,14 +455,14 @@ impl StmtGen for BytecodeGen {
                                         if matches!(&elem.value, Expr::InitList { .. })
                                             && (fields[i].ty.is_struct() || fields[i].ty.is_class() || fields[i].ty.is_array())
                                         {
-                                            self.gen_nested_init(base_temp, offset, &fields[i].ty, elem, loc);
+                                            self.gen_nested_init(base_temp, offset, &fields[i].ty, &mut elem.value, loc);
                                         } else {
                                             self.emit(OpCode::LoadLocal, base_temp, loc);
                                             if offset > 0 {
                                                 self.emit(OpCode::PushConst, offset, loc);
                                                 self.emit(OpCode::Add, 0, loc);
                                             }
-                                            self.gen_expr(elem);
+                                            self.gen_expr(&mut elem.value);
                                             if fields[i].ty.kind() == TypeKind::Double {
                                                 self.emit(OpCode::StoreMemD, 0, loc);
                                             } else if fields[i].ty.kind() == TypeKind::LongLong {

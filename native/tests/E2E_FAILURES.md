@@ -14,8 +14,12 @@
 ### bTree_default
 
 - **来源**: 算法模板批量生成（B 树）
-- **失败原因**: 编译错误 / 运行时错误
-- **最小复现**: 待补充
+- **失败原因**: 运行时错误
+- **最小复现**:
+  ```bash
+  cide_cli run native/tests/cases_template_generated/bTree_default.c
+  ```
+  运行时访问 NULL 指针区域（地址 0x0010），发生在 `bTree_default.c:71`（`node->children[i]->keyCount`）。
 - **是否 Cide 限制**: 是
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否

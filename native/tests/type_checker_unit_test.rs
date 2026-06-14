@@ -159,3 +159,15 @@ fn test_type_checker_struct_pointer_return_allowed() {
     let (errors, _, _) = type_check(src);
     assert!(errors.is_empty(), "Struct pointer return should be allowed: {:?}", errors);
 }
+
+#[test]
+fn test_type_checker_incompatible_pointer_assignment_warns() {
+    // B39: 不兼容的具体指针类型赋值应报告 warning，但不影响编译。
+    let (errors, warnings, _) = type_check("int main() { int x; int *p = (double *)&x; return 0; }");
+    assert!(errors.is_empty(), "Incompatible pointer assignment should not be an error: {:?}", errors);
+    assert!(
+        warnings.iter().any(|w| w.message.contains("不兼容的指针类型赋值")),
+        "Expected warning for incompatible pointer assignment, got: {:?}",
+        warnings
+    );
+}

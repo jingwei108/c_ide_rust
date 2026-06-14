@@ -91,38 +91,51 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
     session.runtime.step_mode = false;
     session.runtime.waiting_input = false;
 
-    let mut vm = session.vm.take().unwrap_or_default();
-    if !is_resume {
-        setup_vm(&mut vm, session);
-        inject_preset_files(&mut vm, session);
-    } else {
-        vm.resume();
-    }
-
-    let ret = vm.run(session);
+    // B47: 用 catch_unwind 保护 take 后的 VM，避免 setup_vm / inject_preset_files / vm.run
+    // 中 panic 导致 VM 永久丢失。panic 后把 VM 还回 session 并返回错误。
+    let mut vm_slot = Some(session.vm.take().unwrap_or_default());
+    let run_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let vm = vm_slot.as_mut().unwrap();
+        if !is_resume {
+            setup_vm(vm, session);
+            inject_preset_files(vm, session);
+        } else {
+            vm.resume();
+        }
+        vm.run(session)
+    }));
+    let vm = vm_slot.take().unwrap();
 
     // 收集 JIT 统计（在 vm 移入 session 之前）
     let jit_stats = vm.jit_stats().clone();
 
-    if vm.has_error() {
-        session.runtime.error = vm.get_error().to_string();
-        session.runtime.running = false;
-        session.vm = Some(vm);
-        Err(session.runtime.error.clone())
-    } else if session.runtime.waiting_input {
-        session.vm = Some(vm);
-        Ok((ret, true))
-    } else {
-        if jit_stats.traces_compiled > 0 {
-            session.runtime.output_lines.push(format!(
-                "[JIT] 已编译 {} 条 trace，加速执行 {} 步",
-                jit_stats.traces_compiled, jit_stats.steps_accelerated
-            ));
+    match run_result {
+        Ok(ret) => {
+            if vm.has_error() {
+                session.runtime.error = vm.get_error().to_string();
+                session.runtime.running = false;
+                session.vm = Some(vm);
+                Err(session.runtime.error.clone())
+            } else if session.runtime.waiting_input {
+                session.vm = Some(vm);
+                Ok((ret, true))
+            } else {
+                if jit_stats.traces_compiled > 0 {
+                    session.runtime.output_lines.push(format!(
+                        "[JIT] 已编译 {} 条 trace，加速执行 {} 步",
+                        jit_stats.traces_compiled, jit_stats.steps_accelerated
+                    ));
+                }
+                session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
+                append_leak_report(session);
+                session.runtime.running = false;
+                session.vm = Some(vm);
+                Ok((ret, false))
+            }
         }
-        session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
-        append_leak_report(session);
-        session.runtime.running = false;
-        session.vm = Some(vm);
-        Ok((ret, false))
+        Err(_) => {
+            session.vm = Some(vm);
+            Err("运行时发生内部错误（panic）".to_string())
+        }
     }
 }

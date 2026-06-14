@@ -257,55 +257,100 @@ impl Type {
 
     /// Generate a mangled name for this type (used in template instantiation).
     pub fn mangle_name(&self) -> String {
+        let mut buf = String::with_capacity(64);
+        self.mangle_name_into(&mut buf);
+        buf
+    }
+
+    /// Append the mangled name for this type into the provided buffer.
+    /// Avoids the O(n²) temporary String allocations of the recursive `mangle_name()`.
+    pub fn mangle_name_into(&self, buf: &mut String) {
+        use std::fmt::Write;
         match self {
-            Type::Void { .. } => "void".to_string(),
+            Type::Void { .. } => buf.push_str("void"),
             Type::Int { is_unsigned, .. } => {
                 if *is_unsigned {
-                    "unsigned_int".to_string()
+                    buf.push_str("unsigned_int")
                 } else {
-                    "int".to_string()
+                    buf.push_str("int")
                 }
             }
             Type::Char { is_unsigned, .. } => {
                 if *is_unsigned {
-                    "unsigned_char".to_string()
+                    buf.push_str("unsigned_char")
                 } else {
-                    "char".to_string()
+                    buf.push_str("char")
                 }
             }
-            Type::Float { .. } => "float".to_string(),
-            Type::Double { .. } => "double".to_string(),
+            Type::Float { .. } => buf.push_str("float"),
+            Type::Double { .. } => buf.push_str("double"),
             Type::LongLong { is_unsigned, .. } => {
                 if *is_unsigned {
-                    "unsigned_long_long".to_string()
+                    buf.push_str("unsigned_long_long")
                 } else {
-                    "long_long".to_string()
+                    buf.push_str("long_long")
                 }
             }
-            Type::Pointer { pointee, .. } => format!("p_{}", pointee.mangle_name()),
+            Type::Pointer { pointee, .. } => {
+                buf.push_str("p_");
+                pointee.mangle_name_into(buf);
+            }
             Type::Array { element, dims, .. } => {
-                format!(
-                    "a{}_{}",
-                    dims.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("_"),
-                    element.mangle_name()
-                )
+                buf.push('a');
+                for (i, d) in dims.iter().enumerate() {
+                    if i > 0 {
+                        buf.push('_');
+                    }
+                    let _ = write!(buf, "{}", d);
+                }
+                buf.push('_');
+                element.mangle_name_into(buf);
             }
             Type::Function { return_type, param_types, .. } => {
-                let params = param_types.iter().map(|t| t.mangle_name()).collect::<Vec<_>>().join("_");
-                format!("fn_{}_{}", return_type.mangle_name(), params)
+                buf.push_str("fn_");
+                return_type.mangle_name_into(buf);
+                buf.push('_');
+                for (i, pt) in param_types.iter().enumerate() {
+                    if i > 0 {
+                        buf.push('_');
+                    }
+                    pt.mangle_name_into(buf);
+                }
             }
-            Type::Struct { name, .. } => format!("struct_{}", name),
-            Type::Union { name, .. } => format!("union_{}", name),
-            Type::Class { name, .. } => format!("class_{}", name),
+            Type::Struct { name, .. } => {
+                buf.push_str("struct_");
+                buf.push_str(name);
+            }
+            Type::Union { name, .. } => {
+                buf.push_str("union_");
+                buf.push_str(name);
+            }
+            Type::Class { name, .. } => {
+                buf.push_str("class_");
+                buf.push_str(name);
+            }
             Type::Reference { base, is_const } => {
-                let prefix = if *is_const { "const_ref" } else { "ref" };
-                format!("{}_{}", prefix, base.mangle_name())
+                if *is_const {
+                    buf.push_str("const_ref_")
+                } else {
+                    buf.push_str("ref_")
+                }
+                base.mangle_name_into(buf);
             }
-            Type::RValueRef { base } => format!("rref_{}", base.mangle_name()),
-            Type::Auto => "auto".to_string(),
+            Type::RValueRef { base } => {
+                buf.push_str("rref_");
+                base.mangle_name_into(buf);
+            }
+            Type::Auto => buf.push_str("auto"),
             Type::TemplateId { base, args, .. } => {
-                let args_str = args.iter().map(|a| a.mangle_name()).collect::<Vec<_>>().join("__");
-                format!("{}__{}", base, args_str)
+                buf.push_str(base);
+                buf.push_str("__");
+                for (i, a) in args.iter().enumerate() {
+                    if i > 0 {
+                        buf.push_str("__");
+                    }
+                    a.mangle_name_into(buf);
+                }
             }
         }
     }
@@ -680,19 +725,6 @@ pub enum Designator {
 pub struct InitElement {
     pub designators: Vec<Designator>,
     pub value: Expr,
-}
-
-impl std::ops::Deref for InitElement {
-    type Target = Expr;
-    fn deref(&self) -> &Expr {
-        &self.value
-    }
-}
-
-impl std::ops::DerefMut for InitElement {
-    fn deref_mut(&mut self) -> &mut Expr {
-        &mut self.value
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

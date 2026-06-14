@@ -79,6 +79,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 保留的 API（Shadow Verification + 测试实际使用）：`cide_session_create`/`destroy`、`cide_compile`/`compile_unit`/`compile_all`、`cide_get_compile_errors`、`cide_set_argv`、`cide_run`、`cide_get_runtime_error`、`cide_set_input`、`cide_is_waiting_input`、`cide_provide_input_line`、`cide_get_output_length`/`get_output`
   - 移除因此变为死代码的辅助函数 `write_str` 和未使用的 `CideVM`/`setup_vm`/`reset_runtime_for_step`/`inject_preset_files` 导入
 
+### Fixed (代码审查报告继续推进)
+- **删除 `InitElement` 的 `Deref`/`DerefMut`（B25）**：`native/src/compiler/ast.rs`
+  - 避免 `*init_elem` 隐式解引用到 `Expr` 时丢失 `designators` 信息
+  - 同步修复 `algorithm_detector.rs`、`codegen/{mod,expr,stmt}.rs`、`data_flow.rs`、`intent.rs`、`typeck/{mod,expr}.rs` 中 23 处隐式解引用调用，全部改为显式访问 `.value`
+- **不兼容指针类型赋值报告 warning（B39）**：`native/src/compiler/typeck/mod.rs`
+  - `check_pointer_assignable` 在双指针分支中比较 `pointee` 类型；`void*` 与具体指针互转仍允许并给出 hint
+  - 对 `int* p = (double*)&x;` 等不兼容赋值报告 `W3053` warning，但允许编译继续
+- **`printf`/`scanf`/`fprintf` 参数不足前置校验（B43）**：`native/src/vm/host_funcs.rs`
+  - `host_printf_n` / `host_scanf_n` / `host_fprintf_n` 在按格式字符串 pop 参数前，先检查栈深度是否足够
+  - 不足时一次性 trap 并给出明确错误信息，避免多次 `pop()` 下溢产生重复/混乱的运行时错误
+- **多维 VLA `array_size` 避免负数（B27）**：`native/src/compiler/parser/mod.rs`
+  - 当内部数组大小未指定（`inner_array_size <= 0`）时，不再让 `size * inner_array_size` 产生负值
+- **VM 调用帧初始化确认走统一内存检查路径（V9/V10）**：`native/src/vm/vm/mod.rs` + `vm/vm/executor.rs`
+  - 复核 `call_user_function` 与 `do_call` 对局部变量的清零/参数写入均已通过 `store_i32`/`store_i8`，自然经过 `check_mem_access` + `check_uaf`，无需额外修改
+- **回归测试扩展**：`type_checker_unit_test.rs` +1（不兼容指针赋值 warning）；`host_contract_tests.rs` +2（printf/scanf 参数不足 trap）
+- **Shadow Verification 实测**：450 match / 3 compile_gap / 3 runtime_gap / 3 output_gap；`bTree_default` 为 pre-existing runtime_gap（HEAD 已存在），与本次改动无关
+
+### Fixed (代码审查报告继续推进 — 第二轮)
+- **`ERROR_CONCEPT_MAP` 键 3035 重复与映射语义修正（B52）**：`native/src/diagnostics/knowledge_graph.rs`
+  - 删除对 3035 的重复 `HashMap::insert`
+  - 将 3030-3035（printf/scanf family）统一映射到 `FunctionCall`/`ParameterPassing`，替代原先不准确的 `ArithOp`
+- **If 条件块不再克隆整棵 AST 子树（B35）**：`native/src/compiler/cfg.rs`
+  - 条件基本块 `stmts` 改为只保留 `Stmt::Expr { cond, loc }` 占位，避免 CFG 冗余存储 then/else 子树
+- **Return 块不再被误加 fall-through 边（B36）**：`native/src/compiler/cfg.rs`
+  - `build_seq` 中顺序 fall-through 边仅对 `Terminator::FallThrough` 添加；`Return` 不再向后连接
+- **`analyze_live_variables` 预计算出边邻接表（B37）**：`native/src/compiler/data_flow.rs`
+  - 将单次迭代从 O(N×E) 降至 O(E)，大 CFG 分析显著加速
+- **回边检测复用 `cfg.find_loops()`（B38）**：`native/src/compiler/intent.rs`
+  - 移除依赖块 ID 分配顺序的 `a >= b` 判断，避免前向边被误判为回边
+- **extra_vars 构造函数初始化同样插入 this 指针（B40）**：`native/src/compiler/typeck/decl.rs`
+  - 提取 `try_process_ctor_init`，统一处理 `Foo a(1), b(2);` 等多变量构造函数初始化
+- **`execute_run` 用 `catch_unwind` 保护 take 后的 VM（B47）**：`native/src/engine/session_ops.rs`
+  - `setup_vm`/`inject_preset_files`/`vm.run` 中若发生 panic，VM 仍会被还回 `session.vm`，避免永久丢失
+- **`unsigned int` 参数类型解析验证（B48）**：`native/tests/completion_unit_test.rs`
+  - 新增测试验证 `find_variable_type` 对带空格类型名（如 `unsigned int x`）的正确解析
+  - `native/src/engine/completion/mod.rs` 将 `mod candidates` 改为 `pub mod candidates` 以便测试访问
+- **回归测试扩展**：`cfg.rs` +2、`data_flow.rs` +1、`intent.rs` +1、`typeck_cpp_unit_test.rs` +1、`completion_unit_test.rs` +1
+
+### Optimized (性能优化 — 代码审查报告 O1/O4)
+- **`Type::mangle_name` buffer 复用**：`native/src/compiler/ast.rs`
+  - 新增 `mangle_name_into(&self, buf: &mut String)`，所有分支直接向 buffer 写入，消除嵌套类型递归中 O(n²) 的临时 `String` 分配
+  - 保留 `mangle_name() -> String` 作为便捷封装，内部调用 `mangle_name_into`
+  - 模板实例化、函数指针、多维数组等复杂类型的命名生成分配显著下降
+- **VM 单步回退快照 buffer 复用**：`native/src/vm/vm/mod.rs` + `native/src/unified/engine.rs`
+  - 新增 `CideVM::snapshot_into(&self, session, target: &mut VMSnapshot)`，复用 `target` 已有的 1MB `Vec<u8>`，仅执行 `copy_from_slice`，避免 `run_batch` 每步分配新 1MB buffer
+  - `UnifiedEngine` 新增私有字段 `pre_step_snap: Option<VMSnapshot>`，首次 step 分配后后续复用
+  - `CheckpointManager` 已有的 `snapshot_incremental` 检查点策略保持不变；本优化专门解决 Trap 回退快照的分配热点
+  - 统一模式长程序（如 10 万步排序可视化）的堆分配流量不再随步数线性增长 1MB/步
+- **回归测试扩展**：`native/tests/ast_unit_test.rs` +2（mangle_name_into 等价性与追加行为）；`native/tests/test_snapshot.rs` +1（snapshot_into 等价性与 buffer 复用）
+- **JIT Trace 批量执行修复（O5）**：`native/src/vm/jit_templates.rs` + `native/src/vm/jit_trace.rs` + `native/src/vm/vm/executor.rs`
+  - 修复 `execute_trace_bulk` 对条件跳转 side-exit 的处理：当条件跳转 taken 且目标为 trace 起点时继续循环，未 taken 且 ip 仍在起点时推进到 `end_ip` 退出
+  - 修复 `TraceRecorder::finish`：Abort 的录制不再被错误编译为不完整 trace，避免生成只包含条件判断的残缺 trace
+  - `JitEntry` 新增 `is_conditional_jump` 标志，替代依赖函数指针地址比较的 `func as usize` 判断（同时消除 B15/S9 可移植性风险）
+  - 新增 `native/tests/jit_templates_test.rs`：`test_jit_trace_bulk_accelerates_loop` 验证长循环确实被批量加速
+- **`host_qsort` 批量写回优化（O10）**：`native/src/vm/host_funcs.rs`
+  - 将结果从临时缓冲区写回 VM 内存的方式从逐字节 `store_i8` 改为按元素块 `write_memory`，大数组排序性能显著提升
+  - 新增 `native/tests/qsort_test.rs`：整型数组、字节数组、100 元素逆序数组排序回归测试
+
 ### Added (P0 语法拓展)
 - **通用逗号运算符 `a, b`**：Parser 在 `parse_assign` 前新增 `parse_comma` 层，AST 新增 `BinaryOp::Comma`
   - TypeChecker 取右操作数类型，CodeGen 生成左值计算 + `Pop` 后保留右值

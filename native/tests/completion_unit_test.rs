@@ -353,3 +353,37 @@ fn test_completion_type_context_with_incomplete_code() {
         labels
     );
 }
+
+#[test]
+fn test_find_variable_type_parses_unsigned_int_param() {
+    // B48: 验证带空格的类型名（如 unsigned int）能被正确解析。
+    use cide_native::engine::completion::candidates::find_variable_type;
+    use cide_native::engine::completion::{CompletionSnapshot, SnapshotFunc};
+
+    let snapshot = CompletionSnapshot {
+        functions: vec![SnapshotFunc {
+            name: "foo".to_string(),
+            return_type: "void".to_string(),
+            params: vec!["unsigned int x".to_string(), "int* y".to_string()],
+            is_static: false,
+            filename: String::new(),
+        }],
+        globals: vec![],
+        structs: vec![],
+        unions: vec![],
+        typedefs: vec![],
+        enums: vec![],
+        macros: vec![],
+    };
+
+    assert_eq!(
+        find_variable_type(&snapshot, "", 0, 0, "x"),
+        Some("unsigned int".to_string()),
+        "unsigned int x 应解析为类型 unsigned int"
+    );
+    assert_eq!(
+        find_variable_type(&snapshot, "", 0, 0, "y"),
+        Some("int*".to_string()),
+        "int* y 应解析为类型 int*"
+    );
+}

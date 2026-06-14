@@ -1714,7 +1714,11 @@ impl Parser {
                                 inner_vla_dims.push(e);
                             }
                         }
-                        let array_size = if size > 0 { size * inner_array_size } else { size };
+                        let array_size = if size > 0 && inner_array_size > 0 {
+                            size * inner_array_size
+                        } else {
+                            size
+                        };
                         Type::Array {
                             element,
                             array_size,

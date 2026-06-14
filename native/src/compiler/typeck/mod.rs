@@ -855,7 +855,10 @@ impl TypeChecker {
         }
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Pointer) {
             if let (
-                Type::Pointer { is_const: t_const, .. },
+                Type::Pointer {
+                    is_const: t_const,
+                    pointee: t_pointee,
+                },
                 Type::Pointer {
                     pointee: v_pointee,
                     is_const: v_const,
@@ -864,6 +867,16 @@ impl TypeChecker {
             {
                 if matches!(v_pointee.as_ref(), Type::Void { .. }) {
                     self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
+                } else if t_pointee != v_pointee {
+                    self.report_warning(
+                        &format!(
+                            "不兼容的指针类型赋值：{}* ← {}*。",
+                            t_pointee.name(),
+                            v_pointee.name()
+                        ),
+                        loc,
+                        ErrorCode::W3053_ImplicitScalarConversion,
+                    );
                 }
                 if *v_const && !*t_const {
                     self.report_warning(
@@ -1234,12 +1247,12 @@ impl TypeChecker {
                 break;
             }
             if fields[i].0.is_struct() && matches!(&elem.value, Expr::InitList { .. }) {
-                self.check_struct_initializer(&fields[i].0, elem, loc);
+                self.check_struct_initializer(&fields[i].0, &mut elem.value, loc);
             } else if fields[i].0.is_array() && matches!(&elem.value, Expr::InitList { .. }) {
                 let mut sub_ty = fields[i].0.clone();
-                self.check_array_initializer(&mut sub_ty, elem, loc);
+                self.check_array_initializer(&mut sub_ty, &mut elem.value, loc);
             } else {
-                let e_type = self.resolve_expr_type(elem);
+                let e_type = self.resolve_expr_type(&mut elem.value);
                 if !self.check_assignable(&fields[i].0, &e_type, loc) {
                     self.report_error(
                         &format!(
@@ -1314,7 +1327,7 @@ impl TypeChecker {
             self.report_error("初始化列表元素数量超过数组维度大小", loc, ErrorCode::E3005_ArrayInitTooMany);
         }
         for elem in elements {
-            if !self.validate_nested_init_list(&dims[1..], elem, loc, element_type) {
+            if !self.validate_nested_init_list(&dims[1..], &mut elem.value, loc, element_type) {
                 return false;
             }
         }
@@ -1415,12 +1428,12 @@ impl TypeChecker {
             }
             for elem in elements.iter_mut() {
                 if elem_type.is_struct() && matches!(&elem.value, Expr::InitList { .. }) {
-                    self.check_struct_initializer(&elem_type, elem, loc);
+                    self.check_struct_initializer(&elem_type, &mut elem.value, loc);
                 } else if elem_type.is_array() && matches!(&elem.value, Expr::InitList { .. }) {
                     let mut sub_ty = elem_type.clone();
-                    self.check_array_initializer(&mut sub_ty, elem, loc);
+                    self.check_array_initializer(&mut sub_ty, &mut elem.value, loc);
                 } else {
-                    let e_type = self.resolve_expr_type(elem);
+                    let e_type = self.resolve_expr_type(&mut elem.value);
                     if !self.check_assignable(&elem_type, &e_type, loc) {
                         self.report_error(
                             &format!("数组初始化元素类型不匹配：期望 '{}'，实际 '{}'", elem_type, e_type),
@@ -1428,7 +1441,7 @@ impl TypeChecker {
                             ErrorCode::E3006_ArrayInitTypeMismatch,
                         );
                     } else {
-                        insert_implicit_cast(elem, &elem_type);
+                        insert_implicit_cast(&mut elem.value, &elem_type);
                     }
                 }
             }

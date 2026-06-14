@@ -390,6 +390,42 @@ impl CideVM {
         }
     }
 
+    /// 将当前 VM 状态写入已有的 `VMSnapshot`，复用其内存 buffer。
+    ///
+    /// 当 `target.memory` 为 `MemoryImage::Full` 且长度匹配时，仅执行 `copy_from_slice`，
+    /// 避免每步分配新的 1MB Vec。若类型或长度不匹配，则回退到 `clone()`。
+    pub fn snapshot_into(&self, session: &Session, target: &mut super::snapshot::VMSnapshot) {
+        match &mut target.memory {
+            super::snapshot::MemoryImage::Full(buf) if buf.len() == self.memory.len() => {
+                buf.copy_from_slice(&self.memory);
+            }
+            _ => {
+                target.memory = super::snapshot::MemoryImage::Full(self.memory.clone());
+            }
+        }
+        target.stack = self.stack.clone();
+        target.call_stack = self.call_stack.clone();
+        target.ip = self.ip;
+        target.mem_stack_top = self.mem_stack_top;
+        target.step_count = self.step_count;
+        target.current_line = self.current_line;
+        target.finished = self.finished;
+        target.exit_code = self.exit_code;
+        target.error = self.error.clone();
+        target.paused = self.paused;
+        target.cancelled = self.cancelled;
+        target.step_event_hit = self.step_event_hit;
+        target.last_snapshot_step = self.last_snapshot_step;
+        target.snapshot_vars = self.snapshot_vars.clone();
+        target.qsort_depth = self.qsort_depth;
+        target.vis_event_queue = self.vis_event_queue.clone();
+        target.breakpoints = self.breakpoints.clone();
+        target.global_count = self.global_count;
+        target.freed_logs = self.freed_logs.clone();
+        target.runtime = super::snapshot::RuntimeSnapshot::from(&session.runtime);
+        target.memory_state = super::snapshot::MemorySnapshot::from(&session.memory);
+    }
+
     /// 标记脏页（ addr 为起始地址，len 为字节数 ）。
     fn mark_dirty_page(&mut self, addr: u32, len: u32) {
         if len == 0 {

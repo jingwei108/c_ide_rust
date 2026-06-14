@@ -555,3 +555,22 @@ int main() {
         errors
     );
 }
+
+
+#[test]
+fn test_cpp_multi_var_ctor_init_inserts_this_for_all() {
+    // B40: 多个类类型变量在同一声明中初始化时，每个构造函数调用都应插入 this 指针。
+    let src = r#"
+class Box {
+public:
+    int x;
+    Box(int v) { x = v; }
+};
+int main() {
+    Box a(1), b(2);
+    return a.x + b.x;
+}
+"#;
+    let (_program, errors) = parse_and_typecheck_cpp(src);
+    assert!(errors.is_empty(), "Multi-var ctor init should not produce type errors: {:?}", errors);
+}

@@ -137,8 +137,10 @@ pub fn infer_intent(func: &FuncDecl) -> Vec<IntentScore> {
 
     // --- CFG structure heuristics ---
     if let (Some(body), Some(cfg)) = (func.body.as_ref(), ControlFlowGraph::from_func(func)) {
-        let has_loop = !cfg.find_loops().is_empty();
-        let has_back_edge = cfg.edges.iter().any(|(a, b)| *a >= *b);
+        let loops = cfg.find_loops();
+        let has_loop = !loops.is_empty();
+        // B38: 块 ID 大小不能可靠判断回边；复用 find_loops 结果。
+        let has_back_edge = has_loop;
         let unreachable = cfg.find_unreachable_blocks();
 
         for s in &mut scores {
@@ -351,7 +353,7 @@ fn expr_has_call(expr: &crate::compiler::ast::Expr, func_name: &str) -> bool {
         }
         Expr::Cast { expr: e, .. } => expr_has_call(e, func_name),
         Expr::Sizeof { operand: Some(e), .. } => expr_has_call(e, func_name),
-        Expr::InitList { elements, .. } => elements.iter().any(|e| expr_has_call(e, func_name)),
+        Expr::InitList { elements, .. } => elements.iter().any(|e| expr_has_call(&e.value, func_name)),
         _ => false,
     }
 }
@@ -386,6 +388,17 @@ mod tests {
     fn test_intent_compute() {
         let func =
             parse_func("int sum(int a[], int n) { int total=0; for(int i=0;i<n;i++) total+=a[i]; return total; }");
+        let intents = infer_intent(&func);
+        assert!(!intents.is_empty());
+        assert_eq!(intents[0].intent, CodeIntent::Compute);
+    }
+
+    #[test]
+    fn test_intent_loop_detected_without_relying_on_block_id_order() {
+        // B38: 回边检测应基于 find_loops，而不是块 ID 大小顺序。
+        // while 循环的 CFG 中，条件块的 ID 可能小于循环体块的 ID，
+        // 但 intent 推断仍应检测到循环。
+        let func = parse_func("int sum(int n) { int i = 0; int s = 0; while (i < n) { s += i; i++; } return s; }");
         let intents = infer_intent(&func);
         assert!(!intents.is_empty());
         assert_eq!(intents[0].intent, CodeIntent::Compute);

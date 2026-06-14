@@ -731,7 +731,7 @@ fn walk_expr(expr: &Expr, f: &mut FuncFeatures, loop_depth: i32, func_name: &str
         }
         Expr::InitList { elements, .. } => {
             for e in elements {
-                walk_expr(e, f, loop_depth, func_name, depth + 1);
+                walk_expr(&e.value, f, loop_depth, func_name, depth + 1);
             }
         }
         _ => {}

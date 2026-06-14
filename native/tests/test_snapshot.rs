@@ -470,3 +470,61 @@ fn test_smart_checkpoint_triggers() {
     };
     assert!(cp.should_checkpoint(40, &meta_swap));
 }
+
+
+#[test]
+fn test_snapshot_into_equivalence_and_reuse() {
+    let source = r#"
+#include <stdio.h>
+int main() {
+    int arr[10] = {0};
+    arr[3] = 42;
+    printf("%d", arr[3]);
+    return 0;
+}
+"#;
+    let mut session = make_session(source);
+    let mut vm = setup_vm_for_session(&mut session);
+
+    // 执行若干步，产生栈/内存状态
+    for _ in 0..20 {
+        let _ = vm.step(&mut session);
+    }
+
+    // 全量快照作为 ground truth
+    let full_snap = vm.snapshot(&session);
+
+    // 用 snapshot_into 复写到另一个 VMSnapshot
+    let mut reused_snap = vm.snapshot(&session);
+    // 先破坏 reused_snap 的内存，确保 copy 真正发生
+    if let cide_native::vm::snapshot::MemoryImage::Full(buf) = &mut reused_snap.memory {
+        buf.fill(0xAA);
+    }
+    vm.snapshot_into(&session, &mut reused_snap);
+
+    // 两者必须等价
+    assert_eq!(reused_snap.step_count, full_snap.step_count);
+    assert_eq!(reused_snap.ip, full_snap.ip);
+    assert_eq!(reused_snap.stack, full_snap.stack);
+    assert_eq!(reused_snap.call_stack, full_snap.call_stack);
+    assert_eq!(
+        reused_snap.memory.byte_size(),
+        full_snap.memory.byte_size(),
+        "snapshot_into memory size should match full snapshot"
+    );
+
+    // 分别恢复到两个独立 VM 并验证状态一致
+    let mut session_a = make_session(source);
+    let mut vm_a = setup_vm_for_session(&mut session_a);
+    vm_a.restore(&full_snap, &mut session_a);
+
+    let mut session_b = make_session(source);
+    let mut vm_b = setup_vm_for_session(&mut session_b);
+    vm_b.restore(&reused_snap, &mut session_b);
+
+    assert_eq!(vm_a.get_executed_steps(), vm_b.get_executed_steps());
+    assert_eq!(vm_a.get_stack(), vm_b.get_stack());
+    assert_eq!(vm_a.get_call_stack(), vm_b.get_call_stack());
+    assert_eq!(vm_a.memory_ref(), vm_b.memory_ref());
+    assert_eq!(session_a.runtime.output_lines, session_b.runtime.output_lines);
+}

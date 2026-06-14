@@ -12,9 +12,10 @@ use cide_native::vm::host_funcs::{
     host_abort, host_acos, host_asin, host_atan, host_atan2, host_atoi, host_bsearch, host_calloc,
     host_cide_assert_fail, host_clock, host_cos, host_cosh, host_exp, host_free, host_getchar, host_isblank,
     host_isgraph, host_ispunct, host_llabs, host_log, host_malloc, host_memset, host_pow, host_printf_n, host_putchar,
-    host_puts, host_rand, host_realloc, host_remove, host_rename, host_scanf_n, host_sin, host_sinh, host_snprintf,
-    host_sprintf, host_sqrt, host_srand, host_sscanf, host_strcat, host_strcmp, host_strcpy, host_strcspn,
-    host_strerror, host_strlen, host_strpbrk, host_strspn, host_strtod, host_strtol, host_tanh, host_time,
+    host_puts, host_qsort, host_rand, host_realloc, host_remove, host_rename, host_scanf_n, host_sin, host_sinh,
+    host_snprintf, host_sprintf, host_sqrt, host_srand, host_sscanf, host_strcat, host_strcmp, host_strcpy,
+    host_strcspn, host_strerror, host_strlen, host_strpbrk, host_strspn, host_strtod, host_strtol, host_tanh,
+    host_time,
 };
 use cide_native::vm::vm::{CideVM, MEM_SIZE, NULL_TRAP_SIZE};
 
@@ -798,6 +799,55 @@ fn test_bsearch_empty_array_returns_null() {
     assert_eq!(result, 0, "bsearch 空数组应返回 NULL");
 }
 
+// ─── qsort 契约 ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_qsort_large_byte_array_default_compare() {
+    let (mut vm, mut session) = fresh_session();
+    let base = 0x2000;
+    let n = 128usize;
+    // 写入降序字节数据：127, 126, ..., 0（限制在 0~127，避免有符号/无符号解释差异）
+    for i in 0..n {
+        vm.store_i8(base + i as u32, (127 - i) as i32, &cide_native::vm::instruction::SourceLoc::default());
+    }
+    // args: compar=0 (default byte comparison), size=1, nmemb=128, base
+    vm.push(0);            // compar
+    vm.push(1);            // size
+    vm.push(n as u64);     // nmemb
+    vm.push(base as u64);  // base
+    host_qsort(&mut vm, &mut session);
+    // 默认字节比较对单字节元素即数值比较，排序后应为升序：0, 1, ..., 127
+    for i in 0..n {
+        let v = vm.load_i8(base + i as u32, &cide_native::vm::instruction::SourceLoc::default());
+        assert_eq!(v, i as i32, "qsort 128 单字节元素默认字节比较应升序排列，索引 {} 处期望 {}，实际 {}", i, i, v);
+    }
+}
+
+#[test]
+fn test_qsort_single_element_noop() {
+    let (mut vm, mut session) = fresh_session();
+    let base = 0x2000;
+    vm.store_i32(base, 42, &cide_native::vm::instruction::SourceLoc::default());
+    vm.push(0);
+    vm.push(4);
+    vm.push(1);
+    vm.push(base as u64);
+    host_qsort(&mut vm, &mut session);
+    assert_eq!(vm.load_i32(base, &cide_native::vm::instruction::SourceLoc::default()), 42);
+}
+
+#[test]
+fn test_qsort_empty_array_noop() {
+    let (mut vm, mut session) = fresh_session();
+    let base = 0x2000;
+    vm.push(0);
+    vm.push(4);
+    vm.push(0);
+    vm.push(base as u64);
+    host_qsort(&mut vm, &mut session);
+    // 不应 trap，也不应写入任何内容
+}
+
 // ─── sprintf 契约 ────────────────────────────────────────────────────────────
 
 #[test]
@@ -1284,4 +1334,42 @@ fn test_strcspn_basic() {
     vm.push(s as u64);
     host_strcspn(&mut vm, &mut Session::default());
     assert_eq!(vm.pop() as usize, 5, "strcspn(hello world, space) 应为 5");
+}
+
+// ─── printf/scanf 栈深度契约 ───────────────────────────────────────────────────
+
+#[test]
+fn test_printf_n_rejects_insufficient_args() {
+    // B43: 格式字符串要求的参数多于栈中实际值时，应一次性 trap 而不是多次 pop 下溢。
+    let (mut vm, mut session) = fresh_session();
+    let fmt_addr = 0x2000;
+    write_test_string(&mut vm, fmt_addr, "%d %d");
+    // VM 调用约定：fmt 在栈顶，参数按从右到左顺序压栈
+    vm.push(42); // 第一个 %d
+    vm.push(fmt_addr as u64);
+    host_printf_n(&mut vm, &mut session);
+    assert!(vm.has_error(), "printf 参数不足时应产生运行时错误");
+    assert!(
+        vm.get_error().contains("参数多于实际提供的参数"),
+        "错误信息应提示参数不足: {}",
+        vm.get_error()
+    );
+}
+
+#[test]
+fn test_scanf_n_rejects_insufficient_args() {
+    // B43: scanf 同样需要在 pop 前验证栈深度。
+    let (mut vm, mut session) = fresh_session();
+    let fmt_addr = 0x2000;
+    write_test_string(&mut vm, fmt_addr, "%d %d");
+    // VM 调用约定：fmt 在栈顶，参数按从右到左顺序压栈
+    vm.push(0x3000); // 第一个 %d 的目标地址
+    vm.push(fmt_addr as u64);
+    host_scanf_n(&mut vm, &mut session);
+    assert!(vm.has_error(), "scanf 参数不足时应产生运行时错误");
+    assert!(
+        vm.get_error().contains("参数多于实际提供的参数"),
+        "错误信息应提示参数不足: {}",
+        vm.get_error()
+    );
 }

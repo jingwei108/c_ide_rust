@@ -939,18 +939,18 @@ impl BytecodeGen {
                             break;
                         }
                         let field_offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>() as u32;
-                        self.flatten_global_init(&fields[i].ty, elem, base_offset + field_offset);
+                        self.flatten_global_init(&fields[i].ty, &elem.value, base_offset + field_offset);
                     }
                 } else if target_ty.is_array() {
                     let inner_ty = target_ty.subscript_type();
                     let elem_size = self.type_size(&inner_ty) as u32;
                     for (i, elem) in elements.iter().enumerate() {
                         let elem_offset = (i as u32) * elem_size;
-                        self.flatten_global_init(&inner_ty, elem, base_offset + elem_offset);
+                        self.flatten_global_init(&inner_ty, &elem.value, base_offset + elem_offset);
                     }
                 } else {
                     if let Some(first) = elements.first() {
-                        self.flatten_global_init(target_ty, first, base_offset);
+                        self.flatten_global_init(target_ty, &first.value, base_offset);
                     }
                 }
             }

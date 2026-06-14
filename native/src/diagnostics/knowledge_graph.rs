@@ -434,7 +434,6 @@ static ERROR_CONCEPT_MAP: LazyLock<HashMap<i32, Vec<String>>> = LazyLock::new(||
     m.insert(3050, vec![String::from("LogicOp")]);
     m.insert(3048, vec![String::from("BitOp")]);
     m.insert(3021, vec![String::from("Pointer"), String::from("Dereference")]);
-    m.insert(3035, vec![String::from("Pointer"), String::from("Dereference")]);
     m.insert(3060, vec![String::from("HeapMemory"), String::from("Pointer")]);
     m.insert(3061, vec![String::from("HeapMemory"), String::from("Pointer")]);
     m.insert(3051, vec![String::from("BoundaryCondition"), String::from("Array")]);
@@ -449,12 +448,12 @@ static ERROR_CONCEPT_MAP: LazyLock<HashMap<i32, Vec<String>>> = LazyLock::new(||
     m.insert(3038, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
     m.insert(3013, vec![String::from("ReturnValue")]);
     m.insert(3020, vec![String::from("Recursion")]);
-    m.insert(3030, vec![String::from("ArithOp")]);
-    m.insert(3031, vec![String::from("ArithOp")]);
-    m.insert(3032, vec![String::from("ArithOp")]);
-    m.insert(3033, vec![String::from("ArithOp")]);
-    m.insert(3034, vec![String::from("ArithOp")]);
-    m.insert(3035, vec![String::from("ArithOp")]);
+    m.insert(3030, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
+    m.insert(3031, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
+    m.insert(3032, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
+    m.insert(3033, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
+    m.insert(3034, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
+    m.insert(3035, vec![String::from("FunctionCall"), String::from("ParameterPassing")]);
     m
 });
 

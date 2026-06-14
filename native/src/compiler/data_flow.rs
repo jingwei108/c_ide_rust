@@ -34,6 +34,12 @@ pub fn analyze_live_variables(cfg: &ControlFlowGraph) -> LiveVarResult {
         live_out.insert(block.id, HashSet::new());
     }
 
+    // Precompute outgoing edges adjacency list to avoid O(N*E) scan per iteration.
+    let mut out_edges: HashMap<BlockId, Vec<BlockId>> = HashMap::new();
+    for &(from, to) in &cfg.edges {
+        out_edges.entry(from).or_default().push(to);
+    }
+
     // Iterative fixed-point (backwards).
     let mut changed = true;
     while changed {
@@ -41,9 +47,9 @@ pub fn analyze_live_variables(cfg: &ControlFlowGraph) -> LiveVarResult {
         for block in &cfg.blocks {
             let id = block.id;
             let mut new_out = HashSet::new();
-            for &(from, to) in &cfg.edges {
-                if from == id {
-                    new_out.extend(live_in.get(&to).cloned().unwrap_or_default());
+            if let Some(succs) = out_edges.get(&id) {
+                for to in succs {
+                    new_out.extend(live_in.get(to).cloned().unwrap_or_default());
                 }
             }
             let new_in = block_live_in(block, &new_out);
@@ -198,7 +204,7 @@ fn collect_expr_vars(expr: &Expr, out: &mut Vec<String>, read: bool) {
         }
         Expr::InitList { elements, .. } => {
             for e in elements {
-                collect_expr_vars(e, out, read);
+                collect_expr_vars(&e.value, out, read);
             }
         }
         _ => {}
@@ -291,5 +297,28 @@ mod tests {
             ty: Type::int(),
         };
         assert_eq!(evaluate_constant_condition(&e), Some(true));
+    }
+
+    #[test]
+    fn test_live_variables_nested_if() {
+        // B37 回归：确保邻接表优化后，嵌套 if 的 live-variable 分析仍正确。
+        let func = parse_func(
+            "int main() { int a = 1; int b = 2; int c; if (a) { c = b; } else { c = a; } return c; }",
+        );
+        let cfg = ControlFlowGraph::from_func(&func).unwrap();
+        let live = analyze_live_variables(&cfg);
+        assert!(!live.is_empty());
+        // 条件分支块（使用 a 的块）的 live_in 应包含 a。
+        let cond_live: Vec<_> = cfg
+            .blocks
+            .iter()
+            .filter(|b| matches!(b.terminator, crate::compiler::cfg::Terminator::Branch { .. }))
+            .filter_map(|b| live.get(&b.id))
+            .collect();
+        assert!(
+            cond_live.iter().any(|s| s.contains("a")),
+            "条件分支块的 live_in 应包含 a，got: {:?}",
+            cond_live
+        );
     }
 }

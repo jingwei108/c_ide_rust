@@ -19,6 +19,9 @@ pub struct JitEntry {
     pub arg0: i32,
     pub arg1: i32,
     pub loc: SourceLoc,
+    /// 是否为条件跳转（JumpIfZero / JumpIfNotZero）。
+    /// 用于 bulk 执行时区分循环继续/退出，避免依赖函数指针地址比较。
+    pub is_conditional_jump: bool,
 }
 
 /// 编译后的 trace
@@ -181,8 +184,11 @@ fn tpl_load_mem(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &m
 }
 
 fn tpl_store_mem(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Session) -> Option<StepResult> {
-    let addr = vm.pop() as u32;
+    // 注意：解释器 executor.rs 中 StoreMem 的栈约定是“值在下、地址在上”，
+    // 因此模板必须同样先 pop 值，再 pop 地址，否则 JIT 加速下的数组赋值会
+    // 把数值当成目标地址写入 NULL trap 区。
     let val = vm.pop() as i32;
+    let addr = vm.pop() as u32;
     vm.store_i32(addr, val, loc);
     None
 }
@@ -201,8 +207,9 @@ fn tpl_store_mem_byte(
     loc: &SourceLoc,
     _session: &mut Session,
 ) -> Option<StepResult> {
-    let addr = vm.pop() as u32;
+    // 与 StoreMem 保持一致：先 pop 值，再 pop 地址。
     let val = vm.pop() as i32;
+    let addr = vm.pop() as u32;
     vm.store_i8(addr, val, loc);
     None
 }
@@ -582,11 +589,13 @@ pub fn compile_trace(trace: &JitTrace) -> CompiledTrace {
         } else {
             0
         };
+        let is_conditional_jump = matches!(inst.op, OpCode::JumpIfZero | OpCode::JumpIfNotZero);
         entries.push(JitEntry {
             func,
             arg0: inst.operand,
             arg1,
             loc: inst.loc,
+            is_conditional_jump,
         });
     }
     CompiledTrace {
@@ -627,34 +636,42 @@ pub fn execute_trace_bulk(vm: &mut CideVM, session: &mut Session, trace: &Compil
     let steps_per_iter = trace.entries.len() as u64;
     let entry_steps = trace.entries.len() as i32;
     let mut total_steps = 0u64;
-    let ends_with_conditional = trace.entries.last().is_some_and(|e| {
-        matches!(
-            e.func as usize,
-            x if x == (tpl_jump_if_zero as *const ()) as usize
-                || x == (tpl_jump_if_not_zero as *const ()) as usize
-        )
-    });
+    let ends_with_conditional = trace.entries.last().is_some_and(|e| e.is_conditional_jump);
 
     for _ in 0..MAX_TRACE_ITERATIONS {
         // 执行一轮 trace
-        if let Some(r) = execute_trace_once(vm, session, trace) {
-            total_steps += steps_per_iter;
-            return (Some(r), total_steps);
-        }
-
-        // 如果 ip 没有回到 trace 起点，说明循环已退出
-        if vm.get_ip() != start_ip {
-            total_steps += steps_per_iter;
-            return (None, total_steps);
-        }
-
-        // trace 正常执行完但 ip 仍在起点：
-        // 如果 trace 以条件跳转结尾，说明条件为假（循环退出），
-        // 将 ip 推进到 trace 结束后的地址，避免无限重复执行同一条 trace。
-        if ends_with_conditional {
-            vm.set_ip(trace.end_ip);
-            total_steps += steps_per_iter;
-            return (None, total_steps);
+        match execute_trace_once(vm, session, trace) {
+            Some(StepResult::Ok) => {
+                // 条件跳转被 taken：
+                // - 若跳回 trace 起点，循环继续；
+                // - 若跳到其他地址（如循环外），退出 bulk。
+                if vm.get_ip() != start_ip {
+                    total_steps += steps_per_iter;
+                    return (None, total_steps);
+                }
+            }
+            Some(r) => {
+                // Trap / Paused / Finished / WaitingInput 等真实外部事件，退出 bulk。
+                total_steps += steps_per_iter;
+                return (Some(r), total_steps);
+            }
+            None => {
+                // trace 正常执行完，ip 未被任何模板函数修改。
+                if vm.get_ip() != start_ip {
+                    // 例如 trace 中间包含 unconditional Jump 离开了循环
+                    total_steps += steps_per_iter;
+                    return (None, total_steps);
+                }
+                // ip 仍在起点：
+                // - 若 trace 以条件跳转结尾，说明条件为假（未 taken），循环结束，
+                //   需将 ip 推进到 trace 结束后的第一条指令。
+                // - 否则是无条件跳转回起点，继续下一轮循环。
+                if ends_with_conditional {
+                    vm.set_ip(trace.end_ip);
+                    total_steps += steps_per_iter;
+                    return (None, total_steps);
+                }
+            }
         }
 
         // 批量检查 step_count / cancelled
@@ -662,6 +679,8 @@ pub fn execute_trace_bulk(vm: &mut CideVM, session: &mut Session, trace: &Compil
             total_steps += steps_per_iter;
             return (Some(StepResult::Trap), total_steps);
         }
+
+        total_steps += steps_per_iter;
     }
 
     total_steps += steps_per_iter * MAX_TRACE_ITERATIONS as u64;

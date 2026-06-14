@@ -8,6 +8,41 @@
 
 ## 已修复（FIXED）
 
+### `qsort` 对栈上大数组排序触发 NULL 指针 trap
+
+- **来源**: O10 `host_qsort` 优化验证过程中记录，根因定位后修复
+- **失败原因**: 运行时错误 / JIT trace 执行错误
+- **最小复现**:
+  ```c
+  #include <stdlib.h>
+  int cmp(const void* a, const void* b) {
+      return *(const int*)a - *(const int*)b;
+  }
+  int main() {
+      int arr[1000];
+      for (int i = 0; i < 1000; i++) arr[i] = 1000 - i;
+      qsort(arr, 1000, sizeof(int), cmp); // 触发：向 NULL 指针区域写入（地址 0x0383）
+      return 0;
+  }
+  ```
+- **当前状态**: **已修复**。
+- **真实根因**: 与 `host_qsort`、栈分配、`call_user_function` 回调均无关；问题在 **JIT trace 模板 `jit_templates.rs` 中 `StoreMem` / `StoreMemByte` 的弹栈顺序与解释器 `executor.rs` 相反**。
+  - 解释器 `StoreMem` 约定：**先 pop 值，再 pop 地址**（栈顶是值）。
+  - JIT 模板错误实现为：**先 pop 地址，再 pop 值**。
+  - 当填充数组的 `for` 循环执行次数超过 `JIT_THRESHOLD=100` 并被 trace 加速后，`arr[i] = 1000 - i` 实际把“值”当成地址写入，数值较小时（如 0x0383）落入 NULL trap 区，触发 trap。
+- **是否 Cide 限制**: 否
+- **是否标准库实现偏差**: 否（实现 bug）
+- **学生影响评级**: P0 — 教学中 1000 元素排序是常见场景，JIT 加速下所有数组写操作都可能把值写到错误地址，后果严重
+- **修复**:
+  1. `native/src/vm/jit_templates.rs`：将 `tpl_store_mem` 和 `tpl_store_mem_byte` 的 `pop` 顺序改为与解释器一致，即先 `val` 后 `addr`。
+  2. `native/src/vm/host_funcs.rs`：将 `host_qsort` 改为 `pub`，供 Host Contract 测试直接调用。
+  3. 新增测试：
+     - `native/tests/host_contract_tests.rs`：`test_qsort_large_byte_array_default_compare`（128 元素默认字节比较排序）、`test_qsort_single_element_noop`、`test_qsort_empty_array_noop`。
+     - `native/tests/qsort_test.rs`：`test_qsort_thousand_int_array`（1000 元素 int 数组 + 用户比较函数回调，覆盖 JIT fast path）。
+- **修复提交**: 2026-06-14 根因定位后修复
+
+---
+
 ### host_atoi 前缀解析偏差
 
 - **来源**: Host Contract
@@ -115,6 +150,34 @@
 
 ---
 
+### JIT Trace 录制 Abort 时被错误编译为残缺 trace
+
+- **来源**: 代码审查报告 O5 推进过程中发现
+- **失败原因**: 运行时行为错误 / 性能劣化
+- **最小复现**:
+  ```c
+  int main() {
+      int sum = 0;
+      for (int i = 0; i < 20; i++) {
+          for (int j = 0; j < 20; j++) {
+              sum = sum + 1;
+          }
+      }
+      return sum;
+  }
+  ```
+  内层循环 backward jump 目标被命中超过 `JIT_THRESHOLD` 后，`TraceRecorder` 在第 N 次迭代（`j >= 20`）录制到 `JumpIfZero` 跳转到循环外，触发 `RecordResult::Abort`；但 `executor.rs` 对 `Finish` 和 `Abort` 都调用 `trace_recorder.finish()`，导致只包含条件判断的 4 条指令被编译为 `CompiledTrace`。
+- **是否 Cide 限制**: 否
+- **是否标准库实现偏差**: 否（实现 bug）
+- **学生影响评级**: P1 — 嵌套循环场景下 JIT 会生成无效 trace，导致循环被反复解释执行或触发 `max_steps` 误报为无限循环
+- **修复**:
+  1. `TraceRecorder::finish` 增加 `aborted: bool` 参数，Abort 时清空 `instructions` 并返回 `None`。
+  2. `executor.rs` 区分 `Finish` 与 `Abort`，仅对 `Finish` 编译并插入 `jit_traces`。
+  3. `execute_trace_bulk` 同步修正条件跳转 side-exit 逻辑，使完整 trace 能批量执行多轮循环迭代。
+- **修复提交**: 2026-06-14 代码审查报告 O5 推进
+
+---
+
 ## 待进一步分析（TODO）
 
 ### `printf("%.2f", 2.675)` 舍入偏差
@@ -133,4 +196,4 @@
 ---
 
 *文档状态：Phase A 实施中*
-*最后更新：2026-06-07*
+*最后更新：2026-06-14*

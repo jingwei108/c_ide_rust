@@ -114,9 +114,11 @@ impl TraceRecorder {
 
     /// 结束录制并取出 trace。
     /// 若 trace 太短（< 2 条指令）则返回 None。
-    pub fn finish(&mut self) -> Option<JitTrace> {
+    /// 结束录制并取出 trace。
+    /// 若 trace 太短（< 2 条指令）或录制以 Abort 结束时返回 None。
+    pub fn finish(&mut self, aborted: bool) -> Option<JitTrace> {
         self.recording = false;
-        if self.instructions.len() < 2 {
+        if aborted || self.instructions.len() < 2 {
             self.instructions.clear();
             return None;
         }

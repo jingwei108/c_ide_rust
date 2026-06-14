@@ -1461,12 +1461,16 @@ impl CideVM {
         if self.trace_recorder.is_recording() {
             match self.trace_recorder.record(inst, ip_before, self.ip) {
                 crate::vm::jit_trace::RecordResult::Continue => {}
-                crate::vm::jit_trace::RecordResult::Finish | crate::vm::jit_trace::RecordResult::Abort => {
-                    if let Some(trace) = self.trace_recorder.finish() {
+                crate::vm::jit_trace::RecordResult::Finish => {
+                    if let Some(trace) = self.trace_recorder.finish(false) {
                         let compiled = crate::vm::jit_templates::compile_trace(&trace);
                         self.jit_traces.insert(trace.start_ip, Arc::new(compiled));
                         self.jit_stats.traces_compiled += 1;
                     }
+                }
+                crate::vm::jit_trace::RecordResult::Abort => {
+                    // Abort 时丢弃已录制内容，避免生成不完整的 trace。
+                    let _ = self.trace_recorder.finish(true);
                 }
             }
         }

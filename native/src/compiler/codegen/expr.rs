@@ -1121,18 +1121,18 @@ impl ExprGen for BytecodeGen {
                             break;
                         }
                         let field_offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
-                        self.gen_nested_init(base_temp, offset + field_offset, &fields[i].ty, elem, loc);
+                        self.gen_nested_init(base_temp, offset + field_offset, &fields[i].ty, &mut elem.value, loc);
                     }
                 } else if target_ty.is_array() {
                     let elem_size = self.elem_type_size(target_ty);
                     let inner_ty = target_ty.subscript_type();
                     for (i, elem) in elements.iter_mut().enumerate() {
                         let elem_offset = offset + (i as i32) * elem_size;
-                        self.gen_nested_init(base_temp, elem_offset, &inner_ty, elem, loc);
+                        self.gen_nested_init(base_temp, elem_offset, &inner_ty, &mut elem.value, loc);
                     }
                 } else {
                     if let Some(first) = elements.first_mut() {
-                        self.gen_nested_init(base_temp, offset, target_ty, first, loc);
+                        self.gen_nested_init(base_temp, offset, target_ty, &mut first.value, loc);
                     }
                 }
             }

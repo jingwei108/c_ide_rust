@@ -506,7 +506,7 @@ pub fn update_completion_snapshot(session: &mut Session, program: &ProgramNode) 
     session.compile.completion_snapshot = build_snapshot(program);
 }
 
-mod candidates;
+pub mod candidates;
 mod context;
 pub use candidates::*;
 pub use context::*;

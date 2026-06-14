@@ -506,6 +506,13 @@ pub fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
     let specs = parse_format_specs(&fmt);
+    if vm.get_stack().len() < specs.len() {
+        vm.trap(
+            "printf: 格式字符串要求的参数多于实际提供的参数。",
+            &super::instruction::SourceLoc::default(),
+        );
+        return;
+    }
     let mut args = Vec::with_capacity(specs.len());
     for _ in 0..specs.len() {
         args.push(vm.pop());
@@ -611,6 +618,13 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt = read_cstring(vm, fmt_addr);
     // 扫描格式字符串，记录每个 % 格式符的类型及是否带 long 修饰符
     let spec_types = parse_scanf_specs(&fmt);
+    if vm.get_stack().len() < spec_types.len() {
+        vm.trap(
+            "scanf: 格式字符串要求的参数多于实际提供的参数。",
+            &super::instruction::SourceLoc::default(),
+        );
+        return;
+    }
     // 按数量 pop 指针参数
     let mut ptrs = Vec::with_capacity(spec_types.len());
     for _ in 0..spec_types.len() {
@@ -1255,6 +1269,13 @@ pub fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
     let specs = parse_format_specs(&fmt);
+    if vm.get_stack().len() < specs.len() {
+        vm.trap(
+            "fprintf: 格式字符串要求的参数多于实际提供的参数。",
+            &super::instruction::SourceLoc::default(),
+        );
+        return;
+    }
     let mut args = Vec::with_capacity(specs.len());
     for _ in 0..specs.len() {
         args.push(vm.pop());
@@ -1445,7 +1466,7 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
 
 const MAX_QSORT_DEPTH: i32 = 8;
 
-fn host_qsort(vm: &mut CideVM, session: &mut Session) {
+pub fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     let base = vm.pop() as u32;
     let nmemb = vm.pop() as usize;
     let size = vm.pop() as usize;
@@ -1495,7 +1516,9 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
         });
     }
 
-    // Reorder memory according to sorted indices
+    // Reorder memory according to sorted indices.
+    // Use a temporary buffer to avoid overwriting data during in-place reordering,
+    // then write back in chunks via `write_memory` instead of byte-by-byte store_i8.
     let mut temp: Vec<u8> = vec![0; nmemb * size];
     {
         let mem = vm.get_memory_slice();
@@ -1508,12 +1531,10 @@ fn host_qsort(vm: &mut CideVM, session: &mut Session) {
     for i in 0..nmemb {
         let src_start = i * size;
         let dst_start = (base as usize) + i * size;
-        for j in 0..size {
-            vm.store_i8(
-                (dst_start + j) as u32,
-                temp[src_start + j] as i32,
-                &super::instruction::SourceLoc::default(),
-            );
+        if !vm.write_memory(dst_start as u32, &temp[src_start..src_start + size]) {
+            vm.trap("qsort: write back out of bounds", &super::instruction::SourceLoc::default());
+            vm.set_qsort_depth(vm.qsort_depth() - 1);
+            return;
         }
     }
     vm.set_qsort_depth(vm.qsort_depth() - 1);
