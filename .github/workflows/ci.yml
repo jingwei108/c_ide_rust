@@ -128,6 +128,20 @@ jobs:
       - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 2.12.0
 
+      # Flutter 3.29 在 Windows 上总是根据检测到的 VS 版本显式传入 -G <generator>，
+      # 导致 CI 中设置的 CMAKE_GENERATOR 环境变量被覆盖。当 runner 检测异常时，
+      # 会回退到 Visual Studio 16 2019 但实例不存在。此 patch 让 Flutter 工具优先
+      # 读取 CMAKE_GENERATOR 环境变量，使历史修复真正生效。
+      - name: Patch Flutter tools to honor CMAKE_GENERATOR
+        run: |
+          $flutterRoot = (Get-Command flutter).Source | Split-Path -Parent | Split-Path -Parent
+          $buildWindows = Join-Path $flutterRoot "packages\flutter_tools\lib\src\windows\build_windows.dart"
+          (Get-Content $buildWindows) `
+            -replace 'final String\? cmakeGenerator = visualStudio\.cmakeGenerator;', 'final String? cmakeGenerator = globals.platform.environment[''CMAKE_GENERATOR''] ?? visualStudio.cmakeGenerator;' |
+            Set-Content $buildWindows
+          Remove-Item "$flutterRoot\bin\cache\flutter_tools.*" -Force -ErrorAction SilentlyContinue
+        shell: pwsh
+
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: CideFlutter
