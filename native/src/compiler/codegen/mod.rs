@@ -1,37 +1,9 @@
 use crate::compiler::ast::*;
-use crate::vm::instruction::{Instruction, SourceLoc as VMSourceLoc};
+use crate::shared::type_utils::{base_kind, immediate_base_kind};
+use crate::shared::{FuncMeta, SourceLoc, Symbol};
+use crate::vm::instruction::Instruction;
 use crate::vm::opcode::OpCode;
-use crate::vm::vm::VMSymbol;
 use std::collections::{HashMap, HashSet};
-
-fn base_kind(ty: &Type) -> TypeKind {
-    match ty {
-        Type::Pointer { pointee, .. } => pointee.kind(),
-        Type::Array { element, .. } => base_kind(element),
-        _ => ty.kind(),
-    }
-}
-
-/// 只解引用一层，用于数组元素类型判断和单级指针解引用。
-fn immediate_base_kind(ty: &Type) -> TypeKind {
-    match ty {
-        Type::Pointer { pointee, .. } => pointee.kind(),
-        Type::Array { element, .. } => element.kind(),
-        _ => ty.kind(),
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct FuncMeta {
-    pub ip: usize,
-    /// 参数总 word 数（以 4-byte words 计），供 Call 指令弹栈使用。
-    pub arg_count: i32,
-    /// 参数个数（供 call_user_function 使用，与总 word 数不同）。
-    pub param_count: i32,
-    pub local_count: i32,
-    pub param_sizes: Vec<i32>,
-    pub return_type: Type,
-}
 
 #[derive(Debug, Clone)]
 struct ShadowEntry {
@@ -84,7 +56,7 @@ pub struct BytecodeGen {
     next_global_offset: i32,
     f64_constants: Vec<f64>,
     i64_constants: Vec<i64>,
-    symbols: Vec<VMSymbol>,
+    symbols: Vec<Symbol>,
     sym_index: HashMap<String, i32>,
     struct_defs: HashMap<String, Vec<StructField>>,
     union_defs: HashMap<String, Vec<StructField>>,
@@ -95,7 +67,7 @@ pub struct BytecodeGen {
     /// 全局变量初始化中遇到的字符串字面量，需在 Pass 1 结束后统一分配地址并回填。
     /// 避免字符串区与全局变量区重叠。
     pending_string_inits: Vec<(u32, String)>,
-    source_map: Vec<(u32, VMSourceLoc)>,
+    source_map: Vec<(u32, SourceLoc)>,
     break_patches: Vec<usize>,
     continue_patches: Vec<usize>,
     loop_start_ips: Vec<usize>,
@@ -184,7 +156,7 @@ impl BytecodeGen {
     }
 
     pub fn generate(mut self, program: &mut ProgramNode) -> Result<CompileOutput, Vec<String>> {
-        self.code.push(Instruction::new(OpCode::Nop, 0, VMSourceLoc::default()));
+        self.code.push(Instruction::new(OpCode::Nop, 0, SourceLoc::default()));
 
         for s in &program.structs {
             self.struct_defs.insert(s.name.clone(), s.fields.clone());
@@ -393,7 +365,7 @@ impl BytecodeGen {
                 }
             }
             self.sym_index.insert(g.name.clone(), self.symbols.len() as i32);
-            self.symbols.push(VMSymbol {
+            self.symbols.push(Symbol {
                 name: g.name.clone(),
                 addr: offset as u32,
                 is_local: false,
@@ -414,7 +386,7 @@ impl BytecodeGen {
             self.global_indices.insert(g.name.clone(), offset);
             self.global_types.insert(g.name.clone(), g.ty.clone());
             self.sym_index.insert(g.name.clone(), self.symbols.len() as i32);
-            self.symbols.push(VMSymbol {
+            self.symbols.push(Symbol {
                 name: g.name.clone(),
                 addr: offset as u32,
                 is_local: false,
@@ -445,7 +417,7 @@ impl BytecodeGen {
         let pending = std::mem::take(&mut self.pending_string_inits);
         for (base_offset, value) in pending {
             let aligned = ((value.len() + 1) as u32 + 3) & !3;
-            let str_addr = crate::vm::vm::GLOBAL_START + self.next_global_offset as u32;
+            let str_addr = crate::vm::core::GLOBAL_START + self.next_global_offset as u32;
             self.string_data.push((str_addr, value));
             self.next_global_offset += aligned as i32;
             self.globals_init_32.push((base_offset, str_addr as i32));
@@ -504,7 +476,7 @@ impl BytecodeGen {
             }
             self.emit(OpCode::Call, main_idx, &SourceLoc { line: 0, column: 0 });
             self.emit(OpCode::Ret, 0, &SourceLoc { line: 0, column: 0 });
-            self.code[0] = Instruction::new(OpCode::Jump, wrapper_ip as i32, VMSourceLoc::default());
+            self.code[0] = Instruction::new(OpCode::Jump, wrapper_ip as i32, SourceLoc::default());
         } else {
             self.errors.push("缺少 main 函数入口".to_string());
         }
@@ -531,7 +503,7 @@ impl BytecodeGen {
 
     fn emit(&mut self, op: OpCode, operand: i32, loc: &SourceLoc) {
         let ip = self.code.len() as u32;
-        let vm_loc = VMSourceLoc {
+        let vm_loc = SourceLoc {
             line: loc.line,
             column: loc.column,
         };
@@ -584,7 +556,7 @@ impl BytecodeGen {
             self.local_indices.insert(p.name.clone(), offset);
             self.local_types.insert(p.name.clone(), p.ty.clone());
             self.sym_index.insert(p.name.clone(), self.symbols.len() as i32);
-            self.symbols.push(VMSymbol {
+            self.symbols.push(Symbol {
                 name: p.name.clone(),
                 addr: offset as u32,
                 is_local: true,
@@ -1131,8 +1103,8 @@ pub struct CompileOutput {
     pub func_table: HashMap<String, FuncMeta>,
     pub func_index: HashMap<String, i32>,
     pub string_data: Vec<(u32, String)>,
-    pub source_map: Vec<(u32, VMSourceLoc)>,
-    pub symbols: Vec<VMSymbol>,
+    pub source_map: Vec<(u32, SourceLoc)>,
+    pub symbols: Vec<Symbol>,
     pub struct_defs: HashMap<String, Vec<StructField>>,
     pub union_defs: HashMap<String, Vec<StructField>>,
     pub f64_constants: Vec<f64>,

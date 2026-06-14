@@ -10,12 +10,12 @@
 
 use cide_native::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use cide_native::session::{CompileUnit, Session};
+use cide_native::vm::core::CideVM;
 use cide_native::vm::host_funcs::{
     host_abs, host_atoi, host_isalnum, host_isalpha, host_iscntrl, host_isdigit, host_islower, host_isprint,
     host_isspace, host_isupper, host_isxdigit, host_memcpy, host_memmove, host_strcmp, host_strlen, host_strncpy,
     host_tolower, host_toupper,
 };
-use cide_native::vm::vm::CideVM;
 
 const BC_STDLIB: &str = include_str!("../runtime_libc/src/stdlib.c");
 const BC_STRING: &str = include_str!("../runtime_libc/src/string.c");

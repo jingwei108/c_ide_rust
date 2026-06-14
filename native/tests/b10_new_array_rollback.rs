@@ -1,7 +1,7 @@
 mod test_utils;
 
 use cide_native::session::Session;
-use cide_native::vm::vm::CideVM;
+use cide_native::vm::core::CideVM;
 
 #[test]
 fn test_new_array_rollback_on_ctor_trap() {
@@ -32,12 +32,13 @@ int main() {
         if let Some(&idx) = output.func_index.get(name) {
             vm.register_function(
                 idx as u32,
-                cide_native::vm::vm::FuncMeta {
+                cide_native::vm::core::FuncMeta {
                     ip: meta.ip,
                     arg_count: meta.arg_count,
                     param_count: meta.param_count,
                     local_count: meta.local_count,
                     param_sizes: meta.param_sizes.clone(),
+                    return_type: meta.return_type.clone(),
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -49,7 +50,7 @@ int main() {
         output
             .symbols
             .iter()
-            .map(|s| cide_native::vm::vm::VMSymbol {
+            .map(|s| cide_native::vm::core::VMSymbol {
                 name: s.name.clone(),
                 addr: s.addr,
                 is_local: s.is_local,

@@ -6,10 +6,10 @@
 //! 跳过两层 match 分支；不匹配的指令回退到 `dispatch_single_instruction`。
 
 use crate::session::Session;
+use crate::vm::core::{CideVM, StepResult, MEM_SIZE, NULL_TRAP_SIZE};
 use crate::vm::instruction::SourceLoc;
 use crate::vm::jit_trace::{JitTrace, MAX_TRACE_ITERATIONS};
 use crate::vm::opcode::OpCode;
-use crate::vm::vm::{CideVM, StepResult, MEM_SIZE, NULL_TRAP_SIZE};
 
 pub type JitFn = fn(&mut CideVM, i32, i32, &SourceLoc, &mut Session) -> Option<StepResult>;
 
@@ -147,7 +147,7 @@ fn tpl_load_global(
     loc: &SourceLoc,
     _session: &mut Session,
 ) -> Option<StepResult> {
-    let addr = crate::vm::vm::GLOBAL_START + offset as u32;
+    let addr = crate::vm::core::GLOBAL_START + offset as u32;
     if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
         vm.trap("LoadGlobal: 地址越界", loc);
         return Some(StepResult::Trap);
@@ -164,7 +164,7 @@ fn tpl_store_global(
     loc: &SourceLoc,
     _session: &mut Session,
 ) -> Option<StepResult> {
-    let addr = crate::vm::vm::GLOBAL_START + offset as u32;
+    let addr = crate::vm::core::GLOBAL_START + offset as u32;
     if addr as u64 + 4 > MEM_SIZE as u64 || addr < NULL_TRAP_SIZE {
         vm.trap("StoreGlobal: 地址越界", loc);
         return Some(StepResult::Trap);

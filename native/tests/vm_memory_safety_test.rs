@@ -1,4 +1,4 @@
-use cide_native::vm::vm::{CideVM, NULL_TRAP_SIZE};
+use cide_native::vm::core::{CideVM, NULL_TRAP_SIZE};
 
 #[test]
 fn test_write_cstring_basic() {

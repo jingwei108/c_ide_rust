@@ -124,7 +124,7 @@ impl BytecodeGen {
                     self.emit(OpCode::PushConst, offset, loc);
                     self.emit(OpCode::Add, 0, loc);
                 } else if let Some(&offset) = self.global_indices.get(name) {
-                    self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, loc);
+                    self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, loc);
                 } else {
                     self.report_error("未声明的类对象", loc);
                     self.emit(OpCode::PushConst, 0, loc);

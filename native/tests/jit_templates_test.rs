@@ -1,6 +1,6 @@
 use cide_native::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
 use cide_native::session::Session;
-use cide_native::vm::vm::CideVM;
+use cide_native::vm::core::CideVM;
 
 fn make_session(source: &str) -> Session {
     let mut session = Session::default();

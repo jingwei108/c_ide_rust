@@ -3,8 +3,8 @@ use crate::unified::checkpoint::CheckpointManager;
 use crate::unified::collector::StepCollector;
 use crate::unified::trace_analyzer::TraceAnalyzer;
 use crate::unified::types::{AutoStepResult, SeekResult, StepMeta, StepPayload};
+use crate::vm::core::{CideVM, StepResult};
 use crate::vm::snapshot::VMSnapshot;
-use crate::vm::vm::{CideVM, StepResult};
 
 /// 统一模式引擎：整合检查点管理、数据收集和批量执行。
 ///

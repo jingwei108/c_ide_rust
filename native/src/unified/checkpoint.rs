@@ -1,7 +1,7 @@
 use crate::session::Session;
 use crate::unified::types::StepMeta;
+use crate::vm::core::CideVM;
 use crate::vm::snapshot::VMSnapshot;
-use crate::vm::vm::CideVM;
 
 /// 检查点管理器：定期保存 VM 快照，用于 Seek 恢复。
 ///

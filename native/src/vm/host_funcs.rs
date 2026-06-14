@@ -1,5 +1,5 @@
+use super::core::CideVM;
 use super::host_func_id;
-use super::vm::CideVM;
 use crate::session::{MemoryRegion, Session};
 
 fn read_cbytes(vm: &CideVM, addr: u32) -> Vec<u8> {
@@ -484,7 +484,7 @@ pub fn host_free(vm: &mut CideVM, session: &mut Session) {
         if r.addr == addr && !r.is_freed {
             r.is_freed = true;
             let aligned_size = ((r.size as u32) + 3) & !3;
-            vm.freed_logs.push(super::vm::FreedRegionInfo {
+            vm.freed_logs.push(super::core::FreedRegionInfo {
                 addr: r.addr,
                 size: aligned_size,
                 alloc_line: r.alloc_line,
@@ -962,7 +962,7 @@ pub fn host_memset(vm: &mut CideVM, _session: &mut Session) {
     let max_write = mem_size - ptr as usize;
     let write_len = (size as usize).min(max_write);
     // 注入 NULL 指针安全检查（与 VM store_i8 保持一致）
-    if ptr < super::vm::NULL_TRAP_SIZE && write_len > 0 {
+    if ptr < super::core::NULL_TRAP_SIZE && write_len > 0 {
         let msg = format!("向 NULL 指针区域写入（地址 0x{:04X}）。请确认指针已被正确初始化。", ptr);
         vm.trap(&msg, &super::instruction::SourceLoc::default());
         vm.push(ptr as u64);
@@ -1295,7 +1295,7 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
                 if r.addr == ptr && !r.is_freed {
                     r.is_freed = true;
                     let aligned_size = ((r.size as u32) + 3) & !3;
-                    vm.freed_logs.push(super::vm::FreedRegionInfo {
+                    vm.freed_logs.push(super::core::FreedRegionInfo {
                         addr: r.addr,
                         size: aligned_size,
                         alloc_line: r.alloc_line,
@@ -1425,7 +1425,7 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
     for r in &mut session.memory.regions {
         if r.addr == old_addr && !r.is_freed {
             r.is_freed = true;
-            vm.freed_logs.push(super::vm::FreedRegionInfo {
+            vm.freed_logs.push(super::core::FreedRegionInfo {
                 addr: r.addr,
                 size: aligned_old_size,
                 alloc_line: r.alloc_line,
@@ -2460,7 +2460,7 @@ pub fn host_cide_assert_fail(vm: &mut CideVM, session: &mut Session) {
 
 pub fn host_set_array_guard(vm: &mut CideVM, _session: &mut Session) {
     let base_addr = vm.pop() as u32;
-    vm.pending_array_construction = Some(crate::vm::vm::ArrayConstructionGuard {
+    vm.pending_array_construction = Some(crate::vm::core::ArrayConstructionGuard {
         base_addr,
         frame_depth: vm.call_stack_len(),
     });

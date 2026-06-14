@@ -367,7 +367,7 @@ fn cmd_unified(path: &str, input_lines: Vec<String>) {
     use cide_native::engine::session_ops::{inject_preset_files, reset_runtime_for_step};
     use cide_native::session::{CompileUnit, Session};
     use cide_native::unified::engine::UnifiedEngine;
-    use cide_native::vm::vm::CideVM;
+    use cide_native::vm::core::CideVM;
 
     let mut session = Session::default();
     session.compile.compile_units.push(CompileUnit {

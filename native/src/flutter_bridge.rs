@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex};
 use crate::session::{CodeFile, *};
 use crate::unified::engine::UnifiedEngine;
 use crate::unified::types::*;
-use crate::vm::vm::NULL_TRAP_SIZE;
+use crate::vm::core::NULL_TRAP_SIZE;
 
 // ========== 多 Session 管理 ==========
 
@@ -210,7 +210,7 @@ pub fn step_next() -> StepResult {
         session.runtime.waiting_input = false;
         loop {
             match vm.step(&mut session) {
-                crate::vm::vm::StepResult::Ok => {
+                crate::vm::core::StepResult::Ok => {
                     // 首次运行：遇到第一个 StepEvent 后暂停，避免无断点时持续执行到 max_steps
                     if vm.was_step_event_hit() {
                         session.runtime.current_line = vm.get_current_line();
@@ -222,7 +222,7 @@ pub fn step_next() -> StepResult {
                         };
                     }
                 }
-                crate::vm::vm::StepResult::Paused => {
+                crate::vm::core::StepResult::Paused => {
                     session.runtime.current_line = vm.get_current_line();
                     break StepResult {
                         status: StepStatus::Paused,
@@ -231,7 +231,7 @@ pub fn step_next() -> StepResult {
                         waiting_input: false,
                     };
                 }
-                crate::vm::vm::StepResult::WaitingInput => {
+                crate::vm::core::StepResult::WaitingInput => {
                     session.runtime.current_line = vm.get_current_line();
                     break StepResult {
                         status: StepStatus::WaitingInput,
@@ -240,7 +240,7 @@ pub fn step_next() -> StepResult {
                         waiting_input: true,
                     };
                 }
-                crate::vm::vm::StepResult::Finished => {
+                crate::vm::core::StepResult::Finished => {
                     session.runtime.running = false;
                     session.runtime.current_line = vm.get_current_line();
                     break StepResult {
@@ -250,7 +250,7 @@ pub fn step_next() -> StepResult {
                         waiting_input: false,
                     };
                 }
-                crate::vm::vm::StepResult::Trap => {
+                crate::vm::core::StepResult::Trap => {
                     session.runtime.error = vm.get_error().to_string();
                     session.runtime.running = false;
                     session.runtime.current_line = vm.get_current_line();
@@ -265,7 +265,7 @@ pub fn step_next() -> StepResult {
         }
     } else {
         match vm.step(&mut session) {
-            crate::vm::vm::StepResult::Ok => {
+            crate::vm::core::StepResult::Ok => {
                 session.runtime.current_line = vm.get_current_line();
                 StepResult {
                     status: StepStatus::Paused,
@@ -274,7 +274,7 @@ pub fn step_next() -> StepResult {
                     waiting_input: false,
                 }
             }
-            crate::vm::vm::StepResult::Paused => {
+            crate::vm::core::StepResult::Paused => {
                 session.runtime.current_line = vm.get_current_line();
                 StepResult {
                     status: StepStatus::Paused,
@@ -283,7 +283,7 @@ pub fn step_next() -> StepResult {
                     waiting_input: false,
                 }
             }
-            crate::vm::vm::StepResult::WaitingInput => {
+            crate::vm::core::StepResult::WaitingInput => {
                 session.runtime.current_line = vm.get_current_line();
                 StepResult {
                     status: StepStatus::WaitingInput,
@@ -292,7 +292,7 @@ pub fn step_next() -> StepResult {
                     waiting_input: true,
                 }
             }
-            crate::vm::vm::StepResult::Finished => {
+            crate::vm::core::StepResult::Finished => {
                 session.runtime.running = false;
                 session.runtime.current_line = vm.get_current_line();
                 StepResult {
@@ -302,7 +302,7 @@ pub fn step_next() -> StepResult {
                     waiting_input: false,
                 }
             }
-            crate::vm::vm::StepResult::Trap => {
+            crate::vm::core::StepResult::Trap => {
                 session.runtime.error = vm.get_error().to_string();
                 session.runtime.running = false;
                 session.runtime.current_line = vm.get_current_line();
@@ -364,7 +364,7 @@ pub fn get_heap_stats() -> crate::session::HeapStats {
     let session_arc_l342 = current_session();
     let session = lock_or_reset(&session_arc_l342);
     let mem = &session.memory;
-    let heap_start = crate::vm::vm::HEAP_START as i32;
+    let heap_start = crate::vm::core::HEAP_START as i32;
     let total_heap = (mem.heap_offset as i32).saturating_sub(heap_start);
     let allocated: i32 = mem.regions.iter().filter(|r| r.is_heap && !r.is_freed).map(|r| r.size).sum();
     let fragmented: i32 = mem.free_list.iter().map(|b| b.size).sum();
@@ -635,11 +635,11 @@ pub fn step_next_unified() -> Option<StepPayload> {
     let step = vm.get_executed_steps();
 
     let payload = match vm.step(&mut session) {
-        crate::vm::vm::StepResult::Ok
-        | crate::vm::vm::StepResult::Paused
-        | crate::vm::vm::StepResult::WaitingInput
-        | crate::vm::vm::StepResult::Finished
-        | crate::vm::vm::StepResult::Trap => {
+        crate::vm::core::StepResult::Ok
+        | crate::vm::core::StepResult::Paused
+        | crate::vm::core::StepResult::WaitingInput
+        | crate::vm::core::StepResult::Finished
+        | crate::vm::core::StepResult::Trap => {
             let p = crate::unified::collector::StepCollector::collect(&mut vm, &session, step);
             if step as usize >= engine.frame_cache.len() {
                 engine.frame_cache.push(p.clone());

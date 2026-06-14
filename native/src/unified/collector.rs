@@ -3,7 +3,7 @@ use crate::unified::algorithm_steps::infer_algorithm_step;
 use crate::unified::types::{
     AccessedVar, ApiFrameInfo, ApiVariableSnapshot, PointerSnapshot, PointerStatus, StepPayload,
 };
-use crate::vm::vm::CideVM;
+use crate::vm::core::CideVM;
 
 /// 每步数据收集器：从 VM 和 Session 中提取轻量 `StepPayload`。
 pub struct StepCollector;
@@ -52,8 +52,8 @@ impl StepCollector {
             .map(|a| AccessedVar {
                 name: a.name.clone(),
                 access_type: match a.access_type {
-                    crate::vm::vm::AccessType::Read => "Read".to_string(),
-                    crate::vm::vm::AccessType::Write => "Write".to_string(),
+                    crate::vm::core::AccessType::Read => "Read".to_string(),
+                    crate::vm::core::AccessType::Write => "Write".to_string(),
                 },
             })
             .collect();
@@ -98,7 +98,7 @@ fn collect_pointer_snapshots(
 
         let status = if target_addr == 0 {
             PointerStatus::Null
-        } else if !(crate::vm::vm::NULL_TRAP_SIZE..crate::vm::vm::MEM_SIZE).contains(&target_addr) {
+        } else if !(crate::vm::core::NULL_TRAP_SIZE..crate::vm::core::MEM_SIZE).contains(&target_addr) {
             PointerStatus::Dangling
         } else if is_freed_heap(&session.memory.regions, target_addr) {
             PointerStatus::Freed

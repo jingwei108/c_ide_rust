@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::session::{FreeBlock, MemoryRegion, MemoryState};
-use crate::vm::vm::CideVM;
+use crate::vm::core::CideVM;
 
 #[derive(Debug, Clone, Default)]
 pub struct VirtualFileSystem {

@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::session::{FreeBlock, MemoryRegion, RuntimeState, TraceEntry, VisEvent};
-use crate::vm::vm::CallFrame;
+use crate::vm::core::CallFrame;
 
 /// VM 内存快照：全量或页级增量（页大小 4KB）。
 #[derive(Clone)]
@@ -72,7 +72,7 @@ pub struct VMSnapshot {
     pub vis_event_queue: Vec<VisEvent>,
     pub breakpoints: HashSet<i32>,
     pub global_count: usize,
-    pub freed_logs: Vec<crate::vm::vm::FreedRegionInfo>,
+    pub freed_logs: Vec<crate::vm::core::FreedRegionInfo>,
 
     // Session 运行时状态（随 VM 一起恢复）
     pub runtime: RuntimeSnapshot,

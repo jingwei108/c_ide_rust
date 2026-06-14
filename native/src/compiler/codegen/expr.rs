@@ -54,9 +54,9 @@ impl ExprGen for BytecodeGen {
             }
             Expr::StringLiteral { value, .. } => {
                 let aligned = ((value.len() + 1) as u32 + 3) & !3;
-                let addr = crate::vm::vm::GLOBAL_START + self.next_global_offset as u32;
+                let addr = crate::vm::core::GLOBAL_START + self.next_global_offset as u32;
                 let new_offset = self.next_global_offset + aligned as i32;
-                if new_offset as u32 + crate::vm::vm::GLOBAL_START > crate::vm::vm::MEM_SIZE / 16 {
+                if new_offset as u32 + crate::vm::core::GLOBAL_START > crate::vm::core::MEM_SIZE / 16 {
                     self.report_error("字符串字面量过多，超出内存限制", &loc);
                     self.emit(OpCode::PushConst, addr as i32, &loc);
                 } else {
@@ -92,7 +92,7 @@ impl ExprGen for BytecodeGen {
                 if let Some(&static_offset) = self.static_local_indices.get(name) {
                     if let Some(ty) = self.static_local_types.get(name) {
                         if ty.is_array() {
-                            self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + static_offset, &loc);
+                            self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + static_offset, &loc);
                         } else if ty.kind() == TypeKind::Double {
                             self.emit(OpCode::LoadGlobalD, static_offset, &loc);
                         } else if ty.kind() == TypeKind::LongLong {
@@ -136,7 +136,11 @@ impl ExprGen for BytecodeGen {
                     if global_offset >= 0 {
                         if let Some(ty) = self.global_types.get(name) {
                             if ty.is_array() {
-                                self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + global_offset, &loc);
+                                self.emit(
+                                    OpCode::PushConst,
+                                    crate::vm::core::GLOBAL_START as i32 + global_offset,
+                                    &loc,
+                                );
                             } else if ty.kind() == TypeKind::Double {
                                 self.emit(OpCode::LoadGlobalD, global_offset, &loc);
                             } else if ty.kind() == TypeKind::LongLong {
@@ -476,9 +480,9 @@ impl ExprGen for BytecodeGen {
                                     self.emit(OpCode::PushConst, offset, &loc);
                                     self.emit(OpCode::Add, 0, &loc);
                                 } else if let Some(&offset) = self.static_local_indices.get(name) {
-                                    self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                                    self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
                                 } else if let Some(&offset) = self.global_indices.get(name) {
-                                    self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                                    self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
                                 } else if let Some(&idx) = self.func_index.get(name) {
                                     // &func_name — 取函数地址
                                     self.emit(OpCode::PushConst, idx, &loc);
@@ -1180,7 +1184,7 @@ impl ExprGen for BytecodeGen {
                 self.emit(OpCode::PushConst, offset, loc);
                 self.emit(OpCode::Add, 0, loc);
             } else if let Some(&offset) = self.global_indices.get(name) {
-                self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, loc);
+                self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, loc);
             } else {
                 self.report_error("未声明的结构体变量", loc);
                 self.emit(OpCode::PushConst, 0, loc);
@@ -1354,7 +1358,7 @@ impl ExprGen for BytecodeGen {
                             return;
                         }
                     }
-                    self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, loc);
+                    self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, loc);
                 } else {
                     self.report_error("未声明的变量", loc);
                     // 错误已被记录，提前返回以避免生成无意义指令。

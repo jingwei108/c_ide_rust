@@ -8,6 +8,7 @@
 //! - FIX_REAL_BUGS：测试失败时，修 Host Func 的实现，而不是改测试预期值让它通过。
 
 use cide_native::session::Session;
+use cide_native::vm::core::{CideVM, MEM_SIZE, NULL_TRAP_SIZE};
 use cide_native::vm::host_funcs::{
     host_abort, host_acos, host_asin, host_atan, host_atan2, host_atoi, host_bsearch, host_calloc,
     host_cide_assert_fail, host_clock, host_cos, host_cosh, host_exp, host_free, host_getchar, host_isblank,
@@ -17,7 +18,6 @@ use cide_native::vm::host_funcs::{
     host_strcspn, host_strerror, host_strlen, host_strpbrk, host_strspn, host_strtod, host_strtol, host_tanh,
     host_time,
 };
-use cide_native::vm::vm::{CideVM, MEM_SIZE, NULL_TRAP_SIZE};
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -1173,7 +1173,7 @@ fn test_strtol_empty_sets_errno() {
     vm.write_memory(errno_addr, &0i32.to_le_bytes());
     // 将 errno 注入符号表
     let mut symbols = vm.get_symbols().to_vec();
-    symbols.push(cide_native::vm::vm::VMSymbol {
+    symbols.push(cide_native::vm::core::VMSymbol {
         name: "errno".to_string(),
         addr: errno_addr,
         is_local: false,

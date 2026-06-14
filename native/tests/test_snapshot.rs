@@ -1,6 +1,6 @@
 use cide_native::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
 use cide_native::session::Session;
-use cide_native::vm::vm::CideVM;
+use cide_native::vm::core::CideVM;
 
 fn make_session(source: &str) -> Session {
     let mut session = Session::default();
@@ -122,8 +122,8 @@ int main() {
     // 执行完整程序
     loop {
         match vm.step(&mut session) {
-            cide_native::vm::vm::StepResult::Finished => break,
-            cide_native::vm::vm::StepResult::Trap => panic!("trap: {}", vm.get_error()),
+            cide_native::vm::core::StepResult::Finished => break,
+            cide_native::vm::core::StepResult::Trap => panic!("trap: {}", vm.get_error()),
             _ => {}
         }
     }
@@ -172,7 +172,7 @@ int main() {
     // 恢复后 VM 应能继续执行而不 trap
     let result = vm.step(&mut session);
     assert!(
-        !matches!(result, cide_native::vm::vm::StepResult::Trap),
+        !matches!(result, cide_native::vm::core::StepResult::Trap),
         "VM should continue after restore, got trap: {}",
         vm.get_error()
     );
@@ -195,8 +195,8 @@ int main() {
     let mut vm_a = setup_vm_for_session(&mut session_a);
     loop {
         match vm_a.step(&mut session_a) {
-            cide_native::vm::vm::StepResult::Finished => break,
-            cide_native::vm::vm::StepResult::Trap => panic!("path A trap: {}", vm_a.get_error()),
+            cide_native::vm::core::StepResult::Finished => break,
+            cide_native::vm::core::StepResult::Trap => panic!("path A trap: {}", vm_a.get_error()),
             _ => {}
         }
     }
@@ -223,8 +223,8 @@ int main() {
     // 继续执行到结束
     loop {
         match vm_b.step(&mut session_b) {
-            cide_native::vm::vm::StepResult::Finished => break,
-            cide_native::vm::vm::StepResult::Trap => panic!("path B trap: {}", vm_b.get_error()),
+            cide_native::vm::core::StepResult::Finished => break,
+            cide_native::vm::core::StepResult::Trap => panic!("path B trap: {}", vm_b.get_error()),
             _ => {}
         }
     }
@@ -366,7 +366,7 @@ int main() {
     vm.restore(&reconstructed, &mut session);
     let mut steps_after = 0;
     for _ in step..35 {
-        if matches!(vm.step(&mut session), cide_native::vm::vm::StepResult::Finished) {
+        if matches!(vm.step(&mut session), cide_native::vm::core::StepResult::Finished) {
             break;
         }
         steps_after += 1;

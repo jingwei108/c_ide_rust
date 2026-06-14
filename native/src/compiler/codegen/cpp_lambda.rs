@@ -56,9 +56,9 @@ impl BytecodeGen {
                         self.emit(OpCode::PushConst, local_offset, loc);
                         self.emit(OpCode::Add, 0, loc);
                     } else if let Some(&global_offset) = self.global_indices.get(&field_name) {
-                        self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + global_offset, loc);
+                        self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + global_offset, loc);
                     } else if let Some(&static_offset) = self.static_local_indices.get(&field_name) {
-                        self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + static_offset, loc);
+                        self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + static_offset, loc);
                     } else {
                         self.report_error(&format!("Lambda 捕获变量 '{}' 未找到", field_name), loc);
                         self.emit(OpCode::PushConst, 0, loc);

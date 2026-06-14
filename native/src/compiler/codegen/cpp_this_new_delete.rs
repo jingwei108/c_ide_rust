@@ -129,7 +129,7 @@ impl BytecodeGen {
                     self.emit(OpCode::LoadLocal, ptr_temp, loc);
                     self.emit(
                         OpCode::PushConst,
-                        crate::vm::vm::GLOBAL_START as i32 + vtable_offset as i32,
+                        crate::vm::core::GLOBAL_START as i32 + vtable_offset as i32,
                         loc,
                     );
                     self.emit(OpCode::StoreMem, 0, loc);

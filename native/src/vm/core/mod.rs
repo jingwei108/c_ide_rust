@@ -3,8 +3,8 @@ use super::instruction::{Instruction, SourceLoc};
 use super::jit_templates::{execute_trace_bulk, CompiledTrace};
 use super::jit_trace::{JitStats, TraceRecorder, JIT_THRESHOLD};
 use super::opcode::OpCode;
-use crate::compiler::ast::Type;
 use crate::session::{Session, VisEvent};
+use crate::shared::type_utils::base_kind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -23,24 +23,7 @@ const EPS_F32: f32 = 1e-6;
 /// and are promoted to double in contexts, leading to larger rounding deltas.
 const EPS_F64: f64 = 1e-6;
 
-fn base_kind(ty: &Type) -> crate::compiler::ast::TypeKind {
-    match ty {
-        Type::Pointer { pointee, .. } => pointee.kind(),
-        Type::Array { element, .. } => base_kind(element),
-        _ => ty.kind(),
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct FuncMeta {
-    pub ip: usize,
-    /// 参数总 word 数（以 4-byte words 计），供 Call 指令弹栈使用。
-    pub arg_count: i32,
-    /// 参数个数（供 call_user_function 使用，与总 word 数不同）。
-    pub param_count: i32,
-    pub local_count: i32,
-    pub param_sizes: Vec<i32>,
-}
+pub use crate::shared::{func_meta::FuncMeta, symbol::Symbol as VMSymbol};
 
 #[derive(Debug, Clone)]
 pub struct FreedRegionInfo {
@@ -62,16 +45,6 @@ pub struct CallFrame {
     pub func_name: String,
     pub original_stack_top: u32,
     pub caller_line: i32,
-}
-
-#[derive(Debug, Clone)]
-pub struct VMSymbol {
-    pub name: String,
-    pub addr: u32,
-    pub is_local: bool,
-    pub ty: Type,
-    pub scope_depth: i32,
-    pub func_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]

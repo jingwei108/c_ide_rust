@@ -44,9 +44,9 @@ impl StmtGen for BytecodeGen {
                         self.static_local_indices.insert(n.to_string(), global_offset);
                         self.static_local_types.insert(n.to_string(), vty.clone());
                         self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
-                        self.symbols.push(VMSymbol {
+                        self.symbols.push(Symbol {
                             name: n.to_string(),
-                            addr: (crate::vm::vm::GLOBAL_START as i32 + global_offset) as u32,
+                            addr: (crate::vm::core::GLOBAL_START as i32 + global_offset) as u32,
                             is_local: false,
                             ty: vty.clone(),
                             scope_depth: 0,
@@ -100,7 +100,7 @@ impl StmtGen for BytecodeGen {
                                                 match &elem.value {
                                                     Expr::StringLiteral { value, .. } => {
                                                         let aligned = ((value.len() + 1) as u32 + 3) & !3;
-                                                        let str_addr = crate::vm::vm::GLOBAL_START
+                                                        let str_addr = crate::vm::core::GLOBAL_START
                                                             + self.next_global_offset as u32;
                                                         self.string_data.push((str_addr, value.clone()));
                                                         self.next_global_offset += aligned as i32;
@@ -189,7 +189,7 @@ impl StmtGen for BytecodeGen {
                     self.local_indices.insert(n.to_string(), local_offset);
                     self.local_types.insert(n.to_string(), vty.clone());
                     self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
-                    self.symbols.push(VMSymbol {
+                    self.symbols.push(Symbol {
                         name: n.to_string(),
                         addr: local_offset as u32,
                         is_local: true,
@@ -927,7 +927,7 @@ impl StmtGen for BytecodeGen {
                                 self.emit(OpCode::PushConst, offset, &loc);
                                 self.emit(OpCode::Add, 0, &loc);
                             } else if let Some(&offset) = self.global_indices.get(name) {
-                                self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                                self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
                             } else {
                                 self.report_error("RangeFor: 未声明的容器变量", &loc);
                                 self.exit_scope();
@@ -963,7 +963,7 @@ impl StmtGen for BytecodeGen {
                             self.emit(OpCode::PushConst, offset, &loc);
                             self.emit(OpCode::Add, 0, &loc);
                         } else if let Some(&offset) = self.global_indices.get(name) {
-                            self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                            self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
                         } else {
                             self.report_error("RangeFor: 未声明的数组变量", &loc);
                             self.exit_scope();
@@ -999,7 +999,7 @@ impl StmtGen for BytecodeGen {
                                 self.emit(OpCode::PushConst, offset, &loc);
                                 self.emit(OpCode::Add, 0, &loc);
                             } else if let Some(&offset) = self.global_indices.get(name) {
-                                self.emit(OpCode::PushConst, crate::vm::vm::GLOBAL_START as i32 + offset, &loc);
+                                self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
                             } else {
                                 self.report_error("RangeFor: 未声明的容器变量", &loc);
                                 self.exit_scope();

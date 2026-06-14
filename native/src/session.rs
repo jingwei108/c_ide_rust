@@ -1,8 +1,8 @@
 use crate::compiler::ast::{SourceLoc, Type};
 use crate::engine::completion::CompletionSnapshot;
+use crate::vm::core::CideVM;
 use crate::vm::instruction::Instruction;
 use crate::vm::vfs::VirtualFileSystem;
-use crate::vm::vm::CideVM;
 use flutter_rust_bridge::frb;
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -37,26 +37,7 @@ pub struct Diagnostic {
     pub filename: String,
 }
 
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct FuncMeta {
-    pub ip: usize,
-    /// 参数总 word 数（以 4-byte words 计），供 Call 指令弹栈使用。
-    pub arg_count: i32,
-    /// 参数个数（供 call_user_function 使用，与总 word 数不同）。
-    pub param_count: i32,
-    pub local_count: i32,
-    pub param_sizes: Vec<i32>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct Symbol {
-    pub name: String,
-    pub addr: u32,
-    pub is_local: bool,
-    pub ty: Type,
-    pub scope_depth: i32,
-    pub func_name: String,
-}
+pub use crate::shared::{func_meta::FuncMeta, symbol::Symbol};
 
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -241,7 +222,7 @@ impl Default for MemoryState {
         Self {
             regions: Vec::new(),
             free_list: Vec::new(),
-            heap_offset: crate::vm::vm::HEAP_START,
+            heap_offset: crate::vm::core::HEAP_START,
             alloc_counter: 0,
         }
     }

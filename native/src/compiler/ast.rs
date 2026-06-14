@@ -653,11 +653,7 @@ impl std::fmt::Display for Type {
 // Type 的 serde 由 #[derive(Serialize, Deserialize)] 自动生成嵌套 JSON 格式。
 // 本项目处于开发期，无需兼容旧 flat 格式。
 
-#[derive(Debug, Clone, Copy, Default, serde::Serialize, serde::Deserialize)]
-pub struct SourceLoc {
-    pub line: i32,
-    pub column: i32,
-}
+pub use crate::shared::source_loc::SourceLoc;
 
 // ============================================================================
 // Expression Nodes

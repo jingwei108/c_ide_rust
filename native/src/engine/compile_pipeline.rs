@@ -3,14 +3,14 @@
 //! 为 `flutter_bridge.rs` 和 `capi/mod.rs` 提供统一的诊断推送、VM 初始化逻辑，
 //! 消除两端的代码重复。
 
-use crate::compiler::ast::{self, SourceLoc as AstSourceLoc};
+use crate::compiler::ast::{self, SourceLoc};
 use crate::compiler::codegen::BytecodeGen;
 use crate::compiler::lexer::Lexer;
 use crate::compiler::parser::Parser;
 use crate::compiler::typeck::TypeChecker;
 use crate::engine::completion::update_completion_snapshot;
 use crate::session::*;
-use crate::vm::vm::CideVM;
+use crate::vm::core::CideVM;
 
 // ---------- 辅助函数：根据类型定义计算类型大小 ----------
 
@@ -184,8 +184,8 @@ pub fn push_hints<T: CompileError>(
 
 pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     use crate::vm::bytecode_libc_loader::load_artifact;
+    use crate::vm::core::{FuncMeta, VMSymbol};
     use crate::vm::opcode::OpCode;
-    use crate::vm::vm::{FuncMeta, VMSymbol};
 
     vm.reset();
 
@@ -224,6 +224,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                     param_count: meta.param_count,
                     local_count: meta.local_count,
                     param_sizes: meta.param_sizes.clone(),
+                    return_type: meta.return_type.clone(),
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -241,6 +242,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                     param_count: meta.param_count,
                     local_count: meta.local_count,
                     param_sizes: meta.param_sizes.clone(),
+                    return_type: meta.return_type.clone(),
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -390,7 +392,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         .map(|(ip, loc)| {
             (
                 ip + libc_code_len,
-                AstSourceLoc {
+                SourceLoc {
                     line: loc.line,
                     column: loc.column,
                 },
@@ -408,6 +410,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
                 param_count: meta.param_count,
                 local_count: meta.local_count,
                 param_sizes: meta.param_sizes,
+                return_type: meta.return_type,
             },
         );
     }
@@ -600,7 +603,7 @@ pub fn run_multi_file_pipeline(
         .map(|(ip, loc)| {
             (
                 ip + libc_code_len,
-                AstSourceLoc {
+                SourceLoc {
                     line: loc.line,
                     column: loc.column,
                 },
@@ -618,6 +621,7 @@ pub fn run_multi_file_pipeline(
                 param_count: meta.param_count,
                 local_count: meta.local_count,
                 param_sizes: meta.param_sizes,
+                return_type: meta.return_type,
             },
         );
     }

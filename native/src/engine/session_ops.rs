@@ -5,7 +5,7 @@
 
 use crate::engine::compile_pipeline::setup_vm;
 use crate::session::Session;
-use crate::vm::vm::CideVM;
+use crate::vm::core::CideVM;
 
 /// 生成内存泄漏报告并追加到输出。
 ///
@@ -57,7 +57,7 @@ pub fn reset_runtime(session: &mut Session) {
     session.runtime.trace.clear();
     session.memory.regions.clear();
     session.memory.free_list.clear();
-    session.memory.heap_offset = crate::vm::vm::HEAP_START;
+    session.memory.heap_offset = crate::vm::core::HEAP_START;
     session.memory.alloc_counter = 0;
     session.vfs = crate::vm::vfs::VirtualFileSystem::new();
     session.runtime.running = true;

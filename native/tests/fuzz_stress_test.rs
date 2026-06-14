@@ -18,13 +18,13 @@
 
 use cide_native::engine::session_ops::append_leak_report;
 use cide_native::session::Session;
+use cide_native::vm::core::CideVM;
 use cide_native::vm::host_funcs::{
     host_atoi, host_free, host_getchar, host_malloc, host_memcpy, host_memmove, host_memset, host_printf_n,
     host_putchar, host_rand, host_realloc, host_scanf_n, host_srand, host_strcat, host_strcmp, host_strcpy,
     host_strlen, host_strncpy,
 };
 use cide_native::vm::instruction::SourceLoc;
-use cide_native::vm::vm::CideVM;
 
 // ─── 确定性 RNG（SplitMix64）──────────────────────────────────────────────────
 
