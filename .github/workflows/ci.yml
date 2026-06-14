@@ -154,19 +154,29 @@ jobs:
         run: flutter test
         working-directory: CideFlutter
 
+      # 提前构建 Rust DLL，使 cide_native 插件的 Windows CMakeLists.txt 能直接使用
+      # 预构建产物，避免在 MSBuild 中通过 cargokit 调用 cargo 时因环境/路径问题失败。
+      - name: Build native DLL (Debug)
+        run: cargo build
+        working-directory: native
+
+      - name: Build native DLL (Release)
+        run: cargo build --release
+        working-directory: native
+
       - name: Clean Windows build cache
         run: if exist build\windows\x64 rmdir /s /q build\windows\x64
         working-directory: CideFlutter
         shell: cmd
 
       - name: Build Windows (Debug)
-        run: flutter build windows --debug
+        run: flutter build windows --debug -v
         working-directory: CideFlutter
         env:
           CMAKE_GENERATOR: Visual Studio 17 2022
 
       - name: Build Windows (Release)
-        run: flutter build windows --release
+        run: flutter build windows --release -v
         working-directory: CideFlutter
         env:
           CMAKE_GENERATOR: Visual Studio 17 2022
