@@ -18,7 +18,7 @@ fn print_usage() {
     eprintln!();
     eprintln!("用法:");
     eprintln!("  cide_cli compile <file.c>           编译并显示诊断信息");
-    eprintln!("  cide_cli run    <file.c> [-i <in>]  编译并全速运行");
+    eprintln!("  cide_cli run    <file.c> [-i <in>] [-- <arg>...]  编译并全速运行（-- 后参数传给 main）");
     eprintln!("  cide_cli step   <file.c> [-i <in>]  交互式单步调试");
     eprintln!("  cide_cli unified <file.c> [-i <in>] 统一模式（时间旅行）执行并摘要");
     eprintln!("  cide_cli export <file1.c> [file2.c ...] -o <out.json> [--builtin-libc]  预编译为字节码产物");
@@ -107,7 +107,7 @@ fn cmd_compile(path: &str) {
     compile_file(path, &source);
 }
 
-fn cmd_run(path: &str, input_lines: Vec<String>) {
+fn cmd_run(path: &str, input_lines: Vec<String>, argv: Vec<String>) {
     let source = read_source(path);
     if !compile_file(path, &source) {
         std::process::exit(1);
@@ -117,6 +117,8 @@ fn cmd_run(path: &str, input_lines: Vec<String>) {
     for line in input_lines {
         flutter_bridge::provide_input_line(line);
     }
+
+    flutter_bridge::set_argv(argv);
 
     let result = flutter_bridge::run_code();
     println!("\n=== 运行输出 ===");
@@ -476,21 +478,31 @@ fn main() {
     let cmd = &args[1];
     let file_path = &args[2];
 
-    // 解析 -i 选项
+    // 解析 -i 选项与 -- 后的命令行参数
     let mut input_lines = Vec::new();
+    let mut argv = vec![file_path.clone()];
     let mut i = 3;
+    let mut passthrough = false;
     while i < args.len() {
-        if args[i] == "-i" && i + 1 < args.len() {
+        if passthrough {
+            argv.push(args[i].clone());
+            i += 1;
+        } else if args[i] == "-i" && i + 1 < args.len() {
             input_lines = read_input_file(&args[i + 1]);
             i += 2;
+        } else if args[i] == "--" {
+            passthrough = true;
+            i += 1;
         } else {
+            // 未识别的位置参数视为传给 main 的 argv
+            argv.push(args[i].clone());
             i += 1;
         }
     }
 
     match cmd.as_str() {
         "compile" => cmd_compile(file_path),
-        "run" => cmd_run(file_path, input_lines),
+        "run" => cmd_run(file_path, input_lines, argv),
         "step" => cmd_step(file_path, input_lines),
         "unified" => cmd_unified(file_path, input_lines),
         "export" => {

@@ -246,12 +246,12 @@ const KNOWN_KR_FAILURES: &[&str] = &[
     // 阶段 3: K&R 第 5-6 章
     // kr_5_1 已修复 (添加 ungetc Host Func)
     // kr_5_2 已修复 (添加 ungetc Host Func)
-    "kr_5_8",
+    // kr_5_8 已修复 (Parser 支持函数指针类型转换；Golden 按 Clang+stdlib.h 重新生成)
     // kr_5_9 已修复 (TypeChecker 支持 (*fp)(args) + BytecodeGen 函数指针解引用不加载内存)
-    "kr_5_10",
+    // kr_5_10 已修复 (VM 支持 main(int argc, char *argv[]) + CLI 传递参数)
     // kr_5_11 已修复 (char*[] 指针数组 elem_type_size / 初始化路径)
     // kr_5_13 已修复 (getchar Batch 模式多行输入)
-    "kr_5_14",
+    // kr_5_14 已修复 (Parser 支持函数指针类型转换/抽象声明符)
     "kr_6_1",
     // kr_6_2 已修复 (Parser 指针无名参数 + ungetc)
     // kr_6_3 已修复 (Parser 指针无名参数 + ungetc)

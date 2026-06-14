@@ -829,8 +829,8 @@ impl Parser {
 
     pub(crate) fn parse_type_only(&mut self) -> Type {
         let mut base = self.parse_base_type();
-        while self.match_token(TokenType::Star) {
-            base = Type::pointer_to(base);
+        if let Some(node) = self.parse_abstract_declarator() {
+            base = Self::interpret_declarator_node(&node, &base);
         }
         base
     }

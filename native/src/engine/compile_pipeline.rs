@@ -299,6 +299,9 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
 
     // ── 11. VM 入口设为用户代码起始位置 ──
     vm.set_ip(libc_code_len);
+
+    // ── 12. 设置命令行参数（供 `main(int argc, char *argv[])` 使用）──
+    vm.setup_argv(session.runtime.argc, &session.runtime.argv);
 }
 
 // ========== 统一编译管线 ==========

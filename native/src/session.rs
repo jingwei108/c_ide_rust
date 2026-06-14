@@ -172,6 +172,10 @@ pub struct RuntimeState {
     pub heatmap: ExecutionHeatmap,
     pub input_mode: InputMode,
     pub ungetc_char: Option<i32>,
+    /// 命令行参数个数（供 `main(int argc, char *argv[])` 使用）。
+    pub argc: i32,
+    /// 命令行参数字符串数组（供 `main(int argc, char *argv[])` 使用）。
+    pub argv: Vec<String>,
 }
 
 impl RuntimeState {

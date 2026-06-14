@@ -64,6 +64,12 @@ impl CideVM {
             OpCode::PushConst => {
                 self.push(operand as u64);
             }
+            OpCode::PushArgc => {
+                self.push(self.argc as u64);
+            }
+            OpCode::PushArgv => {
+                self.push(self.argv_addr as u64);
+            }
             OpCode::Pop => {
                 self.pop();
             }
@@ -1209,7 +1215,12 @@ impl CideVM {
         match op {
             OpCode::Nop => {}
 
-            OpCode::PushConst | OpCode::Pop | OpCode::Dup | OpCode::Swap => {
+            OpCode::PushConst
+            | OpCode::PushArgc
+            | OpCode::PushArgv
+            | OpCode::Pop
+            | OpCode::Dup
+            | OpCode::Swap => {
                 self.execute_stack(op, operand, loc);
             }
 

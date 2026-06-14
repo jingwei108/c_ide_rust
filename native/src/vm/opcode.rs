@@ -15,7 +15,7 @@ macro_rules! define_opcode {
             }
         }
 
-        // 当前最大 opcode 值为 Strlen = 126。
+        // 当前最大 opcode 值为 PushArgv = 128。
         // OpCode 使用 repr(u8)，若未来需要超过 255 个指令，需改为 repr(u16)。
     };
 }
@@ -142,4 +142,6 @@ define_opcode! {
     Memcpy = 124,
     Memset = 125,
     Strlen = 126,
+    PushArgc = 127,
+    PushArgv = 128,
 }

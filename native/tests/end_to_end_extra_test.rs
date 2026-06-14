@@ -1,4 +1,4 @@
-use std::ffi::{c_char, CString};
+use std::ffi::{c_char, c_int, CString};
 
 fn filter_outputs(outputs: Vec<String>) -> Vec<String> {
     outputs.into_iter().filter(|s| !s.contains("程序运行完成")).collect()
@@ -80,6 +80,64 @@ fn compile_and_run_with_input(source: &str, input: &str) -> Result<(i32, Vec<Str
 
         let input_cstr = CString::new(input).map_err(|e| e.to_string())?;
         cide_native::capi::cide_set_input(session, input_cstr.as_ptr() as *const c_char);
+
+        let run_ret = cide_native::capi::cide_run(session);
+
+        let mut outputs = Vec::new();
+        let out_len = cide_native::capi::cide_get_output_length(session);
+        if out_len > 0 {
+            let mut buf = vec![0u8; out_len as usize + 1];
+            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
+            for line in out_str.lines() {
+                if !line.is_empty() {
+                    outputs.push(line.to_string());
+                }
+            }
+        }
+
+        let err_ptr = cide_native::capi::cide_get_runtime_error(session);
+        let runtime_err = if err_ptr.is_null() {
+            None
+        } else {
+            Some(std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string())
+        };
+
+        cide_native::capi::cide_session_destroy(session);
+
+        if let Some(e) = runtime_err {
+            if !e.is_empty() {
+                return Err(format!("Runtime error: {}", e));
+            }
+        }
+
+        Ok((run_ret, outputs))
+    }
+}
+
+fn compile_and_run_with_argv(source: &str, argv: &[&str]) -> Result<(i32, Vec<String>), String> {
+    unsafe {
+        let session = cide_native::capi::cide_session_create();
+        if session.is_null() {
+            return Err("Failed to create session".to_string());
+        }
+
+        let src = CString::new(source).map_err(|e| e.to_string())?;
+        let compile_ret = cide_native::capi::cide_compile(session, src.as_ptr() as *const c_char);
+        if compile_ret != 0 {
+            let err_ptr = cide_native::capi::cide_get_compile_errors(session);
+            let err_msg = if err_ptr.is_null() {
+                "Unknown compile error".to_string()
+            } else {
+                std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string()
+            };
+            cide_native::capi::cide_session_destroy(session);
+            return Err(err_msg);
+        }
+
+        let c_argv: Vec<CString> = argv.iter().map(|s| CString::new(*s).unwrap()).collect();
+        let ptrs: Vec<*const c_char> = c_argv.iter().map(|s| s.as_ptr()).collect();
+        cide_native::capi::cide_set_argv(session, argv.len() as c_int, ptrs.as_ptr());
 
         let run_ret = cide_native::capi::cide_run(session);
 
@@ -4949,4 +5007,42 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, out) = result.unwrap();
     assert_eq!(out, "0 1 2 ", "printf calls should not automatically add newlines");
+}
+
+
+#[test]
+fn test_e2e_main_args() {
+    // 验证 main(int argc, char *argv[]) 能正确接收命令行参数。
+    let src = r#"
+#include <stdio.h>
+int main(int argc, char *argv[]) {
+    for (int i = 1; i < argc; i++) {
+        printf("%s%s", argv[i], (i < argc - 1) ? " " : "");
+    }
+    printf("\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run_with_argv(src, &["prog", "hello", "world"]);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l == "hello world"), "Outputs: {:?}", outputs);
+}
+
+#[test]
+fn test_e2e_main_no_args() {
+    // 验证 main() 无参数时仍可正常运行（PushArgc/PushArgv 不应生成）。
+    let src = r#"
+#include <stdio.h>
+int main() {
+    printf("ok\n");
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "{:?}", result.err());
+    let (ret, outputs) = result.unwrap();
+    assert_eq!(ret, 0);
+    assert!(outputs.iter().any(|l| l == "ok"), "Outputs: {:?}", outputs);
 }

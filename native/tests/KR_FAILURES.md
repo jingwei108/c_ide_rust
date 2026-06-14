@@ -9,8 +9,8 @@
 |:-----|:-----|:-----|:---------|:---------|
 | K&R 第 1-2 章 | 25 | 25 | 0 | 2026-06-06 |
 | K&R 第 3-4 章 | 22 | 22 | 0 | 2026-06-07 |
-| K&R 第 5-6 章 | 22 | 18 | 4 | 2026-06-13 |
-| **合计** | **69** | **65** | **4** | - |
+| K&R 第 5-6 章 | 22 | 21 | 1 | 2026-06-14 |
+| **合计** | **69** | **68** | **1** | - |
 
 ## 已知失败详情
 
@@ -419,14 +419,18 @@
 ### kr_5_8
 
 - **来源**: K&R 第 5 章，练习 5-8（qsort 指针数组版）
-- **失败原因**: 编译错误 — 函数指针类型转换语法不支持
-- **最小复现**: `(int (*)(void *, void *))numcmp` 中函数指针类型语法 `int (*)(void *, void *)` 不被 Parser 支持
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — 函数指针类型转换语法不支持~~ ✅ **已修复（2026-06-14）**
+- **最小复现**: 
+  1. 原编译失败：`(int (*)(void *, void *))numcmp` 中函数指针类型语法 `int (*)(void *, void *)` 不被 Parser 支持。
+  2. 修复后运行输出差异：`atof` 在 C89 隐式声明下返回 `int`，而 Cide 要求按 `<stdlib.h>` 显式声明返回 `double`。`cases_golden/knr/kr_5_8.out` 已按 Clang + `<stdlib.h>` 重新生成，Cide 输出与 Clang 一致为 `-1 0 2.71 3.14 42`。
+- **修复内容**: 
+  1. `native/src/compiler/parser/expr.rs` 的 `parse_type_only` 改为调用 `parse_abstract_declarator`，支持函数指针类型的抽象声明符。
+  2. 重新生成 `tests/cases_golden/knr/kr_5_8.out`（Clang + stdlib.h）。
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
-- **是否环境差异**: 否
-- **涉及语法特性**: 函数指针类型转换（cast）、函数指针参数
+- **是否环境差异**: 否（Cide 不支持隐式函数声明，需按现代 C 语义包含标准头文件）
+- **涉及语法特性**: 函数指针类型转换（cast）、抽象声明符
 - **学生影响评级**: P1
-- **建议**: Cide 函数指针支持已覆盖声明和调用，但复杂的函数指针类型转换语法（无变量名的类型表达式）Parser 暂不支持。
 
 ### kr_5_9
 
@@ -445,14 +449,23 @@
 ### kr_5_10
 
 - **来源**: K&R 第 5 章，练习 5-10（echo 命令行参数）
-- **失败原因**: 编译错误 — 三目运算符分支类型不匹配
-- **最小复现**: `printf("%s%s", argv[i], (i < argc - 1) ? " " : "");` 中三目运算符返回 `char*` 和 `char*` 被报告为类型不匹配
-- **是否 Cide 限制**: 是
+- **失败原因**: ~~编译错误 — 三目运算符分支类型不匹配~~ ✅ **已修复（2026-06-14）**
+- **最小复现**: 
+  1. `main(int argc, char *argv[])` 不被支持：BytecodeGen 调用 `main` 时不推送参数，导致运行时栈下溢。
+  2. 三目运算符字符串字面量类型不匹配此前已由 `typeck/expr.rs` 修复。
+- **修复内容**: 
+  1. `native/src/vm/opcode.rs`: 新增 `PushArgc = 127`、`PushArgv = 128`。
+  2. `native/src/vm/vm/mod.rs`: `CideVM` 新增 `argc`/`argv_addr` 字段、`set_argc`/`set_argv_addr`/`setup_argv` 方法，在全局数据区后分配 argv 字符串数组。
+  3. `native/src/vm/vm/executor.rs`: 执行 `PushArgc`/`PushArgv` 时从 VM 字段入栈。
+  4. `native/src/compiler/codegen/mod.rs`: 包装代码在 `Call main` 前根据 `main` 参数个数推送 `argc`/`argv`。
+  5. `native/src/engine/compile_pipeline.rs`: `setup_vm` 调用 `vm.setup_argv`。
+  6. `native/src/flutter_bridge.rs`: 新增 `set_argv`，供 CLI/前端注入命令行参数。
+  7. `native/src/bin/cide_cli.rs`: `run` 命令支持 `-- arg1 arg2 ...` 传递参数。
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
-- **涉及语法特性**: `argc`/`argv`、三目运算符、字符串字面量类型
+- **涉及语法特性**: `argc`/`argv`、`main` 函数签名
 - **学生影响评级**: P1
-- **建议**: `argc`/`argv` 目前不被 Cide 支持。此外三目运算符对两个字符串字面量的类型推断可能存在差异。
 
 ### kr_5_11
 
@@ -487,10 +500,14 @@
 ### kr_5_14
 
 - **来源**: K&R 第 5 章，练习 5-14（排序增加字段选项）
-- **失败原因**: 编译错误 — 函数指针语法不支持
-- **最小复现**: `void qsortt(void *lineptr[], int left, int right, int (*comp)(void *, void *));` 前向声明中的函数指针参数语法 Parser 报错
-- **是否 Cide 限制**: 是
-- **建议**: 同 kr_5_8
+- **失败原因**: ~~编译错误 — 函数指针语法不支持~~ ✅ **已修复（2026-06-14）**
+- **最小复现**: `void qsortt(void *lineptr[], int left, int right, int (*comp)(void *, void *));` 前向声明中的函数指针参数语法 Parser 报错；实际根因是 cast 表达式 `(int (*)(void *, void *))strcmp_local` 的抽象声明符无法解析
+- **修复内容**: `native/src/compiler/parser/expr.rs` 的 `parse_type_only` 改为调用 `parse_abstract_declarator`，完整支持函数指针类型的抽象声明符（如 `int (*)(void *, void *)`）。此前实现仅能解析基础类型 + 星号，无法处理函数指针。
+- **是否 Cide 限制**: 否（已修复）
+- **是否代码本身问题**: 否
+- **是否环境差异**: 否
+- **涉及语法特性**: 函数指针类型转换（cast）、抽象声明符
+- **学生影响评级**: P1
 
 ### kr_5_15
 

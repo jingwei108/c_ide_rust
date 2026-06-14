@@ -184,6 +184,40 @@ fn test_parser_pointer_decl() {
 }
 
 #[test]
+fn test_parser_function_pointer_cast_type() {
+    // 修复：cast 表达式中的函数指针抽象声明符（如 int (*)(void *, void *)）
+    // 此前 parse_type_only 只能解析基础类型 + 星号，无法处理函数指针。
+    let src = r#"
+int numcmp(char *s1, char *s2);
+int main() {
+    int (*fp)(void *, void *) = (int (*)(void *, void *))numcmp;
+    return 0;
+}
+"#;
+    let (program, errors) = parse(src);
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let body = program.funcs[1].body.as_ref().unwrap();
+    if let Stmt::Block { stmts, .. } = body {
+        if let Stmt::VarDecl { init: Some(init_expr), .. } = &stmts[0] {
+            if let Expr::Cast { target_type, .. } = init_expr {
+                assert!(
+                    target_type.is_function_pointer(),
+                    "Expected function pointer type, got {:?}",
+                    target_type
+                );
+            } else {
+                panic!("Expected Cast expression, got {:?}", init_expr);
+            }
+        } else {
+            panic!("Expected VarDecl with init");
+        }
+    } else {
+        panic!("Expected Block");
+    }
+}
+
+#[test]
 fn test_parser_error_undeclared_no_panic() {
     // Parser should handle missing semicolons gracefully
     let (_, errors) = parse("int main() { int x return 0; }");

@@ -137,6 +137,10 @@ pub struct CideVM {
     pub(crate) freed_logs: Vec<FreedRegionInfo>,
     /// 当前未完成的 `new T[n]` 构造守卫。若构造过程中 trap，用于回滚释放内存。
     pub pending_array_construction: Option<ArrayConstructionGuard>,
+    /// `main(int argc, char *argv[])` 的 argc 值。
+    argc: i32,
+    /// `main(int argc, char *argv[])` 的 argv 数组在 VM 内存中的起始地址。
+    argv_addr: u32,
     // --- 增量快照脏页追踪 ---
     dirty_pages: [u64; 4], // 256 页 bitmap（4 × 64bit）
     // --- JIT ---
@@ -187,6 +191,8 @@ impl CideVM {
             global_sym_map: HashMap::new(),
             freed_logs: Vec::new(),
             pending_array_construction: None,
+            argc: 0,
+            argv_addr: 0,
             dirty_pages: [0; 4],
             ip_hits: HashMap::new(),
             trace_recorder: TraceRecorder::new(),
@@ -224,6 +230,8 @@ impl CideVM {
         self.local_sym_map.clear();
         self.global_sym_map.clear();
         self.freed_logs.clear();
+        self.argc = 0;
+        self.argv_addr = 0;
         self.dirty_pages = [0; 4];
         self.ip_hits.clear();
         self.trace_recorder.reset();
@@ -238,6 +246,14 @@ impl CideVM {
         self.ip = 0;
     }
 
+    pub fn set_argc(&mut self, argc: i32) {
+        self.argc = argc;
+    }
+
+    pub fn set_argv_addr(&mut self, addr: u32) {
+        self.argv_addr = addr;
+    }
+
     pub fn set_globals_32(&mut self, globals: &[(u32, i32)]) {
         for &(offset, v) in globals {
             let addr = GLOBAL_START + offset;
@@ -250,6 +266,31 @@ impl CideVM {
             let addr = GLOBAL_START + offset;
             self.store_i64(addr, v, &SourceLoc::default());
         }
+    }
+
+    /// 在全局数据区之后为 `main(int argc, char *argv[])` 分配 argv 内存。
+    /// 指针数组紧随其后存放字符串指针，字符串数据跟在其后。
+    pub fn setup_argv(&mut self, argc: i32, argv: &[String]) {
+        if argc <= 0 || argv.is_empty() {
+            self.argc = 0;
+            self.argv_addr = 0;
+            return;
+        }
+        let array_addr = GLOBAL_START + (self.global_count as u32) * 4;
+        let mut string_addr = array_addr + (argc as u32) * 4;
+        let count = (argc as usize).min(argv.len());
+        for (i, s) in argv.iter().enumerate().take(count) {
+            let next = string_addr + s.len() as u32 + 1;
+            if next > HEAP_START {
+                self.trap("setup_argv: 命令行参数过长，超出全局数据区", &SourceLoc::default());
+                return;
+            }
+            self.write_cstring(string_addr, s);
+            self.store_i32(array_addr + (i as u32) * 4, string_addr as i32, &SourceLoc::default());
+            string_addr = next;
+        }
+        self.argc = argc;
+        self.argv_addr = array_addr;
     }
 
     pub fn register_function(&mut self, idx: u32, meta: FuncMeta) {

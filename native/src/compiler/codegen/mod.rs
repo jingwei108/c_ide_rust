@@ -485,6 +485,14 @@ impl BytecodeGen {
 
         let wrapper_ip = self.current_ip();
         if let Some(&main_idx) = self.func_index.get("main") {
+            // 支持 `main(int argc, char *argv[])`：按 C 调用约定从右到左入栈，
+            // VM do_call 先 pop 第一个参数，因此栈顶必须是 argc，下面是 argv。
+            if let Some(main_meta) = self.func_table.get("main") {
+                if main_meta.param_count == 2 {
+                    self.emit(OpCode::PushArgv, 0, &SourceLoc::default());
+                    self.emit(OpCode::PushArgc, 0, &SourceLoc::default());
+                }
+            }
             self.emit(OpCode::Call, main_idx, &SourceLoc { line: 0, column: 0 });
             self.emit(OpCode::Ret, 0, &SourceLoc { line: 0, column: 0 });
             self.code[0] = Instruction::new(OpCode::Jump, wrapper_ip as i32, VMSourceLoc::default());

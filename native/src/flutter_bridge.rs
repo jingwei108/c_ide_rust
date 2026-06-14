@@ -148,6 +148,15 @@ pub fn compile_multi(files: Vec<CodeFile>) -> CompileResult {
     }
 }
 
+/// 设置命令行参数（供 `main(int argc, char *argv[])` 使用）。
+/// 应在 `compile` 之后、`run_code`/`step_next` 之前调用。
+pub fn set_argv(argv: Vec<String>) {
+    let session_arc = current_session();
+    let mut session = lock_or_reset(&session_arc);
+    session.runtime.argc = argv.len() as i32;
+    session.runtime.argv = argv;
+}
+
 /// 全速运行已编译的程序
 pub fn run_code() -> RunResult {
     let session_arc_l141 = current_session();

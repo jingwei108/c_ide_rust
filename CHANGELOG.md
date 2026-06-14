@@ -46,6 +46,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI Windows 构建修复**：`.github/workflows/ci.yml` 在 `flutter build windows` 前清理 `build/windows/x64` 缓存，避免 CMake 使用缓存中的 `Visual Studio 16 2019` generator 导致在仅有 VS2022 的 runner 上失败
 - **Rust 测试 warnings 清理**：`native/tests/b10_new_array_rollback.rs` 移除未使用导入；`native/tests/test_utils.rs` 添加 `#![allow(dead_code)]`
 - **失败记录同步**：`bellmanFord_default` 从 `KNOWN_TEMPLATE_FAILURES` 移除；`kr_5_16` 从 `KNOWN_KR_FAILURES` 移除；更新 `E2E_FAILURES.md` / `KR_FAILURES.md`
+- **Parser 支持函数指针类型转换（cast）的抽象声明符**：`parser/expr.rs` 的 `parse_type_only` 改为调用 `parse_abstract_declarator`，使 `(int (*)(void *, void *))func` 这类类型转换可被正确解析
+  - 解锁 K&R `kr_5_8`（函数指针 qsort 比较器）与 `kr_5_14`（排序字段选项）
+  - `kr_5_8` 的 `cases_golden/knr/kr_5_8.out` 已按 Clang + `<stdlib.h>` 重新生成
+  - 新增 `parser_unit_test.rs` 回归测试 `test_parser_function_pointer_cast_type`
+- **VM 支持 `main(int argc, char *argv[])`**：
+  - 新增 `OpCode::PushArgc` / `PushArgv`，VM 在全局数据区后为 argv 分配内存并记录地址
+  - `compiler/codegen/mod.rs` 的入口包装代码根据 `main` 参数个数自动推送 `argc`/`argv`
+  - `engine/compile_pipeline.rs` 的 `setup_vm` 调用 `vm.setup_argv`
+  - `flutter_bridge.rs` 新增 `set_argv`，`capi/mod.rs` 新增 `cide_set_argv`
+  - `cide_cli run` 支持 `-- arg1 arg2 ...` 传递命令行参数
+  - 解锁 K&R `kr_5_10`（echo 命令行参数）
+  - 新增 `end_to_end_extra_test.rs` 回归测试 `test_e2e_main_args` / `test_e2e_main_no_args`
+- **Shadow Verification 状态更新**：匹配数从 412 提升至 415；编译缺口从 5 降至 3（仅剩 `inline_asm`/`static_assert`/`typeof_operator` 三个已知不支持特性）；运行时缺口从 31 降至 30
+- **K&R 失败记录更新**：`KR_FAILURES.md` 中 `kr_5_8`/`kr_5_10`/`kr_5_14` 标记为已修复；剩余已知失败仅 `kr_6_1`
+- **清除 MAUI 前端遗留的死 C API 代码**：`native/src/capi/mod.rs` 从 1384 行精简至约 290 行
+  - 删除未使用的会话快照/恢复：`SessionSnapshot`、`cide_session_save`、`cide_session_load`
+  - 删除未使用的 buf 版本错误获取：`cide_get_compile_errors_buf`、`cide_get_runtime_error_buf`
+  - 删除未使用的单步/状态查询 API：`cide_step_next`、`cide_get_current_line`、`cide_callstack_count`、`cide_callstack_get`、`cide_breakpoint_add`/`remove`/`clear`、`cide_input_count`
+  - 删除未使用的内存/变量/可视化/算法诊断 API：`cide_memory_region_count`/`get`、`cide_memory_get_value`/`pointer_target`、`cide_diagnostic_count`/`get`/`get_fix`、`cide_sourcemap_lookup`、`cide_trace_count`/`get`、`cide_variable_count`/`get`/`get_type`/`find_by_addr`/`get_field`、`cide_vis_event_count`/`get`/`get_ex`/`clear`、`cide_algorithm_match_count`/`get`/`vis_event_count`/`vis_event_get`
+  - 保留的 API（Shadow Verification + 测试实际使用）：`cide_session_create`/`destroy`、`cide_compile`/`compile_unit`/`compile_all`、`cide_get_compile_errors`、`cide_set_argv`、`cide_run`、`cide_get_runtime_error`、`cide_set_input`、`cide_is_waiting_input`、`cide_provide_input_line`、`cide_get_output_length`/`get_output`
+  - 移除因此变为死代码的辅助函数 `write_str` 和未使用的 `CideVM`/`setup_vm`/`reset_runtime_for_step`/`inject_preset_files` 导入
 
 ### Added (P0 语法拓展)
 - **通用逗号运算符 `a, b`**：Parser 在 `parse_assign` 前新增 `parse_comma` 层，AST 新增 `BinaryOp::Comma`
