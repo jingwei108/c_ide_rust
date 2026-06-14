@@ -277,6 +277,11 @@ def main() -> int:
         run(pub_args, cwd=flutter_dir)
         success("Dependencies resolved")
 
+        # 生成 flutter_rust_bridge 绑定（Rust + Dart）
+        header("Generating flutter_rust_bridge bindings")
+        run(["flutter_rust_bridge_codegen", "generate"], cwd=flutter_dir)
+        success("FRB bindings generated")
+
         # 构建
         if args.target in ("Desktop", "All"):
             build_flutter_desktop(

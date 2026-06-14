@@ -198,6 +198,9 @@ jobs:
           flutter-version: '3.29.x'
           cache: true
 
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
+
       - name: Configure Android SDK/Flutter paths
         run: |
           $flutterRoot = (Get-Command flutter).Source | Split-Path -Parent | Split-Path -Parent
@@ -211,6 +214,10 @@ jobs:
 
       - name: Get Flutter dependencies
         run: flutter pub get
+        working-directory: CideFlutter
+
+      - name: Generate FRB bindings
+        run: flutter_rust_bridge_codegen generate
         working-directory: CideFlutter
 
       - name: Build Rust Android .so (arm64 + armv7)

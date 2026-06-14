@@ -94,6 +94,13 @@ node_modules/
 /CideFlutter/lib/src/rust/api/*.dart
 !/CideFlutter/lib/src/rust/api/.gitkeep
 !/CideFlutter/lib/src/rust/api/types.dart
+/CideFlutter/lib/src/rust/compiler/*.dart
+/CideFlutter/lib/src/rust/diagnostics/*.dart
+/CideFlutter/lib/src/rust/unified/*.dart
+/CideFlutter/lib/src/rust/session.dart
+
+# Rust FRB generated file
+/native/src/frb_generated.rs
 
 # iOS / macOS / Linux / Windows build artifacts
 /CideFlutter/ios/Flutter/Generated.xcconfig
