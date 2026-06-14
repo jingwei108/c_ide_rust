@@ -808,18 +808,26 @@ fn test_qsort_large_byte_array_default_compare() {
     let n = 128usize;
     // 写入降序字节数据：127, 126, ..., 0（限制在 0~127，避免有符号/无符号解释差异）
     for i in 0..n {
-        vm.store_i8(base + i as u32, (127 - i) as i32, &cide_native::vm::instruction::SourceLoc::default());
+        vm.store_i8(
+            base + i as u32,
+            (127 - i) as i32,
+            &cide_native::vm::instruction::SourceLoc::default(),
+        );
     }
     // args: compar=0 (default byte comparison), size=1, nmemb=128, base
-    vm.push(0);            // compar
-    vm.push(1);            // size
-    vm.push(n as u64);     // nmemb
-    vm.push(base as u64);  // base
+    vm.push(0); // compar
+    vm.push(1); // size
+    vm.push(n as u64); // nmemb
+    vm.push(base as u64); // base
     host_qsort(&mut vm, &mut session);
     // 默认字节比较对单字节元素即数值比较，排序后应为升序：0, 1, ..., 127
     for i in 0..n {
         let v = vm.load_i8(base + i as u32, &cide_native::vm::instruction::SourceLoc::default());
-        assert_eq!(v, i as i32, "qsort 128 单字节元素默认字节比较应升序排列，索引 {} 处期望 {}，实际 {}", i, i, v);
+        assert_eq!(
+            v, i as i32,
+            "qsort 128 单字节元素默认字节比较应升序排列，索引 {} 处期望 {}，实际 {}",
+            i, i, v
+        );
     }
 }
 

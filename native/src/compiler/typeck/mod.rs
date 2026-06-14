@@ -869,11 +869,7 @@ impl TypeChecker {
                     self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
                 } else if t_pointee != v_pointee {
                     self.report_warning(
-                        &format!(
-                            "不兼容的指针类型赋值：{}* ← {}*。",
-                            t_pointee.name(),
-                            v_pointee.name()
-                        ),
+                        &format!("不兼容的指针类型赋值：{}* ← {}*。", t_pointee.name(), v_pointee.name()),
                         loc,
                         ErrorCode::W3053_ImplicitScalarConversion,
                     );

@@ -448,9 +448,7 @@ impl Parser {
                                         if c.name == class_name {
                                             for member in &mut c.members {
                                                 if let crate::compiler::ast::ClassMember::Method {
-                                                    name,
-                                                    body,
-                                                    ..
+                                                    name, body, ..
                                                 } = member
                                                 {
                                                     if name == method_name && body.is_none() {
@@ -672,10 +670,7 @@ impl Parser {
             fields.push(StructField { ty: fty, name: fname });
             while self.match_token(TokenType::Comma) {
                 let (extra_ty, extra_name) = self.parse_declarator(&base_type);
-                fields.push(StructField {
-                    ty: extra_ty,
-                    name: extra_name,
-                });
+                fields.push(StructField { ty: extra_ty, name: extra_name });
             }
             self.consume(TokenType::Semicolon, "预期 ';'");
         }
@@ -1013,9 +1008,7 @@ impl Parser {
             return false;
         }
         i += 1;
-        if i >= self.tokens.len()
-            || (self.tokens[i].ty != TokenType::Class && self.tokens[i].ty != TokenType::Struct)
-        {
+        if i >= self.tokens.len() || (self.tokens[i].ty != TokenType::Class && self.tokens[i].ty != TokenType::Struct) {
             return false;
         }
         i += 1;

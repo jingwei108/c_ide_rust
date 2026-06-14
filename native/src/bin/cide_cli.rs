@@ -293,9 +293,7 @@ fn cmd_export(source_paths: &[String], output_path: &str, is_builtin_libc: bool)
         use cide_native::vm::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS;
         let old_names: Vec<String> = func_index
             .keys()
-            .filter(|name| {
-                BYTECODE_LIBC_ALL_FUNCS.contains(&name.as_str()) && !func_table.contains_key(name.as_str())
-            })
+            .filter(|name| BYTECODE_LIBC_ALL_FUNCS.contains(&name.as_str()) && !func_table.contains_key(name.as_str()))
             .cloned()
             .collect();
         for name in old_names {

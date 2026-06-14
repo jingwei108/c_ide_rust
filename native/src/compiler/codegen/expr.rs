@@ -1107,9 +1107,10 @@ impl ExprGen for BytecodeGen {
                                 c.members
                                     .iter()
                                     .filter_map(|m| match m {
-                                        ClassMember::Field { name, ty, .. } => {
-                                            Some(StructField { name: name.clone(), ty: ty.clone() })
-                                        }
+                                        ClassMember::Field { name, ty, .. } => Some(StructField {
+                                            name: name.clone(),
+                                            ty: ty.clone(),
+                                        }),
                                         _ => None,
                                     })
                                     .collect()

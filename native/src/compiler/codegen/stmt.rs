@@ -100,7 +100,8 @@ impl StmtGen for BytecodeGen {
                                                 match &elem.value {
                                                     Expr::StringLiteral { value, .. } => {
                                                         let aligned = ((value.len() + 1) as u32 + 3) & !3;
-                                                        let str_addr = crate::vm::vm::GLOBAL_START + self.next_global_offset as u32;
+                                                        let str_addr = crate::vm::vm::GLOBAL_START
+                                                            + self.next_global_offset as u32;
                                                         self.string_data.push((str_addr, value.clone()));
                                                         self.next_global_offset += aligned as i32;
                                                         self.globals_init_32.push((addr, str_addr as i32));
@@ -264,12 +265,20 @@ impl StmtGen for BytecodeGen {
                                     let inner_ty = vty.subscript_type();
                                     let has_nested_init =
                                         elements.iter().any(|e| matches!(&e.value, Expr::InitList { .. }));
-                                    if has_nested_init && (inner_ty.is_struct() || inner_ty.is_class() || inner_ty.is_array()) {
+                                    if has_nested_init
+                                        && (inner_ty.is_struct() || inner_ty.is_class() || inner_ty.is_array())
+                                    {
                                         // Nested struct/array init: each element is an inner_ty value
                                         let elem_stride = self.type_size(&inner_ty);
                                         for (i, elem) in elements.iter_mut().enumerate() {
                                             let addr_offset = (i as i32) * elem_stride;
-                                            self.gen_nested_init(base_temp, addr_offset, &inner_ty, &mut elem.value, loc);
+                                            self.gen_nested_init(
+                                                base_temp,
+                                                addr_offset,
+                                                &inner_ty,
+                                                &mut elem.value,
+                                                loc,
+                                            );
                                         }
                                         // Zero-fill remaining elements
                                         let expected_count = if !vty.dims().is_empty() && vty.dims()[0] > 0 {
@@ -421,7 +430,9 @@ impl StmtGen for BytecodeGen {
                                         let offset =
                                             fields.iter().take(field_idx).map(|f| self.type_size(&f.ty)).sum::<i32>();
                                         if matches!(&elem.value, Expr::InitList { .. })
-                                            && (fields[field_idx].ty.is_struct() || fields[field_idx].ty.is_class() || fields[field_idx].ty.is_array())
+                                            && (fields[field_idx].ty.is_struct()
+                                                || fields[field_idx].ty.is_class()
+                                                || fields[field_idx].ty.is_array())
                                         {
                                             self.gen_nested_init(
                                                 base_temp,
@@ -453,9 +464,17 @@ impl StmtGen for BytecodeGen {
                                         }
                                         let offset = fields.iter().take(i).map(|f| self.type_size(&f.ty)).sum::<i32>();
                                         if matches!(&elem.value, Expr::InitList { .. })
-                                            && (fields[i].ty.is_struct() || fields[i].ty.is_class() || fields[i].ty.is_array())
+                                            && (fields[i].ty.is_struct()
+                                                || fields[i].ty.is_class()
+                                                || fields[i].ty.is_array())
                                         {
-                                            self.gen_nested_init(base_temp, offset, &fields[i].ty, &mut elem.value, loc);
+                                            self.gen_nested_init(
+                                                base_temp,
+                                                offset,
+                                                &fields[i].ty,
+                                                &mut elem.value,
+                                                loc,
+                                            );
                                         } else {
                                             self.emit(OpCode::LoadLocal, base_temp, loc);
                                             if offset > 0 {

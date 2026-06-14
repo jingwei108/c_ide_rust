@@ -31,9 +31,9 @@ class LineNumberColumn implements GutterColumn {
     }
 
     String varSuffix = '';
-    if (ctx.accessedVars.isNotEmpty) {
+    // accessedVars 当前只包含当前调试行的变量，仅在当前行显示访问标记。
+    if (ctx.isStepMode && line == ctx.currentDebugLine && ctx.accessedVars.isNotEmpty) {
       final markers = ctx.accessedVars
-          .where((a) => false) // 由外层统一计算当前行的变量标记
           .take(2)
           .map((a) => '${a.name}=${a.accessType == 'Read' ? 'R' : 'W'}')
           .join(' ');

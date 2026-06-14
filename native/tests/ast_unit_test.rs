@@ -48,9 +48,7 @@ fn test_mangle_name_into_matches_mangle_name() {
             base: Box::new(Type::int()),
             is_const: false,
         },
-        Type::RValueRef {
-            base: Box::new(Type::int()),
-        },
+        Type::RValueRef { base: Box::new(Type::int()) },
         Type::TemplateId {
             base: "list".to_string(),
             args: vec![Type::int(), ptr(Type::int())],

@@ -471,7 +471,6 @@ fn test_smart_checkpoint_triggers() {
     assert!(cp.should_checkpoint(40, &meta_swap));
 }
 
-
 #[test]
 fn test_snapshot_into_equivalence_and_reuse() {
     let source = r#"

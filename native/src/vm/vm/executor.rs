@@ -17,9 +17,9 @@ impl CideVM {
                             };
                         }
                         StepResult::Trap => {
-                    self.rollback_pending_array_construction(session);
-                    return 0;
-                }
+                            self.rollback_pending_array_construction(session);
+                            return 0;
+                        }
                         StepResult::Paused => {
                             self.trap("完整运行模式下遇到暂停状态（可能是断点配置不一致）", &SourceLoc::default());
                             return 0;
@@ -396,9 +396,7 @@ impl CideVM {
                 let n = self.pop();
                 let n_u32 = n as u32;
                 // 统一边界检查：NULL 区、上界、UAF。
-                if !self.check_mem_access(dest, n_u32, loc, true)
-                    || !self.check_mem_access(src, n_u32, loc, false)
-                {
+                if !self.check_mem_access(dest, n_u32, loc, true) || !self.check_mem_access(src, n_u32, loc, false) {
                     self.push(dest as u64);
                     return;
                 }
@@ -457,7 +455,10 @@ impl CideVM {
                 // 统一 NULL 区检查；上界在扫描时自然处理。
                 if addr < NULL_TRAP_SIZE {
                     self.trap(
-                        &format!("访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。", addr),
+                        &format!(
+                            "访问了 NULL 指针区域（地址 0x{:04X}）。NULL 指针不能解引用。请确认指针已被正确初始化。",
+                            addr
+                        ),
                         loc,
                     );
                     self.push(0);
@@ -1215,12 +1216,7 @@ impl CideVM {
         match op {
             OpCode::Nop => {}
 
-            OpCode::PushConst
-            | OpCode::PushArgc
-            | OpCode::PushArgv
-            | OpCode::Pop
-            | OpCode::Dup
-            | OpCode::Swap => {
+            OpCode::PushConst | OpCode::PushArgc | OpCode::PushArgv | OpCode::Pop | OpCode::Dup | OpCode::Swap => {
                 self.execute_stack(op, operand, loc);
             }
 

@@ -38,26 +38,8 @@ jobs:
         run: cargo test
         working-directory: native
 
-      - name: Phase A - Host Contract Tests
-        run: cargo test --test host_contract_tests
-        working-directory: native
-
-      - name: Phase B - Bytecode Libc Consistency
-        run: cargo test --test bytecode_libc_consistency
-        working-directory: native
-
-      - name: Phase C - Differential Stress Tests
-        run: cargo test --test differential_stress
-        working-directory: native
-
-      - name: Phase C++ - Dogfooding Verification
-        run: cargo test --test cpp_dogfooding_test
-        working-directory: native
-
-      - name: Phase E - Fuzz Stress Tests
-        run: cargo test --test fuzz_stress_test
-        working-directory: native
-
+      # cargo test 已覆盖全部单元/集成测试（含 Phase A/B/C/E/Dogfooding），
+      # 无需再单独运行各防线测试套件。
       - name: Three Tier Consistency Check & Report
         run: python scripts/ci_three_tier_check.py
         shell: bash
@@ -70,11 +52,11 @@ jobs:
           path: reports/three_tier_report.md
 
       - name: Run clippy
-        run: cargo clippy -- -D warnings
+        run: cargo clippy --all-targets -- -D warnings
         working-directory: native
 
       - name: Shadow Verification
-        run: python native/tests/shadow_verification/shadow_verify.py --cases native/tests/shadow_verification/cases --report reports/shadow_report.json
+        run: python native/tests/shadow_verification/shadow_verify.py --report native/tests/shadow_verification/reports/shadow_report.md --json native/tests/shadow_verification/reports/shadow_data.json
         shell: bash
 
       - name: Upload Shadow Report
@@ -82,7 +64,7 @@ jobs:
         if: always()
         with:
           name: shadow-verification-report
-          path: reports/shadow_report.json
+          path: native/tests/shadow_verification/reports/shadow_report.md
 
       - name: C++ Shadow Verification
         run: python scripts/shadow_verify_cpp.py
@@ -96,7 +78,8 @@ jobs:
           path: native/tests/shadow_verification/reports/cpp_shadow_report.json
 
       - name: Install cargo-llvm-cov
-        run: cargo install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov --version 0.6.16
+        # 固定版本，避免非确定性；rust-cache 已缓存 cargo 目录
 
       - name: Generate coverage report
         run: cargo llvm-cov --lcov --output-path lcov.info
@@ -146,14 +129,6 @@ jobs:
         run: flutter pub get
         working-directory: CideFlutter
 
-      - name: Generate FRB bindings
-        run: flutter_rust_bridge_codegen generate
-        working-directory: CideFlutter
-
-      - name: Run Flutter tests
-        run: flutter test
-        working-directory: CideFlutter
-
       # 提前构建 Rust DLL，使 cide_native 插件的 Windows CMakeLists.txt 能直接使用
       # 预构建产物，避免在 MSBuild 中通过 cargokit 调用 cargo 时因环境/路径问题失败。
       - name: Build native DLL (Debug)
@@ -163,6 +138,14 @@ jobs:
       - name: Build native DLL (Release)
         run: cargo build --release
         working-directory: native
+
+      - name: Generate FRB bindings
+        run: flutter_rust_bridge_codegen generate
+        working-directory: CideFlutter
+
+      - name: Run Flutter tests
+        run: flutter test
+        working-directory: CideFlutter
 
       - name: Clean Windows build cache
         run: if exist build\windows\x64 rmdir /s /q build\windows\x64

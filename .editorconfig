@@ -6,64 +6,41 @@ end_of_line = lf
 insert_final_newline = true
 trim_trailing_whitespace = true
 
-[*.cs]
+# Rust
+[*.rs]
 indent_size = 4
 indent_style = space
+max_line_length = 120
 
-# ============================================================================
-# Memory Safety: Critical rules (must be Warning or Error)
-# ============================================================================
-dotnet_diagnostic.CA1001.severity = warning   # Types with disposable fields should implement IDisposable
-dotnet_diagnostic.CA1063.severity = warning   # Implement IDisposable correctly
-dotnet_diagnostic.CA1816.severity = suggestion# Call GC.SuppressFinalize
-dotnet_diagnostic.CA2000.severity = warning   # Dispose objects before losing scope
-dotnet_diagnostic.CA2213.severity = warning   # Disposable fields should be disposed
-dotnet_diagnostic.CA2215.severity = warning   # Dispose methods should call base class Dispose
-dotnet_diagnostic.CA2216.severity = warning   # Disposable types should declare finalizer
+# Dart
+[*.dart]
+indent_size = 2
+indent_style = space
+max_line_length = 120
 
-# Async / Task rules
-dotnet_diagnostic.CA2016.severity = warning   # Forward CancellationToken
-dotnet_diagnostic.CA2007.severity = none      # Do not directly await a Task
-
-# Nullability
-dotnet_diagnostic.CS8602.severity = warning
-dotnet_diagnostic.CS8603.severity = warning
-dotnet_diagnostic.CS8618.severity = warning
-
-# ============================================================================
-# Noise reduction: non-safety rules downgraded to suggestion/none
-# ============================================================================
-dotnet_diagnostic.CA1305.severity = none      # IFormatProvider
-dotnet_diagnostic.CA1307.severity = none      # StringComparison for string.Equals
-dotnet_diagnostic.CA1310.severity = none      # StringComparison for string.IndexOf/StartsWith
-dotnet_diagnostic.CA1311.severity = none      # Use ToLowerInvariant
-dotnet_diagnostic.CA1845.severity = none      # Use span-based string.Concat
-dotnet_diagnostic.CA1846.severity = none      # Use AsSpan instead of Substring
-dotnet_diagnostic.CA1401.severity = none      # P/Invoke should not be visible
-dotnet_diagnostic.CA1513.severity = none      # Use ObjectDisposedException.ThrowIf
-dotnet_diagnostic.CA1707.severity = none      # Remove underscores from member names
-dotnet_diagnostic.CA1711.severity = none      # Rename Ex suffix
-dotnet_diagnostic.CA1720.severity = none      # Identifier contains type name
-dotnet_diagnostic.CA1805.severity = none      # Do not initialize to default values
-dotnet_diagnostic.CA1806.severity = none      # Do not ignore method results
-dotnet_diagnostic.CA1852.severity = none      # Seal internal types
-dotnet_diagnostic.CA2101.severity = none      # P/Invoke marshaling for strings
-dotnet_diagnostic.CA1866.severity = none      # Use char overload for EndsWith
-dotnet_diagnostic.CA1868.severity = none      # HashSet.Contains before Remove
-dotnet_diagnostic.IDE0055.severity = none     # Formatting
-dotnet_diagnostic.IDE0005.severity = none     # Remove unnecessary usings
-
-[*.cpp]
+# Python
+[*.py]
 indent_size = 4
 indent_style = space
+max_line_length = 120
 
-[*.hpp]
+# C / C++
+[*.{c,cpp,h,hpp}]
 indent_size = 4
 indent_style = space
+max_line_length = 120
 
-[*.{axaml,xaml}]
+# YAML
+[*.{yml,yaml}]
 indent_size = 2
 indent_style = space
 
+# JSON / TOML
+[*.{json,toml}]
+indent_size = 2
+indent_style = space
+
+# Markdown
 [*.md]
 trim_trailing_whitespace = false
+max_line_length = 120

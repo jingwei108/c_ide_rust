@@ -515,127 +515,14 @@ class IdeNotifier extends AutoDisposeNotifier<IdeState> {
       (f) => f.filename == targetFilename,
       orElse: () => state.files.firstWhere((f) => f.filename == state.currentFile),
     );
-    var source = file.source;
+    final source = file.source;
 
-    // 1. 尝试结构化替换
-    if ((diag.fixKind == 1 || diag.fixKind == 2) && diag.replaceStartLine > 0) {
-      final lines = source.replaceAll('\r\n', '\n').split('\n');
-      final startLine = diag.replaceStartLine - 1;
-      final endLine = diag.replaceEndLine - 1;
-      if (startLine >= 0 && startLine < lines.length && endLine >= 0 && endLine < lines.length) {
-        if (startLine == endLine) {
-          final line = lines[startLine];
-          final startCol = diag.replaceStartColumn;
-          final endCol = diag.replaceEndColumn;
-          if (startCol >= 0 && endCol <= line.length && startCol <= endCol) {
-            final before = line.substring(0, startCol);
-            final after = line.substring(endCol);
-            lines[startLine] = before + diag.replacementText + after;
-            final newSource = lines.join('\n');
-            _setFileSource(targetFilename, newSource);
-            await _recordFix(diag.errorCode);
-            return '已应用修复（${diag.filename}:${diag.line}）';
-          }
-        }
-      }
-    }
+    final newSource = await rust.applyFix(source: source, diag: diag);
+    if (newSource == null) return null;
 
-    // 2. 回退到启发式字符串匹配
-    final lines = source.replaceAll('\r\n', '\n').split('\n');
-    final lineIndex = diag.line - 1;
-    if (lineIndex < 0 || lineIndex >= lines.length) return null;
-
-    final fix = diag.fixSuggestion;
-    bool applied = false;
-
-    if (fix.contains('分号') || fix.contains("';'")) {
-      final trimmed = lines[lineIndex].trimRight();
-      if (!trimmed.endsWith(';') && !trimmed.endsWith('{') && !trimmed.endsWith('}')) {
-        lines[lineIndex] = '$trimmed;';
-        applied = true;
-      }
-    } else if (fix.contains('右花括号') || fix.contains("'}'")) {
-      final trimmed = lines[lineIndex].trimRight();
-      if (!trimmed.endsWith('}')) {
-        lines[lineIndex] = '$trimmed}';
-        applied = true;
-      }
-    } else if (fix.contains('右圆括号') || fix.contains("')'")) {
-      final trimmed = lines[lineIndex].trimRight();
-      if (!trimmed.endsWith(')')) {
-        lines[lineIndex] = '$trimmed)';
-        applied = true;
-      }
-    } else if (fix.contains('右方括号') || fix.contains("']'")) {
-      final trimmed = lines[lineIndex].trimRight();
-      if (!trimmed.endsWith(']')) {
-        lines[lineIndex] = '$trimmed]';
-        applied = true;
-      }
-    } else if (fix.contains('双引号') || fix.contains('"""')) {
-      final trimmed = lines[lineIndex].trimRight();
-      if (!trimmed.endsWith('"')) {
-        lines[lineIndex] = '$trimmed"';
-        applied = true;
-      }
-    } else if (fix.contains("=' 改为 '=='") || fix.contains('==')) {
-      final line = lines[lineIndex];
-      final parenStart = line.indexOf('(');
-      final parenEnd = line.lastIndexOf(')');
-      if (parenStart >= 0 && parenEnd > parenStart) {
-        final before = line.substring(0, parenStart + 1);
-        final cond = line.substring(parenStart + 1, parenEnd);
-        final after = line.substring(parenEnd);
-        final sb = StringBuffer();
-        for (var i = 0; i < cond.length; i++) {
-          if (cond[i] == '=') {
-            final precededByOp = i > 0 && (cond[i - 1] == '=' || cond[i - 1] == '!' || cond[i - 1] == '<' || cond[i - 1] == '>');
-            final followedByEq = i + 1 < cond.length && cond[i + 1] == '=';
-            if (!precededByOp && !followedByEq) {
-              sb.write('==');
-              applied = true;
-              continue;
-            }
-          }
-          sb.write(cond[i]);
-        }
-        if (applied) {
-          lines[lineIndex] = before + sb.toString() + after;
-        }
-      }
-    } else if (fix.contains("'<=' 改为 '<'") || fix.contains('<')) {
-      final trimmed = lines[lineIndex];
-      final idx = trimmed.indexOf('<=');
-      if (idx >= 0) {
-        lines[lineIndex] = '${trimmed.substring(0, idx)}<${trimmed.substring(idx + 2)}';
-        applied = true;
-      }
-    } else if (fix.contains('-> 改为 .')) {
-      final trimmed = lines[lineIndex];
-      final idx = trimmed.indexOf('->');
-      if (idx >= 0) {
-        lines[lineIndex] = '${trimmed.substring(0, idx)}.${trimmed.substring(idx + 2)}';
-        applied = true;
-      }
-    } else if (fix.contains('return 0;')) {
-      final trimmed = lines[lineIndex].trimRight();
-      if (!trimmed.endsWith(';')) {
-        lines[lineIndex] = '$trimmed;';
-        applied = true;
-      } else if (!trimmed.contains('return')) {
-        lines[lineIndex] = '$trimmed return 0;';
-        applied = true;
-      }
-    }
-
-    if (applied) {
-      final newSource = lines.join('\n');
-      _setFileSource(targetFilename, newSource);
-      await _recordFix(diag.errorCode);
-      return '已应用修复（${diag.filename}:${diag.line}）：$fix';
-    }
-
-    return null;
+    _setFileSource(targetFilename, newSource);
+    await _recordFix(diag.errorCode);
+    return '已应用修复（${diag.filename}:${diag.line}）';
   }
 
   void _setFileSource(String filename, String source) {

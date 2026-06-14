@@ -302,9 +302,8 @@ mod tests {
     #[test]
     fn test_live_variables_nested_if() {
         // B37 回归：确保邻接表优化后，嵌套 if 的 live-variable 分析仍正确。
-        let func = parse_func(
-            "int main() { int a = 1; int b = 2; int c; if (a) { c = b; } else { c = a; } return c; }",
-        );
+        let func =
+            parse_func("int main() { int a = 1; int b = 2; int c; if (a) { c = b; } else { c = a; } return c; }");
         let cfg = ControlFlowGraph::from_func(&func).unwrap();
         let live = analyze_live_variables(&cfg);
         assert!(!live.is_empty());

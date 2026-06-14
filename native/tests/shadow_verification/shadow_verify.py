@@ -15,6 +15,7 @@ Cide 影子验证框架
     可用 python check_escapes.py 扫描全部用例检查异常。
 """
 
+import argparse
 import os
 import sys
 import io
@@ -715,7 +716,26 @@ SHADOW_CASES: List[ShadowCase] = [
 ]
 
 
+def parse_args():
+    parser = argparse.ArgumentParser(description="Cide 影子验证框架")
+    parser.add_argument(
+        "--report",
+        type=Path,
+        default=None,
+        help="指定 Markdown 报告输出路径；默认生成带时间戳的文件",
+    )
+    parser.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="指定 JSON 数据输出路径；默认生成带时间戳的文件",
+    )
+    return parser.parse_args()
+
+
 def main():
+    args = parse_args()
+
     print("=" * 60)
     print("Cide 影子验证框架")
     print("=" * 60)
@@ -749,12 +769,18 @@ def main():
             print(f"  => {diff.diff_type}")
 
     # 生成报告
-    report_path = SCRIPT_DIR / "reports" / f"shadow_report_{time.strftime('%Y%m%d_%H%M%S')}.md"
+    if args.report:
+        report_path = args.report
+    else:
+        report_path = SCRIPT_DIR / "reports" / f"shadow_report_{time.strftime('%Y%m%d_%H%M%S')}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     generate_report(diffs, report_path)
 
     # 同时输出 JSON
-    json_path = SCRIPT_DIR / "reports" / f"shadow_data_{time.strftime('%Y%m%d_%H%M%S')}.json"
+    if args.json:
+        json_path = args.json
+    else:
+        json_path = SCRIPT_DIR / "reports" / f"shadow_data_{time.strftime('%Y%m%d_%H%M%S')}.json"
     json_data = {
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
         "summary": {
@@ -780,6 +806,7 @@ def main():
             cat = classify_compile_error(d.cide_result.compile_error, d.expected_category)
             json_data["category_frequency"][cat] = json_data["category_frequency"].get(cat, 0) + 1
 
+    json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nJSON 数据已保存: {json_path}")
 

@@ -48,11 +48,8 @@ static UNIFIED_ENGINES: LazyLock<Mutex<HashMap<u64, Arc<Mutex<UnifiedEngine>>>>>
 fn current_unified_engine() -> Arc<Mutex<UnifiedEngine>> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut engines = UNIFIED_ENGINES.lock().unwrap_or_else(|e| e.into_inner());
-    let engine_ref: Arc<Mutex<UnifiedEngine>> = engines
-        .get(&id)
-        .or_else(|| engines.get(&0))
-        .cloned()
-        .unwrap_or_else(|| {
+    let engine_ref: Arc<Mutex<UnifiedEngine>> =
+        engines.get(&id).or_else(|| engines.get(&0)).cloned().unwrap_or_else(|| {
             let e = Arc::new(Mutex::new(UnifiedEngine::new()));
             engines.insert(id, e.clone());
             e
@@ -90,11 +87,8 @@ pub fn get_current_session_id() -> u64 {
 fn current_session() -> Arc<Mutex<Session>> {
     let id = CURRENT_SESSION_ID.load(Ordering::SeqCst);
     let mut sessions = SESSIONS.lock().unwrap_or_else(|e| e.into_inner());
-    let session_ref: Arc<Mutex<Session>> = sessions
-        .get(&id)
-        .or_else(|| sessions.get(&0))
-        .cloned()
-        .unwrap_or_else(|| {
+    let session_ref: Arc<Mutex<Session>> =
+        sessions.get(&id).or_else(|| sessions.get(&0)).cloned().unwrap_or_else(|| {
             let s = Arc::new(Mutex::new(Session::default()));
             sessions.insert(id, s.clone());
             s

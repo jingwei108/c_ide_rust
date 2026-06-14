@@ -578,7 +578,6 @@ impl Type {
             _ => self.clone(),
         }
     }
-
 }
 
 impl std::fmt::Display for Type {
@@ -871,7 +870,6 @@ pub enum Expr {
         ty: Type,
     },
 }
-
 
 impl Default for Expr {
     fn default() -> Self {

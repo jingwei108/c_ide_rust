@@ -133,25 +133,24 @@ static CPP_TO_CIDE: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::ne
         .collect()
 });
 
-static METHOD_MAP: LazyLock<HashMap<&'static str, HashMap<&'static str, &'static str>>> =
-    LazyLock::new(|| {
-        LAYOUT_DATA
-            .method_map
-            .iter()
-            .map(|(class_name, methods)| {
-                let class_key: &'static str = Box::leak(class_name.clone().into_boxed_str());
-                let method_entries: HashMap<&'static str, &'static str> = methods
-                    .iter()
-                    .map(|(method_name, func_name)| {
-                        let method_key: &'static str = Box::leak(method_name.clone().into_boxed_str());
-                        let func_value: &'static str = Box::leak(func_name.clone().into_boxed_str());
-                        (method_key, func_value)
-                    })
-                    .collect();
-                (class_key, method_entries)
-            })
-            .collect()
-    });
+static METHOD_MAP: LazyLock<HashMap<&'static str, HashMap<&'static str, &'static str>>> = LazyLock::new(|| {
+    LAYOUT_DATA
+        .method_map
+        .iter()
+        .map(|(class_name, methods)| {
+            let class_key: &'static str = Box::leak(class_name.clone().into_boxed_str());
+            let method_entries: HashMap<&'static str, &'static str> = methods
+                .iter()
+                .map(|(method_name, func_name)| {
+                    let method_key: &'static str = Box::leak(method_name.clone().into_boxed_str());
+                    let func_value: &'static str = Box::leak(func_name.clone().into_boxed_str());
+                    (method_key, func_value)
+                })
+                .collect();
+            (class_key, method_entries)
+        })
+        .collect()
+});
 
 /// Return all (cpp_name, cide_name) pairs known to the builtin layout system.
 /// Useful for codegen / type-checker loops that pre-register container metadata.

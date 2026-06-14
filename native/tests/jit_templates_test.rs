@@ -46,15 +46,7 @@ int main() {
 
     let stats = vm.jit_stats();
     println!("JIT stats: {:?}", stats);
-    assert!(
-        stats.traces_compiled > 0,
-        "至少应编译一条 trace，stats={:?}",
-        stats
-    );
+    assert!(stats.traces_compiled > 0, "至少应编译一条 trace，stats={:?}", stats);
     // 加速步数应远大于单次 trace 长度（否则说明 bulk 只执行了一轮）
-    assert!(
-        stats.steps_accelerated > 100,
-        "JIT 应加速多轮循环迭代，stats={:?}",
-        stats
-    );
+    assert!(stats.steps_accelerated > 100, "JIT 应加速多轮循环迭代，stats={:?}", stats);
 }

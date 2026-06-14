@@ -61,13 +61,15 @@ impl TypeChecker {
                         class_methods.push(func_decl);
                     }
                     ClassMember::Constructor { params, body: Some(ref b), .. } => {
-                        let ctor_name = self.resolve_constructor_overload(&c.name, params.len(), c.loc).unwrap_or_else(|| {
-                            if params.is_empty() {
-                                format!("__ctor__{}", c.name)
-                            } else {
-                                format!("__ctor__{}__{}", c.name, params.len())
-                            }
-                        });
+                        let ctor_name =
+                            self.resolve_constructor_overload(&c.name, params.len(), c.loc)
+                                .unwrap_or_else(|| {
+                                    if params.is_empty() {
+                                        format!("__ctor__{}", c.name)
+                                    } else {
+                                        format!("__ctor__{}__{}", c.name, params.len())
+                                    }
+                                });
                         let mut func_decl = FuncDecl {
                             loc: c.loc,
                             return_type: Type::void(),
@@ -130,7 +132,12 @@ impl TypeChecker {
     /// `__ctor__{Class}` 名称；带 N 个参数的构造函数编码为 `__ctor__{Class}__N`。
     /// 如果同一个类存在多个**同参数个数但参数类型不同**的构造函数，当前 mangling
     /// 方案无法区分，会报告 E4031 歧义错误而不是静默选择错误路径。
-    pub(crate) fn resolve_constructor_overload(&mut self, class_name: &str, arg_count: usize, loc: SourceLoc) -> Option<String> {
+    pub(crate) fn resolve_constructor_overload(
+        &mut self,
+        class_name: &str,
+        arg_count: usize,
+        loc: SourceLoc,
+    ) -> Option<String> {
         let sym = self.classes.get(class_name)?;
         let target = if arg_count == 0 {
             format!("__ctor__{}", class_name)

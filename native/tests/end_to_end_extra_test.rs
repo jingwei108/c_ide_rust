@@ -5009,7 +5009,6 @@ int main() {
     assert_eq!(out, "0 1 2 ", "printf calls should not automatically add newlines");
 }
 
-
 #[test]
 fn test_e2e_main_args() {
     // 验证 main(int argc, char *argv[]) 能正确接收命令行参数。

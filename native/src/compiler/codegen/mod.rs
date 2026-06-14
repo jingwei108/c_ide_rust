@@ -137,7 +137,7 @@ impl BytecodeGen {
             BYTECODE_LIBC_BASE_INDEX + BYTECODE_LIBC_FUNC_COUNT as i32 + 1
         };
 
-        Self{
+        Self {
             code: Vec::new(),
             errors: Vec::new(),
             func_table: HashMap::new(),
@@ -565,7 +565,11 @@ impl BytecodeGen {
         self.next_local_offset = 0;
         let mut offset = 0;
         let mut param_sizes = Vec::new();
-        let returns_struct = self.func_table.get(name).map(|m| m.return_type.is_struct() || m.return_type.is_class()).unwrap_or(false);
+        let returns_struct = self
+            .func_table
+            .get(name)
+            .map(|m| m.return_type.is_struct() || m.return_type.is_class())
+            .unwrap_or(false);
         if returns_struct {
             param_sizes.push(1);
             self.local_indices.insert("__ret_ptr".to_string(), offset);
@@ -925,9 +929,10 @@ impl BytecodeGen {
                                 c.members
                                     .iter()
                                     .filter_map(|m| match m {
-                                        ClassMember::Field { name, ty, .. } => {
-                                            Some(StructField { name: name.clone(), ty: ty.clone() })
-                                        }
+                                        ClassMember::Field { name, ty, .. } => Some(StructField {
+                                            name: name.clone(),
+                                            ty: ty.clone(),
+                                        }),
                                         _ => None,
                                     })
                                     .collect()

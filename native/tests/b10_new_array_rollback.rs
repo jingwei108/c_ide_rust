@@ -1,7 +1,7 @@
 mod test_utils;
 
-use cide_native::vm::vm::CideVM;
 use cide_native::session::Session;
+use cide_native::vm::vm::CideVM;
 
 #[test]
 fn test_new_array_rollback_on_ctor_trap() {
@@ -45,14 +45,20 @@ int main() {
     }
     vm.set_globals_32(&output.globals_init_32);
     vm.set_globals_64(&output.globals_init_64);
-    vm.set_symbols(output.symbols.iter().map(|s| cide_native::vm::vm::VMSymbol {
-        name: s.name.clone(),
-        addr: s.addr,
-        is_local: s.is_local,
-        ty: s.ty.clone(),
-        scope_depth: s.scope_depth,
-        func_name: s.func_name.clone(),
-    }).collect());
+    vm.set_symbols(
+        output
+            .symbols
+            .iter()
+            .map(|s| cide_native::vm::vm::VMSymbol {
+                name: s.name.clone(),
+                addr: s.addr,
+                is_local: s.is_local,
+                ty: s.ty.clone(),
+                scope_depth: s.scope_depth,
+                func_name: s.func_name.clone(),
+            })
+            .collect(),
+    );
 
     let mut session = Session::default();
     vm.run(&mut session);

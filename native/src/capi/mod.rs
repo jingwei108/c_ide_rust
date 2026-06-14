@@ -303,4 +303,3 @@ pub unsafe extern "C" fn cide_get_output(s: *mut Session, buf: *mut c_char, max_
     slice.copy_from_slice(&all.as_bytes()[..copy_len]);
     *buf.add(copy_len) = 0;
 }
-

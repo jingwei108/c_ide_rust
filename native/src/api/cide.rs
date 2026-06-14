@@ -214,6 +214,93 @@ pub fn get_diagnostics() -> Vec<Diagnostic> {
     crate::flutter_bridge::get_diagnostics()
 }
 
+/// 根据诊断中的结构化修复信息，对源码执行替换/插入/删除。
+/// fix_kind: 0=None, 1=ReplaceText, 2=InsertText, 3=DeleteText, 4=ManualHint
+#[frb]
+pub fn apply_fix(source: String, diag: Diagnostic) -> Option<String> {
+    match diag.fix_kind {
+        1 => apply_replace(&source, &diag),
+        2 => apply_insert(&source, &diag),
+        3 => apply_delete(&source, &diag),
+        _ => None,
+    }
+}
+
+fn apply_replace(source: &str, diag: &Diagnostic) -> Option<String> {
+    let mut lines: Vec<String> = source.lines().map(|s| s.to_string()).collect();
+    let start_line = diag.replace_start_line as usize;
+    let start_col = diag.replace_start_column as usize;
+    let end_line = diag.replace_end_line as usize;
+    let end_col = diag.replace_end_column as usize;
+
+    if start_line == 0 || end_line == 0 || start_line > lines.len() || end_line > lines.len() {
+        return None;
+    }
+    let start_idx = start_line - 1;
+    let end_idx = end_line - 1;
+    if start_col > lines[start_idx].len()
+        || end_col > lines[end_idx].len()
+        || start_col > end_col && start_idx == end_idx
+    {
+        return None;
+    }
+
+    let before = lines[start_idx][..start_col].to_string();
+    let after = lines[end_idx][end_col..].to_string();
+    let mut new_line = before;
+    new_line.push_str(&diag.replacement_text);
+    new_line.push_str(&after);
+
+    lines.drain(start_idx..=end_idx);
+    lines.insert(start_idx, new_line);
+    Some(lines.join("\n"))
+}
+
+fn apply_insert(source: &str, diag: &Diagnostic) -> Option<String> {
+    let mut lines: Vec<String> = source.lines().map(|s| s.to_string()).collect();
+    let start_line = diag.replace_start_line as usize;
+    let start_col = diag.replace_start_column as usize;
+
+    if start_line == 0 || start_line > lines.len() || start_col > lines[start_line - 1].len() {
+        return None;
+    }
+
+    lines[start_line - 1].insert_str(start_col, &diag.replacement_text);
+    Some(lines.join("\n"))
+}
+
+fn apply_delete(source: &str, diag: &Diagnostic) -> Option<String> {
+    let mut lines: Vec<String> = source.lines().map(|s| s.to_string()).collect();
+    let start_line = diag.replace_start_line as usize;
+    let start_col = diag.replace_start_column as usize;
+    let end_line = diag.replace_end_line as usize;
+    let end_col = diag.replace_end_column as usize;
+
+    if start_line == 0 || end_line == 0 || start_line > lines.len() || end_line > lines.len() {
+        return None;
+    }
+    let start_idx = start_line - 1;
+    let end_idx = end_line - 1;
+    if start_col > lines[start_idx].len()
+        || end_col > lines[end_idx].len()
+        || start_col > end_col && start_idx == end_idx
+    {
+        return None;
+    }
+
+    if start_idx == end_idx {
+        lines[start_idx].replace_range(start_col..end_col, "");
+    } else {
+        let before = lines[start_idx][..start_col].to_string();
+        let after = lines[end_idx][end_col..].to_string();
+        let mut new_line = before;
+        new_line.push_str(&after);
+        lines.drain(start_idx..=end_idx);
+        lines.insert(start_idx, new_line);
+    }
+    Some(lines.join("\n"))
+}
+
 #[frb]
 pub fn get_algorithm_matches() -> Vec<AlgorithmMatch> {
     crate::flutter_bridge::get_algorithm_matches()
@@ -392,4 +479,119 @@ pub fn set_current_session_id(session_id: u64) {
 #[frb]
 pub fn get_current_session_id() -> u64 {
     crate::flutter_bridge::get_current_session_id()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::session::Diagnostic;
+
+    fn diag_replace(line: i32, start_line: i32, start_col: i32, end_line: i32, end_col: i32, text: &str) -> Diagnostic {
+        Diagnostic {
+            line,
+            column: 1,
+            error_code: 2005,
+            severity: 0,
+            message: "test".to_string(),
+            fix_suggestion: "add semicolon".to_string(),
+            fix_kind: 1,
+            replace_start_line: start_line,
+            replace_start_column: start_col,
+            replace_end_line: end_line,
+            replace_end_column: end_col,
+            replacement_text: text.to_string(),
+            filename: "main.c".to_string(),
+        }
+    }
+
+    fn diag_insert(line: i32, col: i32, text: &str) -> Diagnostic {
+        Diagnostic {
+            line,
+            column: 1,
+            error_code: 2005,
+            severity: 0,
+            message: "test".to_string(),
+            fix_suggestion: "insert".to_string(),
+            fix_kind: 2,
+            replace_start_line: line,
+            replace_start_column: col,
+            replace_end_line: line,
+            replace_end_column: col,
+            replacement_text: text.to_string(),
+            filename: "main.c".to_string(),
+        }
+    }
+
+    fn diag_delete(start_line: i32, start_col: i32, end_line: i32, end_col: i32) -> Diagnostic {
+        Diagnostic {
+            line: start_line,
+            column: 1,
+            error_code: 2005,
+            severity: 0,
+            message: "test".to_string(),
+            fix_suggestion: "delete".to_string(),
+            fix_kind: 3,
+            replace_start_line: start_line,
+            replace_start_column: start_col,
+            replace_end_line: end_line,
+            replace_end_column: end_col,
+            replacement_text: String::new(),
+            filename: "main.c".to_string(),
+        }
+    }
+
+    #[test]
+    fn test_apply_fix_replace_single_line() {
+        let source = "int main()\n    return 0\n}".to_string();
+        let diag = diag_replace(2, 2, 12, 2, 12, ";");
+        assert_eq!(apply_fix(source, diag).unwrap(), "int main()\n    return 0;\n}");
+    }
+
+    #[test]
+    fn test_apply_fix_replace_multi_line() {
+        let source = "int main() {\n    int a = 1\n    return a\n}".to_string();
+        let diag = diag_replace(2, 2, 13, 3, 12, ";\n    return a;");
+        assert_eq!(
+            apply_fix(source, diag).unwrap(),
+            "int main() {\n    int a = 1;\n    return a;\n}"
+        );
+    }
+
+    #[test]
+    fn test_apply_fix_insert() {
+        let source = "int main()\n    return 0\n}".to_string();
+        let diag = diag_insert(2, 12, ";");
+        assert_eq!(apply_fix(source, diag).unwrap(), "int main()\n    return 0;\n}");
+    }
+
+    #[test]
+    fn test_apply_fix_delete() {
+        let source = "int main() {\n    int a = 1;;\n    return a;\n}".to_string();
+        let diag = diag_delete(2, 14, 2, 15);
+        assert_eq!(
+            apply_fix(source, diag).unwrap(),
+            "int main() {\n    int a = 1;\n    return a;\n}"
+        );
+    }
+
+    #[test]
+    fn test_apply_fix_no_fix_kind_returns_none() {
+        let source = "int main() {}".to_string();
+        let diag = Diagnostic {
+            line: 1,
+            column: 1,
+            error_code: 3023,
+            severity: 0,
+            message: "undeclared".to_string(),
+            fix_suggestion: String::new(),
+            fix_kind: 0,
+            replace_start_line: 0,
+            replace_start_column: 0,
+            replace_end_line: 0,
+            replace_end_column: 0,
+            replacement_text: String::new(),
+            filename: "main.c".to_string(),
+        };
+        assert!(apply_fix(source, diag).is_none());
+    }
 }
