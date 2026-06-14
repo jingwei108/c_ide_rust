@@ -51,6 +51,7 @@ coverage/
 
 # Shadow verification framework (auto-generated reports)
 native/tests/shadow_verification/reports/
+native/tests/shadow_verification/test.txt
 !native/tests/shadow_verification/reports/SHADOW_VERIFICATION_REPORT_*.md
 !native/tests/shadow_verification/reports/.gitkeep
 
