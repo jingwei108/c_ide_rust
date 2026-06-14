@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/api/cide.dart' as rust;
+import 'package:cide/src/rust/session.dart';
 import 'package:cide/src/rust/unified/stream.dart' as stream;
 import 'package:cide/src/rust/unified/types.dart' as types;
 import '../models/unified_state.dart';
@@ -29,7 +30,12 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
 
     try {
       final result = await rust.compileAndRunMulti(
-        files: files.map((f) => rust.CodeFile(filename: f.filename, source: f.source)).toList(),
+        files:
+            files
+                .map(
+                  (f) => rust.CodeFile(filename: f.filename, source: f.source),
+                )
+                .toList(),
       );
       if (!result.success) {
         state = state.copyWith(
@@ -95,17 +101,36 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
         currentStep: lastPayload.stepIndex,
         currentLine: lastPayload.codeLine,
       );
+      // 同步更新内存可视化数据源
+      _fetchMemoryState();
     }
 
     if (batch.paused) {
       _streamSubscription?.cancel();
-      state = state.copyWith(
-        phase: ExecutionPhase.paused,
-        isPlaying: false,
-      );
+      state = state.copyWith(phase: ExecutionPhase.paused, isPlaying: false);
     } else if (batch.finished || batch.trapped || batch.waitingInput) {
       _streamSubscription?.cancel();
       _fetchHeatmapAndFinish(batch.trapped, batch.trapMessage);
+    }
+  }
+
+  /// 从 Rust VM 拉取当前内存状态，供 MemoryTab 等可视化组件统一读取。
+  Future<void> _fetchMemoryState() async {
+    try {
+      final results = await Future.wait([
+        rust.getMemoryRegions(),
+        rust.getMemorySize(),
+        rust.getMemoryFragments(),
+        rust.getHeapStats(),
+      ]);
+      state = state.copyWith(
+        memoryRegions: results[0] as List<MemoryRegion>,
+        memorySize: results[1] as int,
+        memoryFragments: results[2] as List<MemoryFragment>,
+        heapStats: results[3] as HeapStats,
+      );
+    } catch (_) {
+      // 内存信息属于辅助可视化数据，失败时不阻塞主执行流程。
     }
   }
 
@@ -120,11 +145,13 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
       trapMessage: trapped ? (trapMessage ?? '运行时错误') : null,
       clearTrap: !trapped,
     );
-    await ref.read(ideProvider.notifier).recordUnifiedRun(
-      steps: state.maxCollectedStep,
-      trapped: trapped,
-      trapMessage: trapped ? (trapMessage ?? '运行时错误') : null,
-    );
+    await ref
+        .read(ideProvider.notifier)
+        .recordUnifiedRun(
+          steps: state.maxCollectedStep,
+          trapped: trapped,
+          trapMessage: trapped ? (trapMessage ?? '运行时错误') : null,
+        );
   }
 
   /// 将 StepStreamBatch 解码为完整的 StepPayload 列表。
@@ -150,7 +177,8 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     }
 
     // 维护变量出现顺序（base 顺序 + 后续新增追加到末尾）
-    final varOrder = batch.basePayloads.first.localVars.map((v) => v.nameIdx).toList();
+    final varOrder =
+        batch.basePayloads.first.localVars.map((v) => v.nameIdx).toList();
     final varOrderSet = <int>{...varOrder};
 
     for (final delta in batch.deltas) {
@@ -197,46 +225,69 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
         }
       }
 
-      result.add(types.StepPayload(
-        stepIndex: delta.stepIndex,
-        codeLine: delta.codeLine,
-        funcName: sym[delta.funcNameIdx],
-        semanticLabel: sym[delta.semanticLabelIdx],
-        algorithmStep: delta.algorithmStep == null
-            ? null
-            : types.AlgorithmStepSnapshot(
-                algorithmName: sym[delta.algorithmStep!.algorithmNameIdx],
-                displayName: sym[delta.algorithmStep!.displayNameIdx],
-                phase: sym[delta.algorithmStep!.phaseIdx],
-                description: sym[delta.algorithmStep!.descriptionIdx],
-              ),
-        localVars: localVars,
-        callStack: delta.callStack.map((f) => types.ApiFrameInfo(
-          funcName: sym[f.funcNameIdx],
-          returnLine: f.returnLine,
-        )).toList(),
-        visEvents: delta.visEvents,
-        heatmapLine: delta.heatmapLine,
-        heatmapCount: delta.heatmapCount,
-        accessedVars: delta.accessedVars.map((a) => types.AccessedVar(
-          name: sym[a.nameIdx],
-          accessType: sym[a.accessTypeIdx],
-        )).toList(),
-        arraySnapshots: delta.arraySnapshots.map((a) => types.ArraySnapshot(
-          name: sym[a.nameIdx],
-          elementTy: sym[a.elementTyIdx],
-          elements: a.elements,
-        )).toList(),
-        pointerSnapshots: delta.pointerSnapshots.map((p) => types.PointerSnapshot(
-          name: sym[p.nameIdx],
-          addr: p.addr,
-          tyName: sym[p.tyNameIdx],
-          targetAddr: p.targetAddr,
-          targetName: sym[p.targetNameIdx],
-          status: p.status,
-        )).toList(),
-        rootCauseHint: delta.rootCauseHint,
-      ));
+      result.add(
+        types.StepPayload(
+          stepIndex: delta.stepIndex,
+          codeLine: delta.codeLine,
+          funcName: sym[delta.funcNameIdx],
+          semanticLabel: sym[delta.semanticLabelIdx],
+          algorithmStep:
+              delta.algorithmStep == null
+                  ? null
+                  : types.AlgorithmStepSnapshot(
+                    algorithmName: sym[delta.algorithmStep!.algorithmNameIdx],
+                    displayName: sym[delta.algorithmStep!.displayNameIdx],
+                    phase: sym[delta.algorithmStep!.phaseIdx],
+                    description: sym[delta.algorithmStep!.descriptionIdx],
+                  ),
+          localVars: localVars,
+          callStack:
+              delta.callStack
+                  .map(
+                    (f) => types.ApiFrameInfo(
+                      funcName: sym[f.funcNameIdx],
+                      returnLine: f.returnLine,
+                    ),
+                  )
+                  .toList(),
+          visEvents: delta.visEvents,
+          heatmapLine: delta.heatmapLine,
+          heatmapCount: delta.heatmapCount,
+          accessedVars:
+              delta.accessedVars
+                  .map(
+                    (a) => types.AccessedVar(
+                      name: sym[a.nameIdx],
+                      accessType: sym[a.accessTypeIdx],
+                    ),
+                  )
+                  .toList(),
+          arraySnapshots:
+              delta.arraySnapshots
+                  .map(
+                    (a) => types.ArraySnapshot(
+                      name: sym[a.nameIdx],
+                      elementTy: sym[a.elementTyIdx],
+                      elements: a.elements,
+                    ),
+                  )
+                  .toList(),
+          pointerSnapshots:
+              delta.pointerSnapshots
+                  .map(
+                    (p) => types.PointerSnapshot(
+                      name: sym[p.nameIdx],
+                      addr: p.addr,
+                      tyName: sym[p.tyNameIdx],
+                      targetAddr: p.targetAddr,
+                      targetName: sym[p.targetNameIdx],
+                      status: p.status,
+                    ),
+                  )
+                  .toList(),
+          rootCauseHint: delta.rootCauseHint,
+        ),
+      );
     }
 
     return result;
@@ -247,51 +298,83 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     return '';
   }
 
-  types.StepPayload _decodeStepPayloadRef(stream.StepPayloadRef base, List<String> sym) {
+  types.StepPayload _decodeStepPayloadRef(
+    stream.StepPayloadRef base,
+    List<String> sym,
+  ) {
     return types.StepPayload(
       stepIndex: base.stepIndex,
       codeLine: base.codeLine,
       funcName: _safeSym(sym, base.funcNameIdx),
       semanticLabel: sym[base.semanticLabelIdx],
-      algorithmStep: base.algorithmStep == null
-          ? null
-          : types.AlgorithmStepSnapshot(
-              algorithmName: _safeSym(sym, base.algorithmStep!.algorithmNameIdx),
-              displayName: _safeSym(sym, base.algorithmStep!.displayNameIdx),
-              phase: _safeSym(sym, base.algorithmStep!.phaseIdx),
-              description: _safeSym(sym, base.algorithmStep!.descriptionIdx),
-            ),
-      localVars: base.localVars.map((v) => types.ApiVariableSnapshot(
-        name: _safeSym(sym, v.nameIdx),
-        addr: v.addr,
-        isLocal: v.isLocal,
-        tyName: _safeSym(sym, v.tyNameIdx),
-        value: v.value,
-      )).toList(),
-      callStack: base.callStack.map((f) => types.ApiFrameInfo(
-        funcName: _safeSym(sym, f.funcNameIdx),
-        returnLine: f.returnLine,
-      )).toList(),
+      algorithmStep:
+          base.algorithmStep == null
+              ? null
+              : types.AlgorithmStepSnapshot(
+                algorithmName: _safeSym(
+                  sym,
+                  base.algorithmStep!.algorithmNameIdx,
+                ),
+                displayName: _safeSym(sym, base.algorithmStep!.displayNameIdx),
+                phase: _safeSym(sym, base.algorithmStep!.phaseIdx),
+                description: _safeSym(sym, base.algorithmStep!.descriptionIdx),
+              ),
+      localVars:
+          base.localVars
+              .map(
+                (v) => types.ApiVariableSnapshot(
+                  name: _safeSym(sym, v.nameIdx),
+                  addr: v.addr,
+                  isLocal: v.isLocal,
+                  tyName: _safeSym(sym, v.tyNameIdx),
+                  value: v.value,
+                ),
+              )
+              .toList(),
+      callStack:
+          base.callStack
+              .map(
+                (f) => types.ApiFrameInfo(
+                  funcName: _safeSym(sym, f.funcNameIdx),
+                  returnLine: f.returnLine,
+                ),
+              )
+              .toList(),
       visEvents: base.visEvents,
       heatmapLine: base.heatmapLine,
       heatmapCount: base.heatmapCount,
-      accessedVars: base.accessedVars.map((a) => types.AccessedVar(
-        name: _safeSym(sym, a.nameIdx),
-        accessType: _safeSym(sym, a.accessTypeIdx),
-      )).toList(),
-      arraySnapshots: base.arraySnapshots.map((a) => types.ArraySnapshot(
-        name: _safeSym(sym, a.nameIdx),
-        elementTy: _safeSym(sym, a.elementTyIdx),
-        elements: a.elements,
-      )).toList(),
-      pointerSnapshots: base.pointerSnapshots.map((p) => types.PointerSnapshot(
-        name: _safeSym(sym, p.nameIdx),
-        addr: p.addr,
-        tyName: _safeSym(sym, p.tyNameIdx),
-        targetAddr: p.targetAddr,
-        targetName: _safeSym(sym, p.targetNameIdx),
-        status: p.status,
-      )).toList(),
+      accessedVars:
+          base.accessedVars
+              .map(
+                (a) => types.AccessedVar(
+                  name: _safeSym(sym, a.nameIdx),
+                  accessType: _safeSym(sym, a.accessTypeIdx),
+                ),
+              )
+              .toList(),
+      arraySnapshots:
+          base.arraySnapshots
+              .map(
+                (a) => types.ArraySnapshot(
+                  name: _safeSym(sym, a.nameIdx),
+                  elementTy: _safeSym(sym, a.elementTyIdx),
+                  elements: a.elements,
+                ),
+              )
+              .toList(),
+      pointerSnapshots:
+          base.pointerSnapshots
+              .map(
+                (p) => types.PointerSnapshot(
+                  name: _safeSym(sym, p.nameIdx),
+                  addr: p.addr,
+                  tyName: _safeSym(sym, p.tyNameIdx),
+                  targetAddr: p.targetAddr,
+                  targetName: _safeSym(sym, p.targetNameIdx),
+                  status: p.status,
+                ),
+              )
+              .toList(),
       rootCauseHint: base.rootCauseHint,
     );
   }
@@ -313,7 +396,8 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
       _continueFromPlayback();
       return;
     }
-    if (state.phase == ExecutionPhase.paused || state.phase == ExecutionPhase.stepMode) {
+    if (state.phase == ExecutionPhase.paused ||
+        state.phase == ExecutionPhase.stepMode) {
       rust.resumeExecution();
       state = state.copyWith(phase: ExecutionPhase.collecting, isPlaying: true);
       _startCollectionLoop();
@@ -339,7 +423,8 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   // ========== 单步 ==========
 
   Future<void> stepNext() async {
-    if (state.phase == ExecutionPhase.idle || state.phase == ExecutionPhase.compiling) {
+    if (state.phase == ExecutionPhase.idle ||
+        state.phase == ExecutionPhase.compiling) {
       return;
     }
 
@@ -362,6 +447,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
           maxCollectedStep: math.max(state.maxCollectedStep, payload.stepIndex),
           isVmRestored: true,
         );
+        await _fetchMemoryState();
       }
     } catch (e) {
       state = state.copyWith(errorMessage: '单步异常: $e');
@@ -374,7 +460,9 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     if (!state.canSeek) return;
 
     // 即时响应：目标已在缓存中
-    if (targetStep >= 0 && targetStep <= state.maxCollectedStep && targetStep < state.frameCache.length) {
+    if (targetStep >= 0 &&
+        targetStep <= state.maxCollectedStep &&
+        targetStep < state.frameCache.length) {
       final payload = state.frameCache[targetStep];
       state = state.copyWith(
         currentStep: targetStep,
@@ -406,6 +494,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
           phase: ExecutionPhase.playback,
           maxCollectedStep: math.max(state.maxCollectedStep, targetStep),
         );
+        await _fetchMemoryState();
       } else {
         state = state.copyWith(
           phase: ExecutionPhase.error,
@@ -445,6 +534,19 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     _streamSubscription?.cancel();
     rust.resetSession();
     state = const UnifiedState();
+  }
+
+  /// 获取当前 step 的变量快照，WatchTab 等组件统一从这里读取。
+  /// 若 frameCache 为空（非统一模式），返回空列表。
+  List<types.ApiVariableSnapshot> get currentVariables {
+    final frameCache = state.frameCache;
+    final currentStep = state.currentStep;
+    if (frameCache.isEmpty ||
+        currentStep < 0 ||
+        currentStep >= frameCache.length) {
+      return [];
+    }
+    return frameCache[currentStep].localVars;
   }
 
   void onCodeChanged() {
