@@ -152,6 +152,7 @@ class IdeState {
     LearningProgress? learningProgress,
     TutorialSession? activeTutorial,
     bool clearError = false,
+    bool clearActiveFloatingPanel = false,
   }) {
     return IdeState(
       files: files ?? this.files,
@@ -176,7 +177,7 @@ class IdeState {
       floatingActiveIndex: floatingActiveIndex ?? this.floatingActiveIndex,
       bottomHeight: bottomHeight ?? this.bottomHeight,
       isFloatingOpen: isFloatingOpen ?? this.isFloatingOpen,
-      activeFloatingPanel: activeFloatingPanel ?? this.activeFloatingPanel,
+      activeFloatingPanel: clearActiveFloatingPanel ? null : (activeFloatingPanel ?? this.activeFloatingPanel),
       watchExpressions: watchExpressions ?? this.watchExpressions,
       executionSpeed: executionSpeed ?? this.executionSpeed,
       showIntro: showIntro ?? this.showIntro,

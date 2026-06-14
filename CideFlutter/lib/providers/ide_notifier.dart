@@ -319,7 +319,7 @@ class IdeNotifier extends AutoDisposeNotifier<IdeState> {
 
   /// 关闭浮动面板弹窗
   void closeFloatingPanel() {
-    state = state.copyWith(activeFloatingPanel: null);
+    state = state.copyWith(clearActiveFloatingPanel: true);
   }
 
   /// 将面板与底部区域交换（跨区域：悬浮球 → 底部）

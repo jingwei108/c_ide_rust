@@ -615,7 +615,13 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
               heatmap: unifiedState.heatmap,
               isDark: isDark,
             ),
-            scrollOffset: _editorKey.currentState?.scrollController.offset ?? 0.0,
+            scrollOffset: () {
+              final editorState = _editorKey.currentState;
+              if (editorState == null || !editorState.scrollController.hasClients) {
+                return 0.0;
+              }
+              return editorState.scrollController.offset;
+            }(),
             viewportHeight: MediaQuery.of(context).size.height,
             lineHeight: 21.0,
             lineCount: _document.lineCount,

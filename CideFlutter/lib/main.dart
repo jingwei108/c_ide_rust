@@ -6,9 +6,16 @@ import 'package:cide/src/rust/api/cide.dart' as rust;
 import 'providers/theme_provider.dart';
 import 'screens/ide_screen.dart';
 
+// Guard to make `RustLib.init()` idempotent across multiple `app.main()` calls
+// in integration tests.
+bool _rustLibInitialized = false;
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await RustLib.init();
+  if (!_rustLibInitialized) {
+    await RustLib.init();
+    _rustLibInitialized = true;
+  }
 
   SystemChannels.lifecycle.setMessageHandler((msg) async {
     if (msg == AppLifecycleState.detached.toString()) {

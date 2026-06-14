@@ -37,10 +37,14 @@ class GutterView extends StatelessWidget {
     final renderStart = (firstVisible - 2).clamp(0, lineCount - 1);
     final renderEnd = (lastVisible + 2).clamp(0, lineCount - 1);
 
+    final totalWidth = columns.fold<double>(0.0, (sum, col) => sum + col.width);
+
     return Container(
+      width: totalWidth,
       color: context.isDark ? const Color(0xff21252b) : const Color(0xfff0f0f0),
       child: ClipRect(
         child: OverflowBox(
+          maxWidth: totalWidth,
           maxHeight: double.infinity,
           alignment: Alignment.topCenter,
           child: Transform.translate(

@@ -1,9 +1,7 @@
 mod test_utils;
 
 use cide_native::vm::vm::CideVM;
-use cide_native::vm::instruction::{Instruction, SourceLoc};
 use cide_native::session::Session;
-use cide_native::vm::opcode::OpCode;
 
 #[test]
 fn test_new_array_rollback_on_ctor_trap() {

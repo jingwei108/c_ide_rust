@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 /// 面板位置
 enum PanelLocation { bottom, floating }
 
-/// 面板元素定义（共 11 个）
+/// 面板元素定义（共 12 个）
 class PanelItem {
   final String id;
   final String label;
@@ -11,10 +11,11 @@ class PanelItem {
 
   const PanelItem._({required this.id, required this.label, required this.icon});
 
-  // 底部默认 3 个
+  // 底部默认 4 个
   static const output = PanelItem._(id: 'output', label: '输出', icon: Icons.terminal);
   static const diagnostics = PanelItem._(id: 'diagnostics', label: '诊断', icon: Icons.error_outline);
   static const algorithm = PanelItem._(id: 'algorithm', label: '算法', icon: Icons.auto_fix_high);
+  static const intent = PanelItem._(id: 'intent', label: '意图', icon: Icons.psychology);
 
   // 悬浮球 8 个
   static const knowledge = PanelItem._(id: 'knowledge', label: '知识卡片', icon: Icons.menu_book);
@@ -32,7 +33,7 @@ class PanelItem {
 
   /// 全部 13 个面板元素
   static const List<PanelItem> all = [
-    output, diagnostics, algorithm,
+    output, diagnostics, algorithm, intent,
     knowledge, pointer, arrayVis, linkedListVis, treeVis, memory, variables, watch, callstack, progress, varHistory, breakpoints,
   ];
 

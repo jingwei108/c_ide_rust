@@ -140,6 +140,11 @@ jobs:
         run: flutter test
         working-directory: CideFlutter
 
+      - name: Clean Windows build cache
+        run: if exist build\windows\x64 rmdir /s /q build\windows\x64
+        working-directory: CideFlutter
+        shell: cmd
+
       - name: Build Windows (Debug)
         run: flutter build windows --debug
         working-directory: CideFlutter

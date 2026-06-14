@@ -26,6 +26,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **支持匿名 `enum { ... };` 声明**：移除顶层 Enum 分支对枚举名的强制要求
 - **三目运算符支持数组到指针的通常转换**：`typeck/expr.rs` 对三目分支中的 `Array` 类型统一 decay 为指向元素的指针，使 `" "`（char[2]）与 `""`（char[1]）可统一为 `char*`
 - **回归测试扩展**：`parser_unit_test` +3、`type_checker_unit_test` +1、`end_to_end_extra_test` +1
+- **Flutter 测试金字塔**：新增 10 个测试文件、90 个测试 + 4 个集成测试
+  - `test/models/ide_state_test.dart`：默认值、copyWith、hasErrors/hasWarnings
+  - `test/models/unified_state_test.dart`：默认值、copyWith、ExecutionPhase getter 矩阵
+  - `test/models/code_template_test.dart`：占位符替换、默认参数、模型字段
+  - `test/providers/theme_notifier_test.dart`：主题切换
+  - `test/providers/ide_notifier_test.dart`：build、文件管理、面板管理、watch 表达式、学习进度、教程
+  - `test/providers/unified_notifier_test.dart`：build、播放控制、onCodeChanged
+  - `test/services/learning_progress_service_test.dart`：SharedPreferences load/save/clear、非法 JSON 回退
+  - `test/widgets/custom_keyboard_test.dart`：字母/数字/符号模式、配对键、Shift、Space、滚动
+  - `test/widgets/file_tab_bar_test.dart`：渲染、切换、关闭按钮、关闭回调、新建文件
+  - `test/widgets/tool_button_test.dart`：图标渲染、点击、禁用、自定义颜色
+  - `integration_test/app_test.dart`：端到端 smoke 测试，覆盖应用启动、核心 UI 渲染、主题切换、底部 Tab 切换、新建文件
+  - 添加 `mocktail: ^1.0.4` 到 `pubspec.yaml` 作为未来 mock Rust API 抽象层的基础
+  - 测试揭露并修复：`closeFloatingPanel` 因 `IdeState.copyWith` 的 null 语义无法清除 `activeFloatingPanel`
+  - 测试揭露并修复：`PanelItem` 缺失 `intent` 定义导致默认底部 Tab "意图" 无法渲染
+  - 测试揭露并修复：`EditorPanelV2` 初始 build 时访问尚未 attach 到 ScrollView 的 `ScrollController.offset`
+  - 集成测试适配：`lib/main.dart` 中 `RustLib.init()` 增加幂等保护，避免多个 `app.main()` 调用触发 "Should not initialize flutter_rust_bridge twice"
+- **CI Windows 构建修复**：`.github/workflows/ci.yml` 在 `flutter build windows` 前清理 `build/windows/x64` 缓存，避免 CMake 使用缓存中的 `Visual Studio 16 2019` generator 导致在仅有 VS2022 的 runner 上失败
+- **Rust 测试 warnings 清理**：`native/tests/b10_new_array_rollback.rs` 移除未使用导入；`native/tests/test_utils.rs` 添加 `#![allow(dead_code)]`
 - **失败记录同步**：`bellmanFord_default` 从 `KNOWN_TEMPLATE_FAILURES` 移除；`kr_5_16` 从 `KNOWN_KR_FAILURES` 移除；更新 `E2E_FAILURES.md` / `KR_FAILURES.md`
 
 ### Added (P0 语法拓展)
