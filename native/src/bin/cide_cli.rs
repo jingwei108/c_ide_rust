@@ -75,9 +75,9 @@ fn compile_file(path: &str, source: &str) -> bool {
         println!("=== 诊断信息 ===");
         for d in &result.diagnostics {
             let severity = match d.severity {
-                1 => "错误",
-                2 => "警告",
-                3 => "提示",
+                0 => "错误",
+                1 => "警告",
+                2 => "提示",
                 _ => "信息",
             };
             println!("[{}] {}:{}  {} (E{})", severity, d.line, d.column, d.message, d.error_code);

@@ -154,6 +154,8 @@ def run_with_cide(source: str) -> RunResult:
     dll.cide_compile.restype = ctypes.c_int
     dll.cide_run.argtypes = [ctypes.c_void_p]
     dll.cide_run.restype = ctypes.c_int
+    dll.cide_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+    dll.cide_set_input_mode.restype = None
     dll.cide_get_compile_errors.restype = ctypes.c_char_p
     dll.cide_get_compile_errors.argtypes = [ctypes.c_void_p]
     dll.cide_get_runtime_error.restype = ctypes.c_char_p
@@ -181,6 +183,7 @@ def run_with_cide(source: str) -> RunResult:
                 exit_code=compile_ret, duration_ms=(time.time() - start) * 1000,
             )
 
+        dll.cide_set_input_mode(session, 1)
         run_ret = dll.cide_run(session)
 
         out_len = dll.cide_get_output_length(session)
@@ -330,8 +333,11 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
     print(f"报告已生成: {output_path}")
 
 
-# 为 Clang 添加标准头文件前缀
-CLANG_HEADER = '#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n\n'
+# 为 Clang 添加标准头文件前缀。
+# 只补充 stdio.h：stdlib.h / string.h 会导致 K&R 示例中用户自定义的 itoa/qsort 与标准库声明冲突，
+# 而 Cide 的教学子集允许用户定义这些同名函数（通过内置存根）。隐式声明的 malloc/free/strcpy 等
+# 在 Windows CRT 下仍可链接，不影响 Shadow 对比。
+CLANG_HEADER = '#include <stdio.h>\n\n'
 
 
 

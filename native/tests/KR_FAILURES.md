@@ -530,16 +530,18 @@
 ### kr_6_1
 
 - **来源**: K&R 第 6 章，练习 6-1（getword 提取关键字）
-- **失败原因**: ~~编译错误 — `isspace`/`isalpha`/`isalnum`/`ungetc`/`stdin` 未声明~~ ✅ **标准库拓展后只剩 `ungetc`（2026-06-07）** → 运行时错误：`struct key keytab[] = { {"auto", 0}, ... }` 全局结构体数组中 `char*` 成员的 `StringLiteral` 初始化异常
-- **最小复现**: 
-  1. `<ctype.h>` 已支持，`stdin` 已预定义宏，`ungetc` 已新增 Host Func
-  2. 编译通过，但运行时 `keytab[0].word` 读取到的值不是字符串地址，而是字符串内容本身（如 `"auto"` 的 ASCII 字节 `0x6f747561`），导致 `strcmp` 解引用非法地址触发 NULL 指针陷阱
-- **是否 Cide 限制**: 是（全局结构体数组 `char*` 初始化 Bug）
+- **失败原因**: ~~编译错误 — `isspace`/`isalpha`/`isalnum`/`ungetc`/`stdin` 未声明~~ ✅ **标准库拓展后只剩 `ungetc`（2026-06-07）** → ~~运行时错误：`struct key keytab[] = { {"auto", 0}, ... }` 全局结构体数组中 `char*` 成员的 `StringLiteral` 初始化异常~~ ✅ **已修复（2026-06-14）**
+- **根因**: 全局变量区与字符串字面量区共用同一起始地址 `GLOBAL_START + BYTECODE_LIBC_GLOBALS_RESERVED`。`keytab` 全局数组在 Pass 1 中分配于该区起始处，而字符串字面量地址也在该处分配，导致 `keytab[i].word` 的值被后续写入的字符串内容覆盖。
+- **修复内容**: 
+  - `native/src/compiler/codegen/mod.rs`：全局变量初始化中的 `StringLiteral` 改为延迟到 Pass 1 结束后统一分配地址，确保字符串区位于所有全局变量之后；新增 `pending_string_inits` 列表记录待回填的 `(base_offset, value)`，Pass 1 结束后遍历分配。
+  - `native/src/compiler/codegen/stmt.rs`：静态局部变量及其 `StringLiteral` 初始化改用 `next_global_offset` 分配，避免与全局变量/字符串区重叠。
+  - `native/src/compiler/codegen/expr.rs`：代码生成阶段的 `StringLiteral` 改用 `next_global_offset` 分配。
+- **是否 Cide 限制**: 否（已修复）
 - **是否代码本身问题**: 否
 - **是否环境差异**: 否
 - **涉及语法特性**: `ungetc`、全局结构体数组初始化、`char*` 成员
-- **学生影响评级**: P0
-- **建议**: 根因待进一步定位。`flatten_global_init` 已增加 `StringLiteral` 分支，但测试表明该分支未实际生效；`flatten_init_list` 对 `StringLiteral` 返回 0 亦未生效。怀疑 `keytab` 的 AST 类型或初始化表达式在 Parser/TypeChecker 阶段与预期不符，导致 BytecodeGen 走了错误的初始化路径。已记录为已知 Bug，待后续修复。
+- **学生影响评级**: P1
+- **建议**: 已回归测试验证；K&R `kr_6_1` 在 `cide_e2e` 与单独 Shadow 验证中均为 `match`。
 
 ### kr_6_2
 

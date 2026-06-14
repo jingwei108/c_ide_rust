@@ -92,7 +92,9 @@ pub struct BytecodeGen {
     class_sizes: HashMap<String, i32>,
     class_vtables: HashMap<String, u32>,
     string_data: Vec<(u32, String)>,
-    string_mem_offset: u32,
+    /// 全局变量初始化中遇到的字符串字面量，需在 Pass 1 结束后统一分配地址并回填。
+    /// 避免字符串区与全局变量区重叠。
+    pending_string_inits: Vec<(u32, String)>,
     source_map: Vec<(u32, VMSourceLoc)>,
     break_patches: Vec<usize>,
     continue_patches: Vec<usize>,
@@ -121,7 +123,6 @@ impl BytecodeGen {
             bytecode_libc_index, BYTECODE_LIBC_ALL_FUNCS, BYTECODE_LIBC_BASE_INDEX, BYTECODE_LIBC_FUNC_COUNT,
             BYTECODE_LIBC_GLOBALS_RESERVED,
         };
-        use crate::vm::vm::GLOBAL_START;
 
         let mut func_index = HashMap::new();
         let next_func_idx = if is_library_mode {
@@ -171,7 +172,7 @@ impl BytecodeGen {
             class_sizes: HashMap::new(),
             class_vtables: HashMap::new(),
             string_data: Vec::new(),
-            string_mem_offset: GLOBAL_START + BYTECODE_LIBC_GLOBALS_RESERVED,
+            pending_string_inits: Vec::new(),
             source_map: Vec::new(),
             break_patches: Vec::new(),
             continue_patches: Vec::new(),
@@ -440,7 +441,15 @@ impl BytecodeGen {
             }
         }
 
-        self.string_mem_offset = 0x1000 + self.next_global_offset as u32;
+        // 回填全局变量初始化中的字符串字面量地址
+        let pending = std::mem::take(&mut self.pending_string_inits);
+        for (base_offset, value) in pending {
+            let aligned = ((value.len() + 1) as u32 + 3) & !3;
+            let str_addr = crate::vm::vm::GLOBAL_START + self.next_global_offset as u32;
+            self.string_data.push((str_addr, value));
+            self.next_global_offset += aligned as i32;
+            self.globals_init_32.push((base_offset, str_addr as i32));
+        }
 
         // Pass 2: Register function metadata (func_index already filled above)
         for f in &program.funcs {
@@ -986,10 +995,8 @@ impl BytecodeGen {
                 }
             }
             Expr::StringLiteral { value, .. } => {
-                let str_addr = self.string_mem_offset;
-                self.string_data.push((str_addr, value.clone()));
-                self.string_mem_offset += (value.len() + 1) as u32;
-                self.globals_init_32.push((base_offset, str_addr as i32));
+                // 延迟到 Pass 1 结束后分配地址，确保字符串区位于全局变量区之后。
+                self.pending_string_inits.push((base_offset, value.clone()));
             }
             _ => {}
         }

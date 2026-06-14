@@ -46,6 +46,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **CI Windows 构建修复**：`.github/workflows/ci.yml` 在 `flutter build windows` 前清理 `build/windows/x64` 缓存，避免 CMake 使用缓存中的 `Visual Studio 16 2019` generator 导致在仅有 VS2022 的 runner 上失败
 - **Rust 测试 warnings 清理**：`native/tests/b10_new_array_rollback.rs` 移除未使用导入；`native/tests/test_utils.rs` 添加 `#![allow(dead_code)]`
 - **失败记录同步**：`bellmanFord_default` 从 `KNOWN_TEMPLATE_FAILURES` 移除；`kr_5_16` 从 `KNOWN_KR_FAILURES` 移除；更新 `E2E_FAILURES.md` / `KR_FAILURES.md`
+- **修复 CLI 诊断级别显示错误**：`native/src/bin/cide_cli.rs` 将 `Diagnostic.severity` 映射修正为 `0=错误/1=警告/2=提示`，与后端 `push_diagnostics/push_warnings/push_hints` 及 Flutter 前端 `DiagnosticInfo` 语义一致
+- **抑制 W3052 数组 decay 过度 warning**：`native/src/compiler/typeck/mod.rs` 移除对正常数组到指针隐式转换的 warning，仅保留 `sizeof(数组参数)` 场景下的专门 warning，避免 K&R 标准代码产生噪音诊断
+- **确认 K&R `kr_5_8` / `kr_5_14` 已恢复匹配**：经 Clang 与 Cide 单独 Shadow 验证，两者均为 `match`；原代码审查报告将其标为 `unknown` 编译缺口的状态已过时
+- **VFS 文本模式换行转换列为已知限制**：不在虚拟文件系统中模拟 Windows CRT 的 `\n` ↔ `\r\n` 转换，`vfs_io_extensions` / `file_fread` 的输出差异保留为诚实记录
+- **修复全局变量区与字符串字面量区内存重叠**：`native/src/compiler/codegen/mod.rs` 延迟分配全局初始化中的 `StringLiteral` 地址；`stmt.rs` / `expr.rs` 的字符串分配改用 `next_global_offset`，确保字符串区位于全局变量区之后
+  - 修复 K&R `kr_6_1` 中 `struct key keytab[]` 的 `char*` 成员被字符串内容覆盖的问题
+  - 将 `kr_6_1` 从 `KNOWN_KR_FAILURES` 移除并更新 `KR_FAILURES.md`
+- **新增 `cide_set_input_mode` C API**：支持批量/交互输入模式切换；Shadow Verification 脚本统一设 Batch 模式，使 `getchar` 在输入耗尽后返回 EOF，与 Clang 在无输入时行为一致
+  - 解锁 `kr_1_*`、`kr_4_*`、`kr_5_*`、`kr_6_*` 等 31 个 K&R 运行时缺口用例
+- **精简 Shadow Verification 的 Clang 头文件注入**：`CLANG_HEADER` 不再包含 `stdlib.h` / `string.h`，避免 K&R 示例中用户自定义 `itoa` / `qsort` 与标准库声明冲突
+  - 消除 `kr_3_4`、`kr_3_6`、`kr_4_9`、`kr_4_10` 的 `cide_better` 差异
 - **Parser 支持函数指针类型转换（cast）的抽象声明符**：`parser/expr.rs` 的 `parse_type_only` 改为调用 `parse_abstract_declarator`，使 `(int (*)(void *, void *))func` 这类类型转换可被正确解析
   - 解锁 K&R `kr_5_8`（函数指针 qsort 比较器）与 `kr_5_14`（排序字段选项）
   - `kr_5_8` 的 `cases_golden/knr/kr_5_8.out` 已按 Clang + `<stdlib.h>` 重新生成
@@ -56,7 +67,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `engine/compile_pipeline.rs` 的 `setup_vm` 调用 `vm.setup_argv`
   - `flutter_bridge.rs` 新增 `set_argv`，`capi/mod.rs` 新增 `cide_set_argv`
   - `cide_cli run` 支持 `-- arg1 arg2 ...` 传递命令行参数
-  - 解锁 K&R `kr_5_10`（echo 命令行参数）
+  - 解锁 K&R `kr_5_10`（echo 命令行参数）；单独 Shadow 验证为 `match`
   - 新增 `end_to_end_extra_test.rs` 回归测试 `test_e2e_main_args` / `test_e2e_main_no_args`
 - **Shadow Verification 状态更新**：匹配数从 412 提升至 415；编译缺口从 5 降至 3（仅剩 `inline_asm`/`static_assert`/`typeof_operator` 三个已知不支持特性）；运行时缺口从 31 降至 30
 - **K&R 失败记录更新**：`KR_FAILURES.md` 中 `kr_5_8`/`kr_5_10`/`kr_5_14` 标记为已修复；剩余已知失败仅 `kr_6_1`

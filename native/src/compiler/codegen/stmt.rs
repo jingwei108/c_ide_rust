@@ -39,8 +39,8 @@ impl StmtGen for BytecodeGen {
                         }
                         let sz = self.type_size(vty);
                         let aligned_sz = (sz + 3) & !3;
-                        let global_offset = (self.string_mem_offset - crate::vm::vm::GLOBAL_START) as i32;
-                        self.string_mem_offset += aligned_sz as u32;
+                        let global_offset = self.next_global_offset;
+                        self.next_global_offset += aligned_sz;
                         self.static_local_indices.insert(n.to_string(), global_offset);
                         self.static_local_types.insert(n.to_string(), vty.clone());
                         self.sym_index.insert(n.to_string(), self.symbols.len() as i32);
@@ -99,9 +99,10 @@ impl StmtGen for BytecodeGen {
                                                 let addr = global_offset as u32 + (i as u32) * elem_size as u32;
                                                 match &elem.value {
                                                     Expr::StringLiteral { value, .. } => {
-                                                        let str_addr = self.string_mem_offset;
+                                                        let aligned = ((value.len() + 1) as u32 + 3) & !3;
+                                                        let str_addr = crate::vm::vm::GLOBAL_START + self.next_global_offset as u32;
                                                         self.string_data.push((str_addr, value.clone()));
-                                                        self.string_mem_offset += (value.len() + 1) as u32;
+                                                        self.next_global_offset += aligned as i32;
                                                         self.globals_init_32.push((addr, str_addr as i32));
                                                     }
                                                     Expr::FloatLiteral { value, .. } => {

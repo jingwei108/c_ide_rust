@@ -53,15 +53,15 @@ impl ExprGen for BytecodeGen {
                 self.emit(OpCode::PushConstQ, idx, &loc);
             }
             Expr::StringLiteral { value, .. } => {
-                let addr = self.string_mem_offset;
-                let new_offset = addr + value.len() as u32 + 1;
-                let new_offset = (new_offset + 3) & !3;
-                if new_offset > crate::vm::vm::MEM_SIZE / 16 {
+                let aligned = ((value.len() + 1) as u32 + 3) & !3;
+                let addr = crate::vm::vm::GLOBAL_START + self.next_global_offset as u32;
+                let new_offset = self.next_global_offset + aligned as i32;
+                if new_offset as u32 + crate::vm::vm::GLOBAL_START > crate::vm::vm::MEM_SIZE / 16 {
                     self.report_error("字符串字面量过多，超出内存限制", &loc);
                     self.emit(OpCode::PushConst, addr as i32, &loc);
                 } else {
                     self.string_data.push((addr, value.clone()));
-                    self.string_mem_offset = new_offset;
+                    self.next_global_offset = new_offset;
                     self.emit(OpCode::PushConst, addr as i32, &loc);
                 }
             }

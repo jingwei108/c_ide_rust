@@ -670,25 +670,15 @@ impl TypeChecker {
         false
     }
 
-    fn check_array_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
+    fn check_array_pointer_assignable(&mut self, target: &Type, value: &Type, _loc: &SourceLoc) -> bool {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Array) {
             if let (Type::Pointer { pointee: t_pointee, .. }, Type::Array { element: v_element, .. }) = (target, value)
             {
                 if t_pointee.as_ref() == v_element.as_ref() {
-                    self.report_warning(
-                        "数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。",
-                        loc,
-                        ErrorCode::W3052_ArrayToPointerDecay,
-                    );
                     return true;
                 }
                 // Multidimensional array decay: int arr[3][3] -> int (*)[3]
                 if t_pointee.as_ref() == &value.subscript_type() {
-                    self.report_warning(
-                        "数组隐式转换为指针。数组名在表达式中会自动退化为指向首元素的指针。",
-                        loc,
-                        ErrorCode::W3052_ArrayToPointerDecay,
-                    );
                     return true;
                 }
             }

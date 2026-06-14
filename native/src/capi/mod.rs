@@ -150,6 +150,24 @@ pub unsafe extern "C" fn cide_set_argv(s: *mut Session, argc: c_int, argv: *cons
 }
 
 #[no_mangle]
+/// 设置输入模式：0 为交互式（默认），非 0 为批量模式。
+/// 批量模式下 getchar 在输入耗尽后立即返回 EOF，不进入等待状态。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+pub unsafe extern "C" fn cide_set_input_mode(s: *mut Session, is_batch: c_int) {
+    if s.is_null() {
+        return;
+    }
+    let session = &mut *s;
+    session.runtime.input_mode = if is_batch != 0 {
+        crate::session::InputMode::Batch
+    } else {
+        crate::session::InputMode::Interactive
+    };
+}
+
+#[no_mangle]
 /// cide_run 的 C API 封装。
 ///
 /// # Safety

@@ -252,7 +252,7 @@ const KNOWN_KR_FAILURES: &[&str] = &[
     // kr_5_11 已修复 (char*[] 指针数组 elem_type_size / 初始化路径)
     // kr_5_13 已修复 (getchar Batch 模式多行输入)
     // kr_5_14 已修复 (Parser 支持函数指针类型转换/抽象声明符)
-    "kr_6_1",
+    // kr_6_1 已修复 (全局变量区与字符串字面量区重叠，字符串地址延迟分配)
     // kr_6_2 已修复 (Parser 指针无名参数 + ungetc)
     // kr_6_3 已修复 (Parser 指针无名参数 + ungetc)
     // kr_6_4 已修复 (Parser 指针无名参数 + ungetc)
