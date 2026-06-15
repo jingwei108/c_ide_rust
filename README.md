@@ -1,5 +1,7 @@
 # Cide
 
+> [English Version](README_EN.md)
+
 一个跨平台 C/C++ 受限子集教学 IDE：Rust 后端编译器 + CideVM 自定义字节码虚拟机 + 基于 Trace 的模板 JIT 加速，Flutter 前端，算法可视化与时间旅行调试教学。
 
 ## 这是什么
@@ -81,27 +83,30 @@ scripts/              Python 构建与测试脚本
 
 ## 快速开始
 
-环境要求、完整构建命令与开发约定见 [`AGENTS.md`](AGENTS.md)。
+完整快速入门指南见 [`docs/current/QUICKSTART.md`](docs/current/QUICKSTART.md)。
 
 常用命令：
 
 ```bash
+# 命令行快速体验（无需 Flutter）
+cd native
+cargo build --release --bin cide_cli
+cargo run --release --bin cide_cli -- run tests/cases/baseline/hello_world.c
+
 # Windows 桌面端构建并运行
 python scripts/build_flutter.py --run
 
 # 运行全部 Rust 测试
-cargo test
+cd native && cargo test
 
 # C Shadow Verification
 python native/tests/shadow_verification/shadow_verify.py
 
 # C++ Shadow Verification
 python scripts/shadow_verify_cpp.py
-
-# 命令行调试工具
-cargo run --bin cide_cli -- compile examples/hello.c
-cargo run --bin cide_cli -- run examples/hello.c
 ```
+
+环境要求、完整构建命令与开发约定见 [`AGENTS.md`](AGENTS.md)。
 
 ## 测试防线
 

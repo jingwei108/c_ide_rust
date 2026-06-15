@@ -1,5 +1,7 @@
 # C IDE 构建指南
 
+> [English Version](BUILD_EN.md)
+
 本文档说明项目的构建流程、脚本用法和环境要求。
 
 > **迁移说明**：前端已从 .NET MAUI 迁移至 Flutter。旧版 MAUI 构建文档见 [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md)（已归档）。

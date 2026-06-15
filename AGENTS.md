@@ -1,5 +1,7 @@
 # Cide 项目 Agent 指南
 
+> [English Version](AGENTS_EN.md)
+
 ## 项目概览
 
 Cide 是一个跨平台 C 语言 IDE，包含：

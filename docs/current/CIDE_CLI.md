@@ -1,5 +1,7 @@
 # Cide CLI 使用手册
 
+> [English Version](CIDE_CLI_EN.md)
+
 `cide_cli` 是 Cide 项目 Rust 后端的命令行调试工具，无需启动 Flutter 前端即可直接编译、运行和单步调试 C 代码。
 
 ## 构建
