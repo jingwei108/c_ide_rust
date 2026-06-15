@@ -1617,3 +1617,111 @@ mod cpp_monomorph;
 mod cpp_overload;
 mod decl;
 mod expr;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn loc() -> SourceLoc {
+        SourceLoc::default()
+    }
+
+    #[test]
+    fn test_implicit_cast_target_int_to_double() {
+        assert_eq!(
+            implicit_cast_target(&Type::int(), &Type::double()),
+            Some(Type::double())
+        );
+    }
+
+    #[test]
+    fn test_implicit_cast_target_double_to_int() {
+        assert_eq!(
+            implicit_cast_target(&Type::double(), &Type::int()),
+            Some(Type::int())
+        );
+    }
+
+    #[test]
+    fn test_implicit_cast_target_float_to_int() {
+        assert_eq!(
+            implicit_cast_target(&Type::float(), &Type::int()),
+            Some(Type::int())
+        );
+    }
+
+    #[test]
+    fn test_implicit_cast_target_int_to_float() {
+        assert_eq!(
+            implicit_cast_target(&Type::int(), &Type::float()),
+            Some(Type::float())
+        );
+    }
+
+    #[test]
+    fn test_implicit_cast_target_char_to_longlong() {
+        assert_eq!(
+            implicit_cast_target(&Type::char(), &Type::long_long()),
+            Some(Type::long_long())
+        );
+    }
+
+    #[test]
+    fn test_implicit_cast_target_longlong_to_char() {
+        assert_eq!(
+            implicit_cast_target(&Type::long_long(), &Type::char()),
+            Some(Type::char())
+        );
+    }
+
+    #[test]
+    fn test_implicit_cast_target_pointer_no_cast() {
+        let p = Type::pointer_to(Type::int());
+        assert_eq!(implicit_cast_target(&p, &Type::int()), None);
+        assert_eq!(implicit_cast_target(&Type::int(), &p), None);
+    }
+
+    #[test]
+    fn test_implicit_cast_target_reference_no_cast() {
+        let r = Type::Reference {
+            base: Box::new(Type::int()),
+            is_const: false,
+        };
+        assert_eq!(implicit_cast_target(&r, &Type::double()), None);
+        assert_eq!(implicit_cast_target(&Type::double(), &r), None);
+    }
+
+    #[test]
+    fn test_insert_implicit_cast_int_literal_to_double() {
+        let mut expr = Expr::Literal {
+            value: 42,
+            loc: loc(),
+            ty: Type::int(),
+        };
+        insert_implicit_cast(&mut expr, &Type::double());
+        assert!(matches!(
+            expr,
+            Expr::Cast {
+                target_type: Type::Double { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_insert_implicit_cast_float_literal_to_int() {
+        let mut expr = Expr::FloatLiteral {
+            value: 2.5,
+            loc: loc(),
+            ty: Type::float(),
+        };
+        insert_implicit_cast(&mut expr, &Type::int());
+        assert!(matches!(
+            expr,
+            Expr::Cast {
+                target_type: Type::Int { .. },
+                ..
+            }
+        ));
+    }
+}

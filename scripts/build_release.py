@@ -18,7 +18,8 @@ from pathlib import Path
 
 from build_utils import (
     error,
-    find_ndk,
+    build_rust_android,
+    find_flutter,
     header,
     run,
     success,
@@ -55,27 +56,6 @@ def clean_build(root: Path) -> None:
         if d.exists():
             shutil.rmtree(d)
             print(f"Removed {d}")
-
-
-def find_flutter() -> str:
-    """查找 flutter 可执行文件，支持常见安装路径。"""
-    flutter = shutil.which("flutter")
-    if flutter:
-        return flutter
-
-    candidates = [
-        Path(r"D:\flutter\bin\flutter.bat"),
-        Path(r"C:\flutter\bin\flutter.bat"),
-        Path(r"D:\tools\flutter\bin\flutter.bat"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-
-    raise FileNotFoundError(
-        "flutter command not found. Please add Flutter to your PATH.\n"
-        "Common location: D:\\flutter\\bin"
-    )
 
 
 def build_desktop(root: Path) -> None:
@@ -117,49 +97,8 @@ def build_android(root: Path) -> None:
     flutter_dir = root / "CideFlutter"
     flutter_exe = find_flutter()
 
-    # Build Rust Android .so if NDK available
-    ndk_home = find_ndk()
-    if ndk_home is None:
-        warn("ANDROID_NDK_HOME not set. Skipping manual .so build.")
-        warn("cargokit may still build it during Gradle phase if configured.")
-    else:
-        abi_map = {
-            "arm64-v8a": "aarch64-linux-android",
-            "armeabi-v7a": "armv7-linux-androideabi",
-        }
-        for abi, rust_target in abi_map.items():
-            header(f"Building Native Backend (Android {abi})")
-            native_dir = root / "native"
-            try:
-                run(
-                    [
-                        "cargo",
-                        "ndk",
-                        "--target",
-                        rust_target,
-                        "--platform",
-                        "21",
-                        "build",
-                        "--release",
-                    ],
-                    cwd=native_dir,
-                )
-            except Exception as e:
-                error(f"Native Android build ({abi}) failed: {e}")
-                raise
-
-            so_source = (
-                root / "native" / "target" / rust_target / "release" / "libcide_native.so"
-            )
-            if so_source.exists():
-                so_dest_dir = root / "native" / "target" / "android" / abi
-                so_dest_dir.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(so_source, so_dest_dir / "libcide_native.so")
-                success(
-                    f"Copied libcide_native.so ({abi}) -> native/target/android/{abi}/"
-                )
-            else:
-                warn(f"libcide_native.so not found for {abi} at {so_source}")
+    # Build Rust Android .so if NDK available; copy to native/target/android/<abi>/
+    build_rust_android(root, configuration="Release", copy_to_native_target_android=True)
 
     # Build Flutter APK release
     run([flutter_exe, "build", "apk", "--release"], cwd=flutter_dir)

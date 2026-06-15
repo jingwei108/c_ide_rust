@@ -1,4 +1,4 @@
-package com.example.cide
+package com.cide.app
 
 import io.flutter.embedding.android.FlutterActivity
 

@@ -31,6 +31,7 @@ struct VfsDesc {
     cursor: usize,
     eof: bool,
     error: bool,
+    is_text_mode: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +39,53 @@ enum VfsMode {
     Read,
     Write,
     Append,
+}
+
+/// 将文本模式下的逻辑位置（把 \r\n 视为一个 \n）转换为物理字节偏移。
+fn logical_to_physical(data: &[u8], logical_pos: usize) -> usize {
+    let mut logical = 0usize;
+    let mut physical = 0usize;
+    while physical < data.len() && logical < logical_pos {
+        if data[physical] == b'\r' && physical + 1 < data.len() && data[physical + 1] == b'\n' {
+            logical += 1;
+            physical += 2;
+        } else {
+            logical += 1;
+            physical += 1;
+        }
+    }
+    physical
+}
+
+/// 将文本模式下的物理字节偏移转换为逻辑位置。
+fn physical_to_logical(data: &[u8], physical_pos: usize) -> usize {
+    let mut logical = 0usize;
+    let mut physical = 0usize;
+    while physical < physical_pos.min(data.len()) {
+        if data[physical] == b'\r' && physical + 1 < data.len() && data[physical + 1] == b'\n' {
+            logical += 1;
+            physical += 2;
+        } else {
+            logical += 1;
+            physical += 1;
+        }
+    }
+    logical
+}
+
+/// 在文本模式下读取一个逻辑字节，返回（字节值，下一个物理位置）。
+fn read_text_byte(data: &[u8], physical_pos: usize) -> (u8, usize) {
+    if physical_pos >= data.len() {
+        return (0, physical_pos);
+    }
+    if data[physical_pos] == b'\r'
+        && physical_pos + 1 < data.len()
+        && data[physical_pos + 1] == b'\n'
+    {
+        (b'\n', physical_pos + 2)
+    } else {
+        (data[physical_pos], physical_pos + 1)
+    }
 }
 
 impl VirtualFileSystem {
@@ -81,12 +129,16 @@ impl VirtualFileSystem {
 
     /// fopen：打开或创建文件，返回 fd（0 表示失败）
     pub fn fopen(&mut self, path: &str, mode: &str, vm: &mut CideVM, memory: &mut MemoryState) -> u32 {
-        let mode = match mode {
-            "r" | "rb" => VfsMode::Read,
-            "w" | "wb" => VfsMode::Write,
-            "a" | "ab" => VfsMode::Append,
+        let (vfs_mode, is_text_mode) = match mode {
+            "r" => (VfsMode::Read, true),
+            "rb" => (VfsMode::Read, false),
+            "w" => (VfsMode::Write, true),
+            "wb" => (VfsMode::Write, false),
+            "a" => (VfsMode::Append, true),
+            "ab" => (VfsMode::Append, false),
             _ => return 0,
         };
+        let mode = vfs_mode;
 
         if mode == VfsMode::Read && !self.files.contains_key(path) {
             return 0; // 读模式文件不存在
@@ -159,6 +211,7 @@ impl VirtualFileSystem {
                 cursor,
                 eof: false,
                 error: false,
+                is_text_mode,
             },
         );
         fd
@@ -175,18 +228,55 @@ impl VirtualFileSystem {
             None => return 0,
         };
         let to_read = size * nmemb;
-        let remaining = meta.size.saturating_sub(desc.cursor);
-        let actual = to_read.min(remaining);
+        if to_read == 0 {
+            return 0;
+        }
+
+        let mut tmp = vec![0u8; to_read];
+        let mut actual = 0usize;
+
+        if desc.is_text_mode {
+            // 文本模式：把 \r\n 压缩为 \n，返回逻辑字节数
+            let mut data = vec![0u8; meta.size];
+            if !vm.read_memory_to(meta.heap_addr, &mut data) {
+                return 0;
+            }
+            let mut physical_cursor = desc.cursor;
+            while actual < to_read && physical_cursor < meta.size {
+                if data[physical_cursor] == b'\r'
+                    && physical_cursor + 1 < meta.size
+                    && data[physical_cursor + 1] == b'\n'
+                {
+                    tmp[actual] = b'\n';
+                    physical_cursor += 2;
+                } else {
+                    tmp[actual] = data[physical_cursor];
+                    physical_cursor += 1;
+                }
+                actual += 1;
+            }
+            desc.cursor = physical_cursor;
+        } else {
+            let remaining = meta.size.saturating_sub(desc.cursor);
+            actual = to_read.min(remaining);
+            if actual == 0 {
+                desc.eof = true;
+                return 0;
+            }
+            let src_addr = meta.heap_addr + desc.cursor as u32;
+            if !vm.read_memory_to(src_addr, &mut tmp[..actual]) || !vm.write_memory(buf, &tmp[..actual]) {
+                return 0;
+            }
+            desc.cursor += actual;
+        }
+
         if actual == 0 {
             desc.eof = true;
             return 0;
         }
-        let src_addr = meta.heap_addr + desc.cursor as u32;
-        let mut tmp = vec![0u8; actual];
-        if !vm.read_memory_to(src_addr, &mut tmp) || !vm.write_memory(buf, &tmp) {
+        if !vm.write_memory(buf, &tmp[..actual]) {
             return 0;
         }
-        desc.cursor += actual;
         if desc.cursor >= meta.size {
             desc.eof = true;
         }
@@ -215,7 +305,31 @@ impl VirtualFileSystem {
             Some(m) => m,
             None => return 0,
         };
-        let new_size = desc.cursor + to_write;
+
+        // 先读取用户数据
+        let mut user_data = vec![0u8; to_write];
+        if !vm.read_memory_to(buf, &mut user_data) {
+            return 0;
+        }
+
+        // 文本模式下将 \n 展开为 \r\n
+        let data_to_write: Vec<u8> = if desc.is_text_mode {
+            let mut expanded = Vec::with_capacity(to_write * 2);
+            for &b in &user_data {
+                if b == b'\n' {
+                    expanded.push(b'\r');
+                    expanded.push(b'\n');
+                } else {
+                    expanded.push(b);
+                }
+            }
+            expanded
+        } else {
+            user_data
+        };
+
+        let write_len = data_to_write.len();
+        let new_size = desc.cursor + write_len;
         if new_size > meta.capacity {
             let new_cap = align4(new_size.max(meta.capacity * 2));
             if !realloc_vfs_file(memory, vm, meta, new_cap) {
@@ -223,11 +337,10 @@ impl VirtualFileSystem {
             }
         }
         let dst_addr = meta.heap_addr + desc.cursor as u32;
-        let mut tmp = vec![0u8; to_write];
-        if !vm.read_memory_to(buf, &mut tmp) || !vm.write_memory(dst_addr, &tmp) {
+        if !vm.write_memory(dst_addr, &data_to_write) {
             return 0;
         }
-        desc.cursor += to_write;
+        desc.cursor += write_len;
         if desc.cursor > meta.size {
             meta.size = desc.cursor;
         }
@@ -265,18 +378,20 @@ impl VirtualFileSystem {
         if n == 0 {
             return 0;
         }
+
+        let mut data = vec![0u8; meta.size];
+        if meta.size > 0 && !vm.read_memory_to(meta.heap_addr, &mut data) {
+            return 0;
+        }
+
         let mut read_count = 0usize;
         let mut tmp = Vec::new();
         while read_count < n - 1 && desc.cursor < meta.size {
-            let byte_addr = meta.heap_addr + desc.cursor as u32;
-            let mut b = [0u8; 1];
-            if !vm.read_memory_to(byte_addr, &mut b) {
-                break;
-            }
-            tmp.push(b[0]);
-            desc.cursor += 1;
+            let (b, next_pos) = read_text_byte(&data, desc.cursor);
+            tmp.push(b);
+            desc.cursor = next_pos;
             read_count += 1;
-            if b[0] == b'\n' {
+            if b == b'\n' {
                 break;
             }
         }
@@ -308,17 +423,34 @@ impl VirtualFileSystem {
             Some(m) => m,
             None => return -1,
         };
-        // 读取 C 字符串长度
-        let mut len = 0usize;
+        // 读取 C 字符串
+        let mut tmp = Vec::new();
         loop {
             let mut b = [0u8; 1];
-            if !vm.read_memory_to(s_addr + len as u32, &mut b) || b[0] == 0 {
+            if !vm.read_memory_to(s_addr + tmp.len() as u32, &mut b) || b[0] == 0 {
                 break;
             }
-            len += 1;
+            tmp.push(b[0]);
         }
-        let to_write = len;
-        let new_size = desc.cursor + to_write;
+
+        // 文本模式下将 \n 展开为 \r\n
+        let data_to_write: Vec<u8> = if desc.is_text_mode {
+            let mut expanded = Vec::with_capacity(tmp.len() * 2);
+            for &b in &tmp {
+                if b == b'\n' {
+                    expanded.push(b'\r');
+                    expanded.push(b'\n');
+                } else {
+                    expanded.push(b);
+                }
+            }
+            expanded
+        } else {
+            tmp
+        };
+
+        let write_len = data_to_write.len();
+        let new_size = desc.cursor + write_len;
         if new_size > meta.capacity {
             let new_cap = align4(new_size.max(meta.capacity * 2));
             if !realloc_vfs_file(memory, vm, meta, new_cap) {
@@ -326,11 +458,10 @@ impl VirtualFileSystem {
             }
         }
         let dst_addr = meta.heap_addr + desc.cursor as u32;
-        let mut tmp = vec![0u8; to_write];
-        if !vm.read_memory_to(s_addr, &mut tmp) || !vm.write_memory(dst_addr, &tmp) {
+        if !vm.write_memory(dst_addr, &data_to_write) {
             return -1;
         }
-        desc.cursor += to_write;
+        desc.cursor += write_len;
         if desc.cursor > meta.size {
             meta.size = desc.cursor;
         }
@@ -352,16 +483,18 @@ impl VirtualFileSystem {
             desc.eof = true;
             return -1;
         }
-        let byte_addr = meta.heap_addr + desc.cursor as u32;
-        let mut b = [0u8; 1];
-        if !vm.read_memory_to(byte_addr, &mut b) {
+
+        let mut data = vec![0u8; meta.size];
+        if !vm.read_memory_to(meta.heap_addr, &mut data) {
             return -1;
         }
-        desc.cursor += 1;
+
+        let (b, next_pos) = read_text_byte(&data, desc.cursor);
+        desc.cursor = next_pos;
         if desc.cursor >= meta.size {
             desc.eof = true;
         }
-        b[0] as i32
+        b as i32
     }
 
     /// fputc：向文件写入一个字节
@@ -378,7 +511,15 @@ impl VirtualFileSystem {
             Some(m) => m,
             None => return -1,
         };
-        let new_size = desc.cursor + 1;
+
+        let data_to_write: Vec<u8> = if desc.is_text_mode && c as u8 == b'\n' {
+            vec![b'\r', b'\n']
+        } else {
+            vec![c as u8]
+        };
+
+        let write_len = data_to_write.len();
+        let new_size = desc.cursor + write_len;
         if new_size > meta.capacity {
             let new_cap = align4(new_size.max(meta.capacity * 2));
             if !realloc_vfs_file(memory, vm, meta, new_cap) {
@@ -386,11 +527,10 @@ impl VirtualFileSystem {
             }
         }
         let dst_addr = meta.heap_addr + desc.cursor as u32;
-        let tmp = [c as u8; 1];
-        if !vm.write_memory(dst_addr, &tmp) {
+        if !vm.write_memory(dst_addr, &data_to_write) {
             return -1;
         }
-        desc.cursor += 1;
+        desc.cursor += write_len;
         if desc.cursor > meta.size {
             meta.size = desc.cursor;
         }
@@ -400,7 +540,7 @@ impl VirtualFileSystem {
     /// fseek：移动文件光标
     /// whence: SEEK_SET=0, SEEK_CUR=1, SEEK_END=2
     /// 返回 0（成功）或 -1（失败）
-    pub fn fseek(&mut self, fd: u32, offset: i32, whence: i32) -> i32 {
+    pub fn fseek(&mut self, fd: u32, offset: i32, whence: i32, vm: &mut CideVM) -> i32 {
         let desc = match self.descriptors.get_mut(&fd) {
             Some(d) => d,
             None => return -1,
@@ -409,23 +549,46 @@ impl VirtualFileSystem {
             Some(m) => m,
             None => return -1,
         };
-        let new_cursor = match whence {
-            0 => offset as i64,
-            1 => desc.cursor as i64 + offset as i64,
-            2 => meta.size as i64 + offset as i64,
-            _ => return -1,
+
+        let new_cursor = if desc.is_text_mode {
+            let mut data = vec![0u8; meta.size];
+            if meta.size > 0 && !vm.read_memory_to(meta.heap_addr, &mut data) {
+                return -1;
+            }
+            let physical_size = meta.size;
+            match whence {
+                // SEEK_SET：offset 为逻辑位置，转换为物理位置
+                0 => logical_to_physical(&data, offset as usize),
+                // SEEK_CUR：offset 为逻辑偏移，基于当前逻辑位置转换
+                1 => {
+                    let logical_cursor = physical_to_logical(&data, desc.cursor);
+                    let target_logical = (logical_cursor as i64 + offset as i64).max(0) as usize;
+                    logical_to_physical(&data, target_logical)
+                }
+                // SEEK_END：Windows CRT 行为：offset 基于物理文件末尾
+                2 => (physical_size as i64 + offset as i64).max(0) as usize,
+                _ => return -1,
+            }
+        } else {
+            (match whence {
+                0 => offset as i64,
+                1 => desc.cursor as i64 + offset as i64,
+                2 => meta.size as i64 + offset as i64,
+                _ => return -1,
+            }) as usize
         };
-        if new_cursor < 0 {
-            return -1;
-        }
-        desc.cursor = new_cursor as usize;
+
+        desc.cursor = new_cursor;
         desc.eof = false;
         0
     }
 
     /// ftell：返回当前文件光标位置
     /// 返回光标位置（成功）或 -1（失败）
-    pub fn ftell(&self, fd: u32) -> i32 {
+    /// 
+    /// 注意：Windows CRT 文本模式下 ftell 返回物理字节偏移，而 fseek 使用逻辑偏移。
+    /// 为匹配 Clang/MSVC 行为，这里统一返回物理 cursor。
+    pub fn ftell(&self, fd: u32, _vm: &mut CideVM) -> i32 {
         let desc = match self.descriptors.get(&fd) {
             Some(d) => d,
             None => return -1,

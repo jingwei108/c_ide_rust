@@ -343,10 +343,56 @@ fclose(fp);
 **支持细节**：
 - `fopen` / `fclose` / `fread` / `fwrite` / `fgets` / `fputs` / `fgetc` / `fputc` / `fseek` / `ftell` / `rewind` / `feof`
 - 所有文件操作在 CideVM 虚拟文件系统（VFS）沙盒内进行，路径相对于 VFS 根目录
-- `"r"` / `"w"` / `"a"` / `"rb"` / `"wb"` 等模式均可识别；**文本模式与二进制模式行为一致**，不模拟 Windows CRT 的 `\n` ↔ `\r\n` 自动换行转换
+- `"r"` / `"w"` / `"a"` / `"rb"` / `"wb"` 等模式均可识别；**文本模式已完整模拟 Windows CRT 的 `\n` ↔ `\r\n` 自动换行转换**
+  - 写入 `"w"` 时 `\n` 自动展开为 `\r\n`
+  - 读取 `"r"` 时 `\r\n` 自动压缩为 `\n`
+  - `fseek` 使用逻辑位置，`ftell` 返回物理位置，匹配 Windows CRT 行为
 
 **已知限制**：
-- 文本模式不会在 Windows 下将 `\n` 自动转换为 `\r\n`，因此与 Windows 上 Clang 的文本模式 I/O 存在 stdout/ftell 差异（如 `vfs_io_extensions.c`、`file_fread.c`），已作为跨平台行为差异诚实记录
+- 已修复：文本模式换行转换差异已消除，`vfs_io_extensions.c` 与 `file_fread.c` 已恢复匹配
+
+---
+
+### 2.7 GCC 扩展（有限支持）
+
+为兼容部分教学代码和 K&R / 模板用例，Cide 对以下 GCC 扩展提供**有限支持**（仅保证 Shadow Verification 覆盖的用法可用，不保证完整语义）：
+
+```c
+// __asm__("...")：GCC 风格内联汇编占位
+// 教学子集不执行汇编指令，仅消费语法并忽略，不影响程序控制流
+int main() {
+    int x = 1;
+    __asm__ ("nop");   // 允许出现，但不会生成任何机器码
+    printf("%d", x);   // 输出 1
+    return 0;
+}
+
+// _Static_assert(expr, "msg")：编译期静态断言
+// 教学子集仅消费语法；expr 目前不会被编译期求值，因此不会触发断言失败
+// 支持出现在顶层和函数体内
+_Static_assert(1 == 1, "ok");
+int main() {
+    _Static_assert(sizeof(int) == 4, "int size");
+    printf("ok");
+    return 0;
+}
+
+// typeof(expr)：根据表达式推断类型
+// 支持 typeof / __typeof__ / __typeof 三种写法
+// 目前主要用于局部变量声明，推断依据为初始化表达式
+int main() {
+    int x = 5;
+    typeof(x) y = 10;   // 等价于 int y = 10;
+    typeof(x) z;        // 无初始化时从 typeof 内的表达式推断，等价于 int z;
+    printf("%d", y);    // 输出 10
+    return 0;
+}
+```
+
+**设计决策**：
+- `__asm__`：教学场景不需要真实执行汇编，只需不报错即可
+- `_Static_assert`：编译期求值复杂度高；当前仅做语法兼容，未来可在 TypeChecker 中扩展常量表达式求值
+- `typeof`：主要用于兼容依赖 GCC 扩展的代码；推断路径与 C++ `auto` 共享机制，当前要求变量有初始化表达式（否则回退到 `int`）
 
 ---
 
@@ -590,6 +636,9 @@ int main() { return 0; }
 - [x] **通用逗号运算符** — 已支持 `(a, b)` 表达式，左值求值后丢弃，返回右操作数类型
 - [x] **Designated Initializer** — 已支持 `.field = val`（结构体）和 `[i] = val`（一维数组），局部变量上下文；全局/静态变量 designated init 暂不支持
 - [x] **`offsetof(struct S, field)`** — 已支持编译期常量计算（结构体/联合体）
+- [x] **`__asm__("...")`（GCC 内联汇编占位）** — 已支持语法消费，不生成真实机器码
+- [x] **`_Static_assert(expr, "msg")`** — 已支持语法消费；当前不执行编译期求值，仅保证兼容
+- [x] **`typeof(expr)` / `__typeof__(expr)`** — 已支持变量声明类型推断，无初始化时回退到 `int`
 
 ---
 
@@ -630,7 +679,7 @@ int main() { return 0; }
 | `bitfield`（位域） | 文档已排除；嵌入式专用，初学者不需要 |
 | `_Complex` / `_Imaginary` / `<complex.h>` | 数学/工程专用，教学不用 |
 | `_Generic`（C11 泛型选择） | 学生几乎不用，实现复杂 |
-| `_Static_assert` / `_Alignas` / `_Alignof` | C11 进阶，教学很少涉及 |
+| `_Alignas` / `_Alignof` | C11 进阶，教学很少涉及；`_Static_assert` 已提供语法兼容 |
 | `_Noreturn` / `_Thread_local` / `_Atomic` | 同上 |
 | `union` 的复杂初始化规则 | 当前已支持基本 union，复杂初始化极少见 |
 | **`va_list` / `va_start` / `va_arg` / `va_end`** | 自定义变参需全编译管线 + ABI 改造；`printf`/`scanf` 已内置支持，教学价值有限 |

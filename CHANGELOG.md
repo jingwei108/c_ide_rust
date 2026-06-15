@@ -26,6 +26,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 删除已废弃的 `native/runtime_libc/cide/layouts.toml`
   - 全部 600+ 测试通过，零回归
 
+### Fixed (Shadow Verification 完整修复)
+- **C Shadow 匹配率从 498/511 提升至 504/511（98.6%）**：编译缺口与输出差异归零
+  - **支持 `__asm__("...")` GCC 风格内联汇编占位**：`parser/expr.rs` 在 `parse_primary` 中识别并消费语法，返回 void 字面量，不生成汇编代码
+  - **支持 `_Static_assert(expr, "msg")`**：`parser/mod.rs` 新增 `parse_static_assert`，在顶层与语句层均可消费，教学子集暂不做编译期求值
+  - **支持 `typeof(expr)` 类型说明符**：`parser/mod.rs` 识别 `typeof`/`__typeof__`/`__typeof` 并解析表达式；`ast.rs` 新增 `Type::Typeof`；`typeck/decl.rs` 在变量声明时根据初始化表达式推断实际类型
+  - **按需注入 Clang 前向声明修复 `kr_5_8`**：`shadow_verify.py` 的 `make_clang_header` 仅对源码中实际使用的 `atof`/`atoi`/`atol`/`exit` 注入最小前向声明，避免完整 `stdlib.h` 与 K&R 自定义 `itoa`/`qsort` 冲突
+  - **完整实现 VFS Windows 文本模式换行转换**：`native/src/vm/vfs.rs` 区分 `"r"`/`"w"` 与 `"rb"`/`"wb"`；写入时 `\n` → `\r\n`，读取时 `\r\n` → `\n`；`fseek`/`ftell` 区分逻辑/物理光标以匹配 Windows CRT 行为
+  - **Shadow Verification 用例间文件隔离**：每次用例运行前重置 `test.txt`/`numbers.txt` 为 Cide 注入的预设内容，避免 Clang 读取上一个用例遗留文件
+  - **诚实记录剩余 3 个运行时差异**：`bTree_default`（未初始化指针）、`infixEvaluation_default`（栈下溢）、`spfa_default`（队列越界）已更新为模板代码缺陷分类，Cide 的边界/NULL 检测作为教学核心特性保持不变
+
 ### Fixed (代码审查报告推进)
 - **移除生产代码中的调试输出**：删除 `capi/mod.rs` 中 `CAPI: calling run_multi_file_pipeline` 与 `DUMP: VarDecl` 的 `println!`，以及 `engine/compile_pipeline.rs` 中对 `dump_var_decls` 的调用，避免污染程序 stdout 导致 Shadow Verification 误判
 - **修复 `printf`/`putchar` 输出缓冲行为**：`RuntimeState::output()` 从 `output_lines.join("\n")` 改为 `join("")`，与 C 标准一致：只有格式字符串显式包含 `\n` 或调用 `puts` 时才换行，不再为每次 `printf` 自动换行

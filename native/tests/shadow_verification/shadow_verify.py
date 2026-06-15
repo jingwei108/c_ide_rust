@@ -72,8 +72,8 @@ class ShadowDiff:
 def run_with_clang(source: str) -> RunResult:
     """用 Clang 编译并运行 C 代码"""
     start = time.time()
-    # 为 Clang 添加标准头文件（Cide 有内置函数不需要）
-    clang_source = CLANG_HEADER + source
+    # 为 Clang 添加最小化头文件（Cide 有内置函数不需要）
+    clang_source = make_clang_header(source) + source
     with tempfile.TemporaryDirectory() as tmpdir:
         c_file = Path(tmpdir) / "test.c"
         exe_file = Path(tmpdir) / "test.exe" if sys.platform == "win32" else Path(tmpdir) / "test"
@@ -360,6 +360,31 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
 # 在 Windows CRT 下仍可链接，不影响 Shadow 对比。
 CLANG_HEADER = '#include <stdio.h>\n\n'
 
+
+def make_clang_header(source: str) -> str:
+    """生成针对当前源码的最小 Clang 头文件。
+
+    策略：
+    1. 始终注入 stdio.h（Cide 教学子集默认可用）。
+    2. 仅当源码实际调用某标准库函数且未自行声明/定义时，注入该函数的前向声明。
+       避免注入完整 stdlib.h/string.h 导致与 K&R 自定义 itoa/qsort 冲突。
+    """
+    header = '#include <stdio.h>\n'
+
+    needed_decls = []
+    if 'atof(' in source and 'double atof' not in source:
+        needed_decls.append('double atof(const char *nptr);')
+    if 'atoi(' in source and 'int atoi' not in source:
+        needed_decls.append('int atoi(const char *nptr);')
+    if 'atol(' in source and 'long atol' not in source:
+        needed_decls.append('long atol(const char *nptr);')
+    if 'exit(' in source and 'void exit' not in source:
+        needed_decls.append('void exit(int status);')
+
+    for decl in needed_decls:
+        header += decl + '\n'
+
+    return header + '\n'
 
 
 def load_case_files() -> List[ShadowCase]:
@@ -754,6 +779,17 @@ def parse_args():
     return parser.parse_args()
 
 
+def prepare_test_files() -> None:
+    """为每个用例重置 VFS 文件系统状态，确保 Clang 与 Cide 看到相同的预设文件。"""
+    # Cide 在 setup_vm / inject_preset_files 中注入以下内容：
+    #   test.txt -> b"hello\nworld\n"
+    #   numbers.txt -> b"1 2 3 4 5\n"
+    # 为了让 Clang 的 stdin/stdout 文件 I/O 行为与 Cide VFS 一致，
+    # 每次 Shadow 用例运行前都在当前工作目录写入相同的物理文件。
+    Path("test.txt").write_bytes(b"hello\nworld\n")
+    Path("numbers.txt").write_bytes(b"1 2 3 4 5\n")
+
+
 def main():
     args = parse_args()
 
@@ -772,6 +808,7 @@ def main():
     for i, case in enumerate(CASES, 1):
         print(f"\n[{i}/{len(CASES)}] {case.name} ({case.category})")
 
+        prepare_test_files()
         clang_res = run_with_clang(case.source)
         print(f"  Clang: compile={'OK' if clang_res.compile_success else 'FAIL'}, run={'OK' if clang_res.run_success else 'FAIL'}")
 

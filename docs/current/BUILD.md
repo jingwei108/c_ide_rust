@@ -225,10 +225,10 @@ flutter build apk --release
 
 # 3. 安装并启动
 adb install -r "build/app/outputs/flutter-apk/app-release.apk"
-adb shell monkey -p com.example.cide -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
 
 # 4. 查看日志
-adb logcat --pid=$(adb shell pidof com.example.cide)
+adb logcat --pid=$(adb shell pidof com.cide.app)
 ```
 
 ### 运行测试

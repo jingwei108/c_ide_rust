@@ -1,10 +1,18 @@
 # Android NDK 链接器配置
-# 注意：以下路径为个人开发环境硬编码，其他开发者或 CI 环境需替换为实际 NDK 路径。
-# 建议通过环境变量覆盖：
-#   export ANDROID_NDK_HOME=/path/to/ndk
-# 然后使用 cargo-ndk 工具构建，该工具会自动处理链接器路径。
-[target.aarch64-linux-android]
-linker = "C:/Users/liangjingwei/AppData/Local/Android/Sdk/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/windows-x86_64/bin/aarch64-linux-android21-clang.cmd"
-
-[target.armv7-linux-androideabi]
-linker = "C:/Users/liangjingwei/AppData/Local/Android/Sdk/ndk/android-ndk-r28c/toolchains/llvm/prebuilt/windows-x86_64/bin/armv7a-linux-androideabi21-clang.cmd"
+#
+# 默认通过 `cargo-ndk` 自动处理链接器路径，无需在本文件中硬编码。
+# 安装 cargo-ndk 后执行：
+#   cargo ndk -t aarch64-linux-android -t armv7-linux-androideabi --platform 21 build
+#
+# 如需手动覆盖 NDK 路径或链接器，请通过环境变量：
+#   export ANDROID_NDK_HOME=/path/to/your/ndk
+# 然后 cargo-ndk 会自动从该路径推导链接器。
+#
+# 仅在极少数需要直接调用 `cargo build --target ...` 的场景下，才需要取消注释
+# 下方配置并提供绝对路径；否则保持注释状态。
+#
+# [target.aarch64-linux-android]
+# linker = "/path/to/ndk/toolchains/llvm/prebuilt/<host>/bin/aarch64-linux-android21-clang"
+#
+# [target.armv7-linux-androideabi]
+# linker = "/path/to/ndk/toolchains/llvm/prebuilt/<host>/bin/armv7a-linux-androideabi21-clang"

@@ -275,7 +275,11 @@ impl Parser {
             return true;
         }
         if self.check(TokenType::Identifier) {
-            return self.typedef_names.contains_key(&self.current().text);
+            let name = &self.current().text;
+            if name == "typeof" || name == "__typeof__" || name == "__typeof" {
+                return true;
+            }
+            return self.typedef_names.contains_key(name);
         }
         false
     }
@@ -295,6 +299,10 @@ impl Parser {
             // 跳过函数前缀修饰符 inline（可能出现在 static/extern 之前或之后）
             while self.check(TokenType::Inline) {
                 self.advance();
+            }
+            if self.check(TokenType::Identifier) && self.peek(0).text == "_Static_assert" {
+                self.parse_static_assert();
+                continue;
             }
             if self.check(TokenType::Typedef) {
                 let checkpoint = self.pos;
@@ -1327,6 +1335,17 @@ impl Parser {
             if self.match_token(TokenType::Short) {
                 continue;
             }
+            // GCC 扩展 typeof：在类型限定符循环中直接解析并返回，避免 break 后进入普通类型分支。
+            if self.check(TokenType::Identifier) && (self.current().text == "typeof" || self.current().text == "__typeof__" || self.current().text == "__typeof") {
+                let _name_tok = self.advance().clone();
+                self.consume(TokenType::LParen, "typeof 后预期 '('");
+                let expr = self.parse_expression();
+                self.consume(TokenType::RParen, "typeof 预期 ')'");
+                return Type::Typeof {
+                    expr: Box::new(expr),
+                    is_const,
+                };
+            }
             break;
         }
         let mut t = if self.match_token(TokenType::Int) {
@@ -1897,6 +1916,35 @@ impl Parser {
     // Statements
     // =========================================================================
 
+    fn parse_static_assert(&mut self) {
+        // _Static_assert(constant-expression, string-literal);
+        // 教学子集目前仅消费语法；常量表达式求值可在 TypeChecker 阶段扩展。
+        self.advance(); // _Static_assert
+        self.consume(TokenType::LParen, "_Static_assert 后预期 '('");
+        // 消费常量表达式直到顶层逗号（避免 parse_expression 将逗号后的字符串纳入逗号表达式）
+        let mut paren_depth = 1;
+        while !self.is_at_end() {
+            if self.check(TokenType::LParen) {
+                paren_depth += 1;
+                self.advance();
+            } else if self.check(TokenType::RParen) {
+                paren_depth -= 1;
+                if paren_depth == 0 {
+                    break;
+                }
+                self.advance();
+            } else if self.check(TokenType::Comma) && paren_depth == 1 {
+                break;
+            } else {
+                self.advance();
+            }
+        }
+        self.consume(TokenType::Comma, "_Static_assert 预期 ','");
+        self.consume(TokenType::String, "_Static_assert 预期字符串消息");
+        self.consume(TokenType::RParen, "_Static_assert 预期 ')'");
+        self.consume(TokenType::Semicolon, "_Static_assert 预期 ';'");
+    }
+
     fn parse_statement(&mut self) -> Stmt {
         match self.current().ty {
             TokenType::Semicolon => {
@@ -1918,6 +1966,14 @@ impl Parser {
             TokenType::Goto => self.parse_goto_stmt(),
             TokenType::Switch => self.parse_switch_stmt(),
             TokenType::Case | TokenType::Default => self.parse_case_stmt(),
+            _ if self.check(TokenType::Identifier) && self.peek(0).text == "_Static_assert" => {
+                self.parse_static_assert();
+                let loc = SourceLoc {
+                    line: self.previous().line,
+                    column: self.previous().column,
+                };
+                Stmt::Block { stmts: Vec::new(), loc }
+            }
             _ if self.is_type_token()
                 || self.is_static_token()
                 || self.check(TokenType::Register)

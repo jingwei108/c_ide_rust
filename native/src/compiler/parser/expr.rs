@@ -1098,6 +1098,23 @@ impl Parser {
         if self.is_cpp_mode && self.check(TokenType::LBracket) {
             return self.parse_lambda_expr();
         }
+        if self.check(TokenType::Identifier) && self.peek(0).text == "__asm__" {
+            // 支持 GCC 风格内联汇编占位：__asm__("...")
+            // 教学子集不执行汇编指令，仅消费语法并返回 void 字面量。
+            let name_tok = self.advance().clone();
+            self.consume(TokenType::LParen, "__asm__ 后预期 '('");
+            self.consume(TokenType::String, "__asm__ 预期汇编字符串");
+            self.consume(TokenType::RParen, "__asm__ 预期 ')'");
+            let loc = SourceLoc {
+                line: name_tok.line,
+                column: name_tok.column,
+            };
+            return Expr::Literal {
+                value: 0,
+                loc,
+                ty: Type::void(),
+            };
+        }
         if self.check(TokenType::Identifier) {
             let name_tok = self.advance().clone();
             let mut name = name_tok.text.clone();

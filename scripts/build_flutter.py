@@ -24,9 +24,8 @@ import sys
 from pathlib import Path
 
 from build_utils import (
-    Colors,
     error,
-    find_ndk,
+    find_flutter,
     header,
     info,
     run,
@@ -90,28 +89,6 @@ def clean_build(root: Path) -> None:
         if d.exists():
             shutil.rmtree(d)
             print(f"Removed {d}")
-
-
-def find_flutter() -> str:
-    """查找 flutter 可执行文件，支持常见安装路径。"""
-    flutter = shutil.which("flutter")
-    if flutter:
-        return flutter
-
-    # 常见 Windows 安装路径
-    candidates = [
-        Path(r"D:\flutter\bin\flutter.bat"),
-        Path(r"C:\flutter\bin\flutter.bat"),
-        Path(r"D:\tools\flutter\bin\flutter.bat"),
-    ]
-    for c in candidates:
-        if c.exists():
-            return str(c)
-
-    raise FileNotFoundError(
-        "flutter command not found. Please add Flutter to your PATH.\n"
-        "Common location: D:\\flutter\\bin"
-    )
 
 
 def build_rust_desktop(root: Path, configuration: str) -> Path:
@@ -179,43 +156,6 @@ def build_flutter_desktop(
         if dll_source and dll_source.exists():
             copy_dll_to_flutter_build(root, dll_source, configuration)
         run([flutter_exe, "run", "-d", "windows"], cwd=flutter_dir, check=False)
-
-
-def build_rust_android(root: Path, configuration: str) -> None:
-    """手动构建 Rust Android .so（多 ABI）。"""
-    header("Building Rust Backend (Android)")
-    ndk_home = find_ndk()
-    if ndk_home is None:
-        warn("ANDROID_NDK_HOME / ANDROID_NDK_ROOT not set. Skipping manual .so build.")
-        warn("cargokit may still build it during Gradle phase if configured.")
-        return
-
-    abi_map = {
-        "arm64-v8a": "aarch64-linux-android",
-        "armeabi-v7a": "armv7-linux-androideabi",
-    }
-    native_dir = root / "native"
-    for abi, rust_target in abi_map.items():
-        header(f"Building libcide_native.so ({abi})")
-        cargo_args = [
-            "cargo",
-            "ndk",
-            "--target",
-            rust_target,
-            "--platform",
-            "21",
-            "build",
-        ]
-        if configuration == "Release":
-            cargo_args.append("--release")
-        run(cargo_args, cwd=native_dir)
-
-        profile = "release" if configuration == "Release" else "debug"
-        so_source = native_dir / "target" / rust_target / profile / "libcide_native.so"
-        if so_source.exists():
-            success(f"Built {so_source}")
-        else:
-            warn(f"Expected .so not found: {so_source}")
 
 
 def build_flutter_android(

@@ -235,7 +235,7 @@ adb devices
 4. 如果脚本检测失败，直接使用手动命令：
    ```bash
    adb install -r "CideFlutter/build/app/outputs/flutter-apk/app-release.apk"
-   adb shell monkey -p com.example.cide -c android.intent.category.LAUNCHER 1
+   adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
    ```
 
 ---
@@ -283,10 +283,10 @@ flutter build apk --release
 
 # 4. 安装并启动
 adb install -r "build/app/outputs/flutter-apk/app-release.apk"
-adb shell monkey -p com.example.cide -c android.intent.category.LAUNCHER 1
+adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
 
 # 5. 查看日志
-adb logcat --pid=$(adb shell pidof com.example.cide)
+adb logcat --pid=$(adb shell pidof com.cide.app)
 ```
 
 ---

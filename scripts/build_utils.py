@@ -196,3 +196,79 @@ def detect_device(adb: Path, max_retries: int = 3) -> str:
 def get_project_root() -> Path:
     """返回项目根目录（scripts/build_utils.py 的上两级目录）。"""
     return Path(__file__).resolve().parent.parent
+
+
+def find_flutter() -> str:
+    """查找 flutter 可执行文件，支持常见安装路径。"""
+    flutter = shutil.which("flutter")
+    if flutter:
+        return flutter
+
+    candidates = [
+        Path(r"D:\flutter\bin\flutter.bat"),
+        Path(r"C:\flutter\bin\flutter.bat"),
+        Path(r"D:\tools\flutter\bin\flutter.bat"),
+    ]
+    for c in candidates:
+        if c.exists():
+            return str(c)
+
+    raise FileNotFoundError(
+        "flutter command not found. Please add Flutter to your PATH.\n"
+        "Common location: D:\\flutter\\bin"
+    )
+
+
+def build_rust_android(
+    root: Path,
+    configuration: str = "Debug",
+    copy_to_native_target_android: bool = False,
+) -> None:
+    """手动构建 Rust Android .so（多 ABI）。
+
+    Args:
+        root: 项目根目录。
+        configuration: Debug 或 Release。
+        copy_to_native_target_android: 若 True，将构建产物复制到 native/target/android/<abi>/。
+    """
+    header("Building Rust Backend (Android)")
+    ndk_home = find_ndk()
+    if ndk_home is None:
+        warn("ANDROID_NDK_HOME / ANDROID_NDK_ROOT not set. Skipping manual .so build.")
+        warn("cargokit may still build it during Gradle phase if configured.")
+        return
+
+    abi_map = {
+        "arm64-v8a": "aarch64-linux-android",
+        "armeabi-v7a": "armv7-linux-androideabi",
+    }
+    native_dir = root / "native"
+    profile = "release" if configuration == "Release" else "debug"
+
+    for abi, rust_target in abi_map.items():
+        header(f"Building libcide_native.so ({abi})")
+        cargo_args = [
+            "cargo",
+            "ndk",
+            "--target",
+            rust_target,
+            "--platform",
+            "21",
+            "build",
+        ]
+        if configuration == "Release":
+            cargo_args.append("--release")
+        run(cargo_args, cwd=native_dir)
+
+        so_source = native_dir / "target" / rust_target / profile / "libcide_native.so"
+        if not so_source.exists():
+            warn(f"Expected .so not found: {so_source}")
+            continue
+
+        success(f"Built {so_source}")
+
+        if copy_to_native_target_android:
+            so_dest_dir = root / "native" / "target" / "android" / abi
+            so_dest_dir.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(so_source, so_dest_dir / "libcide_native.so")
+            success(f"Copied libcide_native.so ({abi}) -> {so_dest_dir}")

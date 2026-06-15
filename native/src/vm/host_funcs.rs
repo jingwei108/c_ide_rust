@@ -1984,7 +1984,7 @@ pub fn host_fseek(vm: &mut CideVM, session: &mut Session) {
     let offset = vm.pop() as i32;
     let whence = vm.pop() as i32;
     let mut vfs = std::mem::take(&mut session.vfs);
-    let ret = vfs.fseek(fd, offset, whence);
+    let ret = vfs.fseek(fd, offset, whence, vm);
     session.vfs = vfs;
     vm.push(ret as u64);
 }
@@ -1993,7 +1993,7 @@ pub fn host_ftell(vm: &mut CideVM, session: &mut Session) {
     let stream = vm.pop() as u32;
     let fd = read_fd_from_stream(vm, stream);
     let vfs = std::mem::take(&mut session.vfs);
-    let ret = vfs.ftell(fd);
+    let ret = vfs.ftell(fd, vm);
     session.vfs = vfs;
     vm.push(ret as i64 as u64);
 }

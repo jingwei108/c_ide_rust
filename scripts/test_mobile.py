@@ -30,7 +30,7 @@ from build_utils import (
     get_project_root,
 )
 
-PACKAGE_NAME = "com.example.cide"
+PACKAGE_NAME = "com.cide.app"
 
 
 def parse_args() -> argparse.Namespace:

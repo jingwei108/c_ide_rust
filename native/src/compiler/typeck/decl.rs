@@ -137,6 +137,22 @@ impl TypeChecker {
                 }
                 // Class template instantiation
                 *var_type = self.resolve_template_id(var_type, loc);
+                // typeof type deduction
+                if Self::type_has_typeof(var_type) {
+                    if let Some(ref mut init_expr) = init {
+                        let deduced = self.resolve_expr_type(init_expr);
+                        *var_type = Self::resolve_typeof_in_type(var_type, deduced);
+                    } else if let Type::Typeof { .. } = var_type {
+                        // 需要临时取出表达式来推断类型
+                        if let Type::Typeof { expr, .. } = var_type.clone() {
+                            let mut expr_mut = *expr;
+                            let deduced = self.resolve_expr_type(&mut expr_mut);
+                            *var_type = Self::resolve_typeof_in_type(var_type, deduced);
+                        }
+                    } else {
+                        *var_type = Self::resolve_typeof_in_type(var_type, Type::int());
+                    }
+                }
                 // 只有 C++ 构造函数初始化语法需要提前声明变量，以便 this 指针（&var_name）能正确解析。
                 // 普通变量（尤其是数组）必须在初始化表达式处理完成后再声明，否则符号表中的类型
                 // 无法反映 check_array_initializer 推断出的数组大小。
@@ -651,6 +667,54 @@ impl TypeChecker {
             Type::RValueRef { base, .. } => Self::type_has_auto(base),
             Type::Array { element, .. } => Self::type_has_auto(element),
             _ => false,
+        }
+    }
+
+    fn type_has_typeof(ty: &Type) -> bool {
+        match ty {
+            Type::Typeof { .. } => true,
+            Type::Pointer { pointee, .. } => Self::type_has_typeof(pointee),
+            Type::Reference { base, .. } => Self::type_has_typeof(base),
+            Type::RValueRef { base, .. } => Self::type_has_typeof(base),
+            Type::Array { element, .. } => Self::type_has_typeof(element),
+            _ => false,
+        }
+    }
+
+    fn resolve_typeof_in_type(ty: &Type, replacement: Type) -> Type {
+        match ty {
+            Type::Typeof { is_const, .. } => {
+                let mut t = replacement;
+                t.set_const(*is_const);
+                t
+            }
+            Type::Pointer { pointee, is_const } => Type::Pointer {
+                pointee: Box::new(Self::resolve_typeof_in_type(pointee, replacement)),
+                is_const: *is_const,
+            },
+            Type::Reference { base, is_const } => Type::Reference {
+                base: Box::new(Self::resolve_typeof_in_type(base, replacement)),
+                is_const: *is_const,
+            },
+            Type::RValueRef { base } => Type::RValueRef {
+                base: Box::new(Self::resolve_typeof_in_type(base, replacement)),
+            },
+            Type::Array {
+                element,
+                array_size,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+            } => Type::Array {
+                element: Box::new(Self::resolve_typeof_in_type(element, replacement)),
+                array_size: *array_size,
+                dims: dims.clone(),
+                is_const: *is_const,
+                is_vla: *is_vla,
+                vla_dims: vla_dims.clone(),
+            },
+            _ => ty.clone(),
         }
     }
 

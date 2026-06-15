@@ -1,4 +1,4 @@
-use cide_native::compiler::ast::{BinaryOp, Expr, Stmt};
+use cide_native::compiler::ast::{BinaryOp, Expr, Stmt, TypeKind};
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 
@@ -223,4 +223,48 @@ fn test_parser_error_undeclared_no_panic() {
     let (_, errors) = parse("int main() { int x return 0; }");
     // This will have parse errors but should not panic
     assert!(!errors.is_empty()); // should have parse errors but not panic
+}
+
+#[test]
+fn test_parser_asm_statement() {
+    // 回归测试：GCC 风格内联汇编占位语法 __asm__("...")
+    let (program, errors) = parse("int main() { __asm__(\"nop\"); return 0; }");
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let body = program.funcs[0].body.as_ref().unwrap();
+    if let Stmt::Block { stmts, .. } = body {
+        assert_eq!(stmts.len(), 2, "Expected __asm__ expr-stmt and return");
+    } else {
+        panic!("Expected Block");
+    }
+}
+
+#[test]
+fn test_parser_static_assert_top_level() {
+    // 回归测试：C11 _Static_assert(expr, "msg") 顶层语法消费
+    let (program, errors) = parse("_Static_assert(1 == 1, \"ok\"); int main() { return 0; }");
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    assert_eq!(program.funcs.len(), 1);
+    assert_eq!(program.funcs[0].name, "main");
+}
+
+#[test]
+fn test_parser_typeof_decl() {
+    // 回归测试：GCC typeof(expr) 类型推断语法
+    let (program, errors) = parse("int main() { typeof(1) x = 5; return 0; }");
+    assert!(errors.is_empty(), "Parse errors: {:?}", errors);
+    let program = program.unwrap();
+    let body = program.funcs[0].body.as_ref().unwrap();
+    if let Stmt::Block { stmts, .. } = body {
+        if let Stmt::VarDecl { name, var_type, .. } = &stmts[0] {
+            assert_eq!(name, "x");
+            // Parser 将 typeof 包装为 Type::Typeof，其 kind() 当前映射为 TypeKind::Auto
+            assert!(matches!(var_type.kind(), TypeKind::Auto), "Expected typeof wrapper type");
+        } else {
+            panic!("Expected VarDecl");
+        }
+    } else {
+        panic!("Expected Block");
+    }
 }

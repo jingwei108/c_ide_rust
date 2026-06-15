@@ -86,6 +86,10 @@ pub enum Type {
         args: Vec<Type>,
         is_const: bool,
     },
+    Typeof {
+        expr: Box<Expr>,
+        is_const: bool,
+    },
 }
 
 impl PartialEq for Type {
@@ -145,6 +149,7 @@ impl PartialEq for Type {
             }
             (Type::RValueRef { base: a }, Type::RValueRef { base: b }) => a == b,
             (Type::Auto, Type::Auto) => true,
+            (Type::Typeof { .. }, Type::Typeof { .. }) => false,
             (
                 Type::TemplateId {
                     base: a,
@@ -342,6 +347,9 @@ impl Type {
                 base.mangle_name_into(buf);
             }
             Type::Auto => buf.push_str("auto"),
+            Type::Typeof { expr, .. } => {
+                write!(buf, "typeof({:?})", expr).unwrap();
+            }
             Type::TemplateId { base, args, .. } => {
                 buf.push_str(base);
                 buf.push_str("__");
@@ -374,6 +382,7 @@ impl Type {
             Type::Reference { .. } => TypeKind::Reference,
             Type::RValueRef { .. } => TypeKind::RValueRef,
             Type::Auto => TypeKind::Auto,
+            Type::Typeof { .. } => TypeKind::Auto,
             Type::TemplateId { .. } => TypeKind::TemplateId,
         }
     }
@@ -397,6 +406,7 @@ impl Type {
             Type::Reference { base, .. } => base.name(),
             Type::RValueRef { base, .. } => base.name(),
             Type::Auto => "auto",
+            Type::Typeof { .. } => "typeof",
             Type::TemplateId { base, .. } => base.as_str(),
         }
     }
@@ -449,6 +459,7 @@ impl Type {
             Type::Reference { is_const, .. } => *is_const,
             Type::RValueRef { .. } => false,
             Type::Auto => false,
+            Type::Typeof { is_const, .. } => *is_const,
             Type::TemplateId { is_const, .. } => *is_const,
         }
     }
@@ -512,6 +523,7 @@ impl Type {
     pub fn reference_base(&self) -> Option<&Type> {
         match self {
             Type::Reference { base, .. } | Type::RValueRef { base, .. } => Some(base),
+            Type::Typeof { .. } => None,
             _ => None,
         }
     }
@@ -636,6 +648,7 @@ impl std::fmt::Display for Type {
             }
             Type::RValueRef { base } => write!(f, "{}&&", base),
             Type::Auto => write!(f, "auto"),
+            Type::Typeof { expr, .. } => write!(f, "typeof({:?})", expr),
             Type::TemplateId { base, args, .. } => {
                 write!(f, "{}<", base)?;
                 for (i, a) in args.iter().enumerate() {
