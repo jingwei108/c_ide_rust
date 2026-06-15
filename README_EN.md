@@ -56,7 +56,7 @@ Criticism is real motivation for the project to continue improving. If you are w
 
 ## Current Status
 
-- **C subset**: Covers common teaching syntax, Shadow Verification 511 cases / 498 matched
+- **C subset**: Covers common teaching syntax, Shadow Verification 511 cases / 504 matched (measured 2026-06-16)
 - **C++14 teaching subset extension**: M7 Beta Readiness is ready, 83/83 C++ Shadow Verification green, 61 C++ E2E cases green
 - **Editor**: Third-party `re_editor` has been removed; current editor is self-developed `CideEditor` (`CideFlutter/lib/editor/`) (originally derived from `re_editor` and heavily modified)
 - **Unified mode / Time travel**: Implemented
@@ -120,7 +120,7 @@ The project adopts five layers of collaborative test defenses. The core philosop
 
 Current status:
 
-- C Shadow Verification: **511 cases, 498 matched** (differences are honestly recorded known limitations)
+- C Shadow Verification: **511 cases, 504 matched** (differences are honestly recorded known limitations; measured 2026-06-16)
 - C++ Shadow Verification: **83/83 green, 0 gap**
 - C++ E2E regression cases: **61/61 green**
 - Full `cargo test`: **719 passed, 0 failed**

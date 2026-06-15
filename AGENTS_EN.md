@@ -118,7 +118,7 @@ Cide adopts **five layers of collaborative test defenses**. Core philosophy: *te
 
 The same C source is compiled and executed by both **Clang** and **Cide**, and stdout outputs are compared for exact match. Golden outputs must come from Clang, never from Cide itself.
 
-- **Coverage**: 298 Baseline cases + 82 template-generated cases + 69 K&R cases + 48 LeetCode easy problems (511 C Shadow Verification cases total, 498 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green)
+- **Coverage**: 298 Baseline cases + 82 template-generated cases + 69 K&R cases + 48 LeetCode easy problems (511 C Shadow Verification cases total, 504 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-16)
 - **Drivers**: `python native/tests/shadow_verification/shadow_verify.py`, `python scripts/shadow_verify_cpp.py`
 - **Reports**: `native/tests/shadow_verification/reports/`
 
