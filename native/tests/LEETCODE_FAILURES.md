@@ -114,7 +114,16 @@
 - **建议**: <修复方向 / 记录为已知限制 / 待进一步分析>
 -->
 
+## 阶段 6 完成情况
+
+LeetCode 用例已纳入 `shadow_verify.py` 扫描范围，生成专项报告 `native/tests/shadow_verification/reports/kr_leetcode_report.json`。
+
+| 来源 | 总数 | 匹配 | 编译缺口 | 运行时缺口 | 输出差异 |
+|:-----|:-----|:-----|:---------|:-----------|:---------|
+| K&R | 69 | 68 | 0 | 0 | 1（`kr_5_8`，已知的 qsort 输出顺序差异） |
+| LeetCode | 48 | 48 | 0 | 0 | 0 |
+
 ## 后续计划
 
-1. 将 LeetCode 用例纳入 `shadow_verify.py` 扫描范围，生成差异报告。
-2. 持续观察新增用例是否暴露其他 Cide 与 Clang 行为差异。
+1. 持续观察新增用例是否暴露其他 Cide 与 Clang 行为差异。
+2. 将 shadow 报告路径纳入 CI artifact 上传。

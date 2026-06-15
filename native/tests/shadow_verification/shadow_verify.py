@@ -56,6 +56,7 @@ class ShadowCase:
     name: str
     source: str
     category: str  # 预期分类，如 "double", "function_pointer", "file_io"
+    src_dir: str = "builtin"  # 用例来源目录，如 "baseline", "knr", "leetcode", "template"
 
 
 @dataclass
@@ -65,6 +66,7 @@ class ShadowDiff:
     clang_result: RunResult
     cide_result: RunResult
     diff_type: str  # "compile_gap", "runtime_gap", "output_gap", "match"
+    src_dir: str = "builtin"
 
 
 def run_with_clang(source: str) -> RunResult:
@@ -279,6 +281,7 @@ def analyze_diff(case: ShadowCase, clang_res: RunResult, cide_res: RunResult) ->
         clang_result=clang_res,
         cide_result=cide_res,
         diff_type=diff_type,
+        src_dir=case.src_dir,
     )
 
 
@@ -302,6 +305,16 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
 
     sorted_categories = sorted(category_counts.items(), key=lambda x: x[1], reverse=True)
 
+    # 按来源目录统计（knr / leetcode / baseline / template / gap / builtin）
+    src_stats: Dict[str, Dict[str, int]] = {}
+    for d in diffs:
+        src = d.src_dir if d.src_dir else "other"
+        if src not in src_stats:
+            src_stats[src] = {"total": 0, "match": 0, "compile_gap": 0, "runtime_gap": 0, "output_gap": 0}
+        src_stats[src]["total"] += 1
+        if d.diff_type in src_stats[src]:
+            src_stats[src][d.diff_type] += 1
+
     report_lines = [
         "# Cide 影子验证报告",
         f"\n生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
@@ -310,8 +323,15 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
         f"编译缺口: {len(compile_gaps)} ({len(compile_gaps)*100//len(diffs)}%)",
         f"运行时缺口: {len(runtime_gaps)}",
         f"输出差异: {len(output_gaps)}",
-        "\n## 缺失特性频率排序（编译缺口）\n",
+        "\n## 按来源目录统计\n",
+        "| 来源 | 总数 | 匹配 | 编译缺口 | 运行时缺口 | 输出差异 |",
+        "|------|------|------|----------|------------|----------|",
     ]
+    for src in sorted(src_stats.keys()):
+        s = src_stats[src]
+        report_lines.append(f"| {src} | {s['total']} | {s['match']} | {s['compile_gap']} | {s['runtime_gap']} | {s['output_gap']} |")
+
+    report_lines.append("\n## 缺失特性频率排序（编译缺口）\n")
 
     for cat, count in sorted_categories:
         pct = count * 100 // len(diffs)
@@ -346,12 +366,12 @@ def load_case_files() -> List[ShadowCase]:
     """从 .c 文件加载用例，替代硬编码 SHADOW_CASES 列表"""
     import re
     cases = []
-    for root in [
-        Path("tests/cases/baseline"),
-        Path("tests/cases/gap"),
-        Path("tests/cases_template_generated"),
-        Path("tests/cases/knr"),
-        Path("tests/cases/leetcode"),
+    for root, src_dir in [
+        (Path("tests/cases/baseline"), "baseline"),
+        (Path("tests/cases/gap"), "gap"),
+        (Path("tests/cases_template_generated"), "template"),
+        (Path("tests/cases/knr"), "knr"),
+        (Path("tests/cases/leetcode"), "leetcode"),
     ]:
         root_path = NATIVE_DIR / root
         if not root_path.exists():
@@ -373,7 +393,8 @@ def load_case_files() -> List[ShadowCase]:
             cases.append(ShadowCase(
                 name=path.stem,
                 source=clean_source,
-                category=category
+                category=category,
+                src_dir=src_dir,
             ))
     return cases
 
@@ -809,6 +830,37 @@ def main():
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nJSON 数据已保存: {json_path}")
+
+    # 生成 K&R + LeetCode 专项报告
+    kr_leetcode_diffs = [d for d in diffs if d.src_dir in ("knr", "leetcode")]
+    kr_leetcode_report = {
+        "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+        "summary": {},
+        "gaps": [],
+    }
+    for src in ("knr", "leetcode"):
+        src_diffs = [d for d in kr_leetcode_diffs if d.src_dir == src]
+        kr_leetcode_report["summary"][src] = {
+            "total": len(src_diffs),
+            "match": len([d for d in src_diffs if d.diff_type == "match"]),
+            "compile_gap": len([d for d in src_diffs if d.diff_type == "compile_gap"]),
+            "runtime_gap": len([d for d in src_diffs if d.diff_type == "runtime_gap"]),
+            "output_gap": len([d for d in src_diffs if d.diff_type == "output_gap"]),
+        }
+    for d in kr_leetcode_diffs:
+        if d.diff_type != "match":
+            kr_leetcode_report["gaps"].append({
+                "case": d.case_name,
+                "src_dir": d.src_dir,
+                "diff_type": d.diff_type,
+                "expected_category": d.expected_category,
+                "cide_compile_error": d.cide_result.compile_error[:500] if not d.cide_result.compile_success else "",
+                "clang_stdout": d.clang_result.stdout.strip()[:200],
+                "cide_stdout": d.cide_result.stdout.strip()[:200],
+            })
+    kr_leetcode_path = SCRIPT_DIR / "reports" / "kr_leetcode_report.json"
+    kr_leetcode_path.write_text(json.dumps(kr_leetcode_report, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"K&R + LeetCode 专项报告已保存: {kr_leetcode_path}")
 
 
 if __name__ == "__main__":
