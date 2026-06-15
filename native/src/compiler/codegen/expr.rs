@@ -1,5 +1,7 @@
 use super::*;
 
+mod literal;
+
 /// Returns true if `expr` denotes an object with storage (an lvalue in C++ terms).
 pub(crate) fn is_lvalue_expr(expr: &Expr) -> bool {
     matches!(
@@ -36,35 +38,10 @@ impl ExprGen for BytecodeGen {
     fn gen_expr(&mut self, expr: &mut Expr) {
         let loc = *expr.loc();
         match expr {
-            Expr::Literal { value, .. } => {
-                self.emit(OpCode::PushConst, *value, &loc);
-            }
-            Expr::FloatLiteral { value, ty, .. } => {
-                if ty.kind() == TypeKind::Double {
-                    let idx = self.push_f64_constant(*value);
-                    self.emit(OpCode::PushConstD, idx, &loc);
-                } else {
-                    let bits = (*value as f32).to_bits() as i32;
-                    self.emit(OpCode::PushConstF, bits, &loc);
-                }
-            }
-            Expr::LongLiteral { value, .. } => {
-                let idx = self.push_i64_constant(*value);
-                self.emit(OpCode::PushConstQ, idx, &loc);
-            }
-            Expr::StringLiteral { value, .. } => {
-                let aligned = ((value.len() + 1) as u32 + 3) & !3;
-                let addr = crate::vm::core::GLOBAL_START + self.next_global_offset as u32;
-                let new_offset = self.next_global_offset + aligned as i32;
-                if new_offset as u32 + crate::vm::core::GLOBAL_START > crate::vm::core::MEM_SIZE / 16 {
-                    self.report_error("字符串字面量过多，超出内存限制", &loc);
-                    self.emit(OpCode::PushConst, addr as i32, &loc);
-                } else {
-                    self.string_data.push((addr, value.clone()));
-                    self.next_global_offset = new_offset;
-                    self.emit(OpCode::PushConst, addr as i32, &loc);
-                }
-            }
+            Expr::Literal { value, .. } => literal::gen_literal(self, *value, &loc),
+            Expr::FloatLiteral { value, ty, .. } => literal::gen_float_literal(self, *value, ty, &loc),
+            Expr::LongLiteral { value, .. } => literal::gen_long_literal(self, *value, &loc),
+            Expr::StringLiteral { value, .. } => literal::gen_string_literal(self, value, &loc),
             Expr::Identifier { name, .. } => {
                 // Function name used as value (function pointer)
                 if let Some(&idx) = self.func_index.get(name) {
