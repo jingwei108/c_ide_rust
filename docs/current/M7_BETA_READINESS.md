@@ -2,8 +2,8 @@
 
 > **评估日期**: 2026-06-13  
 > **评估人**: Kimi Code CLI  
-> **结论**: **M6 测试防线与 Stage 2b 容器迁移已全部完成，后端 C++ 编译器具备 M7 Beta 内部试用基础。**  
-> **下一步**: 补齐最小教学模板与学生文档后，启动内部试用并收集反馈。
+> **结论**: **M6 测试防线与 Stage 2b 容器迁移已全部完成，最小教学模板与学生文档已补齐，后端 C++ 编译器具备 M7 Beta 内部试用基础。**  
+> **下一步**: 启动内部试用并收集反馈。
 
 ---
 
@@ -13,26 +13,26 @@
 
 | 指标 | 数值 | 状态 |
 |------|------|------|
-| 全量 Rust 单元/集成测试 | **690 passed, 0 failed** | ✅ |
+| 全量 Rust 单元/集成测试 | **719 passed, 0 failed** | ✅ |
 | `cargo clippy -- -D warnings` | **0 警告** | ✅ |
 | `cargo build` | **0 warning/error** | ✅ |
 | C++ Parser 单元测试 | 33/33 | ✅ |
 | C++ TypeChecker 单元测试 | 30/30 | ✅ |
 | C++ BytecodeGen 单元测试 | 43/43 | ✅ |
 | C++ Dogfooding 测试 | 28/28 | ✅ |
-| C++ E2E 回归用例 | 60/60 | ✅ |
-| C++ Shadow Verification | 82/82 一致，**0 gap** | ✅ |
+| C++ E2E 回归用例 | 61/61 | ✅ |
+| C++ Shadow Verification | 83/83 一致，**0 gap** | ✅ |
 | 三层契约检查 (`ci_three_tier_check.py`) | 全绿（脚本误报已修复） | ✅ |
 
 ### 1.2 与 S6 评估的关键变化
 
 | 维度 | S6 状态 (2026-06-09) | M7 状态 (2026-06-13) |
 |------|---------------------|---------------------|
-| C++ Shadow Verification | 22 用例（16 baseline + 6 gap） | **82 用例，0 gap** |
-| C++ E2E 用例 | 0 个 | **60 个，全部通过** |
+| C++ Shadow Verification | 22 用例（16 baseline + 6 gap） | **83 用例，0 gap** |
+| C++ E2E 用例 | 0 个 | **61 个，全部通过** |
 | C++ 单元测试 | 102 个 | **105 个（Parser 33 + TypeChecker 29 + BytecodeGen 43）** |
 | 容器实现 | Stage 0 C 实现 + force-instantiate 桩 | **Stage 2b 纯 C++ 模板实现，`.c` 文件已删除** |
-| 全量测试 | ~630 个 | **690 个** |
+| 全量测试 | ~630 个 | **719 个** |
 | `ci_three_tier_check.py` | 多处误报 | **误报已修复** |
 
 ---
@@ -67,8 +67,8 @@
 
 ### 2.3 测试防线（全部达标 ✅）
 
-- [x] 防线 1 Shadow Verification：C++ 82 用例 0 gap
-- [x] 防线 2 K&R / E2E：C++ 60 E2E 用例全绿
+- [x] 防线 1 Shadow Verification：C++ 83 用例 0 gap
+- [x] 防线 2 K&R / E2E：C++ 61 E2E 用例全绿
 - [x] 防线 3 三层契约：Host/Bytecode/Differential 全绿
 - [x] 防线 4 Fuzz：5 个 fuzz 场景全绿
 - [x] 防线 5 CI：`ci_three_tier_check.py` 无警告，`CPP_FAILURES.md` / `DOGFOODING_FAILURES.md` 与测试结果一致
@@ -76,9 +76,9 @@
 ### 2.4 文档与工程（M7 新增任务）
 
 - [x] 修复 `ci_three_tier_check.py` 误报
-- [ ] 补充最小 C++ 教学模板（5~8 个）
-- [ ] 编写 `CPP_SUBSET_SPEC.md` 学生版文档
-- [ ] 将 M7 readiness 状态同步到 `CPLUSPLUS_EXTENSION_PLAN.md`
+- [x] 补充最小 C++ 教学模板（5 个：`cpp_hello` / `cpp_class_basic` / `cpp_vector_int` / `cpp_unique_ptr` / `cpp_range_for`）
+- [x] 编写 `CPP_SUBSET_SPEC.md` 学生版文档
+- [x] 将 M7 readiness 状态同步到 `CPLUSPLUS_EXTENSION_PLAN.md`
 
 > **说明**: 文档与工程项不阻塞后端能力发布，但阻塞内部教学试用。需在 M7 Beta 启动前完成。
 
@@ -144,4 +144,4 @@
 
 ---
 
-**评估结论**: **M7 Beta 可以启动**，前提是先完成本文档 2.4 节所列的最小教学模板与学生文档补充。
+**评估结论**: **M7 Beta 可以启动。** 本文档 2.4 节所列文档与模板补充工作已完成。

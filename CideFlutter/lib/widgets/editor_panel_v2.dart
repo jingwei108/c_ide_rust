@@ -506,9 +506,10 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
     // 更新运行时高亮状态
     int newHighlightLine = 0;
     List<rust_unified.AccessedVar> newAccessedVars = [];
-    if (unifiedState.currentStep >= 0 &&
-        unifiedState.currentStep < unifiedState.frameCache.length) {
-      final payload = unifiedState.frameCache[unifiedState.currentStep];
+    final cacheIdx = unifiedState.currentStep - unifiedState.frameCacheStartStep;
+    if (cacheIdx >= 0 &&
+        cacheIdx < unifiedState.frameCache.length) {
+      final payload = unifiedState.frameCache[cacheIdx];
       newHighlightLine = payload.codeLine;
       newAccessedVars = payload.accessedVars;
     }

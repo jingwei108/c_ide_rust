@@ -12,11 +12,11 @@
 
 | 脚本 | 功能 | 适用场景 |
 |:---|:---|:---|
-| [`scripts/build_flutter.py`](../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端（Desktop / Android） | 日常开发编译、打包 |
-| [`scripts/build_release.py`](../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
-| [`scripts/test_mobile.py`](../scripts/test_mobile.py) | 移动端完整测试流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
+| [`scripts/build_flutter.py`](../../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端（Desktop / Android） | 日常开发编译、打包 |
+| [`scripts/build_release.py`](../../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
+| [`scripts/test_mobile.py`](../../scripts/test_mobile.py) | 移动端完整测试流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
 
-所有脚本共用 [`scripts/build_utils.py`](../scripts/build_utils.py) 中的通用工具（彩色输出、命令执行、ADB/NDK 自动探测、设备检测等）。
+所有脚本共用 [`scripts/build_utils.py`](../../scripts/build_utils.py) 中的通用工具（彩色输出、命令执行、ADB/NDK 自动探测、设备检测等）。
 
 ---
 
@@ -294,5 +294,5 @@ adb logcat --pid=$(adb shell pidof com.example.cide)
 ## 相关文档
 
 - [`BUILD.md`](BUILD.md) — 构建指南与环境要求
-- [`AGENTS.md`](../AGENTS.md) — Agent 快速参考（构建命令速查）
+- [`AGENTS.md`](../../AGENTS.md) — Agent 快速参考（构建命令速查）
 - [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md) — 已归档的 MAUI 构建脚本说明

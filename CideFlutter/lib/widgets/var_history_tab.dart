@@ -18,7 +18,8 @@ class VarHistoryTab extends ConsumerWidget {
       return _buildEmpty('运行程序以查看变量历史');
     }
 
-    // 从 frame_cache 中提取所有变量名及其历史值
+    // 从当前 frame_cache 窗口中提取变量名及其历史值。
+    // 长程序执行时 frame_cache 仅保留最近窗口内的帧，因此历史也对应窗口范围。
     final varHistory = _extractVarHistory(frameCache);
     if (varHistory.isEmpty) {
       return _buildEmpty('未检测到变量');
@@ -118,7 +119,7 @@ class VarHistoryTab extends ConsumerWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${entry.values.length} 次变化',
+            '${entry.values.length} 次变化（当前窗口）',
             style: TextStyle(fontSize: 11, color: subTextColor),
           ),
         ],
@@ -126,7 +127,7 @@ class VarHistoryTab extends ConsumerWidget {
     );
   }
 
-  /// 从 frame_cache 中提取变量历史。
+  /// 从 frame_cache 窗口中提取变量历史。
   List<_VarHistoryEntry> _extractVarHistory(List<rust.StepPayload> frameCache) {
     final Map<String, _VarHistoryEntry> map = {};
 

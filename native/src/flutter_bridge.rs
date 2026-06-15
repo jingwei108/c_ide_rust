@@ -602,6 +602,7 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
                 paused: false,
                 current_line: line,
                 trap_message: Some(e),
+                cache_start_step: engine.frame_cache_start_step(),
             };
         }
     };
@@ -641,10 +642,18 @@ pub fn step_next_unified() -> Option<StepPayload> {
         | crate::vm::core::StepResult::Finished
         | crate::vm::core::StepResult::Trap => {
             let p = crate::unified::collector::StepCollector::collect(&mut vm, &session, step);
-            if step as usize >= engine.frame_cache.len() {
+            if let Some(idx) = engine.frame_cache_index(step) {
+                // 目标步在当前窗口内：替换
+                engine.frame_cache[idx] = p.clone();
+            } else if step == engine.max_collected_step() + 1 {
+                // 目标步是窗口下一帧：追加并可能触发截断
                 engine.frame_cache.push(p.clone());
+                engine.trim_frame_cache();
             } else {
-                engine.frame_cache[step as usize] = p.clone();
+                // 其他情况（如窗口外的旧步）：重置窗口为仅包含当前步。
+                engine.frame_cache_start_step = step;
+                engine.frame_cache.clear();
+                engine.frame_cache.push(p.clone());
             }
             Some(p)
         }
@@ -684,6 +693,13 @@ pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
     engine.get_payloads(start, end)
 }
 
+/// 获取当前 frame_cache 窗口起始步号。
+pub fn get_frame_cache_start_step() -> i32 {
+    let engine_arc_l640 = current_unified_engine();
+    let engine = lock_or_reset(&engine_arc_l640);
+    engine.frame_cache_start_step()
+}
+
 /// Stream 模式批量自动执行。
 pub fn run_auto_steps_stream(
     sink: crate::frb_generated::StreamSink<crate::unified::stream::StepStreamBatch>,
@@ -695,7 +711,12 @@ pub fn run_auto_steps_stream(
             let should_stop = result.finished || result.trapped || result.waiting_input || result.paused;
 
             // 将 payloads 编码为优化后的 StepStreamBatch
-            let mut batch = crate::unified::stream::encode_payloads(&result.payloads);
+            let cache_start_step = {
+                let engine_arc_l546 = current_unified_engine();
+                let engine = lock_or_reset(&engine_arc_l546);
+                engine.frame_cache_start_step()
+            };
+            let mut batch = crate::unified::stream::encode_payloads(&result.payloads, cache_start_step);
             batch.finished = result.finished;
             batch.trapped = result.trapped;
             batch.waiting_input = result.waiting_input;

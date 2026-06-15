@@ -1243,7 +1243,7 @@ Future<void> restoreSession() async {
 ### Phase 7：变量级高亮 ✅
 - [x] `accessed_vars` 已收集（`StepPayload.accessed_vars`：Read/Write 标记）
 - [x] `VariablesTab` 值变化背景闪烁动画（琥珀色渐变，600ms）
-- [x] `re_editor` 集成：`spanBuilder` 精确变量名底色高亮（Read=淡蓝，Write=淡橙，保留语法高亮）
+- [x] `CideEditor` 集成：`spanBuilder` 精确变量名底色高亮（Read=淡蓝，Write=淡橙，保留语法高亮）
 - [x] 行号 gutter R/W 标记保留（`EditorPanel._buildGutter`）
 
 ### Phase 8：链表/树可视化增强 ✅

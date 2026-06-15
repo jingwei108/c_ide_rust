@@ -1,7 +1,7 @@
 # C IDE 项目路线图（2026-05-14 修订版）
 
 > **核心原则**：不急着发布，不把时间浪费在"能用"上。每一行代码都指向一个竞品没有的功能亮点。
-> **当前状态**：Rust 后端全链路稳定，Flutter 前端已接棒 MAUI，算法可视化 + 诊断修复系统全部就绪，**统一模式 / 时间旅行 已实现**。
+> **当前状态**：Rust 后端全链路稳定，Flutter 前端已接棒 MAUI 与 `re_editor`，自研 `CideEditor` 已落地，算法可视化 + 诊断修复系统全部就绪，**统一模式 / 时间旅行 已实现**，C++ 扩展 M7 Beta Readiness 已就绪。
 
 ---
 
@@ -12,7 +12,7 @@
 |                     Flutter 前端 (Android / Desktop Windows)                 |
 |  +-------------+  +-------------+  +-------------------------------------+  |
 |  | CodeEditor  |  | MemoryView  |  | KnowledgeCard / QuickFixPanel       |  |
-|  |  re_editor  |  |  内存映射    |  | 知识卡片 / 一键修复面板               |  |
+|  | CideEditor  |  |  内存映射    |  | 知识卡片 / 一键修复面板               |  |
 |  +-------------+  +-------------+  +-------------------------------------+  |
 |  +-------------+  +-------------+  +-------------------------------------+  |
 |  | PointerView |  | ErrorPanel  |  | ConsoleOutput / AlgoCanvas          |  |
@@ -75,7 +75,7 @@ native/
 │   │   └── types.rs               # StepPayload 等 FRB 类型
 │   ├── engine/                    # 编译管线与工具
 │   │   └── compile_pipeline.rs    # 统一编译管线
-│   ├── capi/                     # C API 桥接层（MAUI 兼容）
+│   ├── capi/                     # C API 服务层（Shadow Verification / CLI）
 │   ├── api/                      # flutter_rust_bridge API
 │   ├── flutter_bridge.rs          # FRB 业务包装层（Session 管理）
 │   └── session.rs                # Session 状态管理
@@ -184,7 +184,7 @@ for (int i = 0; i <= 5; i++) { arr[i] = i; }
 - 隐式转换提示系统（warning + hint 分级）
 
 ### Stage 6: 前端迁移与体验优化（✅ 已完成）
-- Flutter 前端从零搭建：IDE 界面 + `re_editor` 编辑器 + 调试面板
+- Flutter 前端从零搭建：IDE 界面 + 自研 `CideEditor` 编辑器 + 调试面板
 - 内存映射 Canvas + 算法可视化事件 FRB 集成
 - VS-style Enter 格式化、Touch swipe tabs、Execution speed slider
 - 教程引导 overlay (`IntroOverlay`)

@@ -125,6 +125,7 @@ stream.StepStreamBatch emptyBatch({
   bool waitingInput = false,
   bool paused = false,
   String? trapMessage,
+  int cacheStartStep = 0,
 }) {
   return stream.StepStreamBatch(
     symbolTable: const ['main'],
@@ -136,5 +137,6 @@ stream.StepStreamBatch emptyBatch({
     paused: paused,
     currentLine: 0,
     trapMessage: trapMessage,
+    cacheStartStep: cacheStartStep,
   );
 }

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **统一模式 frameCache 滑动窗口**：为 `UnifiedEngine.frame_cache` 引入有界滑动窗口（默认 2000 帧，超出时丢弃最早的 20%），解决长程序执行时内存无界增长问题
+  - Rust 后端：`UnifiedEngine` 新增 `frame_cache_window_size`、`frame_cache_trim_ratio`、`frame_cache_start_step`；`run_batch` 自动截断，`seek_to` 支持窗口外懒加载重放
+  - Dart 前端：`UnifiedState` 新增 `frameCacheStartStep`，`UnifiedNotifier` 同步后端窗口；所有读取 `frameCache[currentStep]` 的 Widget 改为按相对索引访问
+  - 传输层：`AutoStepResult` / `StepStreamBatch` 增加 `cache_start_step`，`api/cide.rs` 暴露 `get_frame_cache_start_step()`
+  - `VarHistoryTab` 改为显示当前窗口内的变量历史，避免遍历全量帧
+  - 新增 `native/tests/unified_engine_window_test.rs` 验证窗口化后的公共 API 行为
+
 ### Changed (架构重构)
 - **内置容器布局解耦（CPP_BUILTIN_LAYOUT_DECOUPLING_PLAN）**：将 `vector<int>`/`vector<float>`/`vector<char>`/`string`/`list<int>` 的布局与方法签名从 Rust 硬编码迁移到 `.cpp` 接口声明文件
   - 新建 `native/runtime_libc/cide/{vector_int,vector_float,vector_char,string,list_int}.cpp` 作为唯一真相来源，通过 `clang++ -fsyntax-only` 语法验证

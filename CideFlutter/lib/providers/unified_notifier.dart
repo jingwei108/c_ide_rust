@@ -87,10 +87,16 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
 
     final payloads = _decodeBatch(batch);
     if (payloads.isNotEmpty) {
-      final newCache = [...state.frameCache, ...payloads];
+      final newCache = _syncFrameCache(
+        state.frameCache,
+        state.frameCacheStartStep,
+        batch.cacheStartStep,
+        payloads,
+      );
       final lastPayload = payloads.last;
       state = state.copyWith(
         frameCache: newCache,
+        frameCacheStartStep: batch.cacheStartStep,
         maxCollectedStep: lastPayload.stepIndex,
         currentStep: lastPayload.stepIndex,
         currentLine: lastPayload.codeLine,
@@ -146,6 +152,44 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
           trapped: trapped,
           trapMessage: trapped ? (trapMessage ?? '运行时错误') : null,
         );
+  }
+
+  /// 同步 frame_cache 窗口。
+  ///
+  /// [oldCache] / [oldStartStep] 为当前状态；
+  /// [newStartStep] / [newPayloads] 为后端返回的最新窗口数据。
+  List<types.StepPayload> _syncFrameCache(
+    List<types.StepPayload> oldCache,
+    int oldStartStep,
+    int newStartStep,
+    List<types.StepPayload> newPayloads,
+  ) {
+    if (newPayloads.isEmpty) return oldCache;
+    final firstStep = newPayloads.first.stepIndex;
+
+    // 常见路径：窗口起点未变化，直接追加。
+    if (newStartStep == oldStartStep &&
+        firstStep == oldStartStep + oldCache.length) {
+      return [...oldCache, ...newPayloads];
+    }
+
+    // Rust 端已截断旧帧：丢弃前端早前的帧，保留与后端窗口重叠的部分，
+    // 然后追加新 payloads。
+    if (newStartStep > oldStartStep) {
+      final discard = newStartStep - oldStartStep;
+      final retained = oldCache.length > discard ? oldCache.sublist(discard) : <types.StepPayload>[];
+      // 去重：保留的末尾可能与 newPayloads 重叠。
+      final retainedMaxStep = retained.isEmpty
+          ? oldStartStep - 1
+          : oldStartStep + discard + retained.length - 1;
+      final uniqueNew = newPayloads
+          .where((p) => p.stepIndex > retainedMaxStep)
+          .toList();
+      return [...retained, ...uniqueNew];
+    }
+
+    // 窗口起点回退（罕见，如重置）：直接采用新 payloads。
+    return newPayloads;
   }
 
   /// 将 StepStreamBatch 解码为完整的 StepPayload 列表。
@@ -429,9 +473,15 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
       final payload = await _rustApi.stepNextUnified();
       if (payload != null) {
         final newCache = [...state.frameCache];
-        if (payload.stepIndex < newCache.length) {
-          newCache[payload.stepIndex] = payload;
+        final idx = payload.stepIndex - state.frameCacheStartStep;
+        if (idx >= 0 && idx < newCache.length) {
+          newCache[idx] = payload;
+        } else if (idx == newCache.length) {
+          newCache.add(payload);
         } else {
+          // 窗口已重置为仅包含当前步。
+          newCache.clear();
+          state = state.copyWith(frameCacheStartStep: payload.stepIndex);
           newCache.add(payload);
         }
         state = state.copyWith(
@@ -453,11 +503,13 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   Future<void> seekTo(int targetStep) async {
     if (!state.canSeek) return;
 
-    // 即时响应：目标已在缓存中
+    // 即时响应：目标已在当前窗口缓存中
+    final cacheIdx = targetStep - state.frameCacheStartStep;
     if (targetStep >= 0 &&
         targetStep <= state.maxCollectedStep &&
-        targetStep < state.frameCache.length) {
-      final payload = state.frameCache[targetStep];
+        cacheIdx >= 0 &&
+        cacheIdx < state.frameCache.length) {
+      final payload = state.frameCache[cacheIdx];
       state = state.copyWith(
         currentStep: targetStep,
         currentLine: payload.codeLine,
@@ -474,14 +526,19 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
       final result = await _rustApi.seekToStep(target: targetStep);
       if (result.success && result.payload != null) {
         final payload = result.payload!;
+        final startStep = await _rustApi.getFrameCacheStartStep();
         final newCache = [...state.frameCache];
-        if (payload.stepIndex < newCache.length) {
-          newCache[payload.stepIndex] = payload;
-        } else if (payload.stepIndex == newCache.length) {
+        final idx = payload.stepIndex - startStep;
+        if (idx >= 0 && idx < newCache.length) {
+          newCache[idx] = payload;
+        } else {
+          // Seek 后 Rust 端窗口已重置，前端同步为单帧窗口。
+          newCache.clear();
           newCache.add(payload);
         }
         state = state.copyWith(
           frameCache: newCache,
+          frameCacheStartStep: startStep,
           currentStep: targetStep,
           currentLine: payload.codeLine,
           isVmRestored: true,
@@ -505,8 +562,9 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
 
   void onSliderChanged(int targetStep) {
     // 拖动过程中即时更新（不恢复 VM）
-    if (targetStep >= 0 && targetStep < state.frameCache.length) {
-      final payload = state.frameCache[targetStep];
+    final cacheIdx = targetStep - state.frameCacheStartStep;
+    if (cacheIdx >= 0 && cacheIdx < state.frameCache.length) {
+      final payload = state.frameCache[cacheIdx];
       state = state.copyWith(
         currentStep: targetStep,
         currentLine: payload.codeLine,
@@ -535,12 +593,13 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   List<types.ApiVariableSnapshot> get currentVariables {
     final frameCache = state.frameCache;
     final currentStep = state.currentStep;
+    final idx = currentStep - state.frameCacheStartStep;
     if (frameCache.isEmpty ||
-        currentStep < 0 ||
-        currentStep >= frameCache.length) {
+        idx < 0 ||
+        idx >= frameCache.length) {
       return [];
     }
-    return frameCache[currentStep].localVars;
+    return frameCache[idx].localVars;
   }
 
   void onCodeChanged() {

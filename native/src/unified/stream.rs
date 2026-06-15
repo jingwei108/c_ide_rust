@@ -141,6 +141,8 @@ pub struct StepStreamBatch {
     pub paused: bool,
     pub current_line: i32,
     pub trap_message: Option<String>,
+    /// 当前 frame_cache 窗口起始步号，供前端同步窗口起点。
+    pub cache_start_step: i32,
 }
 
 // ==================== 编码器 ====================
@@ -177,7 +179,7 @@ impl SymbolTable {
 }
 
 /// 将一组 StepPayload 编码为优化的 StepStreamBatch。
-pub fn encode_payloads(payloads: &[StepPayload]) -> StepStreamBatch {
+pub fn encode_payloads(payloads: &[StepPayload], cache_start_step: i32) -> StepStreamBatch {
     if payloads.is_empty() {
         return StepStreamBatch {
             symbol_table: vec![String::new()],
@@ -189,6 +191,7 @@ pub fn encode_payloads(payloads: &[StepPayload]) -> StepStreamBatch {
             paused: false,
             current_line: 0,
             trap_message: None,
+            cache_start_step,
         };
     }
 
@@ -239,6 +242,7 @@ pub fn encode_payloads(payloads: &[StepPayload]) -> StepStreamBatch {
         paused: false,
         current_line: payloads.last().map(|p| p.code_line).unwrap_or(0),
         trap_message: None,
+        cache_start_step,
     }
 }
 
@@ -643,7 +647,7 @@ mod tests {
 
     #[test]
     fn test_empty_payloads() {
-        let batch = encode_payloads(&[]);
+        let batch = encode_payloads(&[], 0);
         assert!(batch.base_payloads.is_empty());
         assert!(batch.deltas.is_empty());
         assert_eq!(batch.symbol_table.len(), 1); // 空字符串
@@ -652,7 +656,7 @@ mod tests {
     #[test]
     fn test_single_payload_roundtrip() {
         let payloads = vec![make_payload(0, vec![var("i", "int", "0"), var("n", "int", "5")])];
-        let batch = encode_payloads(&payloads);
+        let batch = encode_payloads(&payloads, 0);
         let decoded = decode_batch(&batch);
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].step_index, 0);
@@ -668,7 +672,7 @@ mod tests {
             make_payload(1, vec![var("i", "int", "1"), var("n", "int", "5")]),
             make_payload(2, vec![var("i", "int", "2"), var("n", "int", "5")]),
         ];
-        let batch = encode_payloads(&payloads);
+        let batch = encode_payloads(&payloads, 0);
         assert_eq!(batch.base_payloads.len(), 1);
         assert_eq!(batch.deltas.len(), 2);
 
@@ -692,7 +696,7 @@ mod tests {
             make_payload(1, vec![var("i", "int", "1"), var("j", "int", "10")]),
             make_payload(2, vec![var("j", "int", "11")]),
         ];
-        let batch = encode_payloads(&payloads);
+        let batch = encode_payloads(&payloads, 0);
         assert_eq!(batch.deltas[0].new_vars.len(), 1); // j 新增
         assert_eq!(batch.deltas[1].removed_var_name_indices.len(), 1); // i 移除
         assert_eq!(batch.deltas[1].var_deltas.len(), 1); // j 变化
@@ -712,7 +716,7 @@ mod tests {
             make_payload(0, vec![var("i", "int", "0")]),
             make_payload(1, vec![var("i", "int", "1")]),
         ];
-        let batch = encode_payloads(&payloads);
+        let batch = encode_payloads(&payloads, 0);
         // func_name "main", semantic_label "step 0"/"step 1", name "i", ty "int", value "0"/"1"
         // 只有 "main" 和 "i" 和 "int" 是重复的，应该被去重
         let sym_set: std::collections::HashSet<&String> = batch.symbol_table.iter().collect();

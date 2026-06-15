@@ -18,6 +18,12 @@ pub struct UnifiedEngine {
     pub is_cancelled: bool,
     /// 复用的 pre-step 快照容器，避免 `run_batch` 每步分配 1MB Vec。
     pre_step_snap: Option<VMSnapshot>,
+    /// FrameCache 滑动窗口大小。超过此值时丢弃最早的帧。
+    frame_cache_window_size: usize,
+    /// 每次超出窗口时丢弃的比例（如 0.2 表示丢弃最早的 20%）。
+    frame_cache_trim_ratio: f64,
+    /// 当前 frame_cache[0] 对应的实际步号。
+    pub frame_cache_start_step: i32,
 }
 
 impl Default for UnifiedEngine {
@@ -35,6 +41,9 @@ impl UnifiedEngine {
             is_paused: false,
             is_cancelled: false,
             pre_step_snap: None,
+            frame_cache_window_size: 2_000,
+            frame_cache_trim_ratio: 0.2,
+            frame_cache_start_step: 0,
         }
     }
 
@@ -97,6 +106,24 @@ impl UnifiedEngine {
         self.is_paused = false;
         self.is_cancelled = false;
         self.pre_step_snap = None;
+        self.frame_cache_start_step = 0;
+    }
+
+    /// 返回当前 frame_cache 窗口起始步号。
+    pub fn frame_cache_start_step(&self) -> i32 {
+        self.frame_cache_start_step
+    }
+
+    /// 对 frame_cache 执行滑动窗口截断。
+    /// 超过窗口上限时丢弃最早的 `trim_ratio` 比例帧，并更新窗口起点。
+    pub(crate) fn trim_frame_cache(&mut self) {
+        if self.frame_cache.len() <= self.frame_cache_window_size {
+            return;
+        }
+        let discard = ((self.frame_cache.len() as f64) * self.frame_cache_trim_ratio).ceil() as usize;
+        let discard = discard.max(1).min(self.frame_cache.len());
+        self.frame_cache_start_step += discard as i32;
+        self.frame_cache = self.frame_cache.split_off(discard);
     }
 
     pub fn pause(&mut self) {
@@ -207,6 +234,7 @@ impl UnifiedEngine {
         }
 
         self.frame_cache.extend(payloads.clone());
+        self.trim_frame_cache();
 
         Ok(AutoStepResult {
             payloads,
@@ -216,19 +244,20 @@ impl UnifiedEngine {
             paused: self.is_paused,
             current_line: vm.get_current_line(),
             trap_message,
+            cache_start_step: self.frame_cache_start_step,
         })
     }
 
     /// Seek 到指定步。
     ///
-    /// 如果目标步已在 `frame_cache` 中，直接返回；
-    /// 否则从最近检查点恢复 VM 并正向重放。
+    /// 如果目标步已在当前 `frame_cache` 窗口中，直接返回；
+    /// 否则从最近检查点恢复 VM 并正向重放，然后只保留目标步附近窗口内的帧。
     pub fn seek_to(&mut self, target: i32, vm: &mut CideVM, session: &mut Session) -> SeekResult {
-        // 目标已在缓存中
-        if let Some(payload) = self.frame_cache.get(target as usize) {
+        // 目标已在当前窗口中
+        if let Some(idx) = self.frame_cache_index(target) {
             return SeekResult {
                 success: true,
-                payload: Some(payload.clone()),
+                payload: Some(self.frame_cache[idx].clone()),
                 error: None,
             };
         }
@@ -266,15 +295,12 @@ impl UnifiedEngine {
             match vm.step(session) {
                 StepResult::Ok | StepResult::Paused => {
                     let payload = StepCollector::collect(vm, session, step);
-                    if step as usize == self.frame_cache.len() {
-                        self.frame_cache.push(payload);
-                    }
+                    self.push_or_replace_in_replay(step, payload);
                 }
                 StepResult::WaitingInput => {
                     let payload = StepCollector::collect(vm, session, step);
-                    if step as usize == self.frame_cache.len() {
-                        self.frame_cache.push(payload.clone());
-                    }
+                    self.push_or_replace_in_replay(step, payload.clone());
+                    self.finish_replay_window(target);
                     return SeekResult {
                         success: true,
                         payload: Some(payload),
@@ -283,9 +309,8 @@ impl UnifiedEngine {
                 }
                 StepResult::Finished => {
                     let payload = StepCollector::collect(vm, session, step);
-                    if step as usize == self.frame_cache.len() {
-                        self.frame_cache.push(payload.clone());
-                    }
+                    self.push_or_replace_in_replay(step, payload.clone());
+                    self.finish_replay_window(target);
                     return SeekResult {
                         success: true,
                         payload: Some(payload),
@@ -302,11 +327,14 @@ impl UnifiedEngine {
             }
         }
 
-        // 截断 frame_cache，丢弃 target 之后的旧数据（如果存在）
-        self.frame_cache.truncate((target + 1) as usize);
+        self.finish_replay_window(target);
 
         // 返回目标步的 payload
-        match self.frame_cache.get(target as usize).cloned() {
+        match self
+            .frame_cache_index(target)
+            .and_then(|idx| self.frame_cache.get(idx))
+            .cloned()
+        {
             Some(payload) => SeekResult {
                 success: true,
                 payload: Some(payload),
@@ -320,10 +348,72 @@ impl UnifiedEngine {
         }
     }
 
-    /// 获取指定范围的 StepPayload（用于前端 FrameCache 批量回填）。
+    /// 将实际步号转换为当前 frame_cache 中的索引。
+    pub(crate) fn frame_cache_index(&self, step: i32) -> Option<usize> {
+        if step < self.frame_cache_start_step {
+            return None;
+        }
+        let idx = (step - self.frame_cache_start_step) as usize;
+        if idx < self.frame_cache.len() {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    /// 重放过程中将 payload 放入临时缓存。
+    fn push_or_replace_in_replay(&mut self, step: i32, payload: StepPayload) {
+        let idx = (step - self.frame_cache_start_step) as usize;
+        if idx == self.frame_cache.len() {
+            self.frame_cache.push(payload);
+        } else if idx < self.frame_cache.len() {
+            self.frame_cache[idx] = payload;
+        } else {
+            // 中间有缺口，用占位填充（正常重放不应出现）
+            while self.frame_cache.len() < idx {
+                self.frame_cache.push(StepPayload {
+                    step_index: self.frame_cache_start_step + self.frame_cache.len() as i32,
+                    code_line: 0,
+                    func_name: String::new(),
+                    semantic_label: String::new(),
+                    algorithm_step: None,
+                    local_vars: Vec::new(),
+                    call_stack: Vec::new(),
+                    vis_events: Vec::new(),
+                    heatmap_line: 0,
+                    heatmap_count: 0,
+                    accessed_vars: Vec::new(),
+                    array_snapshots: Vec::new(),
+                    pointer_snapshots: Vec::new(),
+                    root_cause_hint: None,
+                });
+            }
+            self.frame_cache.push(payload);
+        }
+    }
+
+    /// 重放结束后仅保留目标步附近窗口内的帧。
+    fn finish_replay_window(&mut self, target: i32) {
+        let end_step = target;
+        let start_step = (end_step - self.frame_cache_window_size as i32 + 1).max(0);
+        if self.frame_cache_start_step < start_step {
+            let discard = (start_step - self.frame_cache_start_step) as usize;
+            self.frame_cache_start_step = start_step;
+            self.frame_cache = self.frame_cache.split_off(discard);
+        }
+        // 截断 target 之后的多余帧
+        let expected_len = (end_step - self.frame_cache_start_step + 1) as usize;
+        self.frame_cache.truncate(expected_len);
+    }
+
+    /// 获取指定范围的 StepPayload（按实际步号）。
+    /// 只返回当前窗口内存在的部分。
     pub fn get_payloads(&self, start: i32, end: i32) -> Vec<StepPayload> {
-        let start = start.max(0) as usize;
-        let end = (end as usize).min(self.frame_cache.len());
+        let start_step = self.frame_cache_start_step;
+        let cache_end = start_step + self.frame_cache.len() as i32;
+        let start = start.max(start_step) as usize;
+        let end = (end.min(cache_end) as usize).saturating_sub(start_step as usize);
+        let start = start.saturating_sub(start_step as usize);
         if start < end {
             self.frame_cache[start..end].to_vec()
         } else {
@@ -331,8 +421,13 @@ impl UnifiedEngine {
         }
     }
 
-    /// 获取当前已收集的最大步数。
+    /// 获取当前缓存窗口中已收集的最大步数。
+    /// 若缓存为空，返回 `frame_cache_start_step - 1`。
     pub fn max_collected_step(&self) -> i32 {
-        self.frame_cache.len().saturating_sub(1) as i32
+        if self.frame_cache.is_empty() {
+            self.frame_cache_start_step - 1
+        } else {
+            self.frame_cache_start_step + self.frame_cache.len() as i32 - 1
+        }
     }
 }

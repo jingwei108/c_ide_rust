@@ -27,8 +27,7 @@
 dependencies:
   flutter:
     sdk: flutter
-  re_editor: ^0.8.0
-  flutter_riverpod: ^3.3.1
+  flutter_riverpod: ^2.6.1
   flutter_rust_bridge: ^2.12.0
   shared_preferences: ^2.5.0
 

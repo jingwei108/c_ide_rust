@@ -14,12 +14,15 @@ class LinkedListVisTab extends ConsumerWidget {
     final unifiedState = ref.watch(unifiedProvider);
     final frameCache = unifiedState.frameCache;
     final currentStep = unifiedState.currentStep;
+    final cacheIdx = currentStep - unifiedState.frameCacheStartStep;
 
-    if (frameCache.isEmpty || currentStep < 0 || currentStep >= frameCache.length) {
+    if (frameCache.isEmpty ||
+        cacheIdx < 0 ||
+        cacheIdx >= frameCache.length) {
       return _buildEmpty('运行程序以查看链表');
     }
 
-    final payload = frameCache[currentStep];
+    final payload = frameCache[cacheIdx];
     final localVars = payload.localVars;
 
     // 查找 struct Node* 类型的指针变量作为链表头

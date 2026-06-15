@@ -15,10 +15,13 @@ class PointerVisTab extends ConsumerWidget {
     final unifiedState = ref.watch(unifiedProvider);
     final frameCache = unifiedState.frameCache;
     final currentStep = unifiedState.currentStep;
+    final cacheIdx = currentStep - unifiedState.frameCacheStartStep;
 
     // 统一模式：从 frameCache 读取指针快照
-    if (frameCache.isNotEmpty && currentStep >= 0 && currentStep < frameCache.length) {
-      final payload = frameCache[currentStep];
+    if (frameCache.isNotEmpty &&
+        cacheIdx >= 0 &&
+        cacheIdx < frameCache.length) {
+      final payload = frameCache[cacheIdx];
       final pointers = payload.pointerSnapshots;
 
       if (pointers.isEmpty) {

@@ -18,6 +18,9 @@ class UnifiedState {
   final int maxCollectedStep;
   final int totalSteps;
   final List<rust.StepPayload> frameCache;
+  /// 当前 frameCache 窗口起始步号。
+  /// frameCache[0] 对应实际步号 frameCacheStartStep。
+  final int frameCacheStartStep;
   final bool isPlaying;
   final double playbackSpeed;
   final String? errorMessage;
@@ -40,6 +43,7 @@ class UnifiedState {
     this.maxCollectedStep = 0,
     this.totalSteps = 0,
     this.frameCache = const [],
+    this.frameCacheStartStep = 0,
     this.isPlaying = false,
     this.playbackSpeed = 1.0,
     this.errorMessage,
@@ -60,6 +64,7 @@ class UnifiedState {
     int? maxCollectedStep,
     int? totalSteps,
     List<rust.StepPayload>? frameCache,
+    int? frameCacheStartStep,
     bool? isPlaying,
     double? playbackSpeed,
     String? errorMessage,
@@ -81,6 +86,7 @@ class UnifiedState {
       maxCollectedStep: maxCollectedStep ?? this.maxCollectedStep,
       totalSteps: totalSteps ?? this.totalSteps,
       frameCache: frameCache ?? this.frameCache,
+      frameCacheStartStep: frameCacheStartStep ?? this.frameCacheStartStep,
       isPlaying: isPlaying ?? this.isPlaying,
       playbackSpeed: playbackSpeed ?? this.playbackSpeed,
       errorMessage: clearError ? null : (errorMessage ?? this.errorMessage),

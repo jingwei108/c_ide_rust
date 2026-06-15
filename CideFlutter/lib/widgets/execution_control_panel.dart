@@ -28,8 +28,9 @@ class ExecutionControlPanel extends ConsumerWidget {
 
     // 获取当前步的算法可视化事件上下文
     String? visContext;
-    final currentPayload = state.currentStep >= 0 && state.currentStep < state.frameCache.length
-        ? state.frameCache[state.currentStep]
+    final cacheIdx = state.currentStep - state.frameCacheStartStep;
+    final currentPayload = cacheIdx >= 0 && cacheIdx < state.frameCache.length
+        ? state.frameCache[cacheIdx]
         : null;
     final algorithmStep = currentPayload?.algorithmStep;
     final rootCauseHint = currentPayload?.rootCauseHint;
@@ -278,8 +279,9 @@ class ExecutionControlPanel extends ConsumerWidget {
   }
 
   String _buildSliderLabel(UnifiedState state) {
-    if (state.currentStep >= 0 && state.currentStep < state.frameCache.length) {
-      final payload = state.frameCache[state.currentStep];
+    final cacheIdx = state.currentStep - state.frameCacheStartStep;
+    if (cacheIdx >= 0 && cacheIdx < state.frameCache.length) {
+      final payload = state.frameCache[cacheIdx];
       if (payload.semanticLabel.isNotEmpty) {
         return payload.semanticLabel;
       }

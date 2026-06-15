@@ -74,8 +74,8 @@ $env:PATH += ";$env:ANDROID_HOME\platform-tools"
 Flutter 前端 (Dart)
   │
   ├─ lib/main.dart                     # 入口，初始化 FRB
-  ├─ lib/src/rust/api/cide.dart        # FRB 自动生成的 Dart 绑定
-  ├─ lib/src/rust/frb_generated.dart   # FRB 生成的序列化/反序列化代码
+  ├─ lib/src/rust/api/cide.dart        # FRB 自动生成的 Dart 绑定（构建时生成，勿提交）
+  ├─ lib/src/rust/frb_generated.dart   # FRB 生成的序列化/反序列化代码（构建时生成，勿提交）
   │
   ▼
 flutter_rust_bridge (Dart 侧运行时)
@@ -88,7 +88,7 @@ Rust 后端 (cide_native)
   ├─ native/src/api/cide.rs            # FRB 公开 API（#[frb] 标记）
   ├─ native/src/api/mod.rs             # API 模块入口
   ├─ native/src/flutter_bridge.rs      # 业务包装层（Session 管理）
-  ├─ native/src/capi/mod.rs            # C API（MAUI / P/Invoke 兼容层）
+  ├─ native/src/capi/mod.rs            # C API（Shadow Verification / CLI 服务层）
   └─ native/src/lib.rs                 # crate 入口
 ```
 
@@ -96,13 +96,11 @@ Rust 后端 (cide_native)
 
 **不改动核心 Rust 逻辑**：FRB 连接层只做**类型转换**和**包装**，所有编译器/VM 代码保持原样。
 
-**Session 全局单例**：`flutter_bridge.rs` 使用 `lazy_static! + Mutex<Session>` 维护全局会话状态，避免 Dart 侧管理 Rust 对象生命周期。
+**Session 全局单例**：`flutter_bridge.rs` 使用 `std::sync::LazyLock<Mutex<Session>>` 维护全局会话状态，避免 Dart 侧管理 Rust 对象生命周期。
 
-**双接口共存**：
-- `capi/mod.rs` → C API（`extern "C"`）→ MAUI 通过 P/Invoke 调用
+**单接口架构**：MAUI 已移除，当前仅保留 FRB 接口。
 - `api/cide.rs` → FRB API（`#[frb]`）→ Flutter 通过 dart:ffi 调用
-
-两者底层共享同一个 `Session` 和 `CideVM` 实例。
+- `capi/mod.rs` → 精简后的 C API，仅服务 Shadow Verification 与 `cide_cli` 调试工具
 
 ### 2.3 重新生成绑定（Rust API 变更后）
 
@@ -130,8 +128,8 @@ flutter_rust_bridge_codegen generate
 | `native/src/api/mod.rs` | API 模块注册 | 低 |
 | `native/src/flutter_bridge.rs` | 业务包装 + Session 管理 | 中 |
 | `native/flutter_rust_bridge.yaml` | FRB 生成配置 | 极低 |
-| `CideFlutter/lib/src/rust/api/cide.dart` | **自动生成**，勿手动修改 | 自动 |
-| `CideFlutter/lib/src/rust/frb_generated.dart` | **自动生成**，勿手动修改 | 自动 |
+| `CideFlutter/lib/src/rust/api/cide.dart` | **构建时自动生成**，勿手动修改、勿提交 | 自动 |
+| `CideFlutter/lib/src/rust/frb_generated.dart` | **构建时自动生成**，勿手动修改、勿提交 | 自动 |
 | `CideFlutter/rust_builder/` | cargokit 跨平台构建插件 | 极低 |
 
 ---
@@ -381,7 +379,7 @@ distributionUrl=file:///C:/.../gradle-8.13-bin.zip
 
 **解决**：
 1. 确保该包在 `~/AppData/Local/Pub/Cache/hosted/pub.dev/`
-2. 目录名格式必须为 `包名-版本号`（如 `re_editor-0.8.0`）
+2. 目录名格式必须为 `包名-版本号`（如 `flutter_riverpod-2.6.1`）
 3. 如果包不在缓存中，需在有网络的机器上先 `flutter pub get`，然后将缓存目录复制过来
 
 ### 5.6 FRB 绑定生成失败

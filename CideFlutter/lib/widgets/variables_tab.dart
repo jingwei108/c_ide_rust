@@ -12,12 +12,16 @@ class VariablesTab extends ConsumerWidget {
     final unifiedState = ref.watch(unifiedProvider);
     final frameCache = unifiedState.frameCache;
     final currentStep = unifiedState.currentStep;
+    final cacheStartStep = unifiedState.frameCacheStartStep;
+    final cacheIdx = currentStep - cacheStartStep;
 
-    if (frameCache.isEmpty || currentStep < 0 || currentStep >= frameCache.length) {
+    if (frameCache.isEmpty ||
+        cacheIdx < 0 ||
+        cacheIdx >= frameCache.length) {
       return _buildEmpty('运行程序以查看变量');
     }
 
-    final payload = frameCache[currentStep];
+    final payload = frameCache[cacheIdx];
     final localVars = payload.localVars;
     final accessedMap = <String, String>{};
     for (final av in payload.accessedVars) {
@@ -26,8 +30,8 @@ class VariablesTab extends ConsumerWidget {
 
     // 上一步变量值，用于检测变化
     final prevValues = <String, String>{};
-    if (currentStep > 0) {
-      final prevPayload = frameCache[currentStep - 1];
+    if (cacheIdx > 0) {
+      final prevPayload = frameCache[cacheIdx - 1];
       for (final pv in prevPayload.localVars) {
         prevValues[pv.name] = pv.value;
       }

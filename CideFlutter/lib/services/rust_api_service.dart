@@ -39,6 +39,7 @@ abstract class RustApiService {
   Future<void> resumeExecution();
   Future<types.SeekResult> seekToStep({required int target});
   Future<types.StepPayload?> stepNextUnified();
+  Future<int> getFrameCacheStartStep();
   Future<String?> applyFix({required String source, required Diagnostic diag});
   Future<CompileResult> compile({required String source});
 }
@@ -122,6 +123,9 @@ class DefaultRustApiService implements RustApiService {
 
   @override
   Future<types.StepPayload?> stepNextUnified() => rust.stepNextUnified();
+
+  @override
+  Future<int> getFrameCacheStartStep() => rust.getFrameCacheStartStep();
 
   @override
   Future<String?> applyFix({required String source, required Diagnostic diag}) =>

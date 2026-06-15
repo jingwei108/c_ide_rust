@@ -103,8 +103,9 @@ class AlgorithmTab extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final unifiedState = ref.watch(unifiedProvider);
-    final currentStep = unifiedState.currentStep >= 0 && unifiedState.currentStep < unifiedState.frameCache.length
-        ? unifiedState.frameCache[unifiedState.currentStep].algorithmStep
+    final cacheIdx = unifiedState.currentStep - unifiedState.frameCacheStartStep;
+    final currentStep = cacheIdx >= 0 && cacheIdx < unifiedState.frameCache.length
+        ? unifiedState.frameCache[cacheIdx].algorithmStep
         : null;
 
     if (matches.isEmpty) {

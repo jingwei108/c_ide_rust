@@ -23,11 +23,12 @@ class WatchTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = TextEditingController();
     final unifiedState = ref.watch(unifiedProvider);
+    final cacheIdx = unifiedState.currentStep - unifiedState.frameCacheStartStep;
     final vars =
         unifiedState.frameCache.isNotEmpty &&
-                unifiedState.currentStep >= 0 &&
-                unifiedState.currentStep < unifiedState.frameCache.length
-            ? unifiedState.frameCache[unifiedState.currentStep].localVars
+                cacheIdx >= 0 &&
+                cacheIdx < unifiedState.frameCache.length
+            ? unifiedState.frameCache[cacheIdx].localVars
             : <rust.ApiVariableSnapshot>[];
 
     return Column(

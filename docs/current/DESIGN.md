@@ -170,7 +170,7 @@ c-ide/
 │   │   │   └── types.rs               # StepPayload / StepMeta 等 FRB 类型
 │   │   ├── engine/                    # 编译管线与工具
 │   │   │   └── compile_pipeline.rs    # 统一编译管线
-│   │   ├── capi/                      # C API 桥接层（MAUI 兼容）
+│   │   ├── capi/                      # C API 服务层（Shadow Verification / CLI）
 │   │   │   └── mod.rs
 │   │   ├── api/                       # flutter_rust_bridge API
 │   │   │   └── cide.rs
@@ -502,7 +502,7 @@ Flutter 前端基于 `LayoutBuilder` 和 `MediaQuery` 实现多端自适应：
 
 ### 5.2 编辑器与交互
 
-- **编辑器**：`re_editor`（CustomPainter 实现），支持语法高亮、智能缩进、VS-style Enter 格式化
+- **编辑器**：自研 `CideEditor`（`EditableText` + `CustomPaint` 实现），支持语法高亮、智能缩进、VS-style Enter 格式化
 - **触控优化**：最小触控区域 48dp；底部符号工具栏；手势滑动切换 Tab（60px 阈值）
 - **虚拟键盘适配**：弹出时自动滚动到光标位置
 - **算法可视化**：内存映射 Canvas（1MB 256×4KB 网格）、链表/数组/树可视化
@@ -707,7 +707,7 @@ void bubbleSort(int arr[], int n) {
 - [x] 项目脚手架：Cargo, 目录结构, 构建脚本
 - [x] C API 接口定义：cide_capi.h
 - [x] Flutter 跨平台项目 + Android / Windows 入口
-- [x] 代码编辑器基础（`re_editor` + 语法高亮 + 触控优化）
+- [x] 代码编辑器基础（自研 `CideEditor` + 语法高亮 + 触控优化，已移除 `re_editor`）
 - [x] **Rust 后端骨架**：Session 类型 + C API 桩
 
 ### Phase 2: C 子集编译器 + VM（✅ 已完成）

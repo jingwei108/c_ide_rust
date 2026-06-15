@@ -75,7 +75,7 @@ impl CideVM {
 ```
 
 ```dart
-// Flutter 层：re_editor 侧边栏渲染
+// Flutter 层：CideEditor 侧边栏渲染
 class HeatmapGutter extends LeafRenderObjectWidget {
   final Map<int, int> lineCounts;   // 来自 Rust
   final int maxCount;               // 用于归一化颜色
@@ -309,7 +309,7 @@ pub fn get_variable_highlights(&self) -> Vec<VariableHighlight> {
 }
 ```
 
-Flutter 侧 `re_editor` 支持在特定文本范围绘制下划线/边框/底色。
+Flutter 侧 `CideEditor` 支持在特定文本范围绘制下划线/边框/底色。
 
 ---
 
@@ -421,7 +421,7 @@ impl CheckpointManager {
 | P1 | 排序动画 MVP + 语义进度条 | ✅ 已实现 | `widgets/array_vis_tab.dart` + `ExecutionControlPanel` |
 | P1 | 变量变化历史（悬浮球零延迟） | ✅ 已实现 | `widgets/var_history_tab.dart` 迷你趋势图 |
 | P2 | 运行时异常自动回退 | ✅ 已实现 | `unified/engine.rs` `pre_step_snap` + Trap 回退 |
-| P2 | 变量级高亮 | ✅ 已实现 | `re_editor` `spanBuilder` 集成：被读变量淡蓝底色、被写变量淡橙底色 |
+| P2 | 变量级高亮 | ✅ 已实现 | 自研 `CideEditor` `spanBuilder` 集成：被读变量淡蓝底色、被写变量淡橙底色 |
 | P3 | 链表/树可视化增强 | ✅ 已实现 | `LinkedListVisualizer` / `TreeVisualizer` CustomPainter + 时间旅行集成 |
 
 **实际用时：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）。**

@@ -141,6 +141,8 @@ pub struct AutoStepResult {
     pub paused: bool,
     pub current_line: i32,
     pub trap_message: Option<String>,
+    /// 当前 frame_cache 窗口起始步号，供前端同步窗口起点。
+    pub cache_start_step: i32,
 }
 
 /// Seek 到指定步的返回结果。

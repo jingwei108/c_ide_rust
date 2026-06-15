@@ -449,6 +449,11 @@ pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
     crate::flutter_bridge::get_step_payloads(start, end)
 }
 
+#[frb]
+pub fn get_frame_cache_start_step() -> i32 {
+    crate::flutter_bridge::get_frame_cache_start_step()
+}
+
 /// Stream 模式批量自动执行（batch_size=100）。
 /// Dart 端订阅返回的 Stream，Rust 在后台线程中循环执行并推送批次。
 #[frb]

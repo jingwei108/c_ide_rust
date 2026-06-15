@@ -14,12 +14,16 @@ class CallstackTab extends ConsumerWidget {
     final unifiedState = ref.watch(unifiedProvider);
     final frameCache = unifiedState.frameCache;
     final currentStep = unifiedState.currentStep;
+    final cacheStartStep = unifiedState.frameCacheStartStep;
+    final cacheIdx = currentStep - cacheStartStep;
 
-    if (frameCache.isEmpty || currentStep < 0 || currentStep >= frameCache.length) {
+    if (frameCache.isEmpty ||
+        cacheIdx < 0 ||
+        cacheIdx >= frameCache.length) {
       return _buildEmpty('运行程序以查看调用栈');
     }
 
-    final payload = frameCache[currentStep];
+    final payload = frameCache[cacheIdx];
     final callStack = payload.callStack;
 
     if (callStack.isEmpty) {

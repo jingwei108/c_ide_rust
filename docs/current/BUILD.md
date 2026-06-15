@@ -39,9 +39,9 @@ $env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
 
 | 脚本 | 功能 | 适用场景 |
 |:---|:---|:---|
-| [`scripts/build_flutter.py`](../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端 | 日常开发编译 |
-| [`scripts/build_release.py`](../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
-| [`scripts/test_mobile.py`](../scripts/test_mobile.py) | 移动端完整流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
+| [`scripts/build_flutter.py`](../../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端 | 日常开发编译 |
+| [`scripts/build_release.py`](../../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
+| [`scripts/test_mobile.py`](../../scripts/test_mobile.py) | 移动端完整流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
 
 > 旧版 MAUI 构建脚本已归档至 [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md)。
 

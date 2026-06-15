@@ -2,7 +2,7 @@
 
 **版本**: 2.8  
 **日期**: 2026-06-13  
-**状态**: **M7 Beta Readiness 已就绪**：M6 + Stage 2b 已完成，`native/tests/cases/cpp/` 60 个 C++ E2E 用例全部通过，C++ Shadow Verification 82/82 一致、0 gap；全量 `cargo test` 690 passed、clippy 0 警告；`scripts/ci_three_tier_check.py` 误报已修复；同参数个数不同类型的构造函数重载已报告 `E4031` 而不是静默错误。已新增 5 个 C++ 教学模板（`cpp_hello` / `cpp_class_basic` / `cpp_vector_int` / `cpp_unique_ptr` / `cpp_range_for`）与学生版 `CPP_SUBSET_SPEC.md`。内置容器已全面迁移为 `runtime_libc/cide/*.cpp` 标准模板实现。详见 `docs/current/M7_BETA_READINESS.md`。**当前目标：启动内部试用并收集反馈。**  
+**状态**: **M7 Beta Readiness 已就绪**：M6 + Stage 2b 已完成，`native/tests/cases/cpp/` 61 个 C++ E2E 用例全部通过，C++ Shadow Verification 83/83 一致、0 gap；全量 `cargo test` 719 passed、clippy 0 警告；`scripts/ci_three_tier_check.py` 误报已修复；同参数个数不同类型的构造函数重载已报告 `E4031` 而不是静默错误。已新增 5 个 C++ 教学模板（`cpp_hello` / `cpp_class_basic` / `cpp_vector_int` / `cpp_unique_ptr` / `cpp_range_for`）与学生版 `CPP_SUBSET_SPEC.md`。内置容器已全面迁移为 `runtime_libc/cide/*.cpp` 标准模板实现。详见 `docs/current/M7_BETA_READINESS.md`。**当前目标：启动内部试用并收集反馈。**  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
 
 ---
