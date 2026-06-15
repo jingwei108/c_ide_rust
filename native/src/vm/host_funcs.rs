@@ -16,6 +16,21 @@ fn read_cstring(vm: &CideVM, addr: u32) -> String {
     String::from_utf8_lossy(&bytes).into_owned()
 }
 
+/// 当前时间戳（毫秒）。
+#[cfg(not(target_arch = "wasm32"))]
+fn current_time_millis() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+/// Web 平台使用 `js_sys::Date::now()` 获取时间戳（毫秒）。
+#[cfg(target_arch = "wasm32")]
+fn current_time_millis() -> u64 {
+    js_sys::Date::now() as u64
+}
+
 /// 跳过 printf 格式字符串中的修饰符（宽度、精度、长度等），返回真正的格式字母列表。
 /// 例如 "%6d" 返回 ['d']，"%.2f" 返回 ['f']，"%%" 不返回任何内容。
 /// 解析一个 printf/scanf 格式说明符（% 之后的内容）。
@@ -2436,20 +2451,14 @@ pub fn host_clearerr(vm: &mut CideVM, session: &mut Session) {
 
 pub fn host_time(vm: &mut CideVM, _session: &mut Session) {
     let _tloc = vm.pop() as u32;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    let secs = now.as_secs() as i64;
+    let secs = (current_time_millis() / 1000) as i64;
     vm.push(secs as u64);
 }
 
 pub fn host_clock(vm: &mut CideVM, _session: &mut Session) {
-    // 返回一个近似值：使用当前时间的纳秒数作为单调时钟
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
+    // 返回一个近似值：使用当前时间戳的微秒数作为单调时钟
     // CLOCKS_PER_SEC 通常定义为 1_000_000，返回微秒级精度
-    let clocks = now.as_micros() as i64;
+    let clocks = (current_time_millis() * 1000) as i64;
     vm.push(clocks as u64);
 }
 

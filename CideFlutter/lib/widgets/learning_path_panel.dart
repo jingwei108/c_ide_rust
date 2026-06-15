@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart' show PlatformInt64Util;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/template_registry.dart';
 //  // CompileSnapshot from ide_provider state
@@ -34,7 +35,7 @@ class _LearningPathPanelState extends ConsumerState<LearningPathPanel> {
     try {
       final progress = ref.read(ideProvider).learningProgress;
       final records = progress.recentCompileRecords.map((s) => rust_mp.CompileRecord(
-        timestampMs: s.timestampMs,
+        timestampMs: PlatformInt64Util.from(s.timestampMs),
         success: s.success,
         errorCodes: Int32List.fromList(s.errorCodes),
         trapMessage: s.trapMessage,

@@ -705,33 +705,50 @@ pub fn run_auto_steps_stream(
     sink: crate::frb_generated::StreamSink<crate::unified::stream::StepStreamBatch>,
     batch_size: i32,
 ) {
-    std::thread::spawn(move || {
-        loop {
-            let result = run_auto_steps(batch_size);
-            let should_stop = result.finished || result.trapped || result.waiting_input || result.paused;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::thread::spawn(move || {
+            run_auto_steps_stream_loop(sink, batch_size);
+        });
+    }
 
-            // 将 payloads 编码为优化后的 StepStreamBatch
-            let cache_start_step = {
-                let engine_arc_l546 = current_unified_engine();
-                let engine = lock_or_reset(&engine_arc_l546);
-                engine.frame_cache_start_step()
-            };
-            let mut batch = crate::unified::stream::encode_payloads(&result.payloads, cache_start_step);
-            batch.finished = result.finished;
-            batch.trapped = result.trapped;
-            batch.waiting_input = result.waiting_input;
-            batch.paused = result.paused;
-            batch.current_line = result.current_line;
-            batch.trap_message = result.trap_message;
+    #[cfg(target_arch = "wasm32")]
+    {
+        wasm_bindgen_futures::spawn_local(async move {
+            run_auto_steps_stream_loop(sink, batch_size);
+        });
+    }
+}
 
-            if sink.add(batch).is_err() {
-                break;
-            }
-            if should_stop {
-                break;
-            }
+fn run_auto_steps_stream_loop(
+    sink: crate::frb_generated::StreamSink<crate::unified::stream::StepStreamBatch>,
+    batch_size: i32,
+) {
+    loop {
+        let result = run_auto_steps(batch_size);
+        let should_stop = result.finished || result.trapped || result.waiting_input || result.paused;
+
+        // 将 payloads 编码为优化后的 StepStreamBatch
+        let cache_start_step = {
+            let engine_arc_l546 = current_unified_engine();
+            let engine = lock_or_reset(&engine_arc_l546);
+            engine.frame_cache_start_step()
+        };
+        let mut batch = crate::unified::stream::encode_payloads(&result.payloads, cache_start_step);
+        batch.finished = result.finished;
+        batch.trapped = result.trapped;
+        batch.waiting_input = result.waiting_input;
+        batch.paused = result.paused;
+        batch.current_line = result.current_line;
+        batch.trap_message = result.trap_message;
+
+        if sink.add(batch).is_err() {
+            break;
         }
-    });
+        if should_stop {
+            break;
+        }
+    }
 }
 
 /// 从指定步继续执行。

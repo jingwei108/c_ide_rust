@@ -193,9 +193,12 @@ version = "0.1.0"
 dependencies = [
  "criterion",
  "flutter_rust_bridge",
+ "js-sys",
  "libm",
  "serde",
  "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
 ]
 
 [[package]]

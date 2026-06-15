@@ -81,6 +81,7 @@ node_modules/
 # ==========================================
 # Build outputs
 /CideFlutter/build/
+/CideFlutter/web/pkg/
 /CideFlutter/.dart_tool/
 /CideFlutter/.flutter-plugins
 /CideFlutter/.flutter-plugins-dependencies

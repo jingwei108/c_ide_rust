@@ -93,8 +93,12 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
 
     // B47: 用 catch_unwind 保护 take 后的 VM，避免 setup_vm / inject_preset_files / vm.run
     // 中 panic 导致 VM 永久丢失。panic 后把 VM 还回 session 并返回错误。
+    // wasm32-unknown-unknown 不支持 catch_unwind，因此 Web 平台直接执行。
     let mut vm_slot = Some(session.vm.take().unwrap_or_default());
-    let run_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+    // wasm32 分支需要可变闭包以调用；desktop 分支通过 catch_unwind 按值消费，
+    // `mut` 在 desktop 下会触发 unused_mut 警告，因此统一允许。
+    #[allow(unused_mut)]
+    let mut run_vm = || {
         let vm = vm_slot.as_mut().unwrap();
         if !is_resume {
             setup_vm(vm, session);
@@ -103,7 +107,11 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
             vm.resume();
         }
         vm.run(session)
-    }));
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    let run_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_vm));
+    #[cfg(target_arch = "wasm32")]
+    let run_result: Result<i32, ()> = Ok(run_vm());
     let vm = vm_slot.take().unwrap();
 
     // 收集 JIT 统计（在 vm 移入 session 之前）
