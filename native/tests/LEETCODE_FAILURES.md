@@ -5,42 +5,40 @@
 
 ## 当前状态
 
-**LeetCode 防线当前尚未实施。**
+**LeetCode 防线已启动（阶段 4：数组/字符串简单题）。**
 
-- `native/tests/cases/leetcode/` 目录不存在
-- `native/tests/cases_golden/leetcode/` 目录不存在
-- 本文件为占位模板，无具体失败条目
+- `native/tests/cases/leetcode/` 已创建
+- `native/tests/cases_golden/leetcode/` 已创建
+- 当前已填充 **10** 道 LeetCode 简单题，全部通过
+- 本文件暂无具体失败条目
 
-## 为什么还没做
+## 已覆盖用例
 
-LeetCode 防线是 `docs/current/PHASE_KR_LEETCODE_TEST_PLAN.md` 中规划的内容，原计划作为 Phase 28 的一部分推进。但在实际迭代过程中，项目优先级调整为**集中攻克 C++ 子集扩展**（Phase 31+）。C++ 扩展涉及 Lexer、Parser、AST、TypeChecker、BytecodeGen、VM 全管线的重大改造，对学生教学的长期价值更高，因此 LeetCode 防线**暂时搁置**。
-
-## 什么时候做
-
-LeetCode 防线仍是项目计划的一部分。待 C++ 子集进入稳定维护期后，将按 `PHASE_KR_LEETCODE_TEST_PLAN.md` 重新启动：
-
-1. 创建 `native/tests/cases/leetcode/` 目录
-2. 填充 LeetCode 简单题源码（数组/字符串、链表/树/栈等）
-3. 使用 Clang 生成 `native/tests/cases_golden/leetcode/` 期望输出
-4. 在 `native/tests/cide_e2e.rs` 中填充 `KNOWN_LEETCODE_FAILURES`
-5. 将本文件更新为真实的失败记录
-
-## 诚实记录声明
-
-本文件明确记录 LeetCode 防线当前不在，以避免"已有"描述造成误解。这不是数据粉饰，而是项目优先级调整的真实状态。K&R 防线（69 个用例）已全部跑通，当前真实程序回归防线仅由 K&R 构成。
+| 用例 | 题目 | 类别 | 状态 | 备注 |
+|:-----|:-----|:-----|:-----|:-----|
+| lc_1 | Two Sum | 数组 | 通过 | 返回动态分配数组，驱动中释放 |
+| lc_26 | Remove Duplicates from Sorted Array | 数组 | 通过 | |
+| lc_27 | Remove Element | 数组 | 通过 | |
+| lc_35 | Search Insert Position | 数组/二分 | 通过 | |
+| lc_53 | Maximum Subarray | 数组/DP | 通过 | |
+| lc_66 | Plus One | 数组/数学 | 通过 | 返回动态分配数组 |
+| lc_88 | Merge Sorted Array | 数组/双指针 | 通过 | |
+| lc_121 | Best Time to Buy and Sell Stock | 数组/贪心 | 通过 | |
+| lc_136 | Single Number | 数组/位运算 | 通过 | |
+| lc_169 | Majority Element | 数组 | 通过 | |
 
 ## 统计摘要
 
 | 阶段 | 总数 | 通过 | 失败 | 记录时间 |
 |:-----|:-----|:-----|:-----|:---------|
-| LeetCode 数组/字符串 | 0 | 0 | 0 | - |
+| LeetCode 数组/字符串 | 10 | 10 | 0 | 2026-06-14 |
 | LeetCode 链表/树/栈 | 0 | 0 | 0 | - |
 
 ## 已知失败详情
 
-<!-- 待 LeetCode 防线启动后按以下模板逐条追加 -->
+当前无已知失败。
 
-<!--
+<!-- 待新增失败时按以下模板追加：
 ### <case_name>
 
 - **来源**: LeetCode XXX
@@ -53,3 +51,9 @@ LeetCode 防线仍是项目计划的一部分。待 C++ 子集进入稳定维护
 - **学生影响评级**: P0 / P1 / P2
 - **建议**: <修复方向 / 记录为已知限制 / 待进一步分析>
 -->
+
+## 后续计划
+
+1. 继续填充阶段 4 剩余数组/字符串简单题（约 15 道）。
+2. 进入阶段 5：链表、树、栈与队列简单题。
+3. 将 LeetCode 用例纳入 `shadow_verify.py` 扫描范围，生成差异报告。
