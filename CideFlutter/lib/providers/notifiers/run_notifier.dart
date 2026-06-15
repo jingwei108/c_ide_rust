@@ -2,6 +2,7 @@ part of '../ide_notifier.dart';
 
 /// 运行与调试控制：运行、单步、输入、断点、输出清理。
 mixin RunNotifierMixin on AutoDisposeNotifier<IdeState>, CompileNotifierMixin {
+  RustApiService get _rustApi => ref.read(rustApiServiceProvider);
   Future<void> run() async {
     if (!state.isRunning) {
       await compileOnly();
@@ -17,7 +18,7 @@ mixin RunNotifierMixin on AutoDisposeNotifier<IdeState>, CompileNotifierMixin {
       clearError: true,
     );
     try {
-      final result = await rust.runCode();
+      final result = await _rustApi.runCode();
       state = state.copyWith(
         isRunning: result.waitingInput,
         output: result.output,
@@ -39,7 +40,7 @@ mixin RunNotifierMixin on AutoDisposeNotifier<IdeState>, CompileNotifierMixin {
     }
     state = state.copyWith(isStepMode: true, isRunning: true, clearError: true);
     try {
-      final result = await rust.stepNext();
+      final result = await _rustApi.stepNext();
       if (state.executionSpeed > 0) {
         await Future.delayed(Duration(milliseconds: state.executionSpeed));
       }
@@ -66,7 +67,7 @@ mixin RunNotifierMixin on AutoDisposeNotifier<IdeState>, CompileNotifierMixin {
 
   Future<void> provideInput(String line) async {
     try {
-      await rust.provideInputLine(line: line);
+      await _rustApi.provideInputLine(line: line);
       if (state.isStepMode) {
         await step();
       } else {
@@ -78,7 +79,7 @@ mixin RunNotifierMixin on AutoDisposeNotifier<IdeState>, CompileNotifierMixin {
   }
 
   Future<void> reset() async {
-    await rust.resetSession();
+    await _rustApi.resetSession();
     state = const IdeState();
   }
 
@@ -97,7 +98,7 @@ mixin RunNotifierMixin on AutoDisposeNotifier<IdeState>, CompileNotifierMixin {
     } else {
       newBreakpoints.add(line);
     }
-    await rust.setBreakpoints(lines: newBreakpoints.toList());
+    await _rustApi.setBreakpoints(lines: newBreakpoints.toList());
     state = state.copyWith(breakpoints: newBreakpoints);
   }
 }

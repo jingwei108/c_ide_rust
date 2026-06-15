@@ -2,6 +2,7 @@ part of '../ide_notifier.dart';
 
 /// 编译与编译后处理：编译、诊断、意图推断、学习进度 streak。
 mixin CompileNotifierMixin on AutoDisposeNotifier<IdeState>, ProgressMixin {
+  RustApiService get _rustApi => ref.read(rustApiServiceProvider);
   /// 仅执行编译并更新状态，不启动统一模式或运行代码。
   /// run()/step() 等需要编译后执行的场景应调用此方法，避免重复执行。
   Future<bool> compileOnly() async {
@@ -17,12 +18,10 @@ mixin CompileNotifierMixin on AutoDisposeNotifier<IdeState>, ProgressMixin {
           }).toList();
       state = state.copyWith(files: syncFiles);
 
-      final result = await rust.compileMulti(
+      final result = await _rustApi.compileMulti(
         files:
             syncFiles
-                .map(
-                  (f) => rust.CodeFile(filename: f.filename, source: f.source),
-                )
+                .map((f) => CodeFile(filename: f.filename, source: f.source))
                 .toList(),
       );
       final diags = result.diagnostics;
@@ -61,7 +60,7 @@ mixin CompileNotifierMixin on AutoDisposeNotifier<IdeState>, ProgressMixin {
       List<IntentScore> intentScores = [];
       if (result.success) {
         try {
-          intentScores = await rust.inferIntentFromSource(source: state.source);
+          intentScores = await _rustApi.inferIntentFromSource(source: state.source);
         } catch (_) {
           // ignore intent inference errors
         }

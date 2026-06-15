@@ -7,6 +7,7 @@ mixin LearningNotifierMixin
         ProgressMixin,
         FileNotifierMixin,
         CompileNotifierMixin {
+  RustApiService get _rustApi => ref.read(rustApiServiceProvider);
   // ========== 应用修复 ==========
 
   Future<String?> applyFix(rust.Diagnostic diag) async {
@@ -18,7 +19,7 @@ mixin LearningNotifierMixin
     );
     final source = file.source;
 
-    final newSource = await rust.applyFix(source: source, diag: diag);
+    final newSource = await _rustApi.applyFix(source: source, diag: diag);
     if (newSource == null) return null;
 
     setFileSource(targetFilename, newSource);
@@ -300,11 +301,11 @@ mixin LearningNotifierMixin
       return AlgorithmValidationResult(false, '生成测试代码失败。');
     }
     try {
-      final compileResult = await rust.compile(source: harness);
+      final compileResult = await _rustApi.compile(source: harness);
       if (!compileResult.success) {
         return AlgorithmValidationResult(false, '测试用例「${tc.description}」编译失败');
       }
-      final runResult = await rust.runCode();
+      final runResult = await _rustApi.runCode();
       if (!runResult.success || runResult.error != null) {
         return AlgorithmValidationResult(
           false,

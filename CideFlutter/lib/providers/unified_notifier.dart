@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:cide/src/rust/api/cide.dart' as rust;
 import 'package:cide/src/rust/session.dart';
 import 'package:cide/src/rust/unified/stream.dart' as stream;
 import 'package:cide/src/rust/unified/types.dart' as types;
@@ -9,6 +8,8 @@ import '../models/unified_state.dart';
 import 'ide_provider.dart';
 
 class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
+  RustApiService get _rustApi => ref.read(rustApiServiceProvider);
+
   StreamSubscription<stream.StepStreamBatch>? _streamSubscription;
 
   @override
@@ -29,14 +30,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     state = state.copyWith(phase: ExecutionPhase.compiling, clearError: true);
 
     try {
-      final result = await rust.compileAndRunMulti(
-        files:
-            files
-                .map(
-                  (f) => rust.CodeFile(filename: f.filename, source: f.source),
-                )
-                .toList(),
-      );
+      final result = await _rustApi.compileAndRunMulti(files: files);
       if (!result.success) {
         state = state.copyWith(
           phase: ExecutionPhase.error,
@@ -46,7 +40,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
       }
 
       // 获取算法检测信息
-      final algoMatches = await rust.getAlgorithmMatches();
+      final algoMatches = await _rustApi.getAlgorithmMatches();
 
       state = state.copyWith(
         phase: ExecutionPhase.collecting,
@@ -73,7 +67,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   void _startCollectionLoop() {
     _streamSubscription?.cancel();
 
-    final stream = rust.runAutoStepsStream(batchSize: 100);
+    final stream = _rustApi.runAutoStepsStream(batchSize: 100);
     _streamSubscription = stream.listen(
       _onBatchReceived,
       onError: (Object e) {
@@ -118,10 +112,10 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   Future<void> _fetchMemoryState() async {
     try {
       final results = await Future.wait([
-        rust.getMemoryRegions(),
-        rust.getMemorySize(),
-        rust.getMemoryFragments(),
-        rust.getHeapStats(),
+        _rustApi.getMemoryRegions(),
+        _rustApi.getMemorySize(),
+        _rustApi.getMemoryFragments(),
+        _rustApi.getHeapStats(),
       ]);
       state = state.copyWith(
         memoryRegions: results[0] as List<MemoryRegion>,
@@ -135,7 +129,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   }
 
   Future<void> _fetchHeatmapAndFinish(bool trapped, String? trapMessage) async {
-    final heatmap = await rust.getHeatmap();
+    final heatmap = await _rustApi.getHeatmap();
     state = state.copyWith(
       phase: trapped ? ExecutionPhase.error : ExecutionPhase.playback,
       isPlaying: false,
@@ -385,7 +379,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
 
   void pause() {
     if (state.phase == ExecutionPhase.collecting) {
-      rust.pauseExecution();
+      _rustApi.pauseExecution();
       _streamSubscription?.cancel();
       state = state.copyWith(phase: ExecutionPhase.paused, isPlaying: false);
     }
@@ -398,7 +392,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     }
     if (state.phase == ExecutionPhase.paused ||
         state.phase == ExecutionPhase.stepMode) {
-      rust.resumeExecution();
+      _rustApi.resumeExecution();
       state = state.copyWith(phase: ExecutionPhase.collecting, isPlaying: true);
       _startCollectionLoop();
     }
@@ -407,9 +401,9 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   Future<void> _continueFromPlayback() async {
     state = state.copyWith(phase: ExecutionPhase.seeking);
     try {
-      await rust.seekToStep(target: state.currentStep);
+      await _rustApi.seekToStep(target: state.currentStep);
       state = state.copyWith(isVmRestored: true);
-      rust.resumeExecution();
+      _rustApi.resumeExecution();
       state = state.copyWith(phase: ExecutionPhase.collecting, isPlaying: true);
       _startCollectionLoop();
     } catch (e) {
@@ -432,7 +426,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     _streamSubscription?.cancel();
 
     try {
-      final payload = await rust.stepNextUnified();
+      final payload = await _rustApi.stepNextUnified();
       if (payload != null) {
         final newCache = [...state.frameCache];
         if (payload.stepIndex < newCache.length) {
@@ -477,7 +471,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     // 记录 Seek 操作
     await ref.read(ideProvider.notifier).recordSeek();
     try {
-      final result = await rust.seekToStep(target: targetStep);
+      final result = await _rustApi.seekToStep(target: targetStep);
       if (result.success && result.payload != null) {
         final payload = result.payload!;
         final newCache = [...state.frameCache];
@@ -532,7 +526,7 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
 
   void reset() {
     _streamSubscription?.cancel();
-    rust.resetSession();
+    _rustApi.resetSession();
     state = const UnifiedState();
   }
 

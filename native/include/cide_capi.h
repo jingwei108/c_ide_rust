@@ -22,16 +22,8 @@ typedef struct CideSession CideSession;
 CIDE_API CideSession* cide_session_create();
 CIDE_API void cide_session_destroy(CideSession* s);
 
-/// Save session state (compile units + bytecode + runtime) to a file.
-/// Returns 0 on success, -1 on error.
-CIDE_API int cide_session_save(CideSession* s, const char* filepath);
-
-/// Load session state from a file. Replaces current state.
-/// Returns 0 on success, -1 on error.
-CIDE_API int cide_session_load(CideSession* s, const char* filepath);
-
 // ========== 错误码 ==========
-/// C-compatible error code enumeration. Keep in sync with native/src/diagnostics/ErrorCodes.hpp.
+/// C-compatible error code enumeration. Keep in sync with native/src/diagnostics/error_codes.rs.
 
 typedef enum {
     CIDE_E1001_UnknownChar        = 1001,
@@ -127,62 +119,36 @@ CIDE_API int cide_compile_all(CideSession* s);
 
 /// Get compilation errors as a UTF-8 string. Returns nullptr if no errors.
 /// Note: The returned pointer may become invalid after the next compile call.
-/// Use cide_get_compile_errors_buf for safe copy-out.
 CIDE_API const char* cide_get_compile_errors(CideSession* s);
 
-/// Copy compilation errors into the provided buffer.
-/// Returns the number of bytes copied (excluding null terminator), or -1 on error.
-CIDE_API int cide_get_compile_errors_buf(CideSession* s, char* buf, int max_len);
+// ========== 命令行参数 ==========
+
+/// Set command-line arguments for `main(int argc, char *argv[])`.
+CIDE_API void cide_set_argv(CideSession* s, int argc, const char** argv);
 
 // ========== 执行 ==========
 
 /// Run the compiled program. Returns 0 on success, -1 on runtime error.
 CIDE_API int cide_run(CideSession* s);
 
-/// Execute a single step. Returns 0 on success, -1 if finished or error.
-CIDE_API int cide_step_next(CideSession* s);
-
-/// Get the current source line during stepping. Returns 0 if not stepping.
-CIDE_API int cide_get_current_line(CideSession* s);
-
-// ========== 调用栈 ==========
-
-/// Get the number of frames in the current call stack.
-CIDE_API int cide_callstack_count(CideSession* s);
-
-/// Get a call stack frame by index (0 = oldest/main, count-1 = current).
-/// name: function name buffer.
-/// line: source line number of the return point (0 if unknown).
-CIDE_API void cide_callstack_get(
-    CideSession* s, int index,
-    char* name, int name_size,
-    int* line);
-
-// ========== 断点调试 ==========
-
-/// Add a breakpoint at the given source line.
-CIDE_API void cide_breakpoint_add(CideSession* s, int line);
-
-/// Remove a breakpoint at the given source line.
-CIDE_API void cide_breakpoint_remove(CideSession* s, int line);
-
-/// Clear all breakpoints.
-CIDE_API void cide_breakpoint_clear(CideSession* s);
-
 /// Get runtime error message. Returns nullptr if no error.
 /// Note: The returned pointer may become invalid after the next run/step call.
-/// Use cide_get_runtime_error_buf for safe copy-out.
 CIDE_API const char* cide_get_runtime_error(CideSession* s);
 
-/// Copy runtime error into the provided buffer.
-/// Returns the number of bytes copied (excluding null terminator), or -1 on error.
-CIDE_API int cide_get_runtime_error_buf(CideSession* s, char* buf, int max_len);
+// ========== 输入 ==========
 
 /// Set input lines for scanf (newline-separated lines).
 CIDE_API void cide_set_input(CideSession* s, const char* input);
 
-/// Get the number of available input lines.
-CIDE_API int cide_input_count(CideSession* s);
+/// Set input mode: 0 = interactive (default), non-zero = batch.
+/// In batch mode getchar returns EOF immediately when input is exhausted.
+CIDE_API void cide_set_input_mode(CideSession* s, int is_batch);
+
+/// Returns 1 if the program is waiting for input, 0 otherwise.
+CIDE_API int cide_is_waiting_input(CideSession* s);
+
+/// Provide a single input line and resume execution.
+CIDE_API int cide_provide_input_line(CideSession* s, const char* line);
 
 // ========== 输出 ==========
 
@@ -191,142 +157,6 @@ CIDE_API int cide_get_output_length(CideSession* s);
 
 /// Copy console output into the provided buffer (max_len includes null terminator).
 CIDE_API void cide_get_output(CideSession* s, char* buf, int max_len);
-
-// ========== 内存视图 ==========
-
-/// Get the number of memory regions.
-CIDE_API int cide_memory_region_count(CideSession* s);
-
-/// Get information about a memory region by index.
-CIDE_API void cide_memory_region_get(
-    CideSession* s, int index,
-    unsigned int* addr, int* size,
-    char* name, int name_size,
-    char* type, int type_size,
-    int* is_heap, int* is_freed);
-
-/// Read an int32 value from the given memory address.
-CIDE_API int cide_memory_get_value(CideSession* s, unsigned int addr, int* out_val);
-
-/// Read the target address of a pointer at the given address.
-CIDE_API int cide_memory_get_pointer_target(CideSession* s, unsigned int addr, unsigned int* out_target);
-
-// ========== 诊断与修复 ==========
-
-/// Get the number of diagnostics.
-CIDE_API int cide_diagnostic_count(CideSession* s);
-
-/// Get a diagnostic by index.
-/// severity: 0=error, 1=warning, 2=hint
-CIDE_API void cide_diagnostic_get(
-    CideSession* s, int index,
-    int* line, int* column, int* error_code, int* severity,
-    char* message, int msg_size,
-    char* fix_suggestion, int fix_size);
-
-/// Get structured fix data for a diagnostic by index.
-/// fix_kind: 0=None, 1=ReplaceText, 2=InsertText, 3=DeleteText, 4=ManualHint
-CIDE_API void cide_diagnostic_get_fix(
-    CideSession* s, int index,
-    int* fix_kind,
-    int* start_line, int* start_column,
-    int* end_line, int* end_column,
-    char* replacement_text, int replacement_size);
-
-/// Lookup source location from bytecode offset.
-/// Returns 0 if found, -1 if not.
-CIDE_API int cide_sourcemap_lookup(
-    CideSession* s, unsigned int bytecode_offset,
-    int* out_line, int* out_column);
-
-// ========== 执行轨迹 ==========
-
-/// Get the number of trace entries.
-CIDE_API int cide_trace_count(CideSession* s);
-
-/// Get a trace entry by index.
-CIDE_API void cide_trace_get(
-    CideSession* s, int index,
-    int* line, char* operation, int op_size);
-
-// ========== 变量面板 (Stage 3) ==========
-
-/// Get the number of visible variables at the current execution point.
-CIDE_API int cide_variable_count(CideSession* s);
-
-/// Get variable information by index.
-/// is_array: 0=scalar, 1=array
-/// array_size: number of elements (0 if scalar)
-CIDE_API void cide_variable_get(
-    CideSession* s, int index,
-    char* name, int name_size,
-    unsigned int* addr,
-    int* is_local, int* is_array, int* array_size,
-    int* value);
-
-/// Get the type string of a variable (e.g. "int", "struct Node*", "int[5]")
-/// Returns the length of the type string, or -1 on error.
-CIDE_API int cide_variable_get_type(
-    CideSession* s, int index,
-    char* type_buf, int type_buf_size);
-
-/// Find the variable name that contains the given address.
-/// Returns 0 if found, -1 if not. offset is bytes from variable start.
-CIDE_API int cide_variable_find_by_addr(
-    CideSession* s, unsigned int addr,
-    char* name, int name_size,
-    int* offset);
-
-/// Get struct field information by variable index and field index.
-/// The variable type must be a struct or pointer-to-struct.
-/// Returns 0 on success, -1 if variable/field not found.
-/// offset: byte offset of the field within the struct.
-/// name: field name buffer (null-terminated).
-CIDE_API int cide_variable_get_field(
-    CideSession* s, int var_index, int field_index,
-    int* offset, char* name, int name_size);
-
-// ========== 运行时可视化事件 (Stage 4) ==========
-
-/// Get the number of pending vis events.
-/// type: 1=Compare, 2=Swap, 3=Update
-CIDE_API int cide_vis_event_count(CideSession* s);
-
-/// Get a vis event by index.
-CIDE_API void cide_vis_event_get(CideSession* s, int index, int* type, int* line);
-
-/// Get a vis event by index (extended with extra payload for graph/tree support).
-CIDE_API void cide_vis_event_get_ex(CideSession* s, int index,
-                                      int* type, int* line,
-                                      int* extra0, int* extra1, int* extra2);
-
-/// Clear all vis events.
-CIDE_API void cide_vis_event_clear(CideSession* s);
-
-// ========== 算法模式识别 (Phase 4) ==========
-
-/// Get the number of detected algorithm patterns.
-CIDE_API int cide_algorithm_match_count(CideSession* s);
-
-/// Get an algorithm match by index.
-CIDE_API void cide_algorithm_match_get(
-    CideSession* s, int index,
-    char* name, int name_size,
-    char* display_name, int display_name_size,
-    char* func_name, int func_name_size,
-    int* confidence,
-    char* suggestion, int suggestion_size,
-    int* line);
-
-/// Get the number of vis events for an algorithm match.
-CIDE_API int cide_algorithm_match_vis_event_count(CideSession* s, int match_index);
-
-/// Get a vis event for an algorithm match by index.
-/// type: 1=Compare, 2=Swap, 3=Update
-/// context: index expressions separated by ':', e.g. "j:j+1" or "mid"
-CIDE_API void cide_algorithm_match_vis_event_get(
-    CideSession* s, int match_index, int event_index,
-    int* type, int* line, char* context, int context_size);
 
 #ifdef __cplusplus
 }

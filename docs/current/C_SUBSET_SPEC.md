@@ -25,7 +25,7 @@
 1. 会分散初学者注意力的细节（如 printf 的格式化字符串）
 2. 增加编译器复杂度但教学价值低（如 double 精度问题）
 3. 可以用现有语法等价表达的（如 break/continue 可用 return 替代）
-4. 在 CideVM 沙盒中无意义的（如 #include、文件 I/O）
+4. 增加实现复杂度但教学价值已在其他方式覆盖的（如完整预处理器、自定义头文件）
 
 ---
 
@@ -324,6 +324,30 @@ arr[1] = 2;
 - **宿主管理堆分配**：`malloc` / `realloc` / `free` 是宿主导入函数，宿主记录分配元数据（用于内存泄漏检测）
 - **`realloc` 已支持**：完整支持扩容/缩容、NULL ptr（等价 malloc）、size 0（等价 free）
 
+### 2.6 VFS 沙盒文件 I/O
+
+```c
+#include <stdio.h>
+
+FILE* fp = fopen("data.txt", "w");
+fputs("hello\n", fp);
+fclose(fp);
+
+fp = fopen("data.txt", "r");
+char buf[32];
+fgets(buf, sizeof(buf), fp);
+printf("%s", buf);
+fclose(fp);
+```
+
+**支持细节**：
+- `fopen` / `fclose` / `fread` / `fwrite` / `fgets` / `fputs` / `fgetc` / `fputc` / `fseek` / `ftell` / `rewind` / `feof`
+- 所有文件操作在 CideVM 虚拟文件系统（VFS）沙盒内进行，路径相对于 VFS 根目录
+- `"r"` / `"w"` / `"a"` / `"rb"` / `"wb"` 等模式均可识别；**文本模式与二进制模式行为一致**，不模拟 Windows CRT 的 `\n` ↔ `\r\n` 自动换行转换
+
+**已知限制**：
+- 文本模式不会在 Windows 下将 `\n` 自动转换为 `\r\n`，因此与 Windows 上 Clang 的文本模式 I/O 存在 stdout/ftell 差异（如 `vfs_io_extensions.c`、`file_fread.c`），已作为跨平台行为差异诚实记录
+
 ---
 
 ## 3. 明确不支持的语法
@@ -338,7 +362,7 @@ arr[1] = 2;
 | `goto` | ✅ **已支持**：无条件跳转到函数内标签 | — |
 | `do...while` | ✅ **已支持**：至少执行一次的循环 | — |
 | `switch` / `case` / `default` | ✅ **已支持**：多分支选择，支持 fallthrough | — |
-| 预处理 (`#include`) | CideVM 沙盒中无意义 | "解释器模式下无需 `#include`，直接编写代码即可" |
+| 预处理 (`#include`) | 仅支持标准库存根；自定义头文件 `"header.h"` 暂不支持 | `<stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 会自动加载对应声明；其他头文件暂不支持 |
 | `union` | ✅ **已支持**：全管线支持（声明、`sizeof(union U)`、成员访问、`p->i`），内存布局为所有字段 offset=0、size=max(fields) | — |
 | `bitfield` | 进阶特性，初学者不需要 | "暂不支持该特性" |
 | 多维数组 | ✅ **已支持**：二维数组声明、嵌套初始化、索引访问、函数参数传递 | — |
@@ -387,7 +411,7 @@ arr[1] = 2;
 | 指针基础教学 | &、*、指针作为参数 | ✅ |
 | 内存布局教学 | 变量、数组、指针、malloc | ✅ |
 | 字符串操作 | char、char*、字符串字面量、printf/scanf | ✅ |
-| 文件读写 | fopen/fread/fwrite | ❌（沙盒中不支持） |
+| 文件读写 | VFS 沙盒文件 I/O：`fopen`/`fclose`/`fread`/`fwrite`/`fgets`/`fputs`/`fgetc`/`fputc`/`fseek`/`ftell`/`rewind` | ✅（文本模式与二进制模式行为一致，不模拟 Windows CRT 的 `\n` ↔ `\r\n` 换行转换） |
 | 浮点运算 | float/double | ✅ |
 | 枚举与状态机 | enum | ✅ |
 | 类型抽象 | typedef | ✅ |

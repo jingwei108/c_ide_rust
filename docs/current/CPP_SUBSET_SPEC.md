@@ -193,18 +193,32 @@ class unique_ptr {
 public:
     unique_ptr() : p((T*)0) {}
     unique_ptr(T* ptr) : p(ptr) {}
+    unique_ptr(unique_ptr<T>&& o) : p(o.p) { o.p = (T*)0; }  // 移动构造
     T* get() { return p; }
-    ~unique_ptr() { delete p; }
+    T* release() { T* t = p; p = (T*)0; return t; }
+    ~unique_ptr() { if (p) delete p; }
 };
 
 int main() {
     unique_ptr<int> p(new int(42));
     printf("%d\n", *p.get());
+
+    unique_ptr<int> q = std::move(p);  // 调用移动构造，p 置空
+    printf("%d\n", *q.get());
+    printf("%d\n", p.get() ? 1 : 0);   // 0
+
+    int* r = q.release();              // 释放所有权
+    delete r;
     return 0;
 }
 ```
 
-**说明**：这是教学简化版，不支持 `reset` / `release` / 移动语义的全部工业语义，但已能展示 RAII 核心思想。
+**支持细节**：
+- 默认构造、从指针构造、析构时自动 `delete`
+- `get()` 获取底层指针，`release()` 释放所有权并将内部指针置空
+- 隐式移动构造：类含指针/资源字段时，Cide 自动生成 `__ctor__{Class}__move`；`std::move` 初始化会调用移动构造，源对象指针字段置空，防止双重释放
+
+**说明**：这是教学简化版，未实现工业级 `reset()` / `swap()` / 自定义删除器，但已覆盖 RAII 与所有权转移核心思想。
 
 ### 2.10 内置容器
 
@@ -269,6 +283,7 @@ Cide 会擦除 `std::` 前缀，因此 `std::vector<int>` 等价于 `vector<int>
 | `v.push_back(x)` | `v.push_back(x)` ✅ |
 | `v.size()` | `v.size()` ✅ |
 | `*p`（unique_ptr）| `*p.get()` |
+| `std::move(p)` | 调用自动生成的移动构造函数，源对象指针字段置空 |
 
 ### 4.3 nullptr
 

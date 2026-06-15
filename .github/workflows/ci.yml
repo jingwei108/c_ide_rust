@@ -22,6 +22,13 @@ jobs:
         with:
           workspaces: native
 
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
+
+      - name: Generate FRB bindings
+        run: flutter_rust_bridge_codegen generate
+        working-directory: CideFlutter
+
       - name: Build native (Debug)
         run: cargo build
         working-directory: native

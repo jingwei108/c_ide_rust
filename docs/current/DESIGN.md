@@ -151,7 +151,9 @@ c-ide/
 │   │   │   ├── type_checker.rs
 │   │   │   └── bytecode_gen.rs       # AST → CideVM 字节码
 │   │   ├── vm/                        # CideVM 教学虚拟机
-│   │   │   ├── vm.rs
+│   │   │   ├── core/                  # VM 核心解释器与执行状态
+│   │   │   │   ├── mod.rs
+│   │   │   │   └── executor.rs
 │   │   │   ├── opcode.rs
 │   │   │   ├── instruction.rs
 │   │   │   ├── host_funcs.rs
@@ -425,7 +427,9 @@ while (1) {}     // 程序执行步数超过限制（10000000步），可能包�
 
 ### 4.5 接口层
 
-#### C API（保留用于 MAUI 兼容）
+#### C API（保留用于 Shadow Verification / CLI / 外部绑定）
+
+C API 当前仅保留编译、执行、输入输出相关核心接口；单步调试、内存视图、诊断详情、可视化事件等能力已迁移至 Rust 内部或 flutter_rust_bridge API，不再通过 C API 暴露。
 
 ```cpp
 // 会话管理
@@ -434,34 +438,26 @@ void cide_session_destroy(CideSession* s);
 
 // 编译
 int cide_compile(CideSession* s, const char* source);
+int cide_compile_unit(CideSession* s, const char* filename, const char* source);
+int cide_compile_all(CideSession* s);
 const char* cide_get_compile_errors(CideSession* s);
+
+// 命令行参数
+void cide_set_argv(CideSession* s, int argc, const char** argv);
 
 // 执行
 int cide_run(CideSession* s);
-int cide_step_next(CideSession* s);   // 单步执行（同步，无线程）
 const char* cide_get_runtime_error(CideSession* s);
+
+// 输入
+void cide_set_input(CideSession* s, const char* input);
+void cide_set_input_mode(CideSession* s, int is_batch);
+int cide_is_waiting_input(CideSession* s);
+int cide_provide_input_line(CideSession* s, const char* line);
 
 // 输出
 int cide_get_output_length(CideSession* s);
 void cide_get_output(CideSession* s, char* buf, int max_len);
-
-// 内存视图
-int cide_memory_region_count(CideSession* s);
-void cide_memory_region_get(CideSession* s, int index,
-    uint32_t* addr, int* size, char* name, int name_size,
-    char* type, int type_size, int* is_heap, int* is_freed);
-int cide_memory_get_value(CideSession* s, uint32_t addr, int* out_val);
-int cide_memory_get_pointer_target(CideSession* s, uint32_t addr, uint32_t* out_target);
-
-// 诊断与修复
-int cide_diagnostic_count(CideSession* s);
-void cide_diagnostic_get(CideSession* s, int index,
-    int* line, int* column, int* error_code,
-    char* message, int msg_size, char* fix_suggestion, int fix_size);
-
-// 执行轨迹（用于算法分析）
-int cide_trace_count(CideSession* s);
-void cide_trace_get(CideSession* s, int index, int* line, char* operation, int op_size);
 ```
 
 #### FRB API（Flutter 前端实际使用）

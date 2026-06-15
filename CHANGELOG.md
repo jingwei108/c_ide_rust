@@ -150,6 +150,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 支持 struct / union 字段偏移查询
 - **新增 10 个 E2E 测试**：`test_e2e_comma_operator`、`test_e2e_designated_struct_init`、`test_e2e_designated_array_init`、`test_e2e_offsetof_struct`、`test_e2e_offsetof_union` 等
 
+### Fixed (CI 修复)
+- **修复 Rust job 构建时生成 FRB 代码**：`.github/workflows/ci.yml`
+  - `native/src/frb_generated.rs` 已改为构建时生成，Rust job 中 `cargo build` 前必须先执行 `flutter_rust_bridge_codegen generate`
+  - 在 Rust job 开头新增 `Install flutter_rust_bridge_codegen` 和 `Generate FRB bindings` 步骤，确保 `cargo build`/`cargo test` 前代码已生成
+- **修复 Android Gradle wrapper 本地路径问题**：`CideFlutter/android/gradle/wrapper/gradle-wrapper.properties`
+  - 将 `distributionUrl` 从本地文件 `file:///D:/code/.../gradle-8.13-bin.zip` 改为官方 `https\://services.gradle.org/distributions/gradle-8.13-bin.zip`
+  - 解决 CI runner 上 `FileNotFoundException` 导致 `flutter build apk` 失败
+
+### Added (Flutter 测试抽象层与单元测试)
+- **引入 `RustApiService` 抽象层**：`CideFlutter/lib/services/rust_api_service.dart`
+  - 将 `flutter_rust_bridge` 生成的全局 Rust API 调用封装到 `RustApiService` 接口
+  - 默认实现 `DefaultRustApiService` 继续转发到真实 Rust 后端
+  - 所有 Notifier（`CompileNotifierMixin` / `RunNotifierMixin` / `LearningNotifierMixin` / `UnifiedNotifier`）改为通过 `ref.read(rustApiServiceProvider)` 调用服务，解耦对全局函数的硬编码依赖
+  - 为 Flutter 单元测试引入 mock 替换点，无需在 Dart VM 中加载原生动态库
+- **新增编译 / 运行 / 统一模式单元测试**：`test/providers/compile_run_unified_test.dart`（11 个测试）
+  - 编译成功/失败状态与诊断更新
+  - 编译成功后自动启动统一模式
+  - 运行成功/失败与输出更新
+  - 单步执行到结束
+  - 统一模式启动失败处理
+  - Stream 批量收集完成/异常陷阱处理
+  - Seek 到缓存内步骤 / 单步追加到缓存
+- **新增测试辅助文件**：`test/mocks/rust_api_service_mock.dart`
+  - `MockRustApiService`（基于 `mocktail`）
+  - 工厂函数构造 `CompileResult` / `RunResult` / `StepResult` / `UnifiedRunResult` / `StepStreamBatch` / `StepPayload`
+- **Flutter 测试总数**：从 90 个提升至 **101** 个，全部通过
+
 ### Added (标准库拓展 P0)
 - **math.h 全管线支持**：引入 `libm` crate，注册 `sin`/`cos`/`sqrt`/`pow`/`atan`/`log`/`exp` 为 Layer B Rust Host Func
   - TypeChecker 支持 `double` 参数/返回类型，Host Contract 测试覆盖精度、NaN、-inf 边界行为
