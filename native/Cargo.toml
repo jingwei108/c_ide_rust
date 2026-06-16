@@ -49,7 +49,7 @@ lto = "thin"
 strip = true
 
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O4", "--enable-bulk-memory"]
+wasm-opt = ["-O4", "--enable-bulk-memory", "--enable-saturating-float-to-int", "--enable-sign-ext"]
 
 [profile.dev]
 opt-level = 1
