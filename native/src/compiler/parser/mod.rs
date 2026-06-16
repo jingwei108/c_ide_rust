@@ -663,45 +663,6 @@ impl Parser {
             self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
         }
     }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 }
 
 mod type_;
