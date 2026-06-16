@@ -2,15 +2,13 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/panel_item.dart';
 import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';
 import '../widgets/custom_keyboard.dart';
 import '../widgets/editor_panel_v2.dart';
 import '../widgets/execution_control_panel.dart';
-import '../widgets/floating_orb_widget.dart';
-import '../widgets/floating_panel_popup.dart';
+import 'ide/floating_orb_area.dart';
 import '../widgets/intro_overlay.dart';
 import '../widgets/template_tutorial_panel.dart';
 import 'ide/bottom_panel.dart';
@@ -50,8 +48,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   final _inputController = TextEditingController();
   bool _showKeyboard = false;
   bool _isSystemKeyboardActive = false;
-  OverlayEntry? _orbOverlayEntry;
-  OverlayEntry? _panelOverlayEntry;
   late final AnimationController _barsAnimationController;
   late final Animation<double> _barsAnimation;
 
@@ -96,38 +92,11 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
       parent: _barsAnimationController,
       curve: Curves.easeInOut,
     );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _insertOrbOverlay();
-    });
-  }
-
-  void _insertOrbOverlay() {
-    if (!mounted) return;
-    final overlay = Overlay.of(context);
-    _orbOverlayEntry = OverlayEntry(builder: (context) => _buildOrbOverlay());
-    overlay.insert(_orbOverlayEntry!);
-  }
-
-  void _insertPanelOverlay(String panelId) {
-    _removePanelOverlay();
-    if (!mounted) return;
-    final overlay = Overlay.of(context);
-    _panelOverlayEntry = OverlayEntry(
-      builder: (context) => _buildPanelOverlay(panelId),
-    );
-    overlay.insert(_panelOverlayEntry!);
-  }
-
-  void _removePanelOverlay() {
-    _panelOverlayEntry?.remove();
-    _panelOverlayEntry = null;
   }
 
   @override
   void dispose() {
     _barsAnimationController.dispose();
-    _orbOverlayEntry?.remove();
-    _panelOverlayEntry?.remove();
     _inputController.dispose();
     super.dispose();
   }
@@ -431,7 +400,11 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                     ],
                   ),
                 ),
-                // 悬浮球通过 OverlayEntry 渲染，不放在 body Stack 中
+                FloatingOrbArea(
+                  inputController: _inputController,
+                  onScrollToLine: _scrollToLine,
+                  onUpdateSource: (src) => _editor?.setText(src),
+                ),
               ],
             ),
           ),
@@ -452,74 +425,4 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   // ========== 模板快捷栏 ==========
 
   // ========== 底部面板 ==========
-
-  // ========== Overlay 悬浮球与弹窗 ==========
-
-  Widget _buildOrbOverlay() {
-    return Consumer(
-      builder: (context, ref, child) {
-        final state = ref.watch(ideProvider);
-        final notifier = ref.read(ideProvider.notifier);
-        return FloatingOrbWidget(
-          isMenuOpen: state.isFloatingOpen,
-          menuItems: state.floatingSlots,
-          onToggleMenu: notifier.toggleFloating,
-          onSelectPanel: (panelId) {
-            notifier.openFloatingPanel(panelId);
-            _insertPanelOverlay(panelId);
-          },
-          onCloseMenu: notifier.closeFloating,
-          onDragAccept: (dragData) {
-            if (dragData.fromLocation == PanelLocation.bottom) {
-              // 拖到边缘/padding 区域，未落在具体菜单项上
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('未识别到可交换的目标位置'),
-                  duration: Duration(seconds: 1),
-                ),
-              );
-            }
-          },
-          onSwapWithFloatingItem: (dragData, targetIndex) {
-            if (dragData.fromLocation == PanelLocation.bottom) {
-              // 底部 → 悬浮球具体项，交换
-              notifier.swapBottomWithFloatingItem(
-                dragData.panelId,
-                targetIndex,
-              );
-            }
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildPanelOverlay(String panelId) {
-    return Consumer(
-      builder: (context, ref, child) {
-        final state = ref.watch(ideProvider);
-        final notifier = ref.read(ideProvider.notifier);
-        final isDark = ref.watch(themeProvider) == ThemeMode.dark;
-        return FloatingPanelPopup(
-          panelId: panelId,
-          isDark: isDark,
-          onClose: () {
-            notifier.closeFloatingPanel();
-            _removePanelOverlay();
-          },
-
-          child: PanelContent(
-            panelId: panelId,
-            state: state,
-            notifier: notifier,
-            isDark: isDark,
-            inputController: _inputController,
-            onScrollToLine: _scrollToLine,
-            onUpdateSource: (src) => _editor?.setText(src),
-          ),
-        );
-      },
-    );
-  }
-
 }
