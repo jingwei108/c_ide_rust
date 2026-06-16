@@ -49,9 +49,12 @@ coverage/
 *.coverage
 *.coveragexml
 
-# Shadow verification framework (auto-generated reports)
+# Shadow verification framework (auto-generated reports & temp files)
 native/tests/shadow_verification/reports/
 native/tests/shadow_verification/test.txt
+/test.txt
+/numbers.txt
+/out.txt
 !native/tests/shadow_verification/reports/SHADOW_VERIFICATION_REPORT_*.md
 !native/tests/shadow_verification/reports/.gitkeep
 

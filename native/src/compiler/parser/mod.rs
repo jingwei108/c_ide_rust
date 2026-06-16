@@ -73,27 +73,7 @@ impl Parser {
         typedef_names.insert("FILE".to_string(), Type::void());
         // 预注册 C++ 内置容器类型名
         if is_cpp_mode {
-            for name in [
-                "cide_vec_int",
-                "cide_vec_float",
-                "cide_vec_char",
-                "cide_string",
-                "cide_list_int",
-            ] {
-                typedef_names.insert(
-                    name.to_string(),
-                    Type::Class {
-                        name: name.to_string(),
-                        is_const: false,
-                    },
-                );
-            }
-            // 预注册内置容器模板名，支持显式实例化写法。
-            // 注意：cide_string 本身是最终类名，不在这里作为模板基名注册，
-            // 避免与用户代码中的 typedef struct cide_string { ... } 冲突。
-            for name in ["cide_vec", "cide_list"] {
-                template_names.insert(name.to_string());
-            }
+            cpp::register_cpp_builtin_types(&mut typedef_names, &mut template_names);
         }
         Self {
             tokens,
@@ -392,26 +372,15 @@ impl Parser {
                     self.errors.truncate(errors_checkpoint);
                     if is_var_decl && !is_pure_decl {
                         self.parse_global_var_or_func(&mut program, false, false);
+                    } else if self.is_cpp_mode && has_name {
+                        self.parse_cpp_class_like_struct_decl(&mut program);
                     } else {
-                        // C++ 模式下，有名字的 struct 声明解析为 class-like（支持构造函数、方法等）
-                        if self.is_cpp_mode && has_name {
-                            let class_decl = self.parse_class_decl_inner(true);
-                            self.typedef_names.insert(
-                                class_decl.name.clone(),
-                                Type::Class {
-                                    name: class_decl.name.clone(),
-                                    is_const: false,
-                                },
-                            );
-                            program.classes.push(class_decl);
-                        } else {
-                            let struct_decl = self.parse_struct_decl();
-                            if self.is_cpp_mode {
-                                self.typedef_names
-                                    .insert(struct_decl.name.clone(), Type::struct_type(struct_decl.name.clone()));
-                            }
-                            program.structs.push(struct_decl);
+                        let struct_decl = self.parse_struct_decl();
+                        if self.is_cpp_mode {
+                            self.typedef_names
+                                .insert(struct_decl.name.clone(), Type::struct_type(struct_decl.name.clone()));
                         }
+                        program.structs.push(struct_decl);
                     }
                 } else {
                     self.pos = checkpoint;
@@ -421,62 +390,9 @@ impl Parser {
             } else if self.check(TokenType::Union) {
                 program.unions.push(self.parse_union_decl());
             } else if self.is_cpp_mode && self.check(TokenType::Class) {
-                let class_decl = self.parse_class_decl();
-                self.typedef_names.insert(
-                    class_decl.name.clone(),
-                    Type::Class {
-                        name: class_decl.name.clone(),
-                        is_const: false,
-                    },
-                );
-                program.classes.push(class_decl);
+                self.parse_cpp_class_decl(&mut program);
             } else if self.is_cpp_mode && self.check(TokenType::Template) {
-                if self.is_template_explicit_instantiation() {
-                    let inst = self.parse_template_instantiation();
-                    program.template_instantiations.push(inst);
-                } else {
-                    let template_decl = self.parse_template_decl();
-                    // 将类模板名加入 typedef_names
-                    if let crate::compiler::ast::Templateable::Class(ref c) = template_decl.decl {
-                        self.typedef_names.insert(
-                            c.name.clone(),
-                            Type::Class {
-                                name: c.name.clone(),
-                                is_const: false,
-                            },
-                        );
-                    }
-                    // 类模板方法类外定义：如 template<class T> void Box<T>::set(T x) { ... }
-                    // 已把 body 合并到对应类模板的 method 声明中，避免生成独立函数模板。
-                    let mut merged = false;
-                    if let crate::compiler::ast::Templateable::Func(ref f) = template_decl.decl {
-                        if f.body.is_some() {
-                            if let Some((class_name, method_name)) = f.name.split_once("__") {
-                                for t in program.templates.iter_mut() {
-                                    if let crate::compiler::ast::Templateable::Class(ref mut c) = t.decl {
-                                        if c.name == class_name {
-                                            for member in &mut c.members {
-                                                if let crate::compiler::ast::ClassMember::Method {
-                                                    name, body, ..
-                                                } = member
-                                                {
-                                                    if name == method_name && body.is_none() {
-                                                        *body = f.body.clone();
-                                                        merged = true;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    if !merged {
-                        program.templates.push(template_decl);
-                    }
-                }
+                self.parse_cpp_template_decl(&mut program);
             } else if self.check(TokenType::Extern) {
                 self.advance(); // consume 'extern'
                 self.parse_global_var_or_func(&mut program, false, true);
@@ -517,38 +433,7 @@ impl Parser {
         let checkpoint = self.pos;
         let base_type = self.parse_base_type();
         // C++ 构造函数类外定义：Counter::Counter() { ... }
-        // parse_base_type 已经把类名 'Counter' 作为返回类型读入，当前 token 是 '::'。
-        if self.is_cpp_mode
-            && matches!(&base_type, Type::Class { name, .. } if !name.is_empty())
-            && self.check(TokenType::ColonColon)
-            && self.peek(1).ty == TokenType::Identifier
-            && self.peek(2).ty == TokenType::LParen
-            && self.peek(1).text == base_type.name()
-        {
-            self.consume(TokenType::ColonColon, "预期 '::'");
-            let name_tok = self.consume(TokenType::Identifier, "预期构造函数名").clone();
-            self.consume(TokenType::LParen, "预期 '('");
-            let params = self.parse_param_list();
-            self.consume(TokenType::RParen, "预期 ')'");
-            let body = if self.check(TokenType::LBrace) {
-                Some(self.parse_block())
-            } else {
-                self.consume(TokenType::Semicolon, "构造函数声明后预期 ';' 或 '{'");
-                None
-            };
-            program.funcs.push(FuncDecl {
-                loc: SourceLoc {
-                    line: name_tok.line,
-                    column: name_tok.column,
-                },
-                return_type: Type::void(),
-                name: format!("__ctor__{}", name_tok.text),
-                params,
-                body,
-                is_static,
-                is_extern,
-                source_file: String::new(),
-            });
+        if self.try_parse_cpp_ctor_out_of_line(program, &base_type, is_static, is_extern) {
             return;
         }
         // 前瞻：跳过前导 *，检查是否是 identifier (
@@ -573,43 +458,8 @@ impl Parser {
         if is_func_decl {
             self.pos = checkpoint;
             program.funcs.push(self.parse_func_decl(is_static, is_extern));
-        } else if self.is_cpp_mode
-            && lookahead < self.tokens.len()
-            && self.tokens[lookahead].ty == TokenType::Identifier
-            && lookahead + 2 < self.tokens.len()
-            && self.tokens[lookahead + 1].ty == TokenType::ColonColon
-            && self.tokens[lookahead + 2].ty == TokenType::Identifier
-        {
-            // C++ qualified static field definition: int A::count = 0;
-            let ty = base_type.clone();
-            let class_name = self.consume(TokenType::Identifier, "预期类名").text.clone();
-            self.consume(TokenType::ColonColon, "预期 '::'");
-            let field_tok = self.consume(TokenType::Identifier, "预期字段名").clone();
-            let name = format!("{}__{}", class_name, field_tok.text);
-            let init = if is_extern {
-                None
-            } else if self.match_token(TokenType::Assign) {
-                if self.check(TokenType::LBrace) {
-                    Some(self.parse_init_list())
-                } else {
-                    Some(self.parse_assign())
-                }
-            } else {
-                None
-            };
-            program.globals.push(GlobalDecl {
-                loc: SourceLoc {
-                    line: self.previous().line,
-                    column: self.previous().column,
-                },
-                ty: ty.clone(),
-                name,
-                init,
-                is_static,
-                is_extern,
-                source_file: String::new(),
-            });
-            self.consume(TokenType::Semicolon, "静态成员定义后预期 ';'");
+        } else if self.try_parse_cpp_qualified_static_field(program, &base_type, is_static, is_extern) {
+            // 已由 cpp 模块处理
         } else {
             let (ty, name) = self.parse_var_declarator(&base_type);
             let init = if is_extern {

@@ -497,64 +497,7 @@ impl StmtGen for BytecodeGen {
                                 }
                             }
                         } else if vty.is_struct() || vty.is_class() {
-                            // C++ 构造函数初始化语法：Type name(args);
-                            // TypeChecker 已在 args 前插入 &name 作为 this 指针。
-                            if let Expr::Call {
-                                name: ctor_name,
-                                args: ctor_args,
-                                ..
-                            } = e
-                            {
-                                if ctor_name.starts_with("__ctor__") {
-                                    if let Type::Class { name: class_name, .. } = vty {
-                                        // VM do_call pops args in parameter-declaration order.
-                                        // Args already include this as the first parameter.
-                                        for arg in ctor_args.iter_mut().rev() {
-                                            // RValueRef arguments (e.g. std::move) must be passed
-                                            // as the address of the source object.
-                                            if arg.ty().is_rvalue_ref() {
-                                                self.gen_addr(arg, loc);
-                                            } else {
-                                                self.gen_expr(arg);
-                                            }
-                                        }
-                                        if let Some(&idx) = self.func_index.get(ctor_name) {
-                                            self.emit(OpCode::Call, idx, loc);
-                                        }
-                                        self.record_class_var(local_offset, class_name);
-                                    }
-                                    return;
-                                }
-                            }
-                            // Lambda 闭包：gen_lambda 在栈上推闭包对象地址，直接保存地址（不逐字段拷贝）
-                            if matches!(e, Expr::Lambda { .. }) {
-                                self.gen_expr(e);
-                                self.emit(OpCode::StoreLocal, local_offset, loc);
-                            } else if e.ty().is_rvalue_ref() || matches!(e, Expr::Move { .. }) {
-                                // C++ implicit move ctor: call __ctor__{Class}__move when
-                                // initializing from an rvalue (std::move or RValueRef).
-                                if let Type::Class { name: class_name, .. } = vty {
-                                    let move_ctor_name = format!("__ctor__{}__move", class_name);
-                                    if self.func_index.contains_key(&move_ctor_name) {
-                                        // VM do_call pops args in parameter-declaration order.
-                                        // We must push them right-to-left so the first pop() gets 'this'.
-                                        // other = source address (pushed first)
-                                        self.gen_addr(e, loc);
-                                        // this = &local_var (pushed second, popped first)
-                                        self.emit(OpCode::GetFrameBase, 0, loc);
-                                        self.emit(OpCode::PushConst, local_offset, loc);
-                                        self.emit(OpCode::Add, 0, loc);
-                                        if let Some(&idx) = self.func_index.get(&move_ctor_name) {
-                                            self.emit(OpCode::Call, idx, loc);
-                                        }
-                                        self.record_class_var(local_offset, class_name);
-                                    } else {
-                                        self.gen_struct_copy_to_local(local_offset, e, loc);
-                                    }
-                                } else {
-                                    self.gen_struct_copy_to_local(local_offset, e, loc);
-                                }
-                            } else {
+                            if !self.try_gen_cpp_class_init(vty, e, local_offset, loc) {
                                 self.gen_struct_copy_to_local(local_offset, e, loc);
                             }
                         } else if vty.is_array() && matches!(e, Expr::StringLiteral { .. }) {
@@ -575,26 +518,7 @@ impl StmtGen for BytecodeGen {
                                 }
                             }
                         } else if vty.is_reference() || vty.is_rvalue_ref() {
-                            // C++ reference initialization: store address of initializer
-                            if e.ty().is_reference() || e.ty().is_rvalue_ref() {
-                                // The initializer itself is a reference expression; gen_expr
-                                // already leaves the target address on the stack.
-                                self.gen_expr(e);
-                            } else if super::expr::is_lvalue_expr(e) {
-                                self.gen_addr(e, loc);
-                            } else {
-                                // Rvalue: extend lifetime by storing into a temporary local,
-                                // then bind the reference to that temporary's address.
-                                let temp_offset = self.next_local_offset;
-                                let temp_sz = (self.type_size(e.ty()) + 3) & !3;
-                                self.next_local_offset += temp_sz;
-                                self.gen_expr(e);
-                                self.emit(OpCode::StoreLocal, temp_offset, loc);
-                                self.emit(OpCode::GetFrameBase, 0, loc);
-                                self.emit(OpCode::PushConst, temp_offset, loc);
-                                self.emit(OpCode::Add, 0, loc);
-                            }
-                            self.emit(OpCode::StoreLocal, local_offset, loc);
+                            self.gen_cpp_reference_init(vty, e, local_offset, loc);
                         } else {
                             self.gen_expr(e);
                             if vty.kind() == TypeKind::Float
@@ -651,13 +575,8 @@ impl StmtGen for BytecodeGen {
                                 self.emit(OpCode::StoreMemByte, 0, loc);
                             }
                         }
-                        // C++ 栈对象 RAII：对 class 类型调用默认构造函数
-                        if vty.is_class() {
-                            if let Type::Class { name: class_name, .. } = vty {
-                                self.record_class_var(local_offset, class_name);
-                                self.emit_class_default_ctor(class_name, local_offset, loc);
-                            }
-                        }
+                        // C++ 栈对象 RAII：对未初始化的 class 类型调用默认构造函数
+                        self.try_gen_cpp_class_default_ctor(vty, local_offset, loc);
                     }
                 };
                 emit_one(var_type, name, init, loc, *is_static);
@@ -883,168 +802,7 @@ impl StmtGen for BytecodeGen {
             }
             // === C++ 新增 (Phase 33) ===
             Stmt::RangeFor { var, var_type, iter, body, .. } => {
-                let iter_ty = iter.ty().clone();
-                let is_container = matches!(&iter_ty, Type::Class { name, .. } if crate::compiler::cpp_frontend::type_map::is_builtin_container(name) || name.starts_with("cide_vec_") || name == "cide_string" || name == "cide_list_int");
-                let is_array = matches!(&iter_ty, Type::Array { .. });
-                if !is_array && !is_container {
-                    self.report_error("RangeFor 目前只支持数组和内置容器类型", &loc);
-                    return;
-                }
-                self.enter_scope();
-                // Index temp
-                let idx_offset = self.next_local_offset;
-                self.next_local_offset += 4;
-                self.emit(OpCode::PushConst, 0, &loc);
-                self.emit(OpCode::StoreLocal, idx_offset, &loc);
-                // Loop variable
-                let var_sz = (self.type_size(var_type) + 3) & !3;
-                let var_offset = self.next_local_offset;
-                self.next_local_offset += var_sz;
-                self.local_indices.insert(var.clone(), var_offset);
-                self.local_types.insert(var.clone(), var_type.clone());
-
-                let start_ip = self.current_ip();
-                self.loop_start_ips.push(start_ip);
-                self.loop_scope_depths.push(self.local_scope_stack.len());
-                let break_base = self.break_patches.len();
-                let continue_base = self.continue_patches.len();
-
-                // Condition: idx < count
-                self.emit(OpCode::LoadLocal, idx_offset, &loc);
-                if is_array {
-                    let elem_count = if let Type::Array { array_size, .. } = &iter_ty {
-                        *array_size
-                    } else {
-                        0
-                    };
-                    self.emit(OpCode::PushConst, elem_count, &loc);
-                } else {
-                    // Container: call {container}__size(&iter)
-                    let class_name = iter_ty.name();
-                    let size_func = format!("{}__size", class_name);
-                    if let Some(&idx) = self.func_index.get(&size_func) {
-                        // Push &iter
-                        if let Expr::Identifier { name, .. } = iter.as_ref() {
-                            if let Some(&offset) = self.local_indices.get(name) {
-                                self.emit(OpCode::GetFrameBase, 0, &loc);
-                                self.emit(OpCode::PushConst, offset, &loc);
-                                self.emit(OpCode::Add, 0, &loc);
-                            } else if let Some(&offset) = self.global_indices.get(name) {
-                                self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
-                            } else {
-                                self.report_error("RangeFor: 未声明的容器变量", &loc);
-                                self.exit_scope();
-                                return;
-                            }
-                        } else {
-                            self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
-                            self.exit_scope();
-                            return;
-                        }
-                        self.emit(OpCode::Call, idx, &loc);
-                    } else {
-                        self.report_error(&format!("RangeFor: 未找到容器函数 '{}'", size_func), &loc);
-                        self.exit_scope();
-                        return;
-                    }
-                }
-                self.emit(OpCode::Lt, 0, &loc);
-                let cond_jump = self.current_ip();
-                self.emit(OpCode::JumpIfZero, 0, &loc);
-
-                // Load element: var = iter[idx]
-                if is_array {
-                    let elem_ty = if let Type::Array { element, .. } = &iter_ty {
-                        element.clone()
-                    } else {
-                        Box::new(Type::int())
-                    };
-                    let elem_sz = self.type_size(&elem_ty);
-                    if let Expr::Identifier { name, .. } = iter.as_ref() {
-                        if let Some(&offset) = self.local_indices.get(name) {
-                            self.emit(OpCode::GetFrameBase, 0, &loc);
-                            self.emit(OpCode::PushConst, offset, &loc);
-                            self.emit(OpCode::Add, 0, &loc);
-                        } else if let Some(&offset) = self.global_indices.get(name) {
-                            self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
-                        } else {
-                            self.report_error("RangeFor: 未声明的数组变量", &loc);
-                            self.exit_scope();
-                            return;
-                        }
-                    } else {
-                        self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
-                        self.exit_scope();
-                        return;
-                    }
-                    self.emit(OpCode::LoadLocal, idx_offset, &loc);
-                    self.emit(OpCode::PushConst, elem_sz, &loc);
-                    self.emit(OpCode::Mul, 0, &loc);
-                    self.emit(OpCode::Add, 0, &loc);
-                    if var_type.is_reference() || var_type.is_rvalue_ref() {
-                        // Reference loop variable for array: bind to element address
-                        self.emit(OpCode::StoreLocal, var_offset, &loc);
-                    } else {
-                        self.emit(OpCode::LoadMem, 0, &loc);
-                        self.emit(OpCode::StoreLocal, var_offset, &loc);
-                    }
-                } else {
-                    // Container: call {container}__get(&iter, idx)
-                    let class_name = iter_ty.name();
-                    let get_func = format!("{}__get", class_name);
-                    if let Some(&idx) = self.func_index.get(&get_func) {
-                        // Push idx first (will be second on stack after &iter)
-                        self.emit(OpCode::LoadLocal, idx_offset, &loc);
-                        // Push &iter
-                        if let Expr::Identifier { name, .. } = iter.as_ref() {
-                            if let Some(&offset) = self.local_indices.get(name) {
-                                self.emit(OpCode::GetFrameBase, 0, &loc);
-                                self.emit(OpCode::PushConst, offset, &loc);
-                                self.emit(OpCode::Add, 0, &loc);
-                            } else if let Some(&offset) = self.global_indices.get(name) {
-                                self.emit(OpCode::PushConst, crate::vm::core::GLOBAL_START as i32 + offset, &loc);
-                            } else {
-                                self.report_error("RangeFor: 未声明的容器变量", &loc);
-                                self.exit_scope();
-                                return;
-                            }
-                        } else {
-                            self.report_error("RangeFor: 复杂的迭代表达式暂不支持", &loc);
-                            self.exit_scope();
-                            return;
-                        }
-                        self.emit(OpCode::Call, idx, &loc);
-                        self.emit(OpCode::StoreLocal, var_offset, &loc);
-                    } else {
-                        self.report_error(&format!("RangeFor: 未找到容器函数 '{}'", get_func), &loc);
-                        self.exit_scope();
-                        return;
-                    }
-                }
-
-                self.gen_stmt(body);
-
-                // Continue: ++idx
-                let continue_ip = self.current_ip();
-                self.emit(OpCode::LoadLocal, idx_offset, &loc);
-                self.emit(OpCode::PushConst, 1, &loc);
-                self.emit(OpCode::Add, 0, &loc);
-                self.emit(OpCode::StoreLocal, idx_offset, &loc);
-                self.emit(OpCode::Jump, start_ip as i32, &loc);
-
-                let end_ip = self.current_ip();
-                self.exit_scope();
-                self.patch_jump(cond_jump, end_ip);
-                for i in break_base..self.break_patches.len() {
-                    self.patch_jump(self.break_patches[i], end_ip);
-                }
-                self.break_patches.resize(break_base, 0);
-                for i in continue_base..self.continue_patches.len() {
-                    self.patch_jump(self.continue_patches[i], continue_ip);
-                }
-                self.continue_patches.resize(continue_base, 0);
-                self.loop_start_ips.pop();
-                self.loop_scope_depths.pop();
+                self.gen_range_for(var, var_type, iter, body, &loc);
             }
             Stmt::Try { .. } => {
                 self.report_error("Try/Catch 语句代码生成尚未实现（VM 不支持异常）", &loc);

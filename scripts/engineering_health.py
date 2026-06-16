@@ -1,0 +1,301 @@
+#!/usr/bin/env python3
+"""
+工程健康度看板脚本
+
+目标：
+1. 统计项目关键健康度指标：超大文件、TODO/FIXME/HACK、unwrap/expect、
+    失败记录活跃问题、Shadow Verification 匹配率。
+2. 生成 `reports/engineering_health.md`，供维护者定期 review。
+
+使用方式：
+    python scripts/engineering_health.py
+"""
+
+import re
+import subprocess
+import sys
+from collections import Counter
+from datetime import datetime, timezone
+from pathlib import Path
+
+# 确保 Windows 控制台输出 UTF-8 不乱码
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+
+# ─── 配置 ────────────────────────────────────────────────────────────────────
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+REPORTS_DIR = PROJECT_ROOT / "reports"
+NATIVE_SRC = PROJECT_ROOT / "native" / "src"
+FLUTTER_LIB = PROJECT_ROOT / "CideFlutter" / "lib"
+SHADOW_REPORT_DIR = PROJECT_ROOT / "native" / "tests" / "shadow_verification" / "reports"
+FAILURES_FILES = [
+    PROJECT_ROOT / "native" / "tests" / "FUZZ_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "HOST_CONTRACT_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "BYTECODE_LIBC_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "DIFFERENTIAL_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "GOLDEN_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "KR_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "E2E_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "LEETCODE_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "CPP_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "DOGFOODING_FAILURES.md",
+]
+
+TOP_N = 20
+
+# ─── 工具函数 ─────────────────────────────────────────────────────────────────
+
+
+def count_lines(path: Path) -> int:
+    """统计文件非空行数。"""
+    if not path.exists():
+        return 0
+    try:
+        text = path.read_text(encoding="utf-8", errors="ignore")
+    except Exception:
+        return 0
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
+def gather_files(root: Path, suffix: str) -> list[Path]:
+    """递归收集指定后缀文件，排除生成目录与 target。"""
+    if not root.exists():
+        return []
+    exclude = {"target", ".dart_tool", "build"}
+    ignored_names = {"frb_generated.rs", "frb_generated.dart", "frb_generated.io.dart", "frb_generated.web.dart"}
+    files = []
+    for p in root.rglob(f"*.{suffix}"):
+        if any(part in exclude for part in p.parts):
+            continue
+        if p.name in ignored_names:
+            continue
+        files.append(p)
+    return files
+
+
+def top_files_by_lines(root: Path, suffix: str, n: int = TOP_N) -> list[tuple[Path, int]]:
+    files = gather_files(root, suffix)
+    return sorted(((p, count_lines(p)) for p in files), key=lambda x: x[1], reverse=True)[:n]
+
+
+def count_pattern_in_files(root: Path, suffix: str, pattern: str) -> tuple[int, Counter]:
+    regex = re.compile(pattern)
+    total = 0
+    per_file = Counter()
+    for p in gather_files(root, suffix):
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            continue
+        count = len(regex.findall(text))
+        if count:
+            total += count
+            per_file[p.relative_to(PROJECT_ROOT)] += count
+    return total, per_file
+
+
+def count_active_failure_entries() -> tuple[int, dict[Path, int]]:
+    """统计各失败记录文件中的活跃条目数。
+
+    规则：
+    - 以 `## `、`### `、`- ` 或数字点开头的条目视为一条记录。
+    - 包含 `已修复`、`FIXED`、`RESOLVED`、`不再失败` 等字样的条目不计入。
+    """
+    resolved_markers = re.compile(r"已修复|FIXED|RESOLVED|不再失败|no longer fails", re.I)
+    entry_start = re.compile(r"^(?:#{2,3}\s+|\*\s+|\-\s+|\d+\.\s+)")
+    per_file = {}
+    total = 0
+    for md in FAILURES_FILES:
+        if not md.exists():
+            per_file[md] = 0
+            continue
+        text = md.read_text(encoding="utf-8", errors="ignore")
+        lines = text.splitlines()
+        count = 0
+        for line in lines:
+            if entry_start.match(line) and not resolved_markers.search(line):
+                count += 1
+        per_file[md] = count
+        total += count
+    return total, per_file
+
+
+def read_shadow_match_rate() -> dict[str, str]:
+    """读取 Shadow Verification 报告中的匹配率摘要。"""
+    import json
+
+    result: dict[str, str] = {}
+
+    # C++ 报告
+    cpp_report = SHADOW_REPORT_DIR / "cpp_shadow_report.json"
+    if cpp_report.exists():
+        try:
+            data = json.loads(cpp_report.read_text(encoding="utf-8"))
+            if isinstance(data, list):
+                total = len(data)
+                matched = sum(1 for c in data if c.get("diff_type") == "match")
+            else:
+                total = data.get("total", 0)
+                matched = data.get("matched", 0)
+            result["C++"] = f"{matched}/{total}"
+        except Exception:
+            result["C++"] = "N/A"
+    else:
+        result["C++"] = "N/A"
+
+    # C 报告：读取 shadow_data_latest.json（由 shadow_verify.py 同步更新）
+    latest = SHADOW_REPORT_DIR / "shadow_data_latest.json"
+    if latest.exists():
+        try:
+            data = json.loads(latest.read_text(encoding="utf-8"))
+            summary = data.get("summary", {})
+            total = summary.get("total", 0)
+            matched = summary.get("match", 0)
+            result["C"] = f"{matched}/{total}"
+        except Exception:
+            result["C"] = "N/A"
+    else:
+        result["C"] = "N/A"
+    return result
+
+
+def get_git_rev() -> str:
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except Exception:
+        return "unknown"
+
+
+def get_git_dirty() -> bool:
+    try:
+        out = subprocess.check_output(
+            ["git", "status", "--short"],
+            cwd=PROJECT_ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+        return bool(out)
+    except Exception:
+        return False
+
+
+# ─── 报告生成 ─────────────────────────────────────────────────────────────────
+
+
+def generate_report() -> str:
+    now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S%z")
+    rev = get_git_rev()
+    dirty = " (dirty)" if get_git_dirty() else ""
+
+    rust_top = top_files_by_lines(NATIVE_SRC, "rs")
+    dart_top = top_files_by_lines(FLUTTER_LIB, "dart")
+
+    todo_total, todo_per_file = count_pattern_in_files(
+        PROJECT_ROOT / "native", "rs", r"//\s*(TODO|FIXME|HACK)"
+    )
+    dart_todo_total, dart_todo_per_file = count_pattern_in_files(
+        FLUTTER_LIB, "dart", r"//\s*(TODO|FIXME|HACK)"
+    )
+
+    unwrap_total, unwrap_per_file = count_pattern_in_files(
+        NATIVE_SRC, "rs", r"\b(unwrap\(\)|expect\()"
+    )
+
+    active_failures, failures_per_file = count_active_failure_entries()
+    shadow_rates = read_shadow_match_rate()
+
+    lines: list[str] = []
+    lines.append("# Cide 工程健康度看板")
+    lines.append("")
+    lines.append(f"> 生成时间: {now}")
+    lines.append(f"> 基线提交: `{rev}{dirty}`")
+    lines.append("")
+    lines.append("## 摘要")
+    lines.append("")
+    lines.append("| 指标 | 数值 |")
+    lines.append("|------|------|")
+    lines.append(f"| Rust TODO/FIXME/HACK | {todo_total} |")
+    lines.append(f"| Dart TODO/FIXME/HACK | {dart_todo_total} |")
+    lines.append(f"| Rust unwrap/expect | {unwrap_total} |")
+    lines.append(f"| 活跃失败记录条目 | {active_failures} |")
+    lines.append(f"| C Shadow Verification | {shadow_rates.get('C', 'N/A')} |")
+    lines.append(f"| C++ Shadow Verification | {shadow_rates.get('C++', 'N/A')} |")
+    lines.append("")
+
+    lines.append("## Rust 源文件行数 Top 20")
+    lines.append("")
+    lines.append("| 排名 | 文件 | 非空行数 |")
+    lines.append("|------|------|----------|")
+    for i, (p, n) in enumerate(rust_top, 1):
+        rel = p.relative_to(PROJECT_ROOT)
+        lines.append(f"| {i} | `{rel}` | {n} |")
+    lines.append("")
+
+    lines.append("## Dart 源文件行数 Top 20")
+    lines.append("")
+    lines.append("| 排名 | 文件 | 非空行数 |")
+    lines.append("|------|------|----------|")
+    for i, (p, n) in enumerate(dart_top, 1):
+        rel = p.relative_to(PROJECT_ROOT)
+        lines.append(f"| {i} | `{rel}` | {n} |")
+    lines.append("")
+
+    lines.append("## Rust TODO/FIXME/HACK 分布（Top 10）")
+    lines.append("")
+    lines.append("| 文件 | 数量 |")
+    lines.append("|------|------|")
+    for p, n in todo_per_file.most_common(10):
+        lines.append(f"| `{p}` | {n} |")
+    lines.append("")
+
+    lines.append("## Dart TODO/FIXME/HACK 分布（Top 10）")
+    lines.append("")
+    lines.append("| 文件 | 数量 |")
+    lines.append("|------|------|")
+    for p, n in dart_todo_per_file.most_common(10):
+        lines.append(f"| `{p}` | {n} |")
+    lines.append("")
+
+    lines.append("## Rust unwrap/expect 分布（Top 10）")
+    lines.append("")
+    lines.append("| 文件 | 数量 |")
+    lines.append("|------|------|")
+    for p, n in unwrap_per_file.most_common(10):
+        lines.append(f"| `{p}` | {n} |")
+    lines.append("")
+
+    lines.append("## 失败记录文件活跃条目")
+    lines.append("")
+    lines.append("| 文件 | 活跃条目 |")
+    lines.append("|------|----------|")
+    for md, n in failures_per_file.items():
+        rel = md.relative_to(PROJECT_ROOT)
+        lines.append(f"| `{rel}` | {n} |")
+    lines.append("")
+
+    lines.append("## 趋势说明")
+    lines.append("")
+    lines.append("- 本报告仅反映当前快照，建议与历史报告对比观察趋势。")
+    lines.append("- 若 Rust/Dart 超大文件持续膨胀，应触发新一轮拆分评估。")
+    lines.append("- 若 `unwrap/expect` 数量持续上升，应评估错误处理健壮性。")
+    lines.append("")
+
+    return "\n".join(lines)
+
+
+def main() -> None:
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    report = generate_report()
+    out_path = REPORTS_DIR / "engineering_health.md"
+    out_path.write_text(report, encoding="utf-8")
+    print(f"工程健康度看板已生成: {out_path}")
+
+
+if __name__ == "__main__":
+    main()

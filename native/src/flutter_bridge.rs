@@ -19,13 +19,22 @@ use crate::vm::core::NULL_TRAP_SIZE;
 
 use std::sync::LazyLock;
 
+/// Mutex poison 发生次数。用于工程健康度监控与问题定位。
+static POISON_COUNT: AtomicU64 = AtomicU64::new(0);
+
 /// 锁定 Arc<Mutex<T>>；若 Mutex 已被 poison，则重置为默认值后返回 guard，
 /// 避免继续使用可能已损坏的状态。
-// FIXME(#D12): Mutex poison 当前静默恢复为默认值，会丢失 panic 现场。
-// 未来应评估是否改为 panic 而非恢复；目前至少记录日志保留可观测痕迹。
+// NOTE(#D12): 当前策略仍为恢复默认值以保证前端不崩溃，但已增加调用位置与全局计数，
+// 不再静默处理。未来若监控显示 poison 频繁发生，应升级为 panic 或上报崩溃报告。
+#[track_caller]
 fn lock_or_reset<T: Default>(arc: &Arc<Mutex<T>>) -> std::sync::MutexGuard<'_, T> {
     arc.lock().unwrap_or_else(|e| {
-        eprintln!("[cide] Mutex poison detected; resetting to default. This may hide a panic root cause.");
+        let count = POISON_COUNT.fetch_add(1, Ordering::SeqCst) + 1;
+        let caller = std::panic::Location::caller();
+        eprintln!(
+            "[cide] Mutex poison detected (total={}) at {}. Resetting state to default; original panic context is lost.",
+            count, caller
+        );
         let mut guard = e.into_inner();
         *guard = T::default();
         guard

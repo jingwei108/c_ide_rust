@@ -834,6 +834,10 @@ def main():
     report_path.parent.mkdir(parents=True, exist_ok=True)
     generate_report(diffs, report_path)
 
+    # 同步更新 latest 文件，便于健康度看板等工具读取
+    latest_report_path = SCRIPT_DIR / "reports" / "shadow_report_latest.md"
+    generate_report(diffs, latest_report_path)
+
     # 同时输出 JSON
     if args.json:
         json_path = args.json
@@ -867,6 +871,10 @@ def main():
     json_path.parent.mkdir(parents=True, exist_ok=True)
     json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\nJSON 数据已保存: {json_path}")
+
+    # 同步更新 latest JSON
+    latest_json_path = SCRIPT_DIR / "reports" / "shadow_data_latest.json"
+    latest_json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # 生成 K&R + LeetCode 专项报告
     kr_leetcode_diffs = [d for d in diffs if d.src_dir in ("knr", "leetcode")]
