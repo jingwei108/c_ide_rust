@@ -1,5 +1,39 @@
 use super::*;
-use crate::compiler::codegen::expr::ExprGen;
+
+pub(crate) fn gen_member_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
+    let loc = *expr.loc();
+    if let Expr::Member { object, member, ty, .. } = expr {
+        gen.gen_member_addr(object, member, &loc);
+        // Lambda by-reference capture: need to load the captured pointer first
+        if object.ty().is_pointer() {
+            if let Type::Pointer { pointee, .. } = object.ty() {
+                if let Type::Class { name, .. } = pointee.as_ref() {
+                    if let Some(by_ref_fields) = gen.lambda_by_ref_fields.get(name) {
+                        if by_ref_fields.contains(member) {
+                            gen.emit(OpCode::LoadMem, 0, &loc);
+                        }
+                    }
+                }
+            }
+        }
+        if !ty.is_array() {
+            if ty.kind() == TypeKind::Char {
+                gen.emit(OpCode::LoadMemByte, 0, &loc);
+            } else if ty.kind() == TypeKind::Double {
+                gen.emit(OpCode::LoadMemD, 0, &loc);
+            } else if ty.kind() == TypeKind::LongLong {
+                gen.emit(OpCode::LoadMemQ, 0, &loc);
+            } else {
+                gen.emit(OpCode::LoadMem, 0, &loc);
+            }
+        }
+    }
+}
+
+pub(crate) fn gen_member_call_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
+    let loc = *expr.loc();
+    gen.gen_member_call(expr, &loc);
+}
 
 impl BytecodeGen {
     pub(crate) fn gen_member_call(&mut self, expr: &mut Expr, loc: &SourceLoc) {

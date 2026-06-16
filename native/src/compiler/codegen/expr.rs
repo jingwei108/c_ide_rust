@@ -5,6 +5,8 @@ mod binary;
 mod unary;
 mod call;
 mod array;
+mod struct_;
+mod cast;
 
 /// Returns true if `expr` denotes an object with storage (an lvalue in C++ terms).
 pub(crate) fn is_lvalue_expr(expr: &Expr) -> bool {
@@ -24,7 +26,6 @@ pub(crate) trait ExprGen {
     fn gen_member_addr(&mut self, object: &mut Expr, member: &str, loc: &SourceLoc);
     fn gen_index(&mut self, array: &mut Expr, index: &mut Expr, result_ty: &Type, loc: &SourceLoc, is_assign: bool);
     fn gen_vla_stride(&mut self, arr_type: &Type, loc: &SourceLoc);
-    fn gen_expr_with_cast(&mut self, expr: &mut Expr, target_is_fp: bool, target_is_double: bool, loc: &SourceLoc);
     fn gen_addr(&mut self, expr: &mut Expr, loc: &SourceLoc);
     fn gen_struct_copy_common<F: FnMut(&mut Self, &SourceLoc, i32)>(
         &mut self,
@@ -143,32 +144,7 @@ impl ExprGen for BytecodeGen {
             Expr::Call { .. } => call::gen_call(self, expr),
             Expr::CallPtr { .. } => call::gen_call_ptr(self, expr),
             Expr::Index { .. } => array::gen_index_expr(self, expr),
-            Expr::Member { object, member, ty, .. } => {
-                self.gen_member_addr(object, member, &loc);
-                // Lambda by-reference capture: need to load the captured pointer first
-                if object.ty().is_pointer() {
-                    if let Type::Pointer { pointee, .. } = object.ty() {
-                        if let Type::Class { name, .. } = pointee.as_ref() {
-                            if let Some(by_ref_fields) = self.lambda_by_ref_fields.get(name) {
-                                if by_ref_fields.contains(member) {
-                                    self.emit(OpCode::LoadMem, 0, &loc);
-                                }
-                            }
-                        }
-                    }
-                }
-                if !ty.is_array() {
-                    if ty.kind() == TypeKind::Char {
-                        self.emit(OpCode::LoadMemByte, 0, &loc);
-                    } else if ty.kind() == TypeKind::Double {
-                        self.emit(OpCode::LoadMemD, 0, &loc);
-                    } else if ty.kind() == TypeKind::LongLong {
-                        self.emit(OpCode::LoadMemQ, 0, &loc);
-                    } else {
-                        self.emit(OpCode::LoadMem, 0, &loc);
-                    }
-                }
-            }
+            Expr::Member { .. } => struct_::gen_member_expr(self, expr),
             Expr::Ternary {
                 cond, then_branch, else_branch, ..
             } => {
@@ -187,143 +163,16 @@ impl ExprGen for BytecodeGen {
             Expr::Assign { op, left, right, .. } => {
                 self.gen_assign(op, left, right, &loc);
             }
-            Expr::Sizeof { target_type, operand, .. } => {
-                let is_vla = target_type.as_ref().map(|t| t.is_vla()).unwrap_or(false)
-                    || operand.as_ref().map(|op| op.ty().is_vla()).unwrap_or(false);
-                if is_vla {
-                    let array_info = if let Some(ref op) = operand {
-                        if let Type::Array { dims, vla_dims, .. } = op.ty() {
-                            Some((dims.clone(), vla_dims.clone(), self.elem_type_size(op.ty())))
-                        } else {
-                            None
-                        }
-                    } else if let Some(ref t) = target_type {
-                        if let Type::Array { dims, vla_dims, .. } = t {
-                            Some((dims.clone(), vla_dims.clone(), self.elem_type_size(t)))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    };
-
-                    if let Some((dims, mut vla_dims, elem_size)) = array_info {
-                        if dims.is_empty() {
-                            self.emit(OpCode::PushConst, 0, &loc);
-                        } else {
-                            let mut vla_idx = 0;
-                            for &dim in dims.iter() {
-                                if dim > 0 {
-                                    self.emit(OpCode::PushConst, dim, &loc);
-                                } else if let Some(dim_expr) = vla_dims.get_mut(vla_idx) {
-                                    self.gen_expr(dim_expr);
-                                    vla_idx += 1;
-                                } else {
-                                    self.emit(OpCode::PushConst, 0, &loc);
-                                }
-                            }
-                            for _ in 1..dims.len() {
-                                self.emit(OpCode::Mul, 0, &loc);
-                            }
-                            if elem_size > 1 {
-                                self.emit(OpCode::PushConst, elem_size, &loc);
-                                self.emit(OpCode::Mul, 0, &loc);
-                            }
-                        }
-                    } else {
-                        self.emit(OpCode::PushConst, 4, &loc);
-                    }
-                } else {
-                    let size = if let Some(ref t) = target_type {
-                        self.type_size(t)
-                    } else if let Some(ref op) = operand {
-                        self.type_size(op.ty())
-                    } else {
-                        0
-                    };
-                    self.emit(OpCode::PushConst, size, &loc);
-                }
-            }
-            Expr::Cast { expr, target_type, .. } => {
-                self.gen_expr(expr);
-                if target_type.kind() == TypeKind::Double
-                    && expr.ty().kind() != TypeKind::Float
-                    && expr.ty().kind() != TypeKind::Double
-                    && expr.ty().kind() != TypeKind::LongLong
-                {
-                    self.emit(OpCode::CastI2D, 0, &loc);
-                } else if target_type.kind() == TypeKind::Double && expr.ty().kind() == TypeKind::Float {
-                    self.emit(OpCode::CastF2D, 0, &loc);
-                } else if target_type.kind() == TypeKind::Double && expr.ty().kind() == TypeKind::LongLong {
-                    self.emit(OpCode::CastQ2D, 0, &loc);
-                } else if target_type.kind() == TypeKind::Float
-                    && expr.ty().kind() != TypeKind::Float
-                    && expr.ty().kind() != TypeKind::Double
-                    && expr.ty().kind() != TypeKind::LongLong
-                {
-                    self.emit(OpCode::CastI2F, 0, &loc);
-                } else if target_type.kind() == TypeKind::Float && expr.ty().kind() == TypeKind::Double {
-                    self.emit(OpCode::CastD2F, 0, &loc);
-                } else if target_type.kind() == TypeKind::LongLong
-                    && expr.ty().kind() != TypeKind::LongLong
-                    && expr.ty().kind() != TypeKind::Double
-                    && expr.ty().kind() != TypeKind::Float
-                {
-                    self.emit(OpCode::CastI2Q, 0, &loc);
-                } else if target_type.kind() == TypeKind::LongLong && expr.ty().kind() == TypeKind::Double {
-                    self.emit(OpCode::CastD2Q, 0, &loc);
-                } else if target_type.kind() != TypeKind::Float
-                    && target_type.kind() != TypeKind::Double
-                    && target_type.kind() != TypeKind::LongLong
-                    && expr.ty().kind() == TypeKind::Double
-                {
-                    self.emit(OpCode::CastD2I, 0, &loc);
-                } else if target_type.kind() != TypeKind::Float
-                    && target_type.kind() != TypeKind::Double
-                    && target_type.kind() != TypeKind::LongLong
-                    && expr.ty().kind() == TypeKind::Float
-                {
-                    self.emit(OpCode::CastF2I, 0, &loc);
-                } else if target_type.kind() != TypeKind::Float
-                    && target_type.kind() != TypeKind::Double
-                    && target_type.kind() != TypeKind::LongLong
-                    && expr.ty().kind() == TypeKind::LongLong
-                {
-                    self.emit(OpCode::CastQ2I, 0, &loc);
-                }
-            }
+            Expr::Sizeof { .. } => cast::gen_sizeof_expr(self, expr),
+            Expr::Cast { .. } => cast::gen_cast_expr(self, expr),
             Expr::InitList { .. } => {
                 self.report_error("初始化列表只能在变量声明中使用", &loc);
                 self.emit(OpCode::PushConst, 0, &loc);
             }
-            Expr::Offsetof { target_type, field, .. } => {
-                let mut offset = 0;
-                let mut found = false;
-                if let Some(fields) = self.struct_defs.get(target_type.name()) {
-                    for f in fields {
-                        if f.name == *field {
-                            found = true;
-                            break;
-                        }
-                        offset += self.type_size(&f.ty);
-                    }
-                } else if let Some(fields) = self.union_defs.get(target_type.name()) {
-                    if fields.iter().any(|f| f.name == *field) {
-                        offset = 0;
-                        found = true;
-                    }
-                }
-                if !found {
-                    self.report_error(
-                        &format!("offsetof: 未知的结构体/联合体 '{}' 或字段 '{}'", target_type.name(), field),
-                        &loc,
-                    );
-                }
-                self.emit(OpCode::PushConst, offset, &loc);
-            }
+            Expr::Offsetof { .. } => cast::gen_offsetof_expr(self, expr),
             // === C++ 新增 (Phase 33) ===
             Expr::This { .. } => self.gen_this(expr, &loc),
-            Expr::MemberCall { .. } => self.gen_member_call(expr, &loc),
+            Expr::MemberCall { .. } => struct_::gen_member_call_expr(self, expr),
             Expr::New { .. } => self.gen_new(expr, &loc),
             Expr::Delete { .. } => self.gen_delete(expr, &loc),
             Expr::Move { .. } => self.gen_move(expr, &loc),
@@ -535,40 +384,6 @@ impl ExprGen for BytecodeGen {
             }
         } else {
             self.emit(OpCode::PushConst, self.elem_type_size(arr_type), loc);
-        }
-    }
-
-    fn gen_expr_with_cast(&mut self, expr: &mut Expr, target_is_fp: bool, target_is_double: bool, loc: &SourceLoc) {
-        self.gen_expr(expr);
-        let _target_is_long_long = !target_is_fp
-            && expr.ty().kind() != TypeKind::Int
-            && expr.ty().kind() != TypeKind::Char
-            && expr.ty().kind() != TypeKind::Float
-            && expr.ty().kind() != TypeKind::Double;
-        // Note: target_is_long_long heuristic is approximate; caller ensures correct cast via Cast nodes
-        if target_is_double
-            && expr.ty().kind() != TypeKind::Float
-            && expr.ty().kind() != TypeKind::Double
-            && expr.ty().kind() != TypeKind::LongLong
-        {
-            self.emit(OpCode::CastI2D, 0, loc);
-        } else if target_is_double && expr.ty().kind() == TypeKind::Float {
-            self.emit(OpCode::CastF2D, 0, loc);
-        } else if target_is_double && expr.ty().kind() == TypeKind::LongLong {
-            self.emit(OpCode::CastQ2D, 0, loc);
-        } else if !target_is_double
-            && target_is_fp
-            && expr.ty().kind() != TypeKind::Float
-            && expr.ty().kind() != TypeKind::Double
-            && expr.ty().kind() != TypeKind::LongLong
-        {
-            self.emit(OpCode::CastI2F, 0, loc);
-        } else if !target_is_fp && expr.ty().kind() == TypeKind::Double {
-            self.emit(OpCode::CastD2I, 0, loc);
-        } else if !target_is_fp && expr.ty().kind() == TypeKind::Float {
-            self.emit(OpCode::CastF2I, 0, loc);
-        } else if !target_is_fp && expr.ty().kind() == TypeKind::LongLong {
-            self.emit(OpCode::CastQ2I, 0, loc);
         }
     }
 
