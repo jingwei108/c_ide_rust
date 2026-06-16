@@ -6,35 +6,17 @@ import '../models/panel_item.dart';
 import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';
-import '../widgets/draggable_panel_tab.dart';
+import '../widgets/custom_keyboard.dart';
 import '../widgets/editor_panel_v2.dart';
+import '../widgets/execution_control_panel.dart';
 import '../widgets/floating_orb_widget.dart';
 import '../widgets/floating_panel_popup.dart';
-import '../widgets/height_resizable_panel.dart';
-import 'ide/editor_area.dart';
 import '../widgets/intro_overlay.dart';
-import '../widgets/linked_list_vis_tab.dart';
-import '../widgets/tree_vis_tab.dart';
-import '../widgets/panel_drag_data.dart';
-import '../widgets/algorithm_tab.dart';
-import '../widgets/array_vis_tab.dart';
-import '../widgets/callstack_tab.dart';
-import '../widgets/diagnostics_tab.dart';
-import '../widgets/intent_inference_panel.dart';
-import '../widgets/knowledge_card_tab.dart';
-import '../widgets/memory_tab.dart';
-import '../widgets/output_tab.dart';
-import '../widgets/pointer_vis_tab.dart';
-import '../widgets/progress_tab.dart';
-import '../widgets/custom_keyboard.dart';
-import 'ide/template_bar.dart';
 import '../widgets/template_tutorial_panel.dart';
-import '../widgets/execution_control_panel.dart';
+import 'ide/bottom_panel.dart';
+import 'ide/editor_area.dart';
+import 'ide/template_bar.dart';
 import 'ide/toolbar.dart';
-import '../widgets/breakpoints_tab.dart';
-import '../widgets/var_history_tab.dart';
-import '../widgets/variables_tab.dart';
-import '../widgets/watch_tab.dart';
 
 class IdeScreen extends ConsumerStatefulWidget {
   const IdeScreen({super.key});
@@ -391,10 +373,11 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                               onScrollToLine: _scrollToLine,
                             ),
                             // 底部面板：键盘弹出时平滑收起
-                            SizeTransition(
-                              sizeFactor: _barsAnimation,
-                              axisAlignment: 1,
-                              child: _buildBottomPanel(state, notifier, isDark),
+                            IdeBottomPanel(
+                              animation: _barsAnimation,
+                              inputController: _inputController,
+                              onScrollToLine: _scrollToLine,
+                              onUpdateSource: (src) => _editor?.setText(src),
                             ),
                           ],
                         ],
@@ -470,157 +453,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
 
   // ========== 底部面板 ==========
 
-  Widget _buildBottomPanel(IdeState state, IdeNotifier notifier, bool isDark) {
-    final panelBg = isDark ? const Color(0xff1e1e1e) : const Color(0xffffffff);
-
-    return HeightResizablePanel(
-      height: state.bottomHeight,
-      onHeightChanged: notifier.setBottomHeight,
-      child: Container(
-        decoration: BoxDecoration(
-          color: panelBg,
-          border: Border(
-            top: BorderSide(
-              color: Theme.of(context).dividerColor.withValues(alpha: 0.2),
-            ),
-          ),
-        ),
-        child: Column(
-          children: [
-            // Tab 栏（可拖拽交换）
-            Container(
-              height: 36,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  ...List.generate(state.bottomSlots.length, (index) {
-                    final panelId = state.bottomSlots[index];
-                    final item = PanelItem.fromId(panelId);
-                    if (item == null) return const SizedBox.shrink();
-                    final isActive = state.bottomActiveIndex == index;
-                    return Expanded(
-                      child: DraggablePanelTab(
-                        item: item,
-                        isActive: isActive,
-                        badge: _getBadgeForPanel(panelId, state),
-                        onTap: () => notifier.selectBottomTab(index),
-
-                        data: PanelDragData(
-                          panelId: panelId,
-                          fromLocation: PanelLocation.bottom,
-                          fromIndex: index,
-                        ),
-                        onAccept: (dragData) {
-                          if (dragData.fromLocation == PanelLocation.bottom) {
-                            // 同区：底部 Tab 之间交换位置
-                            notifier.swapBottomPanels(
-                              index,
-                              dragData.fromIndex,
-                            );
-                          } else {
-                            // 跨区域：悬浮球 → 底部，与当前位置交换
-                            notifier.swapFloatingWithBottomItem(
-                              dragData.panelId,
-                              index,
-                            );
-                          }
-                        },
-                      ),
-                    );
-                  }),
-                ],
-              ),
-            ),
-            // 内容区域（支持水平滑动切换标签）
-            Expanded(
-              child: GestureDetector(
-                onHorizontalDragEnd: (details) {
-                  const threshold = 300.0;
-                  final dx = details.velocity.pixelsPerSecond.dx;
-                  if (dx > threshold && state.bottomActiveIndex > 0) {
-                    notifier.selectBottomTab(state.bottomActiveIndex - 1);
-                  } else if (dx < -threshold &&
-                      state.bottomActiveIndex < state.bottomSlots.length - 1) {
-                    notifier.selectBottomTab(state.bottomActiveIndex + 1);
-                  }
-                },
-                child: _buildBottomTabContent(state, notifier, isDark),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String? _getBadgeForPanel(String panelId, IdeState state) {
-    switch (panelId) {
-      case 'diagnostics':
-        return state.diagnostics.isNotEmpty
-            ? '${state.diagnostics.length}'
-            : null;
-      case 'algorithm':
-        return state.algorithmMatches.isNotEmpty
-            ? '${state.algorithmMatches.length}'
-            : null;
-      case 'breakpoints':
-        return state.breakpoints.isNotEmpty
-            ? '${state.breakpoints.length}'
-            : null;
-      default:
-        return null;
-    }
-  }
-
-  Widget _buildBottomTabContent(
-    IdeState state,
-    IdeNotifier notifier,
-    bool isDark,
-  ) {
-    if (state.bottomSlots.isEmpty) return const SizedBox.shrink();
-    final panelId =
-        state.bottomSlots[state.bottomActiveIndex.clamp(
-          0,
-          state.bottomSlots.length - 1,
-        )];
-    switch (panelId) {
-      case 'output':
-        return _buildOutputTab(state, notifier, isDark);
-      case 'diagnostics':
-        return _buildDiagnosticsTab(state, notifier, isDark);
-      case 'algorithm':
-        return _buildAlgorithmTab(state, isDark);
-      case 'intent':
-        return _buildIntentTab(state);
-      case 'knowledge':
-        return _buildKnowledgeCardTab(state, isDark);
-      case 'pointer':
-        return _buildPointerVisTab(state, isDark);
-      case 'arrayVis':
-        return _buildArrayVisTab(state, isDark);
-      case 'linkedListVis':
-        return _buildLinkedListVisTab(isDark);
-      case 'treeVis':
-        return _buildTreeVisTab(isDark);
-      case 'memory':
-        return _buildMemoryTab(state, isDark);
-      case 'variables':
-        return _buildVariablesTab(state, isDark);
-      case 'watch':
-        return _buildWatchTab(state, isDark);
-      case 'callstack':
-        return _buildCallstackTab(state, isDark);
-      case 'progress':
-        return _buildProgressTab(state, isDark);
-      case 'varHistory':
-        return _buildVarHistoryTab(isDark);
-      case 'breakpoints':
-        return _buildBreakpointsTab(state, isDark);
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
   // ========== Overlay 悬浮球与弹窗 ==========
 
   Widget _buildOrbOverlay() {
@@ -676,140 +508,18 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
             _removePanelOverlay();
           },
 
-          child: _buildPanelContentById(panelId, state, notifier, isDark),
+          child: PanelContent(
+            panelId: panelId,
+            state: state,
+            notifier: notifier,
+            isDark: isDark,
+            inputController: _inputController,
+            onScrollToLine: _scrollToLine,
+            onUpdateSource: (src) => _editor?.setText(src),
+          ),
         );
       },
     );
   }
 
-  Widget _buildPanelContentById(
-    String panelId,
-    IdeState state,
-    IdeNotifier notifier,
-    bool isDark,
-  ) {
-    switch (panelId) {
-      case 'output':
-        return _buildOutputTab(state, notifier, isDark);
-      case 'diagnostics':
-        return _buildDiagnosticsTab(state, notifier, isDark);
-      case 'algorithm':
-        return _buildAlgorithmTab(state, isDark);
-      case 'knowledge':
-        return _buildKnowledgeCardTab(state, isDark);
-      case 'pointer':
-        return _buildPointerVisTab(state, isDark);
-      case 'arrayVis':
-        return _buildArrayVisTab(state, isDark);
-      case 'linkedListVis':
-        return _buildLinkedListVisTab(isDark);
-      case 'treeVis':
-        return _buildTreeVisTab(isDark);
-      case 'memory':
-        return _buildMemoryTab(state, isDark);
-      case 'variables':
-        return _buildVariablesTab(state, isDark);
-      case 'watch':
-        return _buildWatchTab(state, isDark);
-      case 'callstack':
-        return _buildCallstackTab(state, isDark);
-      case 'progress':
-        return _buildProgressTab(state, isDark);
-      case 'varHistory':
-        return _buildVarHistoryTab(isDark);
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-
-  // ========== 各 Tab 内容 ==========
-
-  Widget _buildOutputTab(IdeState state, IdeNotifier notifier, bool isDark) {
-    return OutputTab(
-      state: state,
-      notifier: notifier,
-      isDark: isDark,
-      inputController: _inputController,
-    );
-  }
-
-  Widget _buildDiagnosticsTab(
-    IdeState state,
-    IdeNotifier notifier,
-    bool isDark,
-  ) {
-    return DiagnosticsTab(
-      state: state,
-      notifier: notifier,
-      isDark: isDark,
-      onScrollToLine: _scrollToLine,
-      onUpdateSource: (src) => _editor?.setText(src),
-    );
-  }
-
-  Widget _buildAlgorithmTab(IdeState state, bool isDark) {
-    return AlgorithmTab(matches: state.algorithmMatches, isDark: isDark);
-  }
-
-  Widget _buildIntentTab(IdeState state) {
-    return IntentInferencePanel(scores: state.intentScores);
-  }
-
-  Widget _buildKnowledgeCardTab(IdeState state, bool isDark) {
-    return KnowledgeCardTab(cards: state.knowledgeCards, isDark: isDark);
-  }
-
-  Widget _buildPointerVisTab(IdeState state, bool isDark) {
-    return PointerVisTab(isDark: isDark);
-  }
-
-  Widget _buildArrayVisTab(IdeState state, bool isDark) {
-    return ArrayVisTab(isDark: isDark);
-  }
-
-  Widget _buildLinkedListVisTab(bool isDark) {
-    return LinkedListVisTab(isDark: isDark);
-  }
-
-  Widget _buildTreeVisTab(bool isDark) {
-    return TreeVisTab(isDark: isDark);
-  }
-
-  Widget _buildWatchTab(IdeState state, bool isDark) {
-    return WatchTab(watchExpressions: state.watchExpressions, isDark: isDark);
-  }
-
-  Widget _buildMemoryTab(IdeState state, bool isDark) {
-    return MemoryTab(isDark: isDark);
-  }
-
-  Widget _buildVariablesTab(IdeState state, bool isDark) {
-    return VariablesTab(isDark: isDark);
-  }
-
-  Widget _buildCallstackTab(IdeState state, bool isDark) {
-    return CallstackTab(isDark: isDark, onScrollToLine: _scrollToLine);
-  }
-
-  Widget _buildVarHistoryTab(bool isDark) {
-    return VarHistoryTab(isDark: isDark);
-  }
-
-  Widget _buildProgressTab(IdeState state, bool isDark) {
-    return ProgressTab(state: state);
-  }
-
-  Widget _buildBreakpointsTab(IdeState state, bool isDark) {
-    return BreakpointsTab(
-      state: state,
-      isDark: isDark,
-      onScrollToLine: _scrollToLine,
-    );
-  }
 }
-
-// ========== 可拖拽高度的面板包装器 ==========
-
-// ========== 知识卡片组件 ==========
-
-// ========== 小型组件 ==========
