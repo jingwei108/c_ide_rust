@@ -37,6 +37,9 @@ jobs:
       - name: Install wasm-pack
         run: cargo install wasm-pack
 
+      - name: Install binaryen (wasm-opt)
+        run: sudo apt-get update && sudo apt-get install -y binaryen
+
       - name: Install flutter_rust_bridge_codegen
         run: cargo install flutter_rust_bridge_codegen --version 2.12.0
 
@@ -48,6 +51,10 @@ jobs:
         run: |
           cd native
           wasm-pack build --target no-modules --out-dir ../CideFlutter/web/pkg
+
+      - name: Optimize WASM with wasm-opt
+        run: |
+          wasm-opt --enable-all -O4 CideFlutter/web/pkg/cide_native_bg.wasm -o CideFlutter/web/pkg/cide_native_bg.wasm
 
       - name: Build Flutter Web
         run: |

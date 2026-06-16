@@ -48,8 +48,9 @@ debug = false
 lto = "thin"
 strip = true
 
+# CI 中通过 apt 安装 binaryen 后手动运行 wasm-opt，避免 wasm-pack 自动下载失败或版本特性名不兼容。
 [package.metadata.wasm-pack.profile.release]
-wasm-opt = ["-O4", "--enable-bulk-memory", "--enable-saturating-float-to-int", "--enable-sign-ext"]
+wasm-opt = false
 
 [profile.dev]
 opt-level = 1
