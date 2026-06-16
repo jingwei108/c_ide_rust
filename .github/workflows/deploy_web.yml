@@ -17,6 +17,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -56,9 +58,7 @@ jobs:
       # 需要先在 GitHub Secrets 配置 GITEE_TOKEN（Gitee 私人令牌，需 projects 权限）。
       # 然后在 Gitee 仓库「服务 → Gitee Pages」中选择 pages 分支、根目录部署。
       - name: Deploy to Gitee Pages branch
-        if: ${{ secrets.GITEE_TOKEN != '' }}
-        env:
-          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        if: ${{ env.GITEE_TOKEN != '' }}
         run: |
           git config --global user.email "ci@example.com"
           git config --global user.name "GitHub Actions"
