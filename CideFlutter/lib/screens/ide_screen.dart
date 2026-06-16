@@ -2,7 +2,6 @@ import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../models/template_registry.dart';
 import '../models/panel_item.dart';
 import '../providers/ide_provider.dart';
 import '../providers/unified_provider.dart';
@@ -28,8 +27,7 @@ import '../widgets/output_tab.dart';
 import '../widgets/pointer_vis_tab.dart';
 import '../widgets/progress_tab.dart';
 import '../widgets/custom_keyboard.dart';
-import '../widgets/template_bar.dart';
-import '../widgets/template_param_dialog.dart';
+import 'ide/template_bar.dart';
 import '../widgets/template_tutorial_panel.dart';
 import '../widgets/execution_control_panel.dart';
 import 'ide/toolbar.dart';
@@ -270,40 +268,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   void _backspace() => _editor?.backspace();
   void _insertNewline() => _editor?.insertNewline();
 
-  void _handleTemplateSelect(CodeTemplate template) {
-    final notifier = ref.read(ideProvider.notifier);
-
-    // 无参数且无教程：直接插入（旧行为）
-    if (template.params.isEmpty && template.tutorialSteps.isEmpty) {
-      _insertText(template.code);
-      return;
-    }
-
-    // 有参数：先弹参数对话框
-    if (template.params.isNotEmpty) {
-      showTemplateParamDialog(
-        context: context,
-        template: template,
-        onConfirm: (params) {
-          final generated = template.buildCode(params);
-          if (template.tutorialSteps.isNotEmpty) {
-            // 启动教程
-            notifier.startTutorial(template, generated);
-            _scrollToTutorialFocus();
-          } else {
-            // 无教程，直接插入
-            _insertText(generated);
-          }
-        },
-      );
-      return;
-    }
-
-    // 无参数但有教程
-    notifier.startTutorial(template, template.code);
-    _scrollToTutorialFocus();
-  }
-
   void _scrollToTutorialFocus() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -436,10 +400,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                             )
                           else ...[
                             // 模板栏：键盘弹出时平滑收起
-                            SizeTransition(
-                              sizeFactor: _barsAnimation,
-                              axisAlignment: 1,
-                              child: _buildTemplateBar(state, notifier),
+                            IdeTemplateBar(
+                              animation: _barsAnimation,
+                              onInsertText: _insertText,
+                              onScrollToLine: _scrollToLine,
                             ),
                             // 底部面板：键盘弹出时平滑收起
                             SizeTransition(
@@ -518,21 +482,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   // ========== 模板快捷栏 ==========
-
-  Widget _buildTemplateBar(IdeState state, IdeNotifier notifier) {
-    return FutureBuilder<List<CodeTemplate>>(
-      future: getDynamicTemplates(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
-          return const SizedBox.shrink();
-        }
-        return TemplateBar(
-          templates: snapshot.data!,
-          onSelectTemplate: _handleTemplateSelect,
-        );
-      },
-    );
-  }
 
   // ========== 底部面板 ==========
 
