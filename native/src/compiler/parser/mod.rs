@@ -698,23 +698,6 @@ impl Parser {
 
 
 
-    // =========================================================================
-    // Expressions (precedence climbing)
-    // =========================================================================
-
-    fn parse_arg_list(&mut self) -> Vec<Expr> {
-        let mut args = Vec::new();
-        if self.check(TokenType::RParen) {
-            return args;
-        }
-        loop {
-            args.push(self.parse_assign());
-            if !self.match_token(TokenType::Comma) {
-                break;
-            }
-        }
-        args
-    }
 
 
 
