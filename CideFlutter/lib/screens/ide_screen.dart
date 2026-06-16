@@ -1,18 +1,16 @@
-import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/ide_provider.dart';
-import '../providers/unified_provider.dart';
 import '../providers/theme_provider.dart';
-import '../widgets/custom_keyboard.dart';
 import '../widgets/editor_panel_v2.dart';
 import '../widgets/execution_control_panel.dart';
-import 'ide/floating_orb_area.dart';
 import '../widgets/intro_overlay.dart';
 import '../widgets/template_tutorial_panel.dart';
 import 'ide/bottom_panel.dart';
 import 'ide/editor_area.dart';
+import 'ide/floating_orb_area.dart';
+import 'ide/keyboard_handler.dart';
 import 'ide/template_bar.dart';
 import 'ide/toolbar.dart';
 
@@ -21,22 +19,6 @@ class IdeScreen extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<IdeScreen> createState() => _IdeScreenState();
-}
-
-class _RunIntent extends Intent {
-  const _RunIntent();
-}
-
-class _StepIntent extends Intent {
-  const _StepIntent();
-}
-
-class _ToggleBreakpointIntent extends Intent {
-  const _ToggleBreakpointIntent();
-}
-
-class _StopIntent extends Intent {
-  const _StopIntent();
 }
 
 class _IdeScreenState extends ConsumerState<IdeScreen>
@@ -50,35 +32,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   bool _isSystemKeyboardActive = false;
   late final AnimationController _barsAnimationController;
   late final Animation<double> _barsAnimation;
-
-  // ========== 快捷键 Intent ==========
-  void _handleRun() {
-    final unified = ref.read(unifiedProvider);
-    final unifiedNotifier = ref.read(unifiedProvider.notifier);
-    if (unified.phase == ExecutionPhase.idle) {
-      ref.read(ideProvider.notifier).compile();
-    } else if (unified.canPlay && !unified.isPlaying) {
-      unifiedNotifier.resume();
-    }
-  }
-
-  void _handleStep() {
-    final unified = ref.read(unifiedProvider);
-    if (unified.canStep) {
-      ref.read(unifiedProvider.notifier).stepNext();
-    }
-  }
-
-  void _handleToggleBreakpoint() {
-    final line = _editor?.getCurrentLine() ?? 0;
-    if (line > 0) {
-      ref.read(ideProvider.notifier).toggleBreakpoint(line);
-    }
-  }
-
-  void _handleStop() {
-    ref.read(unifiedProvider.notifier).onCodeChanged();
-  }
 
   @override
   void initState() {
@@ -210,14 +163,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
   }
 
   void _insertText(String text) => _editor?.insertText(text);
-  void _insertPair(String open, String close) =>
-      _editor?.insertPair(open, close);
-  void _undo() => _editor?.undo();
-  void _redo() => _editor?.redo();
-  void _moveCursor(int offset) => _editor?.moveCursor(offset);
+
   void _scrollToLine(int line) => _editor?.scrollToLine(line);
-  void _backspace() => _editor?.backspace();
-  void _insertNewline() => _editor?.insertNewline();
 
   void _scrollToTutorialFocus() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -237,7 +184,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
 
     final scaffoldBg =
         isDark ? const Color(0xff121212) : const Color(0xfff5f5f5);
-    final showCustomKeyboard = _showKeyboard && !_isSystemKeyboardActive;
 
     // 监听错误信息并弹出提示
     ref.listen(ideProvider, (prev, next) {
@@ -256,43 +202,10 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
       }
     });
 
-    // 检测系统键盘真实可见性（仅读取，副作用已移至 didChangeDependencies）
-    final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
-    final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
-    // 桌面端物理键盘不会更新 viewInsets，只要处于系统键盘模式就显示切换按钮
-    final isDesktop =
-        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
-    final showSystemKeyboardToggle =
-        _isSystemKeyboardActive && (isDesktop || isSystemKeyboardReallyVisible);
-
     // 同步上下栏动画
     _syncBarsAnimation();
 
-    final shortcuts = <ShortcutActivator, Intent>{
-      const SingleActivator(LogicalKeyboardKey.f5): const _RunIntent(),
-      const SingleActivator(LogicalKeyboardKey.f10): const _StepIntent(),
-      const SingleActivator(LogicalKeyboardKey.f9):
-          const _ToggleBreakpointIntent(),
-      const SingleActivator(LogicalKeyboardKey.f5, shift: true):
-          const _StopIntent(),
-    };
-
-    final actions = <Type, Action<Intent>>{
-      _RunIntent: CallbackAction<_RunIntent>(onInvoke: (_) => _handleRun()),
-      _StepIntent: CallbackAction<_StepIntent>(onInvoke: (_) => _handleStep()),
-      _ToggleBreakpointIntent: CallbackAction<_ToggleBreakpointIntent>(
-        onInvoke: (_) => _handleToggleBreakpoint(),
-      ),
-      _StopIntent: CallbackAction<_StopIntent>(onInvoke: (_) => _handleStop()),
-    };
-
-    return Shortcuts(
-      shortcuts: shortcuts,
-      child: Actions(
-        actions: actions,
-        child: Focus(
-          autofocus: true,
-          child: Scaffold(
+    return Scaffold(
             resizeToAvoidBottomInset: false,
             backgroundColor: scaffoldBg,
             body: Stack(
@@ -300,11 +213,21 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                 SafeArea(
                   child: Stack(
                     children: [
-                      Column(
-                        children: [
-                          // 顶部工具栏：键盘弹出时平滑收起
-                          IdeToolbar(animation: _barsAnimation),
-                          _buildExecutionControl(state, notifier),
+                      KeyboardHandler(
+                        editorKey: _editorKey,
+                        showKeyboard: _showKeyboard,
+                        isSystemKeyboardActive: _isSystemKeyboardActive,
+                        onCloseKeyboard: _closeKeyboard,
+                        onShowSystemKeyboard: _showSystemKeyboard,
+                        onShowCustomKeyboard: _showCustomKeyboard,
+                        child: Column(
+                          children: [
+                            // 顶部工具栏：键盘弹出时平滑收起
+                            IdeToolbar(animation: _barsAnimation),
+                          ExecutionControlPanel(
+                            onRun: () => notifier.compile(),
+                            onScrollToLine: _scrollToLine,
+                          ),
                           IdeEditorArea(
                             editorKey: _editorKey,
                             onTap: _openKeyboard,
@@ -351,48 +274,8 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                           ],
                         ],
                       ),
-                      // 自定义键盘：编辑器聚焦且未切换系统键盘时显示
-                      if (showCustomKeyboard)
-                        Positioned(
-                          left: 0,
-                          right: 0,
-                          bottom: 0,
-                          child: FocusScope(
-                            canRequestFocus: false,
-                            child: CustomKeyboard(
-                              onInsertText: _insertText,
-                              onInsertPair: _insertPair,
-                              onMoveCursor: _moveCursor,
-                              onBackspace: _backspace,
-                              onEnter: _insertNewline,
-                              onTab: () => _insertText('    '),
-                              onUndo: _undo,
-                              onRedo: _redo,
-                              onDone: _closeKeyboard,
-                              onToggleSystemKeyboard: _showSystemKeyboard,
-                              isSystemKeyboardActive: false,
-                            ),
-                          ),
-                        ),
-                      // 系统键盘激活时，提供悬浮按钮切回自定义键盘
-                      if (showSystemKeyboardToggle)
-                        Positioned(
-                          right: 16,
-                          bottom: viewInsetsBottom + 16,
-                          child: FloatingActionButton(
-                            mini: true,
-                            backgroundColor: Colors.blueAccent,
-                            onPressed: _showCustomKeyboard,
-                            child: const Text(
-                              '英',
-                              style: TextStyle(
-                                fontSize: 14,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      if (state.showIntro)
+                    ),
+                    if (state.showIntro)
                         IntroOverlay(
                           isDark: isDark,
                           onDone: notifier.hideIntro,
@@ -407,19 +290,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ========== 执行控制面板 ==========
-
-  Widget _buildExecutionControl(IdeState state, IdeNotifier notifier) {
-    return ExecutionControlPanel(
-      onRun: () => notifier.compile(),
-      onScrollToLine: _scrollToLine,
-    );
+          );
   }
 
   // ========== 模板快捷栏 ==========
