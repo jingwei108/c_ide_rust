@@ -39,10 +39,15 @@ jobs:
 
       - name: Install binaryen (wasm-opt)
         run: |
+          set -e
           cd /tmp
-          wget -q https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
+          # 移除可能存在的 apt 旧版本，避免 PATH 优先级问题
+          sudo rm -f /usr/bin/wasm-opt
+          wget -q --show-progress https://github.com/WebAssembly/binaryen/releases/download/version_117/binaryen-version_117-x86_64-linux.tar.gz
           tar -xzf binaryen-version_117-x86_64-linux.tar.gz
           sudo cp binaryen-version_117/bin/wasm-opt /usr/local/bin/wasm-opt
+          sudo chmod +x /usr/local/bin/wasm-opt
+          which wasm-opt
           wasm-opt --version
 
       - name: Install flutter_rust_bridge_codegen
