@@ -52,6 +52,37 @@ jobs:
           cd CideFlutter
           flutter build web --release --base-href /c_ide_rust/
 
+      # 可选：将构建产物推送到 Gitee Pages 分支。
+      # 需要先在 GitHub Secrets 配置 GITEE_TOKEN（Gitee 私人令牌，需 projects 权限）。
+      # 然后在 Gitee 仓库「服务 → Gitee Pages」中选择 pages 分支、根目录部署。
+      - name: Deploy to Gitee Pages branch
+        if: ${{ secrets.GITEE_TOKEN != '' }}
+        env:
+          GITEE_TOKEN: ${{ secrets.GITEE_TOKEN }}
+        run: |
+          git config --global user.email "ci@example.com"
+          git config --global user.name "GitHub Actions"
+
+          rm -rf gitee-pages
+          if git clone --single-branch --branch pages https://oauth2:${GITEE_TOKEN}@gitee.com/liangs-horizon/c_ide_rust.git gitee-pages; then
+            cd gitee-pages
+            git checkout pages || git checkout -B pages
+            git rm -rf . || true
+          else
+            mkdir gitee-pages
+            cd gitee-pages
+            git init
+            git remote add origin https://oauth2:${GITEE_TOKEN}@gitee.com/liangs-horizon/c_ide_rust.git
+            git checkout -B pages
+          fi
+
+          cp -r ../CideFlutter/build/web/* .
+
+          git add .
+          git commit -m "deploy: update Gitee Pages from GitHub Actions" || true
+          git push -f origin pages
+        shell: bash
+
       - name: Add SPA fallback for GitHub Pages
         run: |
           cp CideFlutter/build/web/index.html CideFlutter/build/web/404.html
