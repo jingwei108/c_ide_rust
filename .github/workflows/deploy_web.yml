@@ -64,7 +64,7 @@ jobs:
 
       - name: Optimize WASM with wasm-opt
         run: |
-          wasm-opt --enable-all -O4 CideFlutter/web/pkg/cide_native_bg.wasm -o CideFlutter/web/pkg/cide_native_bg.wasm
+          wasm-opt --all-features -O4 CideFlutter/web/pkg/cide_native_bg.wasm -o CideFlutter/web/pkg/cide_native_bg.wasm
 
       - name: Build Flutter Web
         run: |
