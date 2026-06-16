@@ -18,7 +18,7 @@ command -v wasm-pack >/dev/null 2>&1 || cargo install wasm-pack
 
 echo "==> 构建 Rust WASM"
 cd "$NATIVE_DIR"
-wasm-pack build --target web --out-dir "$FLUTTER_DIR/web/pkg" --no-opt
+wasm-pack build --target no-modules --out-dir "$FLUTTER_DIR/web/pkg" --no-opt
 
 echo "==> 构建 Flutter Web"
 cd "$FLUTTER_DIR"
