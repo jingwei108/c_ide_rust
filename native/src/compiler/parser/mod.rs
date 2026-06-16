@@ -704,4 +704,8 @@ impl Parser {
 
 }
 
-mod expr;mod type_;mod stmt;mod decl;
+mod type_;
+mod decl;
+mod stmt;
+mod expr;
+mod cpp;
