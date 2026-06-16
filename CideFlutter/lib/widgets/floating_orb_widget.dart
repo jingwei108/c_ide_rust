@@ -289,10 +289,12 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
       menuBottom = size.height - _pos.dy + 8;
     }
 
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        // 菜单（条件构建：关闭时不渲染，避免退出动画叠加闪烁）
+    // 用 RepaintBoundary 隔离发光球体动画，避免其重绘扩散到整个 IDE。
+    return RepaintBoundary(
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 菜单（条件构建：关闭时不渲染，避免退出动画叠加闪烁）
         if (widget.isMenuOpen) ...[
           // 点击遮罩（translucent 让拖拽事件穿透到底层 DragTarget）
           Positioned.fill(
@@ -376,7 +378,8 @@ class _FloatingOrbWidgetState extends State<FloatingOrbWidget>
             },
           ),
         ),
-      ],
+        ],
+      ),
     );
   }
 
@@ -569,6 +572,7 @@ class _BreathingOrbPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // TODO(#D09): 动画帧内重复创建 RadialGradient/MaskFilter，应提升为类级缓存或 const。
     final center = Offset(size.width / 2, size.height / 2);
     final baseR = size.width / 2;
 

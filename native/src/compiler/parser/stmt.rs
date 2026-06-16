@@ -88,6 +88,7 @@ impl Parser {
                 }
                 let checkpoint = self.pos;
                 let stmt = self.parse_expr_stmt();
+                // NOTE: Parser 零进度保护：若解析未前进则主动 advance，避免死循环。
                 if self.pos == checkpoint {
                     self.synchronize(&[
                         TokenType::Semicolon,

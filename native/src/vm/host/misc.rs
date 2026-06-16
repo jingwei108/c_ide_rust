@@ -492,4 +492,3 @@ pub fn host_set_array_guard(vm: &mut CideVM, _session: &mut Session) {
 pub fn host_clear_array_guard(vm: &mut CideVM, _session: &mut Session) {
     vm.pending_array_construction = None;
 }
-

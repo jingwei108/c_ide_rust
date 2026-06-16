@@ -2,6 +2,7 @@
 //!
 //! 为 Flutter 前端提供类型安全、异步友好的 Rust API。
 //! 现有 C API (`capi/mod.rs`) 完全保留，此模块仅服务于 Flutter 前端。
+// TODO(#D10): 统一模式大状态仍通过同步 API 返回，未来应评估完整 Stream + 差分路径。
 
 #![forbid(unsafe_code)]
 
@@ -20,8 +21,11 @@ use std::sync::LazyLock;
 
 /// 锁定 Arc<Mutex<T>>；若 Mutex 已被 poison，则重置为默认值后返回 guard，
 /// 避免继续使用可能已损坏的状态。
+// FIXME(#D12): Mutex poison 当前静默恢复为默认值，会丢失 panic 现场。
+// 未来应评估是否改为 panic 而非恢复；目前至少记录日志保留可观测痕迹。
 fn lock_or_reset<T: Default>(arc: &Arc<Mutex<T>>) -> std::sync::MutexGuard<'_, T> {
     arc.lock().unwrap_or_else(|e| {
+        eprintln!("[cide] Mutex poison detected; resetting to default. This may hide a panic root cause.");
         let mut guard = e.into_inner();
         *guard = T::default();
         guard
@@ -687,7 +691,15 @@ pub fn get_heatmap() -> HeatmapData {
 }
 
 /// 获取指定范围的 StepPayload。
+///
+/// 为避免一次性返回过大窗口导致前端卡顿，单次请求上限为 1000 步。
 pub fn get_step_payloads(start: i32, end: i32) -> Vec<StepPayload> {
+    const MAX_WINDOW: i32 = 1000;
+    let start = start.max(0);
+    let mut end = end.max(start);
+    if end - start > MAX_WINDOW {
+        end = start + MAX_WINDOW;
+    }
     let engine_arc_l632 = current_unified_engine();
     let engine = lock_or_reset(&engine_arc_l632);
     engine.get_payloads(start, end)

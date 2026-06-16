@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Fuzz 压力测试（Phase E）
 //!
 //! 目标：随机内存状态 + 随机标准库调用序列，验证安全检测不泄漏。

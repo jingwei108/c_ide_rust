@@ -1,3 +1,4 @@
+// TODO(#D08): BytecodeGen 主模块仍超过 1200 行，未来应进一步拆分到 codegen/stmt.rs、codegen/decl.rs。
 use crate::compiler::ast::*;
 use crate::shared::type_utils::{base_kind, immediate_base_kind};
 use crate::shared::{FuncMeta, SourceLoc, Symbol};
@@ -197,6 +198,9 @@ impl BytecodeGen {
         while !pending.is_empty() {
             let mut resolved = Vec::new();
             for class_name in &pending {
+                // TODO(#D08): pending 来自 self.class_defs.keys()，理论上必存在；
+                // 未来可改为 if-let 或返回错误，避免 unwrap。
+                #[allow(clippy::unwrap_used)]
                 let class = self.class_defs.get(class_name).unwrap();
                 let mut can_compute = true;
                 if let Some(ref base) = class.base {
@@ -1125,10 +1129,7 @@ mod tests {
     }
 
     fn init(value: Expr) -> InitElement {
-        InitElement {
-            designators: vec![],
-            value,
-        }
+        InitElement { designators: vec![], value }
     }
 
     #[test]

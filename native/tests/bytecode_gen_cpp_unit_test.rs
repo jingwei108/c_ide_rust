@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::ffi::{c_char, CString};
 
 fn compile_and_run_cpp(source: &str) -> Result<(i32, Vec<String>), String> {

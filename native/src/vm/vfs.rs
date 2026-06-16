@@ -78,10 +78,7 @@ fn read_text_byte(data: &[u8], physical_pos: usize) -> (u8, usize) {
     if physical_pos >= data.len() {
         return (0, physical_pos);
     }
-    if data[physical_pos] == b'\r'
-        && physical_pos + 1 < data.len()
-        && data[physical_pos + 1] == b'\n'
-    {
+    if data[physical_pos] == b'\r' && physical_pos + 1 < data.len() && data[physical_pos + 1] == b'\n' {
         (b'\n', physical_pos + 2)
     } else {
         (data[physical_pos], physical_pos + 1)
@@ -585,7 +582,7 @@ impl VirtualFileSystem {
 
     /// ftell：返回当前文件光标位置
     /// 返回光标位置（成功）或 -1（失败）
-    /// 
+    ///
     /// 注意：Windows CRT 文本模式下 ftell 返回物理字节偏移，而 fseek 使用逻辑偏移。
     /// 为匹配 Clang/MSVC 行为，这里统一返回物理 cursor。
     pub fn ftell(&self, fd: u32, _vm: &mut CideVM) -> i32 {

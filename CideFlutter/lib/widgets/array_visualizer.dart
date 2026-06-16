@@ -70,6 +70,7 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
         ? widget.elements.sublist(0, _maxElements)
         : widget.elements;
 
+    // TODO(#D09): elements 未变化时仍每帧重新解析数值，应缓存 parsed numbers。
     // 解析数值用于条形图高度
     final numbers = displayElements.map((e) {
       final clean = e.replaceAll("'", "");

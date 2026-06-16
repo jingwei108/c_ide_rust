@@ -350,5 +350,10 @@ class _ArrowPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+  bool shouldRepaint(covariant _ArrowPainter oldDelegate) {
+    return oldDelegate.color != color ||
+        oldDelegate.isDashed != isDashed ||
+        oldDelegate.isNull != isNull ||
+        oldDelegate.showBreak != showBreak;
+  }
 }

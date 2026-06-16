@@ -1,14 +1,15 @@
+// TODO(#D08): codegen/expr.rs 仍保留部分表达式分发逻辑，未来可进一步下沉到各子模块。
 use super::*;
 
-mod literal;
-mod binary;
-mod unary;
-mod call;
 mod array;
-mod struct_;
-mod cast;
-mod new_delete;
 mod assign;
+mod binary;
+mod call;
+mod cast;
+mod literal;
+mod new_delete;
+mod struct_;
+mod unary;
 
 /// Returns true if `expr` denotes an object with storage (an lvalue in C++ terms).
 pub(crate) fn is_lvalue_expr(expr: &Expr) -> bool {
@@ -506,5 +507,4 @@ impl ExprGen for BytecodeGen {
             loc,
         );
     }
-
 }

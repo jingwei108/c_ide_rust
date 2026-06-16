@@ -228,7 +228,10 @@ impl BytecodeGen {
             }
         }
         if is_struct_ret {
+            // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
+            #[allow(clippy::unwrap_used)]
             self.emit(OpCode::GetFrameBase, 0, loc);
+            #[allow(clippy::unwrap_used)]
             self.emit(OpCode::PushConst, ret_temp_offset.unwrap(), loc);
             self.emit(OpCode::Add, 0, loc);
         }

@@ -18,6 +18,7 @@ class OutputTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // TODO(#D09): output 较长时 SelectableText 每帧重建可能卡顿，未来应使用 ListView 或缓存 RichText。
     final emptyColor = isDark ? Colors.grey[600] : Colors.grey[400];
     return Column(
       children: [

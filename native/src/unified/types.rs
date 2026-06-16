@@ -1,3 +1,5 @@
+// TODO(#D10): StepPayload 仍携带完整 local_vars/call_stack/array_snapshots，
+// 大程序场景下可进一步按引用/差分瘦身。
 use crate::unified::root_cause::RootCauseHint;
 use flutter_rust_bridge::frb;
 

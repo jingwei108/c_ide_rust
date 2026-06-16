@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Bytecode Libc 自举一致性测试（Phase B）
 //!
 //! 核心逻辑：把 Layer C（Bytecode Libc）的 C 源码同时交给：

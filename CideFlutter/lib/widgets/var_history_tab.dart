@@ -177,6 +177,21 @@ class _VarTrendPainter extends CustomPainter {
   final int currentStep;
   final bool isDark;
 
+  // 复用 Paint 对象，避免 paint() 中重复创建。
+  final Paint _linePaint = Paint()
+    ..color = Colors.blueAccent
+    ..strokeWidth = 2
+    ..style = PaintingStyle.stroke;
+  final Paint _pointPaint = Paint()
+    ..color = Colors.blueAccent
+    ..style = PaintingStyle.fill;
+  final Paint _currentPaint = Paint()
+    ..color = Colors.orange
+    ..style = PaintingStyle.fill;
+  final Paint _discretePaint = Paint()
+    ..color = Colors.grey
+    ..style = PaintingStyle.fill;
+
   _VarTrendPainter({
     required this.values,
     required this.currentStep,
@@ -187,6 +202,7 @@ class _VarTrendPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (values.isEmpty) return;
 
+    // TODO(#D09): 每次 paint 都重新解析 values 并重建 Path，应缓存 numericValues 与 Path。
     // 尝试将所有值解析为数字
     final numericValues = <double>[];
     for (final v in values) {
@@ -208,19 +224,6 @@ class _VarTrendPainter extends CustomPainter {
     final range = (maxVal - minVal).abs();
     final padding = 4.0;
 
-    final paint = Paint()
-      ..color = Colors.blueAccent
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-
-    final pointPaint = Paint()
-      ..color = Colors.blueAccent
-      ..style = PaintingStyle.fill;
-
-    final currentPaint = Paint()
-      ..color = Colors.orange
-      ..style = PaintingStyle.fill;
-
     final path = Path();
     final stepWidth = (size.width - padding * 2) / (values.length - 1);
 
@@ -239,30 +242,33 @@ class _VarTrendPainter extends CustomPainter {
 
       // 绘制当前步指示点
       if (values[i].stepIndex == currentStep) {
-        canvas.drawCircle(Offset(x, y), 4, currentPaint);
+        canvas.drawCircle(Offset(x, y), 4, _currentPaint);
       } else {
-        canvas.drawCircle(Offset(x, y), 2, pointPaint);
+        canvas.drawCircle(Offset(x, y), 2, _pointPaint);
       }
     }
 
-    canvas.drawPath(path, paint);
+    canvas.drawPath(path, _linePaint);
   }
 
   void _drawDiscreteDots(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.grey
-      ..style = PaintingStyle.fill;
-
     final stepWidth = size.width / values.length;
     for (int i = 0; i < values.length; i++) {
       final x = i * stepWidth + stepWidth / 2;
       final y = size.height / 2;
-      canvas.drawCircle(Offset(x, y), 3, paint);
+      canvas.drawCircle(Offset(x, y), 3, _discretePaint);
     }
   }
 
   @override
   bool shouldRepaint(covariant _VarTrendPainter old) {
-    return old.currentStep != currentStep || old.values.length != values.length;
+    if (old.currentStep != currentStep || old.values.length != values.length) return true;
+    // 长度相同时逐元素比较 stepIndex/value，避免同长度但内容不同导致不刷新。
+    for (int i = 0; i < values.length; i++) {
+      if (old.values[i].stepIndex != values[i].stepIndex || old.values[i].value != values[i].value) {
+        return true;
+      }
+    }
+    return false;
   }
 }

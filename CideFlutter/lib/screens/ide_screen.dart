@@ -14,6 +14,7 @@ import 'ide/keyboard_handler.dart';
 import 'ide/template_bar.dart';
 import 'ide/toolbar.dart';
 
+// TODO(#D09): _IdeScreenState 仍依赖 dynamic 访问 EditorPanelV2State，未来应改为强类型回调。
 class IdeScreen extends ConsumerStatefulWidget {
   const IdeScreen({super.key});
 

@@ -254,6 +254,8 @@ impl TypeChecker {
         // Compute has_resource immediately so implicit move ctor generation works
         // for class template instantiations created during Pass 3.
         let has_resource = self.compute_class_has_resource(name);
+        // TODO(#D08): 刚 insert 的 key，理论上必存在；可考虑返回错误而非 unwrap。
+        #[allow(clippy::unwrap_used)]
         let class_sym = self.classes.get_mut(name).unwrap();
         class_sym.size = total_field_size;
         class_sym.has_resource = has_resource;

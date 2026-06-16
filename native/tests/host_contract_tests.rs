@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! Host Function 契约测试（Phase A）
 //!
 //! 目标：验证 Layer B（Rust Host Func）的每个函数在边界条件、安全注入、标准一致性上是否达标。

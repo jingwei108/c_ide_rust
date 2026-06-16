@@ -5,10 +5,7 @@ pub fn host_printf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt = read_cstring(vm, fmt_addr);
     let specs = parse_format_specs(&fmt);
     if vm.get_stack().len() < specs.len() {
-        vm.trap(
-            "printf: 格式字符串要求的参数多于实际提供的参数。",
-            &SourceLoc::default(),
-        );
+        vm.trap("printf: 格式字符串要求的参数多于实际提供的参数。", &SourceLoc::default());
         return;
     }
     let mut args = Vec::with_capacity(specs.len());
@@ -25,10 +22,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut Session) {
     // 扫描格式字符串，记录每个 % 格式符的类型及是否带 long 修饰符
     let spec_types = parse_scanf_specs(&fmt);
     if vm.get_stack().len() < spec_types.len() {
-        vm.trap(
-            "scanf: 格式字符串要求的参数多于实际提供的参数。",
-            &SourceLoc::default(),
-        );
+        vm.trap("scanf: 格式字符串要求的参数多于实际提供的参数。", &SourceLoc::default());
         return;
     }
     // 按数量 pop 指针参数
@@ -196,10 +190,7 @@ pub fn host_fprintf_n(vm: &mut CideVM, session: &mut Session) {
     let fmt = read_cstring(vm, fmt_addr);
     let specs = parse_format_specs(&fmt);
     if vm.get_stack().len() < specs.len() {
-        vm.trap(
-            "fprintf: 格式字符串要求的参数多于实际提供的参数。",
-            &SourceLoc::default(),
-        );
+        vm.trap("fprintf: 格式字符串要求的参数多于实际提供的参数。", &SourceLoc::default());
         return;
     }
     let mut args = Vec::with_capacity(specs.len());
@@ -371,4 +362,3 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut Session) {
 }
 
 // ========== VFS I/O extensions ==========
-

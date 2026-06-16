@@ -421,4 +421,3 @@ pub(crate) fn set_errno(vm: &mut CideVM, val: i32) {
         }
     }
 }
-

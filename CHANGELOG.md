@@ -27,7 +27,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 全部 600+ 测试通过，零回归
 
 ### Fixed (Shadow Verification 完整修复)
-- **C Shadow 匹配率从 498/511 提升至 504/511（98.6%）**：编译缺口与输出差异归零
+- **C Shadow 匹配率从 498/511 提升至 505/511（98.8%）**：编译缺口与输出差异归零
   - **支持 `__asm__("...")` GCC 风格内联汇编占位**：`parser/expr.rs` 在 `parse_primary` 中识别并消费语法，返回 void 字面量，不生成汇编代码
   - **支持 `_Static_assert(expr, "msg")`**：`parser/mod.rs` 新增 `parse_static_assert`，在顶层与语句层均可消费，教学子集暂不做编译期求值
   - **支持 `typeof(expr)` 类型说明符**：`parser/mod.rs` 识别 `typeof`/`__typeof__`/`__typeof` 并解析表达式；`ast.rs` 新增 `Type::Typeof`；`typeck/decl.rs` 在变量声明时根据初始化表达式推断实际类型

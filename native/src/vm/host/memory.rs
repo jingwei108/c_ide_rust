@@ -218,11 +218,7 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut Session) {
         mem[old_addr as usize..(old_addr + copy_size) as usize].to_vec()
     };
     for i in 0..copy_size {
-        vm.store_i8(
-            new_addr + i,
-            copy_buf[i as usize] as i32,
-            &SourceLoc::default(),
-        );
+        vm.store_i8(new_addr + i, copy_buf[i as usize] as i32, &SourceLoc::default());
     }
 
     // Zero remaining bytes
@@ -312,4 +308,3 @@ pub fn host_calloc(vm: &mut CideVM, session: &mut Session) {
     });
     vm.push(addr as u64);
 }
-

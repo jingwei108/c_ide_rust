@@ -175,12 +175,8 @@ impl UnifiedEngine {
 
             // 执行前快照：用于 Trap 时自动回退。
             // 复用已有 VMSnapshot 的 1MB buffer，避免每步分配新 Vec。
-            if let Some(snap) = self.pre_step_snap.as_mut() {
-                vm.snapshot_into(session, snap);
-            } else {
-                self.pre_step_snap = Some(vm.snapshot(session));
-            }
-            let pre_step_snap = self.pre_step_snap.as_ref().expect("pre_step_snap just set");
+            let pre_step_snap = self.pre_step_snap.get_or_insert_with(|| vm.snapshot(session));
+            vm.snapshot_into(session, pre_step_snap);
 
             // 执行一步
             match vm.step(session) {

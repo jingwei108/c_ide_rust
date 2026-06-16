@@ -19,6 +19,8 @@ part 'notifiers/run_notifier.dart';
 part 'notifiers/panel_notifier.dart';
 part 'notifiers/learning_notifier.dart';
 
+// TODO(#D09): IdeNotifier 通过 mixin 拆分后仍依赖单个 IdeState，大状态更新可能导致全树重建。
+/// 未来可将独立子状态（如 output/panels/learning）拆分为独立 Provider。
 /// ---------------------------------------------------------------------------
 /// IdeNotifier —— IDE 主控 Notifier
 ///

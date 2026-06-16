@@ -242,7 +242,10 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
             if let Some(&idx) = gen.func_index.get(name) {
                 gen.emit(OpCode::Call, idx, &loc);
                 if is_struct_ret {
+                    // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
+                    #[allow(clippy::unwrap_used)]
                     gen.emit(OpCode::GetFrameBase, 0, &loc);
+                    #[allow(clippy::unwrap_used)]
                     gen.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
                     gen.emit(OpCode::Add, 0, &loc);
                 }
@@ -253,7 +256,10 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
             if host_id >= 0 {
                 gen.emit(OpCode::CallHost, host_id, &loc);
                 if is_struct_ret {
+                    // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
+                    #[allow(clippy::unwrap_used)]
                     gen.emit(OpCode::GetFrameBase, 0, &loc);
+                    #[allow(clippy::unwrap_used)]
                     gen.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
                     gen.emit(OpCode::Add, 0, &loc);
                 }
@@ -263,7 +269,10 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
         gen.gen_expr(callee);
         gen.emit(OpCode::CallPtr, args.len() as i32, &loc);
         if is_struct_ret {
+            // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
+            #[allow(clippy::unwrap_used)]
             gen.emit(OpCode::GetFrameBase, 0, &loc);
+            #[allow(clippy::unwrap_used)]
             gen.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
             gen.emit(OpCode::Add, 0, &loc);
         }

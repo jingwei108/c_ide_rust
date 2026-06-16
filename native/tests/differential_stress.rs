@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! 差分压力测试（Phase C）
 //!
 //! 核心思想：对同一功能的两种实现（Layer B Rust Host vs Layer C Bytecode）

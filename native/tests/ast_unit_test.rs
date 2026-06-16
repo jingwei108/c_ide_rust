@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use cide_native::compiler::ast::Type;
 
 fn ptr(ty: Type) -> Type {

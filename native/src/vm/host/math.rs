@@ -114,4 +114,3 @@ pub fn host_llabs(vm: &mut CideVM, _session: &mut Session) {
     let n = vm.pop() as i64;
     vm.push(if n < 0 { n.wrapping_neg() as u64 } else { n as u64 });
 }
-

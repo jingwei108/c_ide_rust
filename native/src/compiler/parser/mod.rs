@@ -1,3 +1,4 @@
+// TODO(#D08): Parser 模块仍包含部分 C++ 语法入口，未来应完全迁移到 parser/cpp.rs。
 use crate::compiler::ast::*;
 use crate::compiler::lexer::{Token, TokenType};
 use crate::diagnostics::error_codes::ErrorCode;
@@ -665,8 +666,8 @@ impl Parser {
     }
 }
 
-mod type_;
-mod decl;
-mod stmt;
-mod expr;
 mod cpp;
+mod decl;
+mod expr;
+mod stmt;
+mod type_;

@@ -87,6 +87,8 @@ impl TypeChecker {
         Some((new_expr, ret))
     }
 
+    // TODO(#D08): resolve_expr_type 超过 500 行，未来可按表达式大类拆分。
+    #[allow(clippy::too_many_lines)]
     pub fn resolve_expr_type(&mut self, expr: &mut Expr) -> Type {
         // Handle offsetof: compute offset at compile time and replace with Literal
         if let Expr::Offsetof { target_type, field, loc, .. } = expr {

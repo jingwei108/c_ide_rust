@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use cide_native::compiler::lexer::{Lexer, TokenType};
 
 fn tokenize(src: &str) -> Vec<(TokenType, String)> {

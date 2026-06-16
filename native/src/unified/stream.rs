@@ -606,6 +606,8 @@ fn decode_step_payload_ref(base: &StepPayloadRef, sym: &[String]) -> StepPayload
 
 #[inline]
 fn get_sym(sym: &[String], idx: SymIdx) -> String {
+    // TODO(#D08): 索引越界时返回空字符串可能掩盖协议不一致问题；
+    // 未来应返回 Result 或至少记录日志，便于调试 FRB 传输异常。
     sym.get(idx as usize).cloned().unwrap_or_default()
 }
 

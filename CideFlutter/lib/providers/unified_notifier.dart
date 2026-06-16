@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cide/src/rust/session.dart';
 import 'package:cide/src/rust/unified/stream.dart' as stream;
@@ -80,12 +81,17 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     );
   }
 
-  void _onBatchReceived(stream.StepStreamBatch batch) {
+  Future<void> _onBatchReceived(stream.StepStreamBatch batch) async {
     if (state.phase != ExecutionPhase.collecting) {
       return;
     }
 
-    final payloads = _decodeBatch(batch);
+    // 监控批次大小；大 batch 解码切到 isolate，避免阻塞 UI 线程。
+    final totalUnits = batch.basePayloads.length + batch.deltas.length;
+    if (totalUnits > 50) {
+      debugPrint('[UnifiedNotifier] large batch received: $totalUnits units, decoding on isolate');
+    }
+    final payloads = totalUnits > 50 ? await compute(_decodeBatchIsolate, batch) : _decodeBatchIsolate(batch);
     if (payloads.isNotEmpty) {
       final newCache = _syncFrameCache(
         state.frameCache,
@@ -93,6 +99,9 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
         batch.cacheStartStep,
         payloads,
       );
+      if (newCache.length > 2000) {
+        debugPrint('[UnifiedNotifier] frameCache grew large: ${newCache.length}');
+      }
       final lastPayload = payloads.last;
       state = state.copyWith(
         frameCache: newCache,
@@ -193,7 +202,9 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
   }
 
   /// 将 StepStreamBatch 解码为完整的 StepPayload 列表。
-  List<types.StepPayload> _decodeBatch(stream.StepStreamBatch batch) {
+  ///
+  /// 使用 static 方法以便 [compute] 在 isolate 中调用。
+  static List<types.StepPayload> _decodeBatchIsolate(stream.StepStreamBatch batch) {
     if (batch.basePayloads.isEmpty) return [];
 
     final sym = batch.symbolTable;
@@ -331,12 +342,12 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     return result;
   }
 
-  String _safeSym(List<String> sym, int idx) {
+  static String _safeSym(List<String> sym, int idx) {
     if (idx >= 0 && idx < sym.length) return sym[idx];
     return '';
   }
 
-  types.StepPayload _decodeStepPayloadRef(
+  static types.StepPayload _decodeStepPayloadRef(
     stream.StepPayloadRef base,
     List<String> sym,
   ) {

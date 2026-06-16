@@ -348,6 +348,8 @@ impl Type {
             }
             Type::Auto => buf.push_str("auto"),
             Type::Typeof { expr, .. } => {
+                // SAFETY: write! to an in-memory String is infallible.
+                #[allow(clippy::unwrap_used)]
                 write!(buf, "typeof({:?})", expr).unwrap();
             }
             Type::TemplateId { base, args, .. } => {

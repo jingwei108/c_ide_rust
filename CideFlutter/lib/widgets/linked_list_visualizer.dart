@@ -165,12 +165,15 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
       child: AnimatedBuilder(
         animation: _entranceController,
         builder: (context, child) {
-          return CustomPaint(
-            size: Size(_nodes.length * 100.0 + 40, 80),
-            painter: _LinkedListPainter(
-              nodes: _nodes,
-              isDark: widget.isDark,
-              progress: _entranceController.value,
+          // RepaintBoundary 隔离入场动画重绘，避免影响父级面板。
+          return RepaintBoundary(
+            child: CustomPaint(
+              size: Size(_nodes.length * 100.0 + 40, 80),
+              painter: _LinkedListPainter(
+                nodes: _nodes,
+                isDark: widget.isDark,
+                progress: _entranceController.value,
+              ),
             ),
           );
         },
@@ -184,6 +187,15 @@ class _LinkedListPainter extends CustomPainter {
   final bool isDark;
   final double progress;
 
+  // 复用 Paint 对象，避免每节点每帧重建。
+  final Paint _nodePaint = Paint()..style = PaintingStyle.fill;
+  final Paint _borderPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.5;
+  final Paint _arrowPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.5;
+
   _LinkedListPainter({
     required this.nodes,
     required this.isDark,
@@ -192,19 +204,9 @@ class _LinkedListPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final nodePaint = Paint()
-      ..color = isDark ? const Color(0xFF3E4451) : const Color(0xFFE5E5E5)
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    final arrowPaint = Paint()
-      ..color = isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+    final baseNodeColor = isDark ? const Color(0xFF3E4451) : const Color(0xFFE5E5E5);
+    final baseBorderColor = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0);
+    final baseArrowColor = isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42);
 
     final textStyle = TextStyle(
       color: isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42),
@@ -235,10 +237,8 @@ class _LinkedListPainter extends CustomPainter {
       );
 
       // 背景（带透明度）
-      final bgPaint = Paint()
-        ..color = nodePaint.color.withValues(alpha: alpha)
-        ..style = PaintingStyle.fill;
-      canvas.drawRRect(rect, bgPaint);
+      _nodePaint.color = baseNodeColor.withValues(alpha: alpha);
+      canvas.drawRRect(rect, _nodePaint);
 
       // 闪色边框或普通边框
       if (node.flashColor != null) {
@@ -248,13 +248,11 @@ class _LinkedListPainter extends CustomPainter {
           ..strokeWidth = 2;
         canvas.drawRRect(rect, flashPaint);
       } else {
-        final bPaint = Paint()
-          ..color = borderPaint.color.withValues(alpha: alpha)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5;
-        canvas.drawRRect(rect, bPaint);
+        _borderPaint.color = baseBorderColor.withValues(alpha: alpha);
+        canvas.drawRRect(rect, _borderPaint);
       }
 
+      // TODO(#D09): 每个节点每帧新建两个 TextPainter，应缓存文本布局。
       // 数据文本（带透明度）
       final textSpan = TextSpan(
         text: '${node.data}',
@@ -299,29 +297,23 @@ class _LinkedListPainter extends CustomPainter {
           final endY = startY;
           final currentEndX = startX + (endX - startX - 8) * arrowProgress;
 
-          final aPaint = Paint()
-            ..color = arrowPaint.color.withValues(alpha: alpha * arrowProgress)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1.5;
+          _arrowPaint.color = baseArrowColor.withValues(alpha: alpha * arrowProgress);
 
           final path = Path()
             ..moveTo(startX, startY)
             ..lineTo(currentEndX, endY);
-          canvas.drawPath(path, aPaint);
+          canvas.drawPath(path, _arrowPaint);
 
           if (arrowProgress > 0.8) {
             // 箭头头部
             final headProgress = (arrowProgress - 0.8) / 0.2;
             final headAlpha = alpha * headProgress;
-            final headPaint = Paint()
-              ..color = arrowPaint.color.withValues(alpha: headAlpha)
-              ..style = PaintingStyle.stroke
-              ..strokeWidth = 1.5;
+            _arrowPaint.color = baseArrowColor.withValues(alpha: headAlpha);
             final arrowHead = Path()
               ..moveTo(endX - 8, endY - 4)
               ..lineTo(endX, endY)
               ..lineTo(endX - 8, endY + 4);
-            canvas.drawPath(arrowHead, headPaint);
+            canvas.drawPath(arrowHead, _arrowPaint);
           }
         }
       } else if (node.nextAddress == null) {

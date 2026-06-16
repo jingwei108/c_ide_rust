@@ -11,6 +11,14 @@ import 'editor_layers.dart';
 /// - 只绘制视口内行，跳过不可见区域
 /// ---------------------------------------------------------------------------
 
+class _CachedPainter {
+  final String text;
+  final TextStyle style;
+  final TextPainter painter;
+
+  _CachedPainter({required this.text, required this.style, required this.painter});
+}
+
 class CideEditorPainter extends CustomPainter {
   final CideDocument document;
   final double scrollOffset;
@@ -24,6 +32,10 @@ class CideEditorPainter extends CustomPainter {
   final DocSelection _selection;
   final TextRange _composing;
 
+  // 静态缓存：同一进程内所有编辑器实例共享，key 为行号。
+  // 缓存条目在文本/样式变化时通过 _cacheKey 校验失效并重建。
+  static final Map<int, _CachedPainter> _textPainterCache = {};
+
   CideEditorPainter({
     required this.document,
     required this.scrollOffset,
@@ -34,6 +46,20 @@ class CideEditorPainter extends CustomPainter {
   })  : _text = document.text,
         _selection = document.selection,
         _composing = document.composing;
+
+  TextPainter _getTextPainter(int line, String text) {
+    final cached = _textPainterCache[line];
+    if (cached != null && cached.text == text && cached.style == textStyle) {
+      return cached.painter;
+    }
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: textStyle),
+      textDirection: TextDirection.ltr,
+    );
+    painter.layout();
+    _textPainterCache[line] = _CachedPainter(text: text, style: textStyle, painter: painter);
+    return painter;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -53,12 +79,8 @@ class CideEditorPainter extends CustomPainter {
         continue;
       }
 
-      // 构建 TextPainter 并布局（不限制宽度，禁止 soft wrap）
-      final textPainter = TextPainter(
-        text: TextSpan(text: text, style: textStyle),
-        textDirection: TextDirection.ltr,
-      );
-      textPainter.layout();
+      // 使用缓存的 TextPainter，仅在行文本或样式变化时重建。
+      final textPainter = _getTextPainter(line, text);
 
       final layout = LineLayout(
         lineIndex: line,

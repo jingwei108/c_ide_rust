@@ -217,4 +217,3 @@ pub fn host_rename(vm: &mut CideVM, session: &mut Session) {
     session.vfs = vfs;
     vm.push(ret as u64);
 }
-

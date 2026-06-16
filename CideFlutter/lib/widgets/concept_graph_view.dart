@@ -178,6 +178,8 @@ class _NodeLayout {
   _NodeLayout({required this.offset, required this.domain});
 }
 
+// NOTE: 本 Painter 是 CustomPainter 缓存优化的正面示例：
+// Paint/TextPainter 均提升为类级字段并缓存，shouldRepaint 精确比较激活状态。
 class _ConceptGraphPainter extends CustomPainter {
   final List<rust_kg.ConceptNode> nodes;
   final List<rust_kg.ConceptEdge> edges;

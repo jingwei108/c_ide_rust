@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! CompletionEngine 单元测试
 
 use cide_native::compiler::lexer::Lexer;

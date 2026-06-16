@@ -1,3 +1,4 @@
+// TODO(#D08): gen_stmt / gen_switch 及 C++ RAII 分支较复杂，未来应拆分到 stmt/ 子模块。
 use super::expr::ExprGen;
 use super::*;
 
@@ -7,6 +8,8 @@ pub(crate) trait StmtGen {
 }
 
 impl StmtGen for BytecodeGen {
+    // TODO(#D08): gen_stmt 超过 500 行，未来可按 Stmt 类型拆分到各子模块。
+    #[allow(clippy::too_many_lines)]
     fn gen_stmt(&mut self, stmt: &mut Stmt) {
         let loc = stmt_loc(stmt);
         if loc.line > 0 {

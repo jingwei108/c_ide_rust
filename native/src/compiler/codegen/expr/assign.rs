@@ -2,7 +2,10 @@ use super::*;
 
 pub(crate) fn gen_ternary_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
-    if let Expr::Ternary { cond, then_branch, else_branch, .. } = expr {
+    if let Expr::Ternary {
+        cond, then_branch, else_branch, ..
+    } = expr
+    {
         gen.gen_expr(cond);
         let else_jump = gen.current_ip();
         gen.emit(OpCode::JumpIfZero, 0, &loc);
@@ -25,6 +28,8 @@ pub(crate) fn gen_assign_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
 }
 
 impl BytecodeGen {
+    // TODO(#D08): gen_assign 超过 500 行，未来可按赋值目标类型（标量/结构体/数组）拆分子函数。
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
         let left_is_double = left.ty().kind() == TypeKind::Double;
         let left_is_float = left.ty().kind() == TypeKind::Float;

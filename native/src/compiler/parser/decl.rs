@@ -417,6 +417,8 @@ impl Parser {
             params.push(TemplateParam { name: param_name.clone(), loc });
             // 将模板参数注册为类型名，使其在函数/类体中可被识别
             // 使用 Class 类型作为占位符，以便 TypeChecker 在单态化时识别模板参数
+            // SAFETY: 循环内刚 push 一个 TemplateParam，params 非空。
+            #[allow(clippy::unwrap_used)]
             let tp_name = params.last().unwrap().name.clone();
             self.typedef_names
                 .insert(param_name, Type::Class { name: tp_name, is_const: false });

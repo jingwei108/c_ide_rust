@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::ffi::{c_char, CString};
 use std::path::Path;
 

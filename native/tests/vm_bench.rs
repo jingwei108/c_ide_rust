@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use cide_native::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use cide_native::engine::session_ops::{execute_run, reset_runtime};
 use cide_native::session::{CompileUnit, Session};

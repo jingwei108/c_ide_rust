@@ -1,3 +1,4 @@
+// TODO(#D08): TypeChecker 主模块超过 1700 行，未来应拆分为 typeck/stmt.rs、typeck/expr.rs 等子模块。
 use crate::compiler::ast::*;
 use crate::diagnostics::error_codes::ErrorCode;
 use std::collections::{HashMap, HashSet};
@@ -545,6 +546,8 @@ impl TypeChecker {
         if self.scopes.is_empty() {
             self.scopes.push(HashMap::new());
         }
+        // SAFETY: scopes 在上一步已确保非空。
+        #[allow(clippy::expect_used)]
         let scope = self.scopes.last_mut().expect("scopes 在上一步已确保非空");
         if let Some(existing) = scope.get(name) {
             if is_extern {
@@ -1628,50 +1631,32 @@ mod tests {
 
     #[test]
     fn test_implicit_cast_target_int_to_double() {
-        assert_eq!(
-            implicit_cast_target(&Type::int(), &Type::double()),
-            Some(Type::double())
-        );
+        assert_eq!(implicit_cast_target(&Type::int(), &Type::double()), Some(Type::double()));
     }
 
     #[test]
     fn test_implicit_cast_target_double_to_int() {
-        assert_eq!(
-            implicit_cast_target(&Type::double(), &Type::int()),
-            Some(Type::int())
-        );
+        assert_eq!(implicit_cast_target(&Type::double(), &Type::int()), Some(Type::int()));
     }
 
     #[test]
     fn test_implicit_cast_target_float_to_int() {
-        assert_eq!(
-            implicit_cast_target(&Type::float(), &Type::int()),
-            Some(Type::int())
-        );
+        assert_eq!(implicit_cast_target(&Type::float(), &Type::int()), Some(Type::int()));
     }
 
     #[test]
     fn test_implicit_cast_target_int_to_float() {
-        assert_eq!(
-            implicit_cast_target(&Type::int(), &Type::float()),
-            Some(Type::float())
-        );
+        assert_eq!(implicit_cast_target(&Type::int(), &Type::float()), Some(Type::float()));
     }
 
     #[test]
     fn test_implicit_cast_target_char_to_longlong() {
-        assert_eq!(
-            implicit_cast_target(&Type::char(), &Type::long_long()),
-            Some(Type::long_long())
-        );
+        assert_eq!(implicit_cast_target(&Type::char(), &Type::long_long()), Some(Type::long_long()));
     }
 
     #[test]
     fn test_implicit_cast_target_longlong_to_char() {
-        assert_eq!(
-            implicit_cast_target(&Type::long_long(), &Type::char()),
-            Some(Type::char())
-        );
+        assert_eq!(implicit_cast_target(&Type::long_long(), &Type::char()), Some(Type::char()));
     }
 
     #[test]

@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 //! UnifiedEngine frame_cache 滑动窗口公共 API 测试。
 //!
 //! 这些测试不依赖真实 VM/Session，仅验证窗口化后的公共状态与方法行为。

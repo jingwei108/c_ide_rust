@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use cide_native::engine::compile_pipeline::{run_compile_pipeline, setup_vm};
 use cide_native::session::Session;
 use cide_native::vm::core::CideVM;

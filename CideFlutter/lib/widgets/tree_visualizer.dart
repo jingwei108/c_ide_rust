@@ -249,12 +249,15 @@ class _TreeVisualizerState extends State<TreeVisualizer>
       child: AnimatedBuilder(
         animation: _entranceController,
         builder: (context, child) {
-          return CustomPaint(
-            size: Size(_canvasWidth, _canvasHeight),
-            painter: _TreePainter(
-              nodes: _nodes,
-              isDark: widget.isDark,
-              progress: _entranceController.value,
+          // RepaintBoundary 隔离入场动画重绘，避免影响父级面板。
+          return RepaintBoundary(
+            child: CustomPaint(
+              size: Size(_canvasWidth, _canvasHeight),
+              painter: _TreePainter(
+                nodes: _nodes,
+                isDark: widget.isDark,
+                progress: _entranceController.value,
+              ),
             ),
           );
         },
@@ -268,6 +271,15 @@ class _TreePainter extends CustomPainter {
   final bool isDark;
   final double progress;
 
+  // 复用 Paint 对象，避免每节点每帧重建。
+  final Paint _nodePaint = Paint()..style = PaintingStyle.fill;
+  final Paint _borderPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.5;
+  final Paint _edgePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.5;
+
   _TreePainter({
     required this.nodes,
     required this.isDark,
@@ -276,19 +288,9 @@ class _TreePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final nodePaint = Paint()
-      ..color = isDark ? const Color(0xFF3E4451) : const Color(0xFFE5E5E5)
-      ..style = PaintingStyle.fill;
-
-    final borderPaint = Paint()
-      ..color = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-
-    final edgePaint = Paint()
-      ..color = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
+    final baseNodeColor = isDark ? const Color(0xFF3E4451) : const Color(0xFFE5E5E5);
+    final baseBorderColor = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0);
+    _edgePaint.color = baseBorderColor;
 
     final textStyle = TextStyle(
       color: isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42),
@@ -319,7 +321,7 @@ class _TreePainter extends CustomPainter {
         final path = Path()
           ..moveTo(node.x, node.y + nodeHeight / 2)
           ..lineTo(currentEndX, currentEndY - nodeHeight / 2);
-        canvas.drawPath(path, edgePaint);
+        canvas.drawPath(path, _edgePaint);
       }
       if (node.rightAddr != null && nodeMap.containsKey(node.rightAddr!)) {
         final child = nodeMap[node.rightAddr!]!;
@@ -330,7 +332,7 @@ class _TreePainter extends CustomPainter {
         final path = Path()
           ..moveTo(node.x, node.y + nodeHeight / 2)
           ..lineTo(currentEndX, currentEndY - nodeHeight / 2);
-        canvas.drawPath(path, edgePaint);
+        canvas.drawPath(path, _edgePaint);
       }
     }
 
@@ -348,10 +350,8 @@ class _TreePainter extends CustomPainter {
       );
 
       // 背景
-      final bgPaint = Paint()
-        ..color = nodePaint.color.withValues(alpha: alpha)
-        ..style = PaintingStyle.fill;
-      canvas.drawRRect(rect, bgPaint);
+      _nodePaint.color = baseNodeColor.withValues(alpha: alpha);
+      canvas.drawRRect(rect, _nodePaint);
 
       // 边框 / 闪色
       if (node.flashColor != null) {
@@ -361,13 +361,11 @@ class _TreePainter extends CustomPainter {
           ..strokeWidth = 2;
         canvas.drawRRect(rect, flashPaint);
       } else {
-        final bPaint = Paint()
-          ..color = borderPaint.color.withValues(alpha: alpha)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.5;
-        canvas.drawRRect(rect, bPaint);
+        _borderPaint.color = baseBorderColor.withValues(alpha: alpha);
+        canvas.drawRRect(rect, _borderPaint);
       }
 
+      // TODO(#D09): 每个节点每帧新建两个 TextPainter，应缓存文本布局。
       // 值文本
       final textSpan = TextSpan(
         text: '${node.val}',

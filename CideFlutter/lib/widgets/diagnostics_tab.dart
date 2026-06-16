@@ -41,6 +41,7 @@ class DiagnosticsTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final diag = state.diagnostics[index];
         final isError = diag.severity == 0;
+        // TODO(#D09): KnowledgeCard.findByErrorCode 每 item 调用，可缓存 errorCode -> cards 映射。
         final relatedCards = diag.errorCode > 0
             ? KnowledgeCard.findByErrorCode(diag.errorCode)
             : <KnowledgeCard>[];

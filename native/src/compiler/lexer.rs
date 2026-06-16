@@ -1,3 +1,4 @@
+// TODO(#D08): Lexer 已承载 C/C++ 混合词法，未来应将 C++ 专属词法拆分到 lexer/cpp.rs。
 use crate::diagnostics::error_codes::ErrorCode;
 use std::collections::{HashMap, HashSet};
 

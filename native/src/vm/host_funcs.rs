@@ -1,3 +1,4 @@
+// NOTE: Host 函数已按功能拆分到 vm/host/*.rs；utils.rs 集中共享工具，未来如需进一步解耦可继续拆分。
 use super::core::CideVM;
 use super::host_func_id;
 use crate::session::{MemoryRegion, Session};
@@ -6,27 +7,27 @@ pub(crate) use super::core::{ArrayConstructionGuard, FreedRegionInfo, NULL_TRAP_
 pub(crate) use super::instruction::SourceLoc;
 pub(crate) use crate::session::FreeBlock;
 
-#[path = "host/utils.rs"]
-mod utils;
-#[path = "host/memory.rs"]
-mod memory;
-#[path = "host/string.rs"]
-mod string;
-#[path = "host/io.rs"]
-mod io;
 #[path = "host/file.rs"]
 mod file;
+#[path = "host/io.rs"]
+mod io;
 #[path = "host/math.rs"]
 mod math;
+#[path = "host/memory.rs"]
+mod memory;
 #[path = "host/misc.rs"]
 mod misc;
-pub(crate) use utils::*;
-pub use memory::*;
-pub use string::*;
-pub use io::*;
+#[path = "host/string.rs"]
+mod string;
+#[path = "host/utils.rs"]
+mod utils;
 pub use file::*;
+pub use io::*;
 pub use math::*;
+pub use memory::*;
 pub use misc::*;
+pub use string::*;
+pub(crate) use utils::*;
 
 pub fn execute_host_func(vm: &mut CideVM, session: &mut Session, id: u32) {
     match id {
@@ -152,4 +153,3 @@ fn host_output(vm: &mut CideVM, session: &mut Session) {
     let val = vm.pop();
     session.runtime.output_lines.push(format!("{}\n", val));
 }
-

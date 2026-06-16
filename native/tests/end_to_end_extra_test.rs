@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use std::ffi::{c_char, c_int, CString};
 
 fn filter_outputs(outputs: Vec<String>) -> Vec<String> {

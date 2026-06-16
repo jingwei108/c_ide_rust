@@ -54,15 +54,16 @@ impl Parser {
                 continue;
             }
             // GCC 扩展 typeof：在类型限定符循环中直接解析并返回，避免 break 后进入普通类型分支。
-            if self.check(TokenType::Identifier) && (self.current().text == "typeof" || self.current().text == "__typeof__" || self.current().text == "__typeof") {
+            if self.check(TokenType::Identifier)
+                && (self.current().text == "typeof"
+                    || self.current().text == "__typeof__"
+                    || self.current().text == "__typeof")
+            {
                 let _name_tok = self.advance().clone();
                 self.consume(TokenType::LParen, "typeof 后预期 '('");
                 let expr = self.parse_expression();
                 self.consume(TokenType::RParen, "typeof 预期 ')'");
-                return Type::Typeof {
-                    expr: Box::new(expr),
-                    is_const,
-                };
+                return Type::Typeof { expr: Box::new(expr), is_const };
             }
             break;
         }

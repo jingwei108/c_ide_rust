@@ -1,12 +1,6 @@
 use super::*;
 
-fn gen_mem_inc_dec(
-    gen: &mut BytecodeGen,
-    is_inc: bool,
-    is_pre: bool,
-    step: i32,
-    loc: &SourceLoc,
-) {
+fn gen_mem_inc_dec(gen: &mut BytecodeGen, is_inc: bool, is_pre: bool, step: i32, loc: &SourceLoc) {
     // stack top: address
     let addr_temp = gen.get_temp_slot(2);
     gen.emit(OpCode::StoreLocal, addr_temp, loc); // save address

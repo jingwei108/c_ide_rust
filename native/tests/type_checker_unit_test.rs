@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 use cide_native::compiler::typeck::TypeChecker;

@@ -30,6 +30,9 @@ pub struct BytecodeLibcArtifact {
 /// 并提交到版本控制。日常构建直接嵌入，无需重新编译。
 pub fn load_artifact() -> BytecodeLibcArtifact {
     let json = include_str!("bytecode_libc_data.json");
+    // SAFETY: bytecode_libc_data.json 由构建脚本生成并嵌入，格式固定；
+    // 解析失败说明构建产物损坏，应直接 panic 提示重建。
+    #[allow(clippy::expect_used)]
     serde_json::from_str(json).expect(
         "Failed to parse bytecode_libc_data.json. \
          Run: python scripts/precompile_bytecode_libc.py",

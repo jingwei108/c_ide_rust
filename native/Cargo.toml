@@ -9,6 +9,17 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 [lints.rust]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(frb_expand)'] }
 
+[lints.clippy]
+# 逐步收敛：先 warn，避免一次性阻塞构建；达到 0 警告后可提升为 deny。
+unwrap_used = "warn"
+expect_used = "warn"
+# 教学项目，文档负担不宜过重。
+missing_panics_doc = "allow"
+# 提示超大函数，辅助后续拆分。
+too_many_lines = "warn"
+# 部分类型确实复杂，允许。
+type_complexity = "allow"
+
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

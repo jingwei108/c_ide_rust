@@ -1,3 +1,4 @@
+// TODO(#D08): VM 指令分发函数超过 1000 行，未来可按指令大类拆分到 executor/ 子模块。
 use super::*;
 
 impl CideVM {
@@ -1104,6 +1105,8 @@ impl CideVM {
                     return Some(StepResult::Finished);
                 }
                 let ret_val = self.pop();
+                // SAFETY: 上面已检查 call_stack 非空。
+                #[allow(clippy::unwrap_used)]
                 let frame = self.call_stack.pop().unwrap();
                 const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                 if frame.return_ip == HOST_CALLBACK_SENTINEL {
@@ -1123,6 +1126,8 @@ impl CideVM {
                 if self.call_stack.is_empty() {
                     return Some(StepResult::Finished);
                 }
+                // SAFETY: 上面已检查 call_stack 非空。
+                #[allow(clippy::unwrap_used)]
                 let frame = self.call_stack.pop().unwrap();
                 const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                 if frame.return_ip == HOST_CALLBACK_SENTINEL {

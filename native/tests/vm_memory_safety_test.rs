@@ -1,3 +1,5 @@
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
 use cide_native::vm::core::{CideVM, NULL_TRAP_SIZE};
 
 #[test]

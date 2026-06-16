@@ -1,5 +1,6 @@
 use super::*;
 
+// TODO(#D08): gen_binary 接近 300 行，未来可按运算符大类（算术/比较/位运算/指针）拆分。
 pub(crate) fn gen_binary(
     gen: &mut BytecodeGen,
     op: &BinaryOp,
