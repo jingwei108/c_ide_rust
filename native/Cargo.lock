@@ -191,6 +191,7 @@ dependencies = [
 name = "cide_native"
 version = "0.1.0"
 dependencies = [
+ "console_error_panic_hook",
  "criterion",
  "flutter_rust_bridge",
  "js-sys",

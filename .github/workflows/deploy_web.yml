@@ -45,7 +45,7 @@ jobs:
       - name: Build Rust WASM
         run: |
           cd native
-          wasm-pack build --target no-modules --out-dir ../CideFlutter/web/pkg --no-opt
+          wasm-pack build --target no-modules --out-dir ../CideFlutter/web/pkg
 
       - name: Build Flutter Web
         run: |
