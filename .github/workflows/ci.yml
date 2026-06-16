@@ -144,6 +144,10 @@ jobs:
         run: flutter pub get
         working-directory: CideFlutter
 
+      - name: Generate FRB bindings
+        run: flutter_rust_bridge_codegen generate
+        working-directory: CideFlutter
+
       # 提前构建 Rust DLL，使 cide_native 插件的 Windows CMakeLists.txt 能直接使用
       # 预构建产物，避免在 MSBuild 中通过 cargokit 调用 cargo 时因环境/路径问题失败。
       - name: Build native DLL (Debug)
@@ -153,10 +157,6 @@ jobs:
       - name: Build native DLL (Release)
         run: cargo build --release
         working-directory: native
-
-      - name: Generate FRB bindings
-        run: flutter_rust_bridge_codegen generate
-        working-directory: CideFlutter
 
       - name: Run Flutter tests
         run: flutter test
