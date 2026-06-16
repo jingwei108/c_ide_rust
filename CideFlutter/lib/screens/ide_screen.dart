@@ -32,7 +32,7 @@ import '../widgets/template_bar.dart';
 import '../widgets/template_param_dialog.dart';
 import '../widgets/template_tutorial_panel.dart';
 import '../widgets/execution_control_panel.dart';
-import '../widgets/toolbar.dart';
+import 'ide/toolbar.dart';
 import '../widgets/breakpoints_tab.dart';
 import '../widgets/var_history_tab.dart';
 import '../widgets/variables_tab.dart';
@@ -388,11 +388,7 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                       Column(
                         children: [
                           // 顶部工具栏：键盘弹出时平滑收起
-                          SizeTransition(
-                            sizeFactor: _barsAnimation,
-                            axisAlignment: -1,
-                            child: _buildToolbar(state, notifier, isDark),
-                          ),
+                          IdeToolbar(animation: _barsAnimation),
                           _buildExecutionControl(state, notifier),
                           FileTabBar(
                             files: state.files,
@@ -509,17 +505,6 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
           ),
         ),
       ),
-    );
-  }
-
-  // ========== 工具栏 ==========
-
-  Widget _buildToolbar(IdeState state, IdeNotifier notifier, bool isDark) {
-    return Toolbar(
-      state: state,
-      notifier: notifier,
-      isDark: isDark,
-      onToggleTheme: () => ref.read(themeProvider.notifier).toggle(),
     );
   }
 
