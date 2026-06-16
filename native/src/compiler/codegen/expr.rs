@@ -7,6 +7,7 @@ mod call;
 mod array;
 mod struct_;
 mod cast;
+mod new_delete;
 
 /// Returns true if `expr` denotes an object with storage (an lvalue in C++ terms).
 pub(crate) fn is_lvalue_expr(expr: &Expr) -> bool {
@@ -171,12 +172,12 @@ impl ExprGen for BytecodeGen {
             }
             Expr::Offsetof { .. } => cast::gen_offsetof_expr(self, expr),
             // === C++ 新增 (Phase 33) ===
-            Expr::This { .. } => self.gen_this(expr, &loc),
+            Expr::This { .. } => new_delete::gen_this_expr(self, expr),
             Expr::MemberCall { .. } => struct_::gen_member_call_expr(self, expr),
-            Expr::New { .. } => self.gen_new(expr, &loc),
-            Expr::Delete { .. } => self.gen_delete(expr, &loc),
-            Expr::Move { .. } => self.gen_move(expr, &loc),
-            Expr::Lambda { .. } => self.gen_lambda(expr, &loc),
+            Expr::New { .. } => new_delete::gen_new_expr(self, expr),
+            Expr::Delete { .. } => new_delete::gen_delete_expr(self, expr),
+            Expr::Move { .. } => new_delete::gen_move_expr(self, expr),
+            Expr::Lambda { .. } => new_delete::gen_lambda_expr(self, expr),
         }
     }
 

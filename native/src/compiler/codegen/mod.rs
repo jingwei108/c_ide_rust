@@ -980,8 +980,6 @@ impl BytecodeGen {
     }
 }
 
-mod cpp_lambda;
-mod cpp_this_new_delete;
 mod expr;
 mod stmt;
 pub(crate) use stmt::StmtGen;
