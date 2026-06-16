@@ -1,4 +1,4 @@
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -107,8 +107,10 @@ class KeyboardHandler extends ConsumerWidget {
 
     final viewInsetsBottom = MediaQuery.of(context).viewInsets.bottom;
     final isSystemKeyboardReallyVisible = viewInsetsBottom > 50;
-    final isDesktop =
-        Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+    final isDesktop = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.windows ||
+            defaultTargetPlatform == TargetPlatform.macOS ||
+            defaultTargetPlatform == TargetPlatform.linux);
     final showSystemKeyboardToggle =
         isSystemKeyboardActive && (isDesktop || isSystemKeyboardReallyVisible);
     final showCustomKeyboard = showKeyboard && !isSystemKeyboardActive;
