@@ -11,7 +11,7 @@ import '../widgets/editor_panel_v2.dart';
 import '../widgets/floating_orb_widget.dart';
 import '../widgets/floating_panel_popup.dart';
 import '../widgets/height_resizable_panel.dart';
-import '../widgets/file_tab_bar.dart';
+import 'ide/editor_area.dart';
 import '../widgets/intro_overlay.dart';
 import '../widgets/linked_list_vis_tab.dart';
 import '../widgets/tree_vis_tab.dart';
@@ -354,27 +354,12 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                           // 顶部工具栏：键盘弹出时平滑收起
                           IdeToolbar(animation: _barsAnimation),
                           _buildExecutionControl(state, notifier),
-                          FileTabBar(
-                            files: state.files,
-                            currentFile: state.currentFile,
-                            onSwitch:
-                                (filename) => notifier.switchFile(filename),
-                            onClose:
-                                (filename) => notifier.removeFile(filename),
-                            onAdd: () => _showAddFileDialog(context, notifier),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 8,
-                              ),
-                              child: EditorPanelV2(
-                                key: _editorKey,
-                                onTap: _openKeyboard,
-                                onBlankTap: _closeAllKeyboards,
-                                onDismissKeyboard: _closeAllKeyboards,
-                              ),
-                            ),
+                          IdeEditorArea(
+                            editorKey: _editorKey,
+                            onTap: _openKeyboard,
+                            onBlankTap: _closeAllKeyboards,
+                            onDismissKeyboard: _closeAllKeyboards,
+                            onAddFile: () => _showAddFileDialog(context, notifier),
                           ),
                           // 教程激活时显示教程面板，否则显示模板栏+底部面板
                           if (state.activeTutorial != null)
