@@ -1,4 +1,5 @@
-// TODO(#D08): 当前测试代码与 FRB 生成代码中存在大量 unwrap/expect，待逐步收敛后移除全局豁免。
+// 生产代码 unwrap/expect 已收敛并均附 SAFETY 注释；测试代码使用 unwrap/expect 属于常见实践，
+// 通过 cfg_attr(test) 统一豁免，避免在每个测试用例上重复 #[allow]。
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 #[cfg(target_arch = "wasm32")]

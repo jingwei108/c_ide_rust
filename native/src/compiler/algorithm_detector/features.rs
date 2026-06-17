@@ -1,39 +1,49 @@
-//! 算法模式检测器
-//!
-//! 基于 AST 进行启发式算法识别，支持：
-//! - 冒泡排序 (bubble_sort)
-//! - 选择排序 (selection_sort)
-//! - 插入排序 (insertion_sort)
-//! - 快速排序 (quick_sort)
-//! - 归并排序 (merge_sort)
-//! - 二分查找 (binary_search)
+//! 算法特征提取与通用辅助函数
 
 use crate::compiler::ast::*;
 use crate::compiler::cfg::ControlFlowGraph;
-use crate::session::{AlgorithmMatch, VisEvent};
+use crate::session::AlgorithmMatch;
 
-/// 检测程序中的所有算法模式
-pub fn detect_algorithms(program: &ProgramNode) -> Vec<AlgorithmMatch> {
-    let mut matches = Vec::new();
-    for func in &program.funcs {
-        matches.extend(detect_in_func(func));
-    }
-    matches
+/// 函数级特征集合，供各类算法检测器使用。
+#[derive(Default)]
+pub(crate) struct FuncFeatures {
+    pub loop_depth: i32,
+    pub max_loop_depth: i32,
+    pub has_nested_loops: bool,
+    pub has_single_loop: bool,
+    pub has_array_compare: bool,
+    pub has_swap: bool,
+    pub has_swap_in_inner_loop: bool,
+    pub has_min_max_track: bool,
+    pub has_shift_pattern: bool,
+    pub is_recursive: bool,
+    pub has_partition_pattern: bool,
+    pub has_merge_pattern: bool,
+    pub has_mid_calculation: bool,
+    pub has_left_right_update: bool,
+    pub has_adjacent_index_compare: bool,
+    // CFG-derived features (P3)
+    pub cfg_has_early_return: bool,
+    pub cfg_has_back_edge: bool,
+    pub cfg_num_blocks: usize,
+    pub cfg_has_unreachable: bool,
+    pub compare_lines: Vec<(i32, i32, String)>, // (line, type, context)
 }
 
-fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
-    let body = match func.body.as_ref() {
-        Some(b) => b,
-        None => return Vec::new(),
-    };
-    let mut features = extract_features(body);
+const MAX_WALK_DEPTH: i32 = 512;
+
+pub(crate) fn extract_features(func: &crate::compiler::ast::FuncDecl, body: &Stmt) -> FuncFeatures {
+    let mut f = FuncFeatures::default();
+    walk_stmt(body, &mut f, 0, "", 0);
+    f.has_nested_loops = f.max_loop_depth >= 2;
+    f.has_single_loop = f.max_loop_depth >= 1;
 
     // P3: augment with CFG features
     if let Some(cfg) = ControlFlowGraph::from_func(func) {
-        features.cfg_has_back_edge = cfg.edges.iter().any(|(a, b)| *a >= *b);
-        features.cfg_num_blocks = cfg.blocks.len();
-        features.cfg_has_unreachable = !cfg.find_unreachable_blocks().is_empty();
-        features.cfg_has_early_return = cfg
+        f.cfg_has_back_edge = cfg.edges.iter().any(|(a, b)| *a >= *b);
+        f.cfg_num_blocks = cfg.blocks.len();
+        f.cfg_has_unreachable = !cfg.find_unreachable_blocks().is_empty();
+        f.cfg_has_early_return = cfg
             .blocks
             .iter()
             .filter(|b| matches!(b.terminator, crate::compiler::cfg::Terminator::Return))
@@ -41,533 +51,6 @@ fn detect_in_func(func: &FuncDecl) -> Vec<AlgorithmMatch> {
             > 1;
     }
 
-    // 基于函数名和结构特征进行匹配（收集所有匹配）
-    let name_lower = func.name.to_lowercase();
-    let mut matches = Vec::new();
-
-    // 冒泡排序
-    if name_lower.contains("bubble")
-        || (features.has_nested_loops
-            && features.has_array_compare
-            && features.has_swap
-            && features.loop_depth >= 2
-            && features.has_adjacent_index_compare)
-    {
-        matches.push(build_match(
-            "bubble_sort",
-            "冒泡排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 选择排序
-    if name_lower.contains("select")
-        || (features.has_nested_loops
-            && features.has_array_compare
-            && features.has_min_max_track
-            && features.loop_depth >= 2
-            && !features.has_swap_in_inner_loop)
-    {
-        matches.push(build_match(
-            "selection_sort",
-            "选择排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 插入排序
-    if name_lower.contains("insert")
-        || (features.has_nested_loops && features.has_shift_pattern && features.loop_depth >= 2 && !features.has_swap)
-    {
-        matches.push(build_match(
-            "insertion_sort",
-            "插入排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 快速排序
-    if name_lower.contains("quick")
-        || (features.is_recursive && features.has_partition_pattern && features.has_nested_loops)
-    {
-        matches.push(build_match(
-            "quick_sort",
-            "快速排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 归并排序
-    if name_lower.contains("merge")
-        || (features.is_recursive && features.has_merge_pattern && !features.has_partition_pattern)
-    {
-        matches.push(build_match(
-            "merge_sort",
-            "归并排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 二分查找
-    if name_lower.contains("binary")
-        || name_lower.contains("bsearch")
-        || (features.has_single_loop && features.has_mid_calculation && features.has_left_right_update)
-    {
-        matches.push(build_match(
-            "binary_search",
-            "二分查找",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 堆排序
-    if name_lower.contains("heap")
-        || (features.is_recursive && features.has_array_compare && features.has_swap && name_lower.contains("sort"))
-    {
-        matches.push(build_match(
-            "heap_sort",
-            "堆排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // BFS 广度优先搜索
-    if name_lower.contains("bfs")
-        || name_lower.contains("breadth")
-        || (name_lower.contains("search") && features.has_single_loop && features.cfg_has_back_edge)
-    {
-        matches.push(build_match(
-            "bfs",
-            "BFS 广度优先搜索",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // DFS 深度优先搜索
-    if name_lower.contains("dfs")
-        || name_lower.contains("depth")
-        || (features.is_recursive
-            && !features.has_partition_pattern
-            && !features.has_merge_pattern
-            && name_lower.contains("search"))
-    {
-        matches.push(build_match(
-            "dfs",
-            "DFS 深度优先搜索",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // DP 动态规划（斐波那契 / 背包 等）
-    if name_lower.contains("dp") || name_lower.contains("knapsack") || name_lower.contains("dynamic") {
-        matches.push(build_match(
-            "dp",
-            "动态规划",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 希尔排序
-    if name_lower.contains("shell") {
-        matches.push(build_match(
-            "shell_sort",
-            "希尔排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 计数排序
-    if name_lower.contains("counting") {
-        matches.push(build_match(
-            "counting_sort",
-            "计数排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 链表操作（删除/插入等）
-    if name_lower.contains("deletenode") || name_lower.contains("delete_node") {
-        matches.push(build_match(
-            "linked_list_delete",
-            "链表删除",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 二叉搜索树
-    if name_lower.contains("bst")
-        || name_lower.contains("insert") && features.is_recursive && features.cfg_has_back_edge
-    {
-        matches.push(build_match(
-            "bst_insert",
-            "BST 插入",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 字符串操作
-    if name_lower.contains("reverse") && name_lower.contains("str") {
-        matches.push(build_match(
-            "string_reverse",
-            "字符串反转",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 数学算法
-    if name_lower.contains("gcd") || name_lower.contains("greatest") {
-        matches.push(build_match(
-            "gcd",
-            "最大公约数",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    if name_lower.contains("prime") || name_lower.contains("isprime") {
-        matches.push(build_match(
-            "is_prime",
-            "素数判断",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 汉诺塔
-    if name_lower.contains("hanoi") {
-        matches.push(build_match(
-            "hanoi",
-            "汉诺塔",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 顺序表 / 数组操作
-    if name_lower.contains("seqlist") || name_lower.contains("list_insert") || name_lower.contains("listdelete") {
-        matches.push(build_match(
-            "seq_list",
-            "顺序表",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 链表尾插 / 双向链表
-    if name_lower.contains("append") && (name_lower.contains("list") || name_lower.contains("node")) {
-        matches.push(build_match(
-            "linked_list_append",
-            "链表尾插",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 循环队列
-    if name_lower.contains("circular") && name_lower.contains("queue") {
-        matches.push(build_match(
-            "circular_queue",
-            "循环队列",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 链栈
-    if name_lower.contains("linked") && name_lower.contains("stack") {
-        matches.push(build_match(
-            "linked_stack",
-            "链栈",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 链队列
-    if name_lower.contains("linked") && name_lower.contains("queue") {
-        matches.push(build_match(
-            "linked_queue",
-            "链队列",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 层序遍历
-    if name_lower.contains("levelorder") || name_lower.contains("level_order") {
-        matches.push(build_match(
-            "level_order",
-            "层序遍历",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // BST 查找
-    if name_lower.contains("search") && features.is_recursive && features.cfg_has_back_edge {
-        matches.push(build_match(
-            "bst_search",
-            "BST 查找",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 哈希表
-    if name_lower.contains("hash") && !name_lower.contains("cash") {
-        matches.push(build_match(
-            "hash_table",
-            "哈希表",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // 约瑟夫环
-    if name_lower.contains("josephus") {
-        matches.push(build_match(
-            "josephus",
-            "约瑟夫环",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 循环链表
-    if name_lower.contains("circular") && name_lower.contains("list") {
-        matches.push(build_match(
-            "circular_linked_list",
-            "循环链表",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 静态链表
-    if name_lower.contains("static") && name_lower.contains("list") {
-        matches.push(build_match(
-            "static_linked_list",
-            "静态链表",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 朴素模式匹配
-    if name_lower.contains("indexbf") || name_lower.contains("bfmatch") || name_lower.contains("brute") {
-        matches.push(build_match(
-            "string_match_bf",
-            "朴素模式匹配",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: KMP 模式匹配
-    if name_lower.contains("kmp") || name_lower.contains("indexkmp") || name_lower.contains("getnext") {
-        matches.push(build_match(
-            "string_match_kmp",
-            "KMP 模式匹配",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 线索二叉树
-    if name_lower.contains("thread") && name_lower.contains("tree") {
-        matches.push(build_match(
-            "threaded_binary_tree",
-            "线索二叉树",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 哈夫曼树
-    if name_lower.contains("huffman") {
-        matches.push(build_match(
-            "huffman_tree",
-            "哈夫曼树",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 并查集
-    if name_lower.contains("unionfind") || (name_lower.contains("union") && name_lower.contains("find")) {
-        matches.push(build_match(
-            "union_find",
-            "并查集",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: AVL 树
-    if name_lower.contains("avl") {
-        matches.push(build_match(
-            "avl_tree",
-            "AVL 树",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: Prim 最小生成树
-    if name_lower.contains("prim") {
-        matches.push(build_match(
-            "prim_mst",
-            "Prim 最小生成树",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: Kruskal 最小生成树
-    if name_lower.contains("kruskal") {
-        matches.push(build_match(
-            "kruskal_mst",
-            "Kruskal 最小生成树",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: Dijkstra 最短路径
-    if name_lower.contains("dijkstra") {
-        matches.push(build_match(
-            "dijkstra",
-            "Dijkstra 最短路径",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: Floyd 最短路径
-    if name_lower.contains("floyd") {
-        matches.push(build_match(
-            "floyd",
-            "Floyd 最短路径",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 拓扑排序
-    if name_lower.contains("topolog") {
-        matches.push(build_match(
-            "topological_sort",
-            "拓扑排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    // P0: 基数排序
-    if name_lower.contains("radix") {
-        matches.push(build_match(
-            "radix_sort",
-            "基数排序",
-            &func.name,
-            func.loc.line,
-            &features.compare_lines,
-        ));
-    }
-
-    matches
-}
-
-// ============================================================================
-// 特征提取
-// ============================================================================
-
-#[derive(Default)]
-struct FuncFeatures {
-    loop_depth: i32,
-    max_loop_depth: i32,
-    has_nested_loops: bool,
-    has_single_loop: bool,
-    has_array_compare: bool,
-    has_swap: bool,
-    has_swap_in_inner_loop: bool,
-    has_min_max_track: bool,
-    has_shift_pattern: bool,
-    is_recursive: bool,
-    has_partition_pattern: bool,
-    has_merge_pattern: bool,
-    has_mid_calculation: bool,
-    has_left_right_update: bool,
-    has_adjacent_index_compare: bool,
-    // CFG-derived features (P3)
-    cfg_has_early_return: bool,
-    cfg_has_back_edge: bool,
-    cfg_num_blocks: usize,
-    cfg_has_unreachable: bool,
-    compare_lines: Vec<(i32, i32, String)>, // (line, type, context)
-}
-
-const MAX_WALK_DEPTH: i32 = 512;
-
-fn extract_features(stmt: &Stmt) -> FuncFeatures {
-    let mut f = FuncFeatures::default();
-    walk_stmt(stmt, &mut f, 0, "", 0);
-    f.has_nested_loops = f.max_loop_depth >= 2;
-    f.has_single_loop = f.max_loop_depth >= 1;
     f
 }
 
@@ -948,7 +431,8 @@ fn format_compare_context(left: &Expr, right: &Expr) -> String {
     format!("{}:{}", expr_to_string(left), expr_to_string(right))
 }
 
-fn expr_to_string(expr: &Expr) -> String {
+/// 将表达式近似转换为字符串，用于结构比较。
+pub(crate) fn expr_to_string(expr: &Expr) -> String {
     match expr {
         Expr::Binary { op, left, right, .. } => {
             let op_str = match op {
@@ -1054,7 +538,8 @@ fn expr_to_string(expr: &Expr) -> String {
     }
 }
 
-fn build_match(
+/// 构造算法匹配结果，供各检测子模块复用。
+pub(crate) fn build_match(
     name: &str,
     display_name: &str,
     func_name: &str,
@@ -1132,7 +617,7 @@ fn build_match(
         line,
         vis_events: compare_lines
             .iter()
-            .map(|&(line, ty, ref ctx)| VisEvent {
+            .map(|&(line, ty, ref ctx)| crate::session::VisEvent {
                 line,
                 ty,
                 extra0: 0,

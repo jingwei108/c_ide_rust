@@ -95,15 +95,81 @@ def count_pattern_in_files(root: Path, suffix: str, pattern: str) -> tuple[int, 
     return total, per_file
 
 
+def count_production_unwrap_expect() -> tuple[int, Counter]:
+    """统计生产代码中的 unwrap/expect 数量。
+
+    排除：
+    - FRB 生成文件（frb_generated.rs）
+    - `#[cfg(test)]` 模块
+    - `#[test]` 标注的测试函数
+    """
+    pattern = re.compile(r"\b(unwrap\(\)|expect\()")
+    per_file = Counter()
+    total = 0
+    for p in gather_files(NATIVE_SRC, "rs"):
+        if p.name == "frb_generated.rs":
+            continue
+        text = p.read_text(encoding="utf-8", errors="ignore")
+        lines = text.splitlines()
+        in_test_mod = False
+        in_test_fn = False
+        mod_brace_depth = 0
+        fn_brace_depth = 0
+        local_count = 0
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            stripped = line.strip()
+            if re.search(r"#\[cfg\(test\)\]", stripped):
+                in_test_mod = True
+                mod_brace_depth = 0
+                i += 1
+                continue
+            if in_test_mod:
+                mod_brace_depth += stripped.count("{") - stripped.count("}")
+                if mod_brace_depth < 0:
+                    in_test_mod = False
+                i += 1
+                continue
+            if stripped == "#[test]":
+                in_test_fn = True
+                fn_brace_depth = 0
+                i += 1
+                continue
+            if in_test_fn:
+                fn_brace_depth += stripped.count("{") - stripped.count("}")
+                if fn_brace_depth < 0:
+                    in_test_fn = False
+                i += 1
+                continue
+            if pattern.search(line):
+                local_count += 1
+            i += 1
+        if local_count:
+            total += local_count
+            per_file[p.relative_to(PROJECT_ROOT)] += local_count
+    return total, per_file
+
+
 def count_active_failure_entries() -> tuple[int, dict[Path, int]]:
     """统计各失败记录文件中的活跃条目数。
 
     规则：
-    - 以 `## `、`### `、`- ` 或数字点开头的条目视为一条记录。
+    - 仅统计位于 `KNOWN_FAILURE` / `KNOWN_DIVERGENCE` / `KNOWN_LIMITATION`
+      二级标题下的条目。
+    - 条目包括：
+      - `### ` 开头的独立条目。
+      - KNOWN_* section 下的表格数据行（表头与分隔线不计入）。
     - 包含 `已修复`、`FIXED`、`RESOLVED`、`不再失败` 等字样的条目不计入。
     """
+    active_section = re.compile(
+        r"^#{2}\s+.*?(KNOWN_FAILURE|KNOWN_DIVERGENCE|KNOWN_LIMITATION)",
+        re.I,
+    )
+    entry_start = re.compile(r"^#{3}\s+")
+    section_start = re.compile(r"^#{2}\s+")
     resolved_markers = re.compile(r"已修复|FIXED|RESOLVED|不再失败|no longer fails", re.I)
-    entry_start = re.compile(r"^(?:#{2,3}\s+|\*\s+|\-\s+|\d+\.\s+)")
+    table_divider = re.compile(r"^\|[-:\|\s]+\|$")
     per_file = {}
     total = 0
     for md in FAILURES_FILES:
@@ -113,9 +179,34 @@ def count_active_failure_entries() -> tuple[int, dict[Path, int]]:
         text = md.read_text(encoding="utf-8", errors="ignore")
         lines = text.splitlines()
         count = 0
+        in_active_section = False
+        inside_table = False
         for line in lines:
-            if entry_start.match(line) and not resolved_markers.search(line):
-                count += 1
+            stripped = line.strip()
+            if section_start.match(stripped):
+                in_active_section = bool(active_section.match(stripped))
+                inside_table = False
+                continue
+            if not in_active_section:
+                continue
+            # 独立条目
+            if entry_start.match(stripped):
+                if not resolved_markers.search(stripped):
+                    count += 1
+                inside_table = False
+                continue
+            # 表格分隔线标志后续行为表格数据行
+            if table_divider.match(stripped):
+                inside_table = True
+                continue
+            # 表格数据行
+            if inside_table and stripped.startswith("|") and stripped.endswith("|"):
+                if not resolved_markers.search(stripped):
+                    count += 1
+                continue
+            # 非空非表格行，退出表格状态
+            if stripped and not stripped.startswith("|"):
+                inside_table = False
         per_file[md] = count
         total += count
     return total, per_file
@@ -206,6 +297,8 @@ def generate_report() -> str:
     unwrap_total, unwrap_per_file = count_pattern_in_files(
         NATIVE_SRC, "rs", r"\b(unwrap\(\)|expect\()"
     )
+    # 生产代码 unwrap/expect：排除测试代码与 FRB 生成文件
+    prod_unwrap_total, prod_unwrap_per_file = count_production_unwrap_expect()
 
     active_failures, failures_per_file = count_active_failure_entries()
     shadow_rates = read_shadow_match_rate()
@@ -222,7 +315,8 @@ def generate_report() -> str:
     lines.append("|------|------|")
     lines.append(f"| Rust TODO/FIXME/HACK | {todo_total} |")
     lines.append(f"| Dart TODO/FIXME/HACK | {dart_todo_total} |")
-    lines.append(f"| Rust unwrap/expect | {unwrap_total} |")
+    lines.append(f"| Rust unwrap/expect（全量） | {unwrap_total} |")
+    lines.append(f"| Rust unwrap/expect（生产代码） | {prod_unwrap_total} |")
     lines.append(f"| 活跃失败记录条目 | {active_failures} |")
     lines.append(f"| C Shadow Verification | {shadow_rates.get('C', 'N/A')} |")
     lines.append(f"| C++ Shadow Verification | {shadow_rates.get('C++', 'N/A')} |")
@@ -267,6 +361,14 @@ def generate_report() -> str:
     lines.append("| 文件 | 数量 |")
     lines.append("|------|------|")
     for p, n in unwrap_per_file.most_common(10):
+        lines.append(f"| `{p}` | {n} |")
+    lines.append("")
+
+    lines.append("## Rust 生产代码 unwrap/expect 分布（Top 10）")
+    lines.append("")
+    lines.append("| 文件 | 数量 |")
+    lines.append("|------|------|")
+    for p, n in prod_unwrap_per_file.most_common(10):
         lines.append(f"| `{p}` | {n} |")
     lines.append("")
 

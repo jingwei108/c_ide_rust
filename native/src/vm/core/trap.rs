@@ -1,4 +1,6 @@
 use super::*;
+use crate::shared::type_utils::base_kind;
+use crate::vm::instruction::SourceLoc;
 
 impl CideVM {
     pub(crate) fn format_bounds_error(&self, addr: u32) -> String {

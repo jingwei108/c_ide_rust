@@ -353,8 +353,10 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     };
 
     // 3. TypeChecker
-    let mut type_checker = TypeChecker::default();
-    type_checker.is_library_mode = false;
+    let type_checker = TypeChecker {
+        is_library_mode: false,
+        ..TypeChecker::default()
+    };
     let (type_errors, type_warnings, type_hints) = type_checker.check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, full_source, None);
@@ -564,8 +566,10 @@ pub fn run_multi_file_pipeline(
     }
 
     // 3. TypeChecker
-    let mut type_checker = TypeChecker::default();
-    type_checker.is_library_mode = is_library_mode;
+    let type_checker = TypeChecker {
+        is_library_mode,
+        ..TypeChecker::default()
+    };
     let (type_errors, type_warnings, type_hints) = type_checker.check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, &full_source, Some(&file_ranges));

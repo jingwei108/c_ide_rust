@@ -10,8 +10,9 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 unexpected_cfgs = { level = "allow", check-cfg = ['cfg(frb_expand)'] }
 
 [lints.clippy]
-# 逐步收敛：先 warn，避免一次性阻塞构建；达到 0 警告后可提升为 deny。
-unwrap_used = "warn"
+# 生产代码 unwrap/expect 已收敛至 17 处且均有 SAFETY 注释与 #[allow]；
+# 测试代码与 FRB 生成代码通过 lib.rs 与模块级 #[allow] 豁免。
+unwrap_used = "deny"
 expect_used = "warn"
 # 教学项目，文档负担不宜过重。
 missing_panics_doc = "allow"
