@@ -37,6 +37,8 @@ CideFlutter/            Flutter 跨平台前端 (Android + Desktop Windows)
 docs/                   设计文档、事故报告
 ```
 
+Flutter 前端测试框架详见 [`docs/current/FLUTTER_TESTING.md`](docs/current/FLUTTER_TESTING.md)。
+
 ## Rust 迁移进度（已完成 ✅）
 
 | 阶段 | 模块 | 状态 |

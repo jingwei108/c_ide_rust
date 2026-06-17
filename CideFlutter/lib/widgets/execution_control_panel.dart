@@ -196,7 +196,7 @@ class ExecutionControlPanel extends ConsumerWidget {
             ),
           ),
         Container(
-          height: 48,
+          height: 56,
           padding: const EdgeInsets.symmetric(horizontal: 8),
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.surfaceContainerHighest,

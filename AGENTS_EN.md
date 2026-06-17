@@ -36,6 +36,8 @@ CideFlutter/            Flutter cross-platform frontend (Android + Desktop Windo
 docs/                   Design documents, incident reports
 ```
 
+For the Flutter frontend testing framework, see [`docs/current/FLUTTER_TESTING_EN.md`](docs/current/FLUTTER_TESTING_EN.md).
+
 ## Rust Migration Progress (Completed ✅)
 
 | Phase | Module | Status |

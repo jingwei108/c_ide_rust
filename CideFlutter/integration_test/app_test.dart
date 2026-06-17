@@ -91,5 +91,38 @@ void main() {
       expect(find.text('main.c'), findsOneWidget);
       expect(find.text('test.c'), findsOneWidget);
     });
+
+    testWidgets('default program runs and produces output', (tester) async {
+      app.main();
+      await _pumpFrames(tester);
+
+      // Tap the toolbar run button.
+      await tester.tap(find.byIcon(Icons.play_arrow));
+      await _pumpFrames(tester, count: 120);
+
+      // The default source prints "Hello, Cide!" plus a completion line.
+      expect(find.textContaining('程序运行完成'), findsOneWidget);
+    });
+
+    testWidgets('step mode advances through the default program', (tester) async {
+      app.main();
+      await _pumpFrames(tester);
+
+      // Tap the step button repeatedly until the program finishes.
+      for (var i = 0; i < 20; i++) {
+        await tester.tap(find.byIcon(Icons.skip_next));
+        await _pumpFrames(tester, count: 20);
+      }
+
+      // The program output appears inside the output panel.
+      final outputTab = find.byType(OutputTab);
+      expect(
+        find.descendant(
+          of: outputTab,
+          matching: find.textContaining('Hello, Cide!'),
+        ),
+        findsOneWidget,
+      );
+    });
   });
 }

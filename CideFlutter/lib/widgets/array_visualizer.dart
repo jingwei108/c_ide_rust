@@ -119,7 +119,7 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
             ),
             const SizedBox(height: 12),
             SizedBox(
-              height: barHeight + 28,
+              height: barHeight + 36,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: displayElements.length,

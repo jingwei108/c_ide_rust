@@ -183,7 +183,7 @@ class CideDocument extends ChangeNotifier {
 
   void redo() {
     if (_redoStack.isEmpty) return;
-    final op = _redoStack.removeLast().inverse();
+    final op = _redoStack.removeLast();
     _apply(op);
     _undoStack.add(op.inverse());
     notifyListeners();

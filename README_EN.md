@@ -104,7 +104,13 @@ python native/tests/shadow_verification/shadow_verify.py
 
 # C++ Shadow Verification
 python scripts/shadow_verify_cpp.py
+
+# Flutter frontend tests (unit / widget / integration)
+cd CideFlutter && flutter test
+cd CideFlutter && flutter test -d windows integration_test/
 ```
+
+For the Flutter testing framework, see [`docs/current/FLUTTER_TESTING_EN.md`](docs/current/FLUTTER_TESTING_EN.md).
 
 For environment requirements, full build commands, and development conventions, see [`AGENTS_EN.md`](AGENTS_EN.md).
 
