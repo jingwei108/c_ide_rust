@@ -31,6 +31,8 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
 
   late AnimationController _pulseController;
   List<String> _prevElements = [];
+  List<double> _cachedNumbers = [];
+  double _cachedMaxVal = 1.0;
 
   @override
   void initState() {
@@ -39,6 +41,7 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
       vsync: this,
       duration: const Duration(milliseconds: 600),
     )..repeat(reverse: true);
+    _cacheNumbers();
   }
 
   @override
@@ -47,7 +50,23 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
     if (oldWidget.elements.length != widget.elements.length ||
         !_listEquals(oldWidget.elements, widget.elements)) {
       _prevElements = List.from(oldWidget.elements);
+      _cacheNumbers();
     }
+  }
+
+  void _cacheNumbers() {
+    final displayElements = widget.elements.length > _maxElements
+        ? widget.elements.sublist(0, _maxElements)
+        : widget.elements;
+    _cachedNumbers = displayElements.map((e) {
+      final clean = e.replaceAll("'", "");
+      return double.tryParse(clean) ?? 0.0;
+    }).toList();
+    _cachedMaxVal = _cachedNumbers
+        .map((v) => v.abs())
+        .fold(0.0, (a, b) => a > b ? a : b)
+        .clamp(1.0, double.infinity)
+        .toDouble();
   }
 
   @override
@@ -70,14 +89,9 @@ class _ArrayVisualizerState extends State<ArrayVisualizer>
         ? widget.elements.sublist(0, _maxElements)
         : widget.elements;
 
-    // TODO(#D09): elements 未变化时仍每帧重新解析数值，应缓存 parsed numbers。
-    // 解析数值用于条形图高度
-    final numbers = displayElements.map((e) {
-      final clean = e.replaceAll("'", "");
-      return double.tryParse(clean) ?? 0.0;
-    }).toList();
-
-    final maxVal = numbers.map((v) => v.abs()).fold(0.0, (a, b) => a > b ? a : b).clamp(1.0, double.infinity);
+    // 使用缓存的解析结果，避免每帧重新解析字符串。
+    final numbers = _cachedNumbers;
+    final maxVal = _cachedMaxVal;
     const barHeight = 120.0;
 
     return Card(

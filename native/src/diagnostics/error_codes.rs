@@ -121,4 +121,10 @@ pub enum ErrorCode {
     E4029_ReferenceBindLvalueRequired = 4029,
     E4030_ConstructorNotFound = 4030,
     E4031_ConstructorOverloadAmbiguous = 4031,
+    // C++ 教学知识卡片（运行时/设计缺陷提示）
+    E4100_CppMemoryLeak = 4100,
+    E4101_CppDanglingReference = 4101,
+    E4102_CppObjectSlicing = 4102,
+    E4103_CppUniquePtrDoubleFree = 4103,
+    E4104_CppUseAfterMove = 4104,
 }

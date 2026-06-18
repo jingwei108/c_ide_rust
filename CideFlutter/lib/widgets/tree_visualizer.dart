@@ -47,6 +47,10 @@ class _TreeVisualizerState extends State<TreeVisualizer>
   String? _error;
   late AnimationController _entranceController;
 
+  // 缓存节点文本布局，避免每帧重建 TextPainter。
+  final Map<int, TextPainter> _valuePainters = {};
+  final Map<int, TextPainter> _addrPainters = {};
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +73,19 @@ class _TreeVisualizerState extends State<TreeVisualizer>
   @override
   void dispose() {
     _entranceController.dispose();
+    _disposeTextPainters();
     super.dispose();
+  }
+
+  void _disposeTextPainters() {
+    for (final p in _valuePainters.values) {
+      p.dispose();
+    }
+    _valuePainters.clear();
+    for (final p in _addrPainters.values) {
+      p.dispose();
+    }
+    _addrPainters.clear();
   }
 
   Future<void> _loadNodes() async {
@@ -170,6 +186,8 @@ class _TreeVisualizerState extends State<TreeVisualizer>
       }
 
       if (mounted) {
+        _disposeTextPainters();
+        _buildTextPainters(nodeMap.values.toList());
         setState(() {
           _nodes = nodeMap.values.toList();
           _loading = false;
@@ -183,6 +201,39 @@ class _TreeVisualizerState extends State<TreeVisualizer>
           _loading = false;
         });
       }
+    }
+  }
+
+  void _buildTextPainters(List<_TreeNodeData> nodes) {
+    final valueStyle = TextStyle(
+      color: widget.isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42),
+      fontSize: 12,
+      fontFamily: 'monospace',
+    );
+    final addrStyle = TextStyle(
+      color: (widget.isDark ? Colors.grey[600] : Colors.grey[400]),
+      fontSize: 7,
+      fontFamily: 'monospace',
+    );
+
+    for (final node in nodes) {
+      final valuePainter = TextPainter(
+        text: TextSpan(text: '${node.val}', style: valueStyle),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      );
+      valuePainter.layout();
+      _valuePainters[node.address] = valuePainter;
+
+      final addrPainter = TextPainter(
+        text: TextSpan(
+          text: '0x${node.address.toRadixString(16).toUpperCase()}',
+          style: addrStyle,
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      addrPainter.layout();
+      _addrPainters[node.address] = addrPainter;
     }
   }
 
@@ -257,6 +308,8 @@ class _TreeVisualizerState extends State<TreeVisualizer>
                 nodes: _nodes,
                 isDark: widget.isDark,
                 progress: _entranceController.value,
+                valuePainters: _valuePainters,
+                addrPainters: _addrPainters,
               ),
             ),
           );
@@ -270,6 +323,8 @@ class _TreePainter extends CustomPainter {
   final List<_TreeNodeData> nodes;
   final bool isDark;
   final double progress;
+  final Map<int, TextPainter> valuePainters;
+  final Map<int, TextPainter> addrPainters;
 
   // 复用 Paint 对象，避免每节点每帧重建。
   final Paint _nodePaint = Paint()..style = PaintingStyle.fill;
@@ -283,7 +338,9 @@ class _TreePainter extends CustomPainter {
   _TreePainter({
     required this.nodes,
     required this.isDark,
-    this.progress = 1.0,
+    required this.progress,
+    required this.valuePainters,
+    required this.addrPainters,
   });
 
   @override
@@ -291,12 +348,6 @@ class _TreePainter extends CustomPainter {
     final baseNodeColor = isDark ? const Color(0xFF3E4451) : const Color(0xFFE5E5E5);
     final baseBorderColor = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0);
     _edgePaint.color = baseBorderColor;
-
-    final textStyle = TextStyle(
-      color: isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42),
-      fontSize: 12,
-      fontFamily: 'monospace',
-    );
 
     const nodeWidth = 48.0;
     const nodeHeight = 36.0;
@@ -365,41 +416,38 @@ class _TreePainter extends CustomPainter {
         canvas.drawRRect(rect, _borderPaint);
       }
 
-      // TODO(#D09): 每个节点每帧新建两个 TextPainter，应缓存文本布局。
-      // 值文本
-      final textSpan = TextSpan(
-        text: '${node.val}',
-        style: textStyle.copyWith(
-          color: textStyle.color?.withValues(alpha: alpha),
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.center,
-      );
-      textPainter.layout();
-      textPainter.paint(
-        canvas,
-        Offset(node.x - textPainter.width / 2, slideY - textPainter.height / 2),
-      );
+      // 值文本：使用缓存的 TextPainter，通过 saveLayer 应用动态透明度。
+      final valuePainter = valuePainters[node.address];
+      if (valuePainter != null) {
+        final offset = Offset(node.x - valuePainter.width / 2, slideY - valuePainter.height / 2);
+        _paintWithAlpha(canvas, valuePainter, offset, alpha,
+          Rect.fromCenter(center: Offset(node.x, slideY), width: nodeWidth, height: nodeHeight));
+      }
 
       // 地址标签（底部）
-      final addrSpan = TextSpan(
-        text: '0x${node.address.toRadixString(16).toUpperCase()}',
-        style: TextStyle(
-          color: (isDark ? Colors.grey[600] : Colors.grey[400])?.withValues(alpha: alpha),
-          fontSize: 7,
-          fontFamily: 'monospace',
-        ),
-      );
-      final addrPainter = TextPainter(text: addrSpan, textDirection: TextDirection.ltr);
-      addrPainter.layout();
-      addrPainter.paint(
-        canvas,
-        Offset(node.x - addrPainter.width / 2, slideY + nodeHeight / 2 + 2),
-      );
+      final addrPainter = addrPainters[node.address];
+      if (addrPainter != null) {
+        final offset = Offset(node.x - addrPainter.width / 2, slideY + nodeHeight / 2 + 2);
+        _paintWithAlpha(canvas, addrPainter, offset, alpha,
+          Rect.fromCenter(center: Offset(node.x, slideY + nodeHeight / 2 + 6), width: nodeWidth, height: 14));
+      }
     }
+  }
+
+  void _paintWithAlpha(
+    Canvas canvas,
+    TextPainter painter,
+    Offset offset,
+    double alpha,
+    Rect bounds,
+  ) {
+    if (alpha >= 0.999) {
+      painter.paint(canvas, offset);
+      return;
+    }
+    canvas.saveLayer(bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
+    painter.paint(canvas, offset);
+    canvas.restore();
   }
 
   @override

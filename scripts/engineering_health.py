@@ -34,12 +34,13 @@ FAILURES_FILES = [
     PROJECT_ROOT / "native" / "tests" / "HOST_CONTRACT_FAILURES.md",
     PROJECT_ROOT / "native" / "tests" / "BYTECODE_LIBC_FAILURES.md",
     PROJECT_ROOT / "native" / "tests" / "DIFFERENTIAL_FAILURES.md",
-    PROJECT_ROOT / "native" / "tests" / "GOLDEN_FAILURES.md",
+    # 注意：根目录 GOLDEN_FAILURES.md 已迁移至 cases_golden/ 下
     PROJECT_ROOT / "native" / "tests" / "KR_FAILURES.md",
     PROJECT_ROOT / "native" / "tests" / "E2E_FAILURES.md",
     PROJECT_ROOT / "native" / "tests" / "LEETCODE_FAILURES.md",
     PROJECT_ROOT / "native" / "tests" / "CPP_FAILURES.md",
     PROJECT_ROOT / "native" / "tests" / "DOGFOODING_FAILURES.md",
+    PROJECT_ROOT / "native" / "tests" / "cases_golden" / "GOLDEN_FAILURES.md",
 ]
 
 TOP_N = 20

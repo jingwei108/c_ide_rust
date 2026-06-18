@@ -42,6 +42,11 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
   String? _error;
   late AnimationController _entranceController;
 
+  // 缓存节点文本布局，避免每帧重建 TextPainter。
+  final List<TextPainter> _dataPainters = [];
+  final List<TextPainter> _addrPainters = [];
+  TextPainter? _nullPainter;
+
   @override
   void initState() {
     super.initState();
@@ -64,7 +69,21 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
   @override
   void dispose() {
     _entranceController.dispose();
+    _disposeTextPainters();
     super.dispose();
+  }
+
+  void _disposeTextPainters() {
+    for (final p in _dataPainters) {
+      p.dispose();
+    }
+    _dataPainters.clear();
+    for (final p in _addrPainters) {
+      p.dispose();
+    }
+    _addrPainters.clear();
+    _nullPainter?.dispose();
+    _nullPainter = null;
   }
 
   Future<void> _loadNodes() async {
@@ -131,6 +150,8 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
       }
 
       if (mounted) {
+        _disposeTextPainters();
+        _buildTextPainters(nodes);
         setState(() {
           _nodes = nodes;
           _loading = false;
@@ -145,6 +166,50 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
         });
       }
     }
+  }
+
+  void _buildTextPainters(List<_NodeData> nodes) {
+    final dataStyle = TextStyle(
+      color: widget.isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42),
+      fontSize: 12,
+      fontFamily: 'monospace',
+    );
+    final addrStyle = TextStyle(
+      color: (widget.isDark ? Colors.grey[600] : Colors.grey[400]),
+      fontSize: 8,
+      fontFamily: 'monospace',
+    );
+    final nullStyle = TextStyle(
+      color: (widget.isDark ? Colors.grey[600] : Colors.grey[400]),
+      fontSize: 10,
+      fontFamily: 'monospace',
+    );
+
+    for (final node in nodes) {
+      final dataPainter = TextPainter(
+        text: TextSpan(text: '${node.data}', style: dataStyle),
+        textDirection: TextDirection.ltr,
+        textAlign: TextAlign.center,
+      );
+      dataPainter.layout(minWidth: 60.0, maxWidth: 60.0);
+      _dataPainters.add(dataPainter);
+
+      final addrPainter = TextPainter(
+        text: TextSpan(
+          text: '0x${node.address.toRadixString(16).toUpperCase()}',
+          style: addrStyle,
+        ),
+        textDirection: TextDirection.ltr,
+      );
+      addrPainter.layout();
+      _addrPainters.add(addrPainter);
+    }
+
+    _nullPainter = TextPainter(
+      text: TextSpan(text: 'NULL', style: nullStyle),
+      textDirection: TextDirection.ltr,
+    );
+    _nullPainter!.layout();
   }
 
   @override
@@ -173,6 +238,9 @@ class _LinkedListVisualizerState extends State<LinkedListVisualizer>
                 nodes: _nodes,
                 isDark: widget.isDark,
                 progress: _entranceController.value,
+                dataPainters: _dataPainters,
+                addrPainters: _addrPainters,
+                nullPainter: _nullPainter,
               ),
             ),
           );
@@ -186,6 +254,9 @@ class _LinkedListPainter extends CustomPainter {
   final List<_NodeData> nodes;
   final bool isDark;
   final double progress;
+  final List<TextPainter> dataPainters;
+  final List<TextPainter> addrPainters;
+  final TextPainter? nullPainter;
 
   // 复用 Paint 对象，避免每节点每帧重建。
   final Paint _nodePaint = Paint()..style = PaintingStyle.fill;
@@ -199,7 +270,10 @@ class _LinkedListPainter extends CustomPainter {
   _LinkedListPainter({
     required this.nodes,
     required this.isDark,
-    this.progress = 1.0,
+    required this.progress,
+    required this.dataPainters,
+    required this.addrPainters,
+    required this.nullPainter,
   });
 
   @override
@@ -207,12 +281,6 @@ class _LinkedListPainter extends CustomPainter {
     final baseNodeColor = isDark ? const Color(0xFF3E4451) : const Color(0xFFE5E5E5);
     final baseBorderColor = isDark ? const Color(0xFF5C6370) : const Color(0xFFB0B0B0);
     final baseArrowColor = isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42);
-
-    final textStyle = TextStyle(
-      color: isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42),
-      fontSize: 12,
-      fontFamily: 'monospace',
-    );
 
     const nodeWidth = 60.0;
     const nodeHeight = 40.0;
@@ -252,40 +320,31 @@ class _LinkedListPainter extends CustomPainter {
         canvas.drawRRect(rect, _borderPaint);
       }
 
-      // TODO(#D09): 每个节点每帧新建两个 TextPainter，应缓存文本布局。
-      // 数据文本（带透明度）
-      final textSpan = TextSpan(
-        text: '${node.data}',
-        style: textStyle.copyWith(
-          color: textStyle.color?.withValues(alpha: alpha),
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-        textAlign: TextAlign.center,
-      );
-      textPainter.layout(minWidth: nodeWidth, maxWidth: nodeWidth);
-      textPainter.paint(
-        canvas,
-        Offset(x, slideY + (nodeHeight - textPainter.height) / 2),
-      );
+      // 数据文本：使用缓存的 TextPainter，通过 saveLayer 应用动态透明度。
+      if (i < dataPainters.length) {
+        final dataPainter = dataPainters[i];
+        final offset = Offset(x, slideY + (nodeHeight - dataPainter.height) / 2);
+        _paintWithAlpha(
+          canvas,
+          dataPainter,
+          offset,
+          alpha,
+          Rect.fromLTWH(x, slideY, nodeWidth, nodeHeight),
+        );
+      }
 
       // 地址标签
-      final addrSpan = TextSpan(
-        text: '0x${node.address.toRadixString(16).toUpperCase()}',
-        style: TextStyle(
-          color: (isDark ? Colors.grey[600] : Colors.grey[400])?.withValues(alpha: alpha),
-          fontSize: 8,
-          fontFamily: 'monospace',
-        ),
-      );
-      final addrPainter = TextPainter(text: addrSpan, textDirection: TextDirection.ltr);
-      addrPainter.layout();
-      addrPainter.paint(
-        canvas,
-        Offset(x + (nodeWidth - addrPainter.width) / 2, slideY - 14),
-      );
+      if (i < addrPainters.length) {
+        final addrPainter = addrPainters[i];
+        final offset = Offset(x + (nodeWidth - addrPainter.width) / 2, slideY - 14);
+        _paintWithAlpha(
+          canvas,
+          addrPainter,
+          offset,
+          alpha,
+          Rect.fromLTWH(x, slideY - 16, nodeWidth, 16),
+        );
+      }
 
       // 绘制箭头到下一个节点（带渐进动画）
       if (node.nextAddress != null && i < nodes.length - 1) {
@@ -318,22 +377,38 @@ class _LinkedListPainter extends CustomPainter {
         }
       } else if (node.nextAddress == null) {
         // NULL 终止符
-        final nullSpan = TextSpan(
-          text: 'NULL',
-          style: TextStyle(
-            color: (isDark ? Colors.grey[600] : Colors.grey[400])?.withValues(alpha: alpha),
-            fontSize: 10,
-            fontFamily: 'monospace',
-          ),
-        );
-        final nullPainter = TextPainter(text: nullSpan, textDirection: TextDirection.ltr);
-        nullPainter.layout();
-        nullPainter.paint(
-          canvas,
-          Offset(x + nodeWidth + 8, slideY + (nodeHeight - nullPainter.height) / 2),
-        );
+        final nullP = nullPainter;
+        if (nullP != null) {
+          final offset = Offset(
+            x + nodeWidth + 8,
+            slideY + (nodeHeight - nullP.height) / 2,
+          );
+          _paintWithAlpha(
+            canvas,
+            nullP,
+            offset,
+            alpha,
+            Rect.fromLTWH(x + nodeWidth + 6, slideY, 40, nodeHeight),
+          );
+        }
       }
     }
+  }
+
+  void _paintWithAlpha(
+    Canvas canvas,
+    TextPainter painter,
+    Offset offset,
+    double alpha,
+    Rect bounds,
+  ) {
+    if (alpha >= 0.999) {
+      painter.paint(canvas, offset);
+      return;
+    }
+    canvas.saveLayer(bounds, Paint()..color = Colors.white.withValues(alpha: alpha));
+    painter.paint(canvas, offset);
+    canvas.restore();
   }
 
   @override

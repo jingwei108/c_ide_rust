@@ -402,7 +402,7 @@ int main() {
 
 | 特性 | 排除理由 | 遇到时的错误提示 |
 |:---|:---|:---|
-| `double` | ✅ **已支持**：完整 64 位精度浮点运算、数组、函数参数/返回值、printf `%lf` / scanf `%lf` | — |
+| `double` | ⚠️ **部分支持**：`double` 字面量、变量、数组、函数参数、算术运算、printf `%lf` / scanf `%lf` 正常；**函数返回 `double` 值存在 ABI 异常**（调用方可能得到 `0.0`，见 `AGENTS.md` 已知差异与 `LEETCODE_FAILURES.md` 中 `lc_4` 记录），建议通过整数缩放或指针参数输出浮点结果 | 运行时输出 `0.0` |
 | `char` / `char*` / 字符串 | ✅ **已支持**：char 按 i32 存储，字符串通过 Data Segment 注入；支持 `strlen`/`strcpy`/`strcmp`/`strcat` | — |
 | `break` / `continue` | ✅ **已支持**：循环控制的核心语法 | — |
 | `goto` | ✅ **已支持**：无条件跳转到函数内标签 | — |

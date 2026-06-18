@@ -219,7 +219,9 @@ void main() {
                 elements: ['3', '2'],
               ),
             ],
+            removedArrayNameIndices: Int32List(0),
             pointerSnapshots: const [],
+            removedPointerNameIndices: Int32List(0),
           ),
         ],
         finished: true,
@@ -496,7 +498,9 @@ stream.StepStreamBatch _batchWithSteps({
         heatmapCount: BigInt.from(0),
         accessedVars: const [],
         arraySnapshots: const [],
+        removedArrayNameIndices: Int32List(0),
         pointerSnapshots: const [],
+        removedPointerNameIndices: Int32List(0),
       ),
     );
   }

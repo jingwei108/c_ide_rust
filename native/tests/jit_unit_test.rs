@@ -2,7 +2,7 @@
 
 use std::ffi::{c_char, CString};
 
-fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
+fn compile_and_run(source: &str) -> Result<(i32, Vec<String>, (i32, i32)), String> {
     unsafe {
         let session = cide_native::capi::cide_session_create();
         if session.is_null() {
@@ -44,6 +44,10 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
             Some(std::ffi::CStr::from_ptr(err_ptr).to_string_lossy().to_string())
         };
 
+        let mut traces_compiled = 0;
+        let mut steps_accelerated = 0;
+        cide_native::capi::cide_get_jit_stats(session, &mut traces_compiled, &mut steps_accelerated);
+
         cide_native::capi::cide_session_destroy(session);
 
         if let Some(e) = runtime_err {
@@ -52,7 +56,7 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
             }
         }
 
-        Ok((run_ret, outputs))
+        Ok((run_ret, outputs, (traces_compiled, steps_accelerated)))
     }
 }
 
@@ -69,11 +73,11 @@ int main() {
     return 0;
 }
 "#;
-    let (ret, outputs) = compile_and_run(source).expect("Should compile and run");
+    let (ret, outputs, jit_stats) = compile_and_run(source).expect("Should compile and run");
     assert_eq!(ret, 0);
     let output = outputs.join("\n");
     assert!(output.contains("200"), "Output should contain 200, got: {}", output);
-    assert!(output.contains("[JIT]"), "JIT should have triggered, got: {}", output);
+    assert!(jit_stats.0 > 0, "JIT should have triggered, stats: {:?}", jit_stats);
 }
 
 #[test]
@@ -85,15 +89,11 @@ int main() {
     return 0;
 }
 "#;
-    let (ret, outputs) = compile_and_run(source).expect("Should compile and run");
+    let (ret, outputs, jit_stats) = compile_and_run(source).expect("Should compile and run");
     assert_eq!(ret, 0);
     let output = outputs.join("\n");
     assert!(output.contains("hello"), "Output should contain hello, got: {}", output);
-    assert!(
-        !output.contains("[JIT]"),
-        "JIT should not trigger without loop, got: {}",
-        output
-    );
+    assert!(jit_stats.0 == 0, "JIT should not trigger without loop, stats: {:?}", jit_stats);
 }
 
 #[test]
@@ -110,15 +110,15 @@ int main() {
     return 0;
 }
 "#;
-    let (ret, outputs) = compile_and_run(source).expect("Should compile and run");
+    let (ret, outputs, jit_stats) = compile_and_run(source).expect("Should compile and run");
     assert_eq!(ret, 0);
     let output = outputs.join("\n");
     assert!(output.contains("55"), "Output should contain 55, got: {}", output);
     // 循环只有 10 次，小于阈值 100，不应触发 JIT
     assert!(
-        !output.contains("[JIT]"),
-        "JIT should not trigger for short loop, got: {}",
-        output
+        jit_stats.0 == 0,
+        "JIT should not trigger for short loop, stats: {:?}",
+        jit_stats
     );
 }
 
@@ -139,10 +139,10 @@ int main() {
     return 0;
 }
 "#;
-    let (ret, outputs) = compile_and_run(source).expect("Should compile and run");
+    let (ret, outputs, jit_stats) = compile_and_run(source).expect("Should compile and run");
     assert_eq!(ret, 0);
     let output = outputs.join("\n");
     assert!(output.contains("400"), "Output should contain 400, got: {}", output);
     // 内层循环 backward jump 目标被命中 400 次（>阈值 100），JIT 应触发并正确加速
-    assert!(output.contains("[JIT]"), "JIT should trigger for nested loops, got: {}", output);
+    assert!(jit_stats.0 > 0, "JIT should trigger for nested loops, stats: {:?}", jit_stats);
 }

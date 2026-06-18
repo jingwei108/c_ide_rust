@@ -48,7 +48,7 @@ jobs:
         shell: bash
 
       - name: Run Rust tests
-        run: cargo test
+        run: cargo test --all-features
         working-directory: native
 
       # cargo test 已覆盖全部单元/集成测试（含 Phase A/B/C/E/Dogfooding），
@@ -131,14 +131,8 @@ jobs:
       # 会回退到 Visual Studio 16 2019 但实例不存在。此 patch 让 Flutter 工具优先
       # 读取 CMAKE_GENERATOR 环境变量，使历史修复真正生效。
       - name: Patch Flutter tools to honor CMAKE_GENERATOR
-        run: |
-          $flutterRoot = (Get-Command flutter).Source | Split-Path -Parent | Split-Path -Parent
-          $buildWindows = Join-Path $flutterRoot "packages\flutter_tools\lib\src\windows\build_windows.dart"
-          (Get-Content $buildWindows) `
-            -replace 'final String\? cmakeGenerator = visualStudio\.cmakeGenerator;', 'final String? cmakeGenerator = globals.platform.environment[''CMAKE_GENERATOR''] ?? visualStudio.cmakeGenerator;' |
-            Set-Content $buildWindows
-          Remove-Item "$flutterRoot\bin\cache\flutter_tools.*" -Force -ErrorAction SilentlyContinue
-        shell: pwsh
+        run: python scripts/patch_flutter_windows_generator.py
+        shell: bash
 
       - name: Get Flutter dependencies
         run: flutter pub get
@@ -238,6 +232,10 @@ jobs:
       - name: Build Rust Android .so (arm64 + armv7)
         run: cargo ndk -t aarch64-linux-android -t armv7-linux-androideabi --platform 21 build
         working-directory: native
+
+      - name: Run Flutter Dart tests
+        run: flutter test
+        working-directory: CideFlutter
 
       - name: Build Android APK
         run: flutter build apk --debug

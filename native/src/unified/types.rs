@@ -1,5 +1,5 @@
-// TODO(#D10): StepPayload 仍携带完整 local_vars/call_stack/array_snapshots，
-// 大程序场景下可进一步按引用/差分瘦身。
+// NOTE: StepPayload 在内存中的完整表示用于前端解码后的状态；
+// 跨 FFI 传输时已通过 `unified::stream` 进行变量/调用栈/数组/指针/访问变量/可视化事件差分编码。
 use crate::unified::root_cause::RootCauseHint;
 use flutter_rust_bridge::frb;
 

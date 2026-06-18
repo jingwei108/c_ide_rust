@@ -303,3 +303,27 @@ pub unsafe extern "C" fn cide_get_output(s: *mut Session, buf: *mut c_char, max_
     slice.copy_from_slice(&all.as_bytes()[..copy_len]);
     *buf.add(copy_len) = 0;
 }
+
+#[no_mangle]
+/// 获取最近一次运行后的 JIT 统计信息。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `traces_compiled` 与 `steps_accelerated` 若非空，必须指向有效的 `c_int` 内存。
+pub unsafe extern "C" fn cide_get_jit_stats(
+    s: *mut Session,
+    traces_compiled: *mut c_int,
+    steps_accelerated: *mut c_int,
+) {
+    if s.is_null() {
+        return;
+    }
+    let session = &*s;
+    let stats = session.vm.as_ref().map(|vm| vm.jit_stats()).cloned().unwrap_or_default();
+    if !traces_compiled.is_null() {
+        *traces_compiled = stats.traces_compiled as c_int;
+    }
+    if !steps_accelerated.is_null() {
+        *steps_accelerated = stats.steps_accelerated as c_int;
+    }
+}

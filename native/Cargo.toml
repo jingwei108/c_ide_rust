@@ -1,3 +1,7 @@
+[workspace]
+members = ["crates/cide_ast", "crates/cide_shared", "."]
+resolver = "2"
+
 [package]
 name = "cide_native"
 version = "0.1.0"
@@ -22,10 +26,12 @@ too_many_lines = "warn"
 type_complexity = "allow"
 
 [dependencies]
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+cide_ast = { path = "crates/cide_ast" }
+cide_shared = { path = "crates/cide_shared" }
+serde = { version = "~1.0.228", features = ["derive"] }
+serde_json = "~1.0.149"
 flutter_rust_bridge = "=2.12.0"
-libm = "0.2"
+libm = "~0.2.16"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1"

@@ -416,3 +416,140 @@ int main() {
 | **VM 边界检查** | 3.1、3.3、5.3、8.2 |
 | **自动修复建议** | 1.1、2.1、4.1、5.1、6.1、7.1 |
 | **安全加固验证** | 4.4（step_count）、6.2（死循环）、6.3（除零） |
+
+---
+
+## 9. C++ 常见错误（Stage 0~6）
+
+> 以下用例针对 Cide 已支持的 C++ 子集编写，用于验证 C++ 诊断知识卡片（E4100~E4104）。
+> 若某段代码当前子集无法编译，预期诊断中会有说明。
+
+### 9.1 内存泄漏：new 后未 delete
+
+```cpp
+#include <stdio.h>
+class Box {
+public:
+    int* data;
+    Box() { data = new int(42); }
+    // 缺少析构函数：data 指向的内存不会被释放
+};
+int main() {
+    Box* b = new Box();
+    printf("%d\n", *b->data);
+    delete b;           // 只释放了 Box 本身，data 指向的 int 泄漏
+    return 0;
+}
+```
+
+**预期诊断**：运行时可能报告内存泄漏（E4100）。  
+**正确写法**：在 `~Box()` 中添加 `delete data;`，或使用 `unique_ptr<int>`。
+
+### 9.2 悬垂引用：返回局部变量引用
+
+```cpp
+#include <stdio.h>
+int& bad_ref() {
+    int x = 42;
+    return x;           // 返回局部变量的引用
+}
+int main() {
+    int& r = bad_ref();
+    printf("%d\n", r);  // 使用悬垂引用
+    return 0;
+}
+```
+
+**预期诊断**：TypeChecker 可能报错（E4101），或运行时产生不可预测的值。  
+**正确写法**：返回值对象 `int bad_ref()`，或确保返回的变量生命周期足够长。
+
+### 9.3 对象切片：派生类赋值给基类值对象
+
+```cpp
+#include <stdio.h>
+class Animal {
+public:
+    int age;
+    Animal(int a) : age(a) {}
+};
+class Dog : public Animal {
+public:
+    int breed;
+    Dog(int a, int b) : Animal(a), breed(b) {}
+};
+void print(Animal a) {   // 按值传递：Dog 的 breed 被切掉
+    printf("age=%d\n", a.age);
+}
+int main() {
+    Dog d(3, 7);
+    print(d);
+    return 0;
+}
+```
+
+**预期诊断**：可通过教学提示指出对象切片风险（E4102）。  
+**正确写法**：参数改为 `const Animal& a` 或 `Animal* a`。
+
+### 9.4 unique_ptr 所有权混乱
+
+```cpp
+#include <stdio.h>
+template <typename T>
+class unique_ptr {
+    T* ptr;
+public:
+    unique_ptr(T* p = 0) : ptr(p) {}
+    ~unique_ptr() { delete ptr; }
+    unique_ptr(unique_ptr&& other) : ptr(other.ptr) { other.ptr = 0; }
+    T* get() const { return ptr; }
+};
+int main() {
+    unique_ptr<int> a(new int(10));
+    unique_ptr<int> b = a;   // 错误：unique_ptr 不可拷贝，当前简化版可能允许但会导致双重释放
+    printf("%d %d\n", *a.get(), *b.get());
+    return 0;
+}
+```
+
+**预期诊断**：教学提示 unique_ptr 不可拷贝（E4103）；当前简化版若允许拷贝可能在运行时触发双重释放检测。  
+**正确写法**：使用 `unique_ptr<int> b = std::move(a);`，且 move 后不再使用 `a`。
+
+### 9.5 move 后继续使用源对象
+
+```cpp
+#include <stdio.h>
+template <typename T>
+class unique_ptr {
+    T* ptr;
+public:
+    unique_ptr(T* p = 0) : ptr(p) {}
+    ~unique_ptr() { delete ptr; }
+    unique_ptr(unique_ptr&& other) : ptr(other.ptr) { other.ptr = 0; }
+    T* get() const { return ptr; }
+};
+unique_ptr<int> make() {
+    return unique_ptr<int>(new int(20));
+}
+int main() {
+    unique_ptr<int> a(new int(10));
+    unique_ptr<int> b = a;   // 假设为 move 语义
+    printf("%d\n", *a.get()); // 错误：move 后继续使用源对象
+    return 0;
+}
+```
+
+**预期诊断**：教学提示 move 后源对象处于未指定状态（E4104）。  
+**正确写法**：move 后将源对象视为无效，不再读取其值。
+
+---
+
+## 测试建议
+
+| 测试维度 | 推荐用例 |
+|----------|----------|
+| **Parser 死循环防护** | 1.2、8.1（故意留语法错误） |
+| **TypeChecker 错误收集** | 2.1、4.1、8.1（多错误同时存在） |
+| **VM 边界检查** | 3.1、3.3、5.3、8.2 |
+| **自动修复建议** | 1.1、2.1、4.1、5.1、6.1、7.1 |
+| **安全加固验证** | 4.4（step_count）、6.2（死循环）、6.3（除零） |
+| **C++ 教学诊断** | 9.1~9.5（E4100~E4104 知识卡片） |

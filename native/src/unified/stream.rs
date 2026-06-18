@@ -4,10 +4,11 @@ use flutter_rust_bridge::frb;
 
 use crate::session::VisEvent;
 use crate::unified::root_cause::RootCauseHint;
-use crate::unified::types::{
-    AlgorithmStepSnapshot, ApiFrameInfo, ApiVariableSnapshot, ArraySnapshot, PointerSnapshot, PointerStatus,
-    StepPayload,
-};
+use crate::unified::types::{PointerStatus, StepPayload};
+
+mod decode;
+mod diff;
+mod encode;
 
 /// 符号表索引。
 pub type SymIdx = i32;
@@ -113,13 +114,22 @@ pub struct StepPayloadDelta {
     pub new_vars: Vec<ApiVarSnapshotRef>,
     /// 消失的变量名索引。
     pub removed_var_name_indices: Vec<SymIdx>,
-    pub call_stack: Vec<ApiFrameInfoRef>,
-    pub vis_events: Vec<VisEvent>,
+    /// `None` 表示调用栈无变化；`Some(vec)` 为完整新调用栈。
+    pub call_stack: Option<Vec<ApiFrameInfoRef>>,
+    /// `None` 表示当前步无可视化事件；`Some(vec)` 为当前步完整事件列表。
+    pub vis_events: Option<Vec<VisEvent>>,
     pub heatmap_line: i32,
     pub heatmap_count: u64,
-    pub accessed_vars: Vec<AccessedVarRef>,
-    pub array_snapshots: Vec<ArraySnapshotRef>,
-    pub pointer_snapshots: Vec<PointerSnapshotRef>,
+    /// `None` 表示访问变量集合无变化；`Some(vec)` 为完整新集合。
+    pub accessed_vars: Option<Vec<AccessedVarRef>>,
+    /// `None` 表示数组快照集合无变化；`Some(vec)` 为新增/替换的数组快照。
+    pub array_snapshots: Option<Vec<ArraySnapshotRef>>,
+    /// 已删除的数组变量名索引（相对于上一步）。
+    pub removed_array_name_indices: Vec<SymIdx>,
+    /// `None` 表示指针快照集合无变化；`Some(vec)` 为新增/替换的指针快照。
+    pub pointer_snapshots: Option<Vec<PointerSnapshotRef>>,
+    /// 已删除的指针变量名索引（相对于上一步）。
+    pub removed_pointer_name_indices: Vec<SymIdx>,
     pub root_cause_hint: Option<RootCauseHint>,
 }
 
@@ -144,8 +154,6 @@ pub struct StepStreamBatch {
     /// 当前 frame_cache 窗口起始步号，供前端同步窗口起点。
     pub cache_start_step: i32,
 }
-
-// ==================== 编码器 ====================
 
 struct SymbolTable {
     symbols: Vec<String>,
@@ -198,7 +206,7 @@ pub fn encode_payloads(payloads: &[StepPayload], cache_start_step: i32) -> StepS
     let mut sym = SymbolTable::new();
 
     // 编码第 0 个 payload 为 base
-    let base = encode_step_payload(&payloads[0], &mut sym);
+    let base = encode::encode_step_payload(&payloads[0], &mut sym);
     let mut deltas = Vec::new();
 
     let mut prev_vars: HashMap<SymIdx, String> = HashMap::new();
@@ -209,7 +217,7 @@ pub fn encode_payloads(payloads: &[StepPayload], cache_start_step: i32) -> StepS
     // 对后续 payload 做差分编码
     let mut current_full_ref = base.clone();
     for i in 1..payloads.len() {
-        let delta = encode_step_delta(&payloads[i - 1], &payloads[i], &mut sym, &prev_vars);
+        let delta = encode::encode_step_delta(&payloads[i - 1], &payloads[i], &mut sym, &prev_vars);
 
         // 增量更新 prev_vars：应用当前 delta 到 current_full_ref
         for d in &delta.var_deltas {
@@ -246,374 +254,15 @@ pub fn encode_payloads(payloads: &[StepPayload], cache_start_step: i32) -> StepS
     }
 }
 
-fn encode_step_payload(payload: &StepPayload, sym: &mut SymbolTable) -> StepPayloadRef {
-    StepPayloadRef {
-        step_index: payload.step_index,
-        code_line: payload.code_line,
-        func_name_idx: sym.insert(payload.func_name.clone()),
-        semantic_label_idx: sym.insert(payload.semantic_label.clone()),
-        algorithm_step: payload.algorithm_step.as_ref().map(|a| AlgorithmStepSnapshotRef {
-            algorithm_name_idx: sym.insert(a.algorithm_name.clone()),
-            display_name_idx: sym.insert(a.display_name.clone()),
-            phase_idx: sym.insert(a.phase.clone()),
-            description_idx: sym.insert(a.description.clone()),
-        }),
-        local_vars: payload
-            .local_vars
-            .iter()
-            .map(|v| ApiVarSnapshotRef {
-                name_idx: sym.insert(v.name.clone()),
-                addr: v.addr,
-                is_local: v.is_local,
-                ty_name_idx: sym.insert(v.ty_name.clone()),
-                value: v.value.clone(),
-            })
-            .collect(),
-        call_stack: payload
-            .call_stack
-            .iter()
-            .map(|f| ApiFrameInfoRef {
-                func_name_idx: sym.insert(f.func_name.clone()),
-                return_line: f.return_line,
-            })
-            .collect(),
-        vis_events: payload.vis_events.clone(),
-        heatmap_line: payload.heatmap_line,
-        heatmap_count: payload.heatmap_count,
-        accessed_vars: payload
-            .accessed_vars
-            .iter()
-            .map(|a| AccessedVarRef {
-                name_idx: sym.insert(a.name.clone()),
-                access_type_idx: sym.insert(a.access_type.clone()),
-            })
-            .collect(),
-        array_snapshots: payload
-            .array_snapshots
-            .iter()
-            .map(|a| ArraySnapshotRef {
-                name_idx: sym.insert(a.name.clone()),
-                element_ty_idx: sym.insert(a.element_ty.clone()),
-                elements: a.elements.clone(),
-            })
-            .collect(),
-        pointer_snapshots: payload
-            .pointer_snapshots
-            .iter()
-            .map(|p| PointerSnapshotRef {
-                name_idx: sym.insert(p.name.clone()),
-                addr: p.addr,
-                ty_name_idx: sym.insert(p.ty_name.clone()),
-                target_addr: p.target_addr,
-                target_name_idx: sym.insert(p.target_name.clone()),
-                status: p.status,
-            })
-            .collect(),
-        root_cause_hint: payload.root_cause_hint.clone(),
-    }
-}
-
-fn encode_step_delta(
-    prev: &StepPayload,
-    curr: &StepPayload,
-    sym: &mut SymbolTable,
-    prev_vars: &HashMap<SymIdx, String>,
-) -> StepPayloadDelta {
-    let curr_vars: HashMap<String, &ApiVariableSnapshot> =
-        curr.local_vars.iter().map(|v| (v.name.clone(), v)).collect();
-    let _prev_var_names: std::collections::HashSet<String> = prev.local_vars.iter().map(|v| v.name.clone()).collect();
-
-    let mut var_deltas = Vec::new();
-    let mut new_vars = Vec::new();
-    let mut removed_var_name_indices = Vec::new();
-
-    for v in &curr.local_vars {
-        let name_idx = sym.insert(v.name.clone());
-        if let Some(prev_val) = prev_vars.get(&name_idx) {
-            if prev_val != &v.value {
-                var_deltas.push(VarDelta {
-                    name_idx,
-                    value: v.value.clone(),
-                });
-            }
-        } else {
-            new_vars.push(ApiVarSnapshotRef {
-                name_idx,
-                addr: v.addr,
-                is_local: v.is_local,
-                ty_name_idx: sym.insert(v.ty_name.clone()),
-                value: v.value.clone(),
-            });
-        }
-    }
-
-    for v in &prev.local_vars {
-        let name_idx = sym.insert(v.name.clone());
-        if !curr_vars.contains_key(&v.name) {
-            removed_var_name_indices.push(name_idx);
-        }
-    }
-
-    StepPayloadDelta {
-        step_index: curr.step_index,
-        code_line: curr.code_line,
-        func_name_idx: sym.insert(curr.func_name.clone()),
-        semantic_label_idx: sym.insert(curr.semantic_label.clone()),
-        algorithm_step: curr.algorithm_step.as_ref().map(|a| AlgorithmStepSnapshotRef {
-            algorithm_name_idx: sym.insert(a.algorithm_name.clone()),
-            display_name_idx: sym.insert(a.display_name.clone()),
-            phase_idx: sym.insert(a.phase.clone()),
-            description_idx: sym.insert(a.description.clone()),
-        }),
-        var_deltas,
-        new_vars,
-        removed_var_name_indices,
-        call_stack: curr
-            .call_stack
-            .iter()
-            .map(|f| ApiFrameInfoRef {
-                func_name_idx: sym.insert(f.func_name.clone()),
-                return_line: f.return_line,
-            })
-            .collect(),
-        vis_events: curr.vis_events.clone(),
-        heatmap_line: curr.heatmap_line,
-        heatmap_count: curr.heatmap_count,
-        accessed_vars: curr
-            .accessed_vars
-            .iter()
-            .map(|a| AccessedVarRef {
-                name_idx: sym.insert(a.name.clone()),
-                access_type_idx: sym.insert(a.access_type.clone()),
-            })
-            .collect(),
-        array_snapshots: curr
-            .array_snapshots
-            .iter()
-            .map(|a| ArraySnapshotRef {
-                name_idx: sym.insert(a.name.clone()),
-                element_ty_idx: sym.insert(a.element_ty.clone()),
-                elements: a.elements.clone(),
-            })
-            .collect(),
-        pointer_snapshots: curr
-            .pointer_snapshots
-            .iter()
-            .map(|p| PointerSnapshotRef {
-                name_idx: sym.insert(p.name.clone()),
-                addr: p.addr,
-                ty_name_idx: sym.insert(p.ty_name.clone()),
-                target_addr: p.target_addr,
-                target_name_idx: sym.insert(p.target_name.clone()),
-                status: p.status,
-            })
-            .collect(),
-        root_cause_hint: curr.root_cause_hint.clone(),
-    }
-}
-
-// ==================== 解码器 ====================
-
 /// 将 StepStreamBatch 解码为完整的 StepPayload 列表。
 pub fn decode_batch(batch: &StepStreamBatch) -> Vec<StepPayload> {
-    if batch.base_payloads.is_empty() {
-        return Vec::new();
-    }
-
-    let mut result = Vec::new();
-    let base = &batch.base_payloads[0];
-    result.push(decode_step_payload_ref(base, &batch.symbol_table));
-
-    let mut current_vars: HashMap<SymIdx, ApiVariableSnapshot> = HashMap::new();
-    for v in &base.local_vars {
-        current_vars.insert(
-            v.name_idx,
-            ApiVariableSnapshot {
-                name: get_sym(&batch.symbol_table, v.name_idx),
-                addr: v.addr,
-                is_local: v.is_local,
-                ty_name: get_sym(&batch.symbol_table, v.ty_name_idx),
-                value: v.value.clone(),
-            },
-        );
-    }
-
-    // 维护变量出现顺序（base 顺序 + 后续新增追加到末尾）
-    let mut var_order: Vec<SymIdx> = base.local_vars.iter().map(|v| v.name_idx).collect();
-
-    for delta in &batch.deltas {
-        // 应用 var_deltas
-        for d in &delta.var_deltas {
-            if let Some(var) = current_vars.get_mut(&d.name_idx) {
-                var.value = d.value.clone();
-            }
-        }
-        // 添加新变量
-        for v in &delta.new_vars {
-            current_vars.insert(
-                v.name_idx,
-                ApiVariableSnapshot {
-                    name: get_sym(&batch.symbol_table, v.name_idx),
-                    addr: v.addr,
-                    is_local: v.is_local,
-                    ty_name: get_sym(&batch.symbol_table, v.ty_name_idx),
-                    value: v.value.clone(),
-                },
-            );
-        }
-        // 移除消失的变量
-        for &idx in &delta.removed_var_name_indices {
-            current_vars.remove(&idx);
-        }
-
-        // 更新 var_order：移除已消失的，追加新出现的
-        var_order.retain(|idx| !delta.removed_var_name_indices.contains(idx));
-        for v in &delta.new_vars {
-            if !var_order.contains(&v.name_idx) {
-                var_order.push(v.name_idx);
-            }
-        }
-
-        // 按 var_order 构建 local_vars
-        let local_vars: Vec<ApiVariableSnapshot> =
-            var_order.iter().filter_map(|idx| current_vars.get(idx).cloned()).collect();
-
-        result.push(StepPayload {
-            step_index: delta.step_index,
-            code_line: delta.code_line,
-            func_name: batch.symbol_table[delta.func_name_idx as usize].clone(),
-            semantic_label: batch.symbol_table[delta.semantic_label_idx as usize].clone(),
-            algorithm_step: delta.algorithm_step.as_ref().map(|a| AlgorithmStepSnapshot {
-                algorithm_name: batch.symbol_table[a.algorithm_name_idx as usize].clone(),
-                display_name: batch.symbol_table[a.display_name_idx as usize].clone(),
-                phase: batch.symbol_table[a.phase_idx as usize].clone(),
-                description: batch.symbol_table[a.description_idx as usize].clone(),
-            }),
-            local_vars,
-            call_stack: delta
-                .call_stack
-                .iter()
-                .map(|f| ApiFrameInfo {
-                    func_name: batch.symbol_table[f.func_name_idx as usize].clone(),
-                    return_line: f.return_line,
-                })
-                .collect(),
-            vis_events: delta.vis_events.clone(),
-            heatmap_line: delta.heatmap_line,
-            heatmap_count: delta.heatmap_count,
-            accessed_vars: delta
-                .accessed_vars
-                .iter()
-                .map(|a| crate::unified::types::AccessedVar {
-                    name: batch.symbol_table[a.name_idx as usize].clone(),
-                    access_type: batch.symbol_table[a.access_type_idx as usize].clone(),
-                })
-                .collect(),
-            array_snapshots: delta
-                .array_snapshots
-                .iter()
-                .map(|a| ArraySnapshot {
-                    name: batch.symbol_table[a.name_idx as usize].clone(),
-                    element_ty: batch.symbol_table[a.element_ty_idx as usize].clone(),
-                    elements: a.elements.clone(),
-                })
-                .collect(),
-            pointer_snapshots: delta
-                .pointer_snapshots
-                .iter()
-                .map(|p| PointerSnapshot {
-                    name: batch.symbol_table[p.name_idx as usize].clone(),
-                    addr: p.addr,
-                    ty_name: batch.symbol_table[p.ty_name_idx as usize].clone(),
-                    target_addr: p.target_addr,
-                    target_name: batch.symbol_table[p.target_name_idx as usize].clone(),
-                    status: p.status,
-                })
-                .collect(),
-            root_cause_hint: delta.root_cause_hint.clone(),
-        });
-    }
-
-    result
-}
-
-fn decode_step_payload_ref(base: &StepPayloadRef, sym: &[String]) -> StepPayload {
-    StepPayload {
-        step_index: base.step_index,
-        code_line: base.code_line,
-        func_name: get_sym(sym, base.func_name_idx),
-        semantic_label: get_sym(sym, base.semantic_label_idx),
-        algorithm_step: base.algorithm_step.as_ref().map(|a| AlgorithmStepSnapshot {
-            algorithm_name: get_sym(sym, a.algorithm_name_idx),
-            display_name: get_sym(sym, a.display_name_idx),
-            phase: get_sym(sym, a.phase_idx),
-            description: get_sym(sym, a.description_idx),
-        }),
-        local_vars: base
-            .local_vars
-            .iter()
-            .map(|v| ApiVariableSnapshot {
-                name: get_sym(sym, v.name_idx),
-                addr: v.addr,
-                is_local: v.is_local,
-                ty_name: get_sym(sym, v.ty_name_idx),
-                value: v.value.clone(),
-            })
-            .collect(),
-        call_stack: base
-            .call_stack
-            .iter()
-            .map(|f| ApiFrameInfo {
-                func_name: get_sym(sym, f.func_name_idx),
-                return_line: f.return_line,
-            })
-            .collect(),
-        vis_events: base.vis_events.clone(),
-        heatmap_line: base.heatmap_line,
-        heatmap_count: base.heatmap_count,
-        accessed_vars: base
-            .accessed_vars
-            .iter()
-            .map(|a| crate::unified::types::AccessedVar {
-                name: get_sym(sym, a.name_idx),
-                access_type: get_sym(sym, a.access_type_idx),
-            })
-            .collect(),
-        array_snapshots: base
-            .array_snapshots
-            .iter()
-            .map(|a| ArraySnapshot {
-                name: get_sym(sym, a.name_idx),
-                element_ty: get_sym(sym, a.element_ty_idx),
-                elements: a.elements.clone(),
-            })
-            .collect(),
-        pointer_snapshots: base
-            .pointer_snapshots
-            .iter()
-            .map(|p| PointerSnapshot {
-                name: get_sym(sym, p.name_idx),
-                addr: p.addr,
-                ty_name: get_sym(sym, p.ty_name_idx),
-                target_addr: p.target_addr,
-                target_name: get_sym(sym, p.target_name_idx),
-                status: p.status,
-            })
-            .collect(),
-        root_cause_hint: base.root_cause_hint.clone(),
-    }
-}
-
-#[inline]
-fn get_sym(sym: &[String], idx: SymIdx) -> String {
-    // TODO(#D08): 索引越界时返回空字符串可能掩盖协议不一致问题；
-    // 未来应返回 Result 或至少记录日志，便于调试 FRB 传输异常。
-    sym.get(idx as usize).cloned().unwrap_or_default()
+    decode::decode_batch(batch)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::unified::types::{ApiFrameInfo, ApiVariableSnapshot, ArraySnapshot, PointerSnapshot};
 
     fn make_payload(step: i32, vars: Vec<ApiVariableSnapshot>) -> StepPayload {
         StepPayload {
@@ -723,5 +372,117 @@ mod tests {
         // 只有 "main" 和 "i" 和 "int" 是重复的，应该被去重
         let sym_set: std::collections::HashSet<&String> = batch.symbol_table.iter().collect();
         assert_eq!(sym_set.len(), batch.symbol_table.len()); // 无重复
+    }
+
+    #[test]
+    fn test_call_stack_delta() {
+        let p0 = make_payload(0, vec![var("i", "int", "0")]);
+        let mut p1 = make_payload(1, vec![var("i", "int", "1")]);
+        let mut p2 = make_payload(2, vec![var("i", "int", "2")]);
+
+        // p0/p1 调用栈相同，p2 进入 foo
+        p1.call_stack = p0.call_stack.clone();
+        p2.call_stack = vec![
+            ApiFrameInfo {
+                func_name: "main".to_string(),
+                return_line: 3,
+            },
+            ApiFrameInfo {
+                func_name: "foo".to_string(),
+                return_line: 0,
+            },
+        ];
+
+        let batch = encode_payloads(&[p0, p1, p2], 0);
+        assert!(batch.deltas[0].call_stack.is_none()); // p1 调用栈未变
+        assert!(batch.deltas[1].call_stack.is_some()); // p2 调用栈变化
+        assert_eq!(batch.deltas[1].call_stack.as_ref().unwrap().len(), 2);
+
+        let decoded = decode_batch(&batch);
+        assert_eq!(decoded[2].call_stack.len(), 2);
+        assert_eq!(decoded[2].call_stack[1].func_name, "foo");
+    }
+
+    #[test]
+    fn test_array_and_pointer_delta() {
+        let mut p0 = make_payload(0, vec![var("i", "int", "0")]);
+        p0.array_snapshots = vec![ArraySnapshot {
+            name: "a".to_string(),
+            element_ty: "int".to_string(),
+            elements: vec!["1".to_string(), "2".to_string()],
+        }];
+        p0.pointer_snapshots = vec![PointerSnapshot {
+            name: "p".to_string(),
+            addr: 100,
+            ty_name: "int*".to_string(),
+            target_addr: 200,
+            target_name: "x".to_string(),
+            status: PointerStatus::Valid,
+        }];
+
+        let mut p1 = p0.clone();
+        // p1 数组变化（元素值改变）
+        p1.array_snapshots[0].elements = vec!["3".to_string(), "2".to_string()];
+        // p1 指针不变
+
+        let mut p2 = p1.clone();
+        // p2 删除数组 a，新增数组 b；指针 p 目标改变
+        p2.array_snapshots = vec![ArraySnapshot {
+            name: "b".to_string(),
+            element_ty: "int".to_string(),
+            elements: vec!["7".to_string()],
+        }];
+        p2.pointer_snapshots[0].target_addr = 300;
+
+        let batch = encode_payloads(&[p0, p1, p2], 0);
+
+        // p1：数组变化，指针未变
+        assert!(batch.deltas[0].array_snapshots.is_some());
+        assert!(batch.deltas[0].pointer_snapshots.is_none());
+
+        // p2：数组替换 + 删除 a，指针变化
+        assert!(batch.deltas[1].array_snapshots.is_some());
+        assert!(!batch.deltas[1].removed_array_name_indices.is_empty());
+        assert!(batch.deltas[1].pointer_snapshots.is_some());
+
+        let decoded = decode_batch(&batch);
+        assert_eq!(decoded[2].array_snapshots.len(), 1);
+        assert_eq!(decoded[2].array_snapshots[0].name, "b");
+        assert_eq!(decoded[2].pointer_snapshots[0].target_addr, 300);
+    }
+
+    #[test]
+    fn test_accessed_vars_and_vis_events_delta() {
+        let mut p0 = make_payload(0, vec![var("i", "int", "0")]);
+        p0.accessed_vars = vec![crate::unified::types::AccessedVar {
+            name: "i".to_string(),
+            access_type: "Read".to_string(),
+        }];
+        p0.vis_events = vec![crate::session::VisEvent {
+            ty: 1,
+            line: 10,
+            extra0: 0,
+            extra1: 0,
+            extra2: 0,
+            context: "swap".to_string(),
+        }];
+
+        let mut p1 = p0.clone();
+        p1.accessed_vars[0].access_type = "Write".to_string();
+        // vis_events 不变
+
+        let mut p2 = p1.clone();
+        p2.vis_events.clear();
+        p2.accessed_vars = p1.accessed_vars.clone();
+
+        let batch = encode_payloads(&[p0, p1, p2], 0);
+        assert!(batch.deltas[0].accessed_vars.is_some());
+        assert!(batch.deltas[0].vis_events.is_none()); // 未变
+        assert!(batch.deltas[1].vis_events.is_some()); // 变为空列表
+        assert_eq!(batch.deltas[1].vis_events.as_ref().unwrap().len(), 0);
+
+        let decoded = decode_batch(&batch);
+        assert_eq!(decoded[1].accessed_vars[0].access_type, "Write");
+        assert_eq!(decoded[2].vis_events.len(), 0);
     }
 }

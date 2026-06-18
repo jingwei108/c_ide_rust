@@ -120,7 +120,7 @@ Cide adopts **five layers of collaborative test defenses**. Core philosophy: *te
 
 The same C source is compiled and executed by both **Clang** and **Cide**, and stdout outputs are compared for exact match. Golden outputs must come from Clang, never from Cide itself.
 
-- **Coverage**: 298 Baseline cases + 82 template-generated cases + 69 K&R cases + 48 LeetCode easy problems (511 C Shadow Verification cases total, 504 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-16)
+- **Coverage**: 298 Baseline cases + 82 template-generated cases + 76 K&R cases + 92 LeetCode problems (562 C Shadow Verification cases total, 556 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-18)
 - **Drivers**: `python native/tests/shadow_verification/shadow_verify.py`, `python scripts/shadow_verify_cpp.py`
 - **Reports**: `native/tests/shadow_verification/reports/`
 
@@ -131,7 +131,7 @@ Collect real teaching/competition code as end-to-end regression cases to verify 
 - **Baseline**: `native/tests/cases/baseline/` (298 cases, all green)
 - **K&R**: *The C Programming Language* exercises (69 cases, 69 green, 0 known failures)
 - **Template Generated**: algorithm template batch generation (82 cases, 78 green, 4 known failures)
-- **LeetCode**: Phase 4 + Phase 5 fully implemented; current 48 easy problems all pass, see `native/tests/LEETCODE_FAILURES.md`
+- **LeetCode**: Phase 4 + Phase 5 fully implemented; current 92 problems all pass, see `native/tests/LEETCODE_FAILURES.md`
 - **Reports**: `native/tests/TEST_REPORT.md`, `KR_FAILURES.md`, `E2E_FAILURES.md`, `LEETCODE_FAILURES.md`
 
 ### Defense 3: Three-Tier Contract Verification
@@ -238,6 +238,7 @@ The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** ca
 The following inconsistencies between Cide and Clang were discovered during LeetCode defense filling:
 
 - **Compound side-effect array indexing** — forms like `a[++i] = b[j--]` (containing `++`/`--` side effects on two different objects) behave correctly under Clang/GCC, but may incorrectly trigger "accessing NULL pointer" traps in the Cide VM (see `native/tests/LEETCODE_FAILURES.md` for `lc_232` record). Workaround: split the increment/decrement into separate statements.
+- **Function returning `double` value is incorrect** — when a function's return type is `double`, the caller may receive `0.0` (discovered in the original `lc_4` implementation: `double findMedianSortedArrays(...)` returns the correct median under Clang, but prints all `0.00000` under Cide VM). Declaring `double x = 2.5;` and printing it works correctly, indicating the issue is in the function return path rather than the `double` type itself. Workaround: use integer-scaled return values, or output the floating-point result via a pointer from the caller.
 
 > Historical feature details and bug-fix records are in [`CHANGELOG.md`](CHANGELOG.md) and [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md).
 

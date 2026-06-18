@@ -188,9 +188,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cide_ast"
+version = "0.1.0"
+dependencies = [
+ "cide_shared",
+ "serde",
+]
+
+[[package]]
 name = "cide_native"
 version = "0.1.0"
 dependencies = [
+ "cide_ast",
+ "cide_shared",
  "console_error_panic_hook",
  "criterion",
  "flutter_rust_bridge",
@@ -200,6 +210,13 @@ dependencies = [
  "serde_json",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "cide_shared"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

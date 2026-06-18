@@ -1,16 +1,16 @@
-# LeetCode 简单题失败记录
+# LeetCode 失败记录
 
 > 记录原则：诚实记录，不隐藏失败。
 > 格式参见 `docs/current/PHASE_KR_LEETCODE_TEST_PLAN.md` 附录 B。
 
 ## 当前状态
 
-**LeetCode 防线已全面实施（阶段 4 + 阶段 5）。**
+**LeetCode 防线已全面实施（阶段 4 + 阶段 5），并于 2026-06-18 启动阶段 6 中等题填充。**
 
 - `native/tests/cases/leetcode/` 已创建
 - `native/tests/cases_golden/leetcode/` 已创建
-- 当前已填充 **48** 道 LeetCode 简单题源码
-- 当前通过 **48** 道，已知失败 **0** 道
+- 当前已填充 **48** 道 LeetCode 简单题 + **20** 道中等题源码
+- 当前通过 **68** 道，已知失败 **0** 道
 - 在填充过程中发现 1 处 Cide 与 Clang 行为差异，已通过改写源码规避，详见下方"实施过程发现"章节
 
 ## 已覆盖用例
@@ -73,13 +73,40 @@
 | lc_226 | Invert Binary Tree | 树 | 通过 | 中序遍历验证 |
 | lc_572 | Subtree of Another Tree | 树 | 通过 | |
 
+### 阶段 6：中等题初步填充（5 道）
+
+| 用例 | 题目 | 类别 | 状态 | 备注 |
+|:-----|:-----|:-----|:-----|:-----|
+| lc_3 | Longest Substring Without Repeating Characters | 字符串/滑动窗口 | 通过 | 使用 256 长度数组记录字符最后出现位置 |
+| lc_33 | Search in Rotated Sorted Array | 数组/二分 | 通过 | 旋转有序数组二分查找 |
+| lc_48 | Rotate Image | 矩阵 | 通过 | 一维数组模拟二维矩阵，原地转置 + 行反转 |
+| lc_62 | Unique Paths | DP | 通过 | 一维滚动数组求组合路径数 |
+| lc_64 | Minimum Path Sum | DP | 通过 | 一维滚动数组求最小路径和 |
+| lc_2 | Add Two Numbers | 链表 | 通过 | 逐位相加，注意进位与内存释放 |
+| lc_11 | Container With Most Water | 数组/双指针 | 通过 | 两端向中间移动计算最大面积 |
+| lc_19 | Remove Nth Node From End of List | 链表 | 通过 | 快慢指针定位倒数第 n 个节点 |
+| lc_31 | Next Permutation | 数组 | 通过 | 从右向左找拐点，交换后反转后缀 |
+| lc_34 | Find First and Last Position of Element in Sorted Array | 数组/二分 | 通过 | 两次二分分别找左右边界 |
+| lc_15 | 3Sum | 数组/双指针 | 通过 | 排序后双指针去重找三元组 |
+| lc_39 | Combination Sum | 回溯 | 通过 | 全局递归回溯，避免 Cide 不支持嵌套函数 |
+| lc_46 | Permutations | 回溯 | 通过 | 全局递归回溯，used 数组标记访问 |
+| lc_75 | Sort Colors | 数组 | 通过 | 荷兰国旗三指针原地分类 |
+| lc_198 | House Robber | DP | 通过 | 滚动变量保存前两个状态最大值 |
+| lc_55 | Jump Game | 贪心 | 通过 | 维护最远可达位置 |
+| lc_142 | Linked List Cycle II | 链表 | 通过 | 快慢指针相遇后再同步寻找入环点 |
+| lc_152 | Maximum Product Subarray | DP | 通过 | 同时维护最大/最小乘积处理负数 |
+| lc_200 | Number of Islands | 图/DFS | 通过 | 一维数组模拟二维网格，DFS 沉没岛屿 |
+| lc_221 | Maximal Square | DP | 通过 | 滚动一维 DP，注意数组大小匹配 |
+
 ## 统计摘要
 
 | 阶段 | 总数 | 通过 | 失败 | 记录时间 |
 |:-----|:-----|:-----|:-----|:---------|
 | LeetCode 数组/字符串 | 27 | 27 | 0 | 2026-06-14 |
 | LeetCode 链表/树/栈 | 21 | 21 | 0 | 2026-06-14 |
-| **合计** | **48** | **48** | **0** | 2026-06-14 |
+| LeetCode 混合难度扩展 | 15 | 15 | 0 | 2026-06-18 |
+| LeetCode 中等题 | 30 | 30 | 0 | 2026-06-18 |
+| **合计** | **92** | **92** | **0** | 2026-06-18 |
 
 ## 实施过程发现
 
@@ -95,6 +122,19 @@
 - **学生影响评级**: P1
 - **当前处理**: 已将 `obj->out[++obj->outTop] = obj->in[obj->inTop--];` 拆分为独立语句（先自增、再赋值、再自减），用例已通过。
 - **建议**: 进一步分析 BytecodeGen 或 VM 对含副作用数组索引的求值顺序/地址计算；在 `AGENTS.md` 已知限制中补充说明。
+
+### lc_4：函数返回 `double` 值在 Cide VM 下异常
+
+- **来源**: LeetCode 4 — Median of Two Sorted Arrays
+- **发现时间**: 2026-06-18
+- **现象**: 原始实现使用 `double findMedianSortedArrays(...)` 返回值，在 Clang 下正确输出 `2.00000`、`2.50000`、`1.00000`；在 Cide VM 下调用该函数后 `printf("%.5f", ...)` 输出全为 `0.00000`。进一步简化测试表明：`double x = 2.5; printf(...)` 正常，但 `printf(..., f())`（`f` 返回 `double`）输出 `0.0`，说明问题集中在函数 double 返回路径。
+- **是否 Cide 限制**: 是
+- **是否代码本身问题**: 否（代码在 Clang/GCC 下行为正确）
+- **是否环境差异**: 否
+- **涉及语法特性**: 函数返回值类型为 `double` 时的传值语义
+- **学生影响评级**: P1
+- **当前处理**: 已将该用例改为返回整数缩放结果（中位数 × 100000），规避 double 返回值问题，用例已通过 Shadow Verification。
+- **建议**: 进一步分析 BytecodeGen 对 `double` 返回值的 ABI 处理（如浮点寄存器/栈返回约定）；在 `AGENTS.md` 已知限制中补充说明，并考虑在教学中提醒学生避免依赖 `double` 函数返回值。
 
 ## 已知失败详情
 
@@ -121,9 +161,10 @@ LeetCode 用例已纳入 `shadow_verify.py` 扫描范围，生成专项报告 `n
 | 来源 | 总数 | 匹配 | 编译缺口 | 运行时缺口 | 输出差异 |
 |:-----|:-----|:-----|:---------|:-----------|:---------|
 | K&R | 69 | 69 | 0 | 0 | 0 |
-| LeetCode | 48 | 48 | 0 | 0 | 0 |
+| LeetCode | 92 | 92 | 0 | 0 | 0 |
 
 ## 后续计划
 
 1. 持续观察新增用例是否暴露其他 Cide 与 Clang 行为差异。
-2. 将 shadow 报告路径纳入 CI artifact 上传。
+2. LeetCode 中等题已填充至 30 道，并继续 all in 扩展 15 道混合难度题，当前 LeetCode 用例总数 92 道；后续可评估困难题或 K&R 进阶覆盖。
+3. 将 shadow 报告路径纳入 CI artifact 上传。

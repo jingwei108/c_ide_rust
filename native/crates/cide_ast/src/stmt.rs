@@ -2,7 +2,7 @@
 
 use super::expr::Expr;
 use super::types::Type;
-use crate::shared::source_loc::SourceLoc;
+use cide_shared::source_loc::SourceLoc;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum Stmt {

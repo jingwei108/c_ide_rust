@@ -1,6 +1,6 @@
 use super::opcode::OpCode;
 
-pub use crate::shared::source_loc::SourceLoc;
+pub use cide_shared::source_loc::SourceLoc;
 
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Instruction {

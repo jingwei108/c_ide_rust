@@ -93,19 +93,28 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
     }
     final payloads = totalUnits > 50 ? await compute(_decodeBatchIsolate, batch) : _decodeBatchIsolate(batch);
     if (payloads.isNotEmpty) {
-      final newCache = _syncFrameCache(
+      var newCache = _syncFrameCache(
         state.frameCache,
         state.frameCacheStartStep,
         batch.cacheStartStep,
         payloads,
       );
+      var newStartStep = batch.cacheStartStep;
+      // 安全兜底：防止极端情况下 frameCache 无限增长导致内存泄漏。
+      const maxCacheSize = 5000;
+      if (newCache.length > maxCacheSize) {
+        final trimCount = newCache.length - (maxCacheSize ~/ 2);
+        newCache = newCache.sublist(trimCount);
+        newStartStep += trimCount;
+        debugPrint('[UnifiedNotifier] frameCache trimmed to ${newCache.length}, startStep=$newStartStep');
+      }
       if (newCache.length > 2000) {
         debugPrint('[UnifiedNotifier] frameCache grew large: ${newCache.length}');
       }
       final lastPayload = payloads.last;
       state = state.copyWith(
         frameCache: newCache,
-        frameCacheStartStep: batch.cacheStartStep,
+        frameCacheStartStep: newStartStep,
         maxCollectedStep: lastPayload.stepIndex,
         currentStep: lastPayload.stepIndex,
         currentLine: lastPayload.codeLine,
@@ -230,6 +239,50 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
         batch.basePayloads.first.localVars.map((v) => v.nameIdx).toList();
     final varOrderSet = <int>{...varOrder};
 
+    // 维护其他快照的当前状态，用于应用差分
+    var currentCallStack =
+        batch.basePayloads.first.callStack
+            .map(
+              (f) => types.ApiFrameInfo(
+                funcName: sym[f.funcNameIdx],
+                returnLine: f.returnLine,
+              ),
+            )
+            .toList();
+    var currentVisEvents = batch.basePayloads.first.visEvents.toList();
+    var currentAccessedVars =
+        batch.basePayloads.first.accessedVars
+            .map(
+              (a) => types.AccessedVar(
+                name: sym[a.nameIdx],
+                accessType: sym[a.accessTypeIdx],
+              ),
+            )
+            .toList();
+    var currentArrays =
+        batch.basePayloads.first.arraySnapshots
+            .map(
+              (a) => types.ArraySnapshot(
+                name: sym[a.nameIdx],
+                elementTy: sym[a.elementTyIdx],
+                elements: a.elements,
+              ),
+            )
+            .toList();
+    var currentPointers =
+        batch.basePayloads.first.pointerSnapshots
+            .map(
+              (p) => types.PointerSnapshot(
+                name: sym[p.nameIdx],
+                addr: p.addr,
+                tyName: sym[p.tyNameIdx],
+                targetAddr: p.targetAddr,
+                targetName: sym[p.targetNameIdx],
+                status: p.status,
+              ),
+            )
+            .toList();
+
     for (final delta in batch.deltas) {
       // 应用变化的变量
       for (final d in delta.varDeltas) {
@@ -274,6 +327,82 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
         }
       }
 
+      // 应用 call_stack 差分
+      if (delta.callStack != null) {
+        currentCallStack = delta.callStack!
+            .map(
+              (f) => types.ApiFrameInfo(
+                funcName: sym[f.funcNameIdx],
+                returnLine: f.returnLine,
+              ),
+            )
+            .toList();
+      }
+
+      // 应用 vis_events 差分
+      if (delta.visEvents != null) {
+        currentVisEvents = delta.visEvents!.toList();
+      }
+
+      // 应用 accessed_vars 差分
+      if (delta.accessedVars != null) {
+        currentAccessedVars = delta.accessedVars!
+            .map(
+              (a) => types.AccessedVar(
+                name: sym[a.nameIdx],
+                accessType: sym[a.accessTypeIdx],
+              ),
+            )
+            .toList();
+      }
+
+      // 应用 array_snapshots 差分
+      if (delta.arraySnapshots != null) {
+        for (var i = 0; i < delta.removedArrayNameIndices.length; i++) {
+          final idx = delta.removedArrayNameIndices[i];
+          final name = _safeSym(sym, idx);
+          currentArrays.removeWhere((a) => a.name == name);
+        }
+        for (final a in delta.arraySnapshots!) {
+          final decoded = types.ArraySnapshot(
+            name: sym[a.nameIdx],
+            elementTy: sym[a.elementTyIdx],
+            elements: a.elements,
+          );
+          final pos = currentArrays.indexWhere((x) => x.name == decoded.name);
+          if (pos >= 0) {
+            currentArrays[pos] = decoded;
+          } else {
+            currentArrays.add(decoded);
+          }
+        }
+      }
+
+      // 应用 pointer_snapshots 差分
+      if (delta.pointerSnapshots != null) {
+        for (var i = 0; i < delta.removedPointerNameIndices.length; i++) {
+          final idx = delta.removedPointerNameIndices[i];
+          final name = _safeSym(sym, idx);
+          currentPointers.removeWhere((p) => p.name == name);
+        }
+        for (final p in delta.pointerSnapshots!) {
+          final decoded = types.PointerSnapshot(
+            name: sym[p.nameIdx],
+            addr: p.addr,
+            tyName: sym[p.tyNameIdx],
+            targetAddr: p.targetAddr,
+            targetName: sym[p.targetNameIdx],
+            status: p.status,
+          );
+          final pos = currentPointers.indexWhere((x) => x.name == decoded.name);
+          if (pos >= 0) {
+            currentPointers[pos] = decoded;
+          } else {
+            currentPointers.add(decoded);
+          }
+        }
+      }
+
       result.add(
         types.StepPayload(
           stepIndex: delta.stepIndex,
@@ -290,50 +419,13 @@ class UnifiedNotifier extends AutoDisposeNotifier<UnifiedState> {
                     description: sym[delta.algorithmStep!.descriptionIdx],
                   ),
           localVars: localVars,
-          callStack:
-              delta.callStack
-                  .map(
-                    (f) => types.ApiFrameInfo(
-                      funcName: sym[f.funcNameIdx],
-                      returnLine: f.returnLine,
-                    ),
-                  )
-                  .toList(),
-          visEvents: delta.visEvents,
+          callStack: currentCallStack.toList(),
+          visEvents: currentVisEvents.toList(),
           heatmapLine: delta.heatmapLine,
           heatmapCount: delta.heatmapCount,
-          accessedVars:
-              delta.accessedVars
-                  .map(
-                    (a) => types.AccessedVar(
-                      name: sym[a.nameIdx],
-                      accessType: sym[a.accessTypeIdx],
-                    ),
-                  )
-                  .toList(),
-          arraySnapshots:
-              delta.arraySnapshots
-                  .map(
-                    (a) => types.ArraySnapshot(
-                      name: sym[a.nameIdx],
-                      elementTy: sym[a.elementTyIdx],
-                      elements: a.elements,
-                    ),
-                  )
-                  .toList(),
-          pointerSnapshots:
-              delta.pointerSnapshots
-                  .map(
-                    (p) => types.PointerSnapshot(
-                      name: sym[p.nameIdx],
-                      addr: p.addr,
-                      tyName: sym[p.tyNameIdx],
-                      targetAddr: p.targetAddr,
-                      targetName: sym[p.targetNameIdx],
-                      status: p.status,
-                    ),
-                  )
-                  .toList(),
+          accessedVars: currentAccessedVars.toList(),
+          arraySnapshots: currentArrays.toList(),
+          pointerSnapshots: currentPointers.toList(),
           rootCauseHint: delta.rootCauseHint,
         ),
       );
