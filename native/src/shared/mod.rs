@@ -2,12 +2,10 @@
 //!
 //! 设计原则：
 //! - `source_loc` 不依赖任何上层模块，供 `compiler::ast` 和 `vm::instruction` re-export。
-//! - `func_meta` / `symbol` / `type_utils` 依赖 `compiler::ast::Type`，
-//!   但 `compiler::ast` 只 re-export `source_loc`，避免循环依赖。
+//! - `func_meta` / `symbol` / `type_utils` 等运行时共享类型已下沉到 `cide_runtime` crate，
+//!   本模块仅做 re-export 以保持既有路径兼容。
 
-pub mod func_meta;
-pub mod symbol;
-pub mod type_utils;
+pub use cide_runtime::{func_meta, symbol, type_utils};
 
 pub use cide_shared::source_loc::SourceLoc;
 pub use func_meta::FuncMeta;

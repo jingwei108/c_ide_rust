@@ -41,7 +41,7 @@ int main() {
     let mut session = make_session(source);
     let mut vm = setup_vm_for_session(&mut session);
 
-    let exit_code = vm.run(&mut session);
+    let exit_code = vm.run(&mut session.as_vm_context());
 
     // 1+2+...+999 = 499500，取低 8/16/32 位（返回 int）
     assert_eq!(exit_code, 499500);

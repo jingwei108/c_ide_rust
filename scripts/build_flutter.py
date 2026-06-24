@@ -197,11 +197,11 @@ def main() -> int:
         if args.test:
             header("Running Rust tests and lints")
             native_dir = root / "native"
-            print("Running cargo test --all-features...")
-            run(["cargo", "test", "--all-features"], cwd=native_dir)
+            print("Running cargo test --workspace --all-features...")
+            run(["cargo", "test", "--workspace", "--all-features"], cwd=native_dir)
             success("cargo test passed")
-            print("Running cargo clippy --all-targets -- -D warnings...")
-            run(["cargo", "clippy", "--all-targets", "--", "-D", "warnings"], cwd=native_dir)
+            print("Running cargo clippy --workspace --all-targets --all-features -- -D warnings...")
+            run(["cargo", "clippy", "--workspace", "--all-targets", "--all-features", "--", "-D", "warnings"], cwd=native_dir)
             success("cargo clippy passed")
 
         flutter_exe = find_flutter()

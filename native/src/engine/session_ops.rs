@@ -108,7 +108,7 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
         } else {
             vm.resume();
         }
-        vm.run(session)
+        vm.run(&mut session.as_vm_context())
     };
     #[cfg(not(target_arch = "wasm32"))]
     let run_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_vm));

@@ -1,5 +1,4 @@
-pub mod algorithm_steps;
-pub mod checkpoint;
+pub use cide_algorithm_steps as algorithm_steps;
 pub mod collector;
 pub mod engine;
 pub mod root_cause;

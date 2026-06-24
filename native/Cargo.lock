@@ -188,6 +188,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "cide_algorithm_steps"
+version = "0.1.0"
+
+[[package]]
 name = "cide_ast"
 version = "0.1.0"
 dependencies = [
@@ -196,11 +200,45 @@ dependencies = [
 ]
 
 [[package]]
-name = "cide_native"
+name = "cide_codegen"
 version = "0.1.0"
 dependencies = [
  "cide_ast",
+ "cide_cpp_frontend",
+ "cide_runtime",
  "cide_shared",
+]
+
+[[package]]
+name = "cide_cpp_frontend"
+version = "0.1.0"
+dependencies = [
+ "cide_ast",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "cide_lexer"
+version = "0.1.0"
+dependencies = [
+ "cide_shared",
+]
+
+[[package]]
+name = "cide_native"
+version = "0.1.0"
+dependencies = [
+ "cide_algorithm_steps",
+ "cide_ast",
+ "cide_codegen",
+ "cide_cpp_frontend",
+ "cide_lexer",
+ "cide_parser",
+ "cide_runtime",
+ "cide_shared",
+ "cide_typeck",
+ "cide_vm",
  "console_error_panic_hook",
  "criterion",
  "flutter_rust_bridge",
@@ -213,10 +251,51 @@ dependencies = [
 ]
 
 [[package]]
+name = "cide_parser"
+version = "0.1.0"
+dependencies = [
+ "cide_ast",
+ "cide_lexer",
+ "cide_shared",
+]
+
+[[package]]
+name = "cide_runtime"
+version = "0.1.0"
+dependencies = [
+ "cide_ast",
+ "cide_shared",
+ "serde",
+]
+
+[[package]]
 name = "cide_shared"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "cide_typeck"
+version = "0.1.0"
+dependencies = [
+ "cide_ast",
+ "cide_cpp_frontend",
+ "cide_lexer",
+ "cide_runtime",
+ "cide_shared",
+]
+
+[[package]]
+name = "cide_vm"
+version = "0.1.0"
+dependencies = [
+ "cide_ast",
+ "cide_runtime",
+ "cide_shared",
+ "libm",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

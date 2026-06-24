@@ -8,8 +8,8 @@ use cide_native::compiler::codegen::{BytecodeGen, CompileOutput};
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 use cide_native::compiler::typeck::TypeChecker;
-use cide_native::vm::instruction::Instruction;
-use cide_native::vm::opcode::OpCode;
+use cide_runtime::instruction::Instruction;
+use cide_runtime::opcode::OpCode;
 
 /// Compile C++ source code directly through the compiler pipeline and return the CompileOutput.
 /// This is a white-box helper for dogfooding tests.

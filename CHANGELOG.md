@@ -8,12 +8,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **CLI `unified` 命令支持 `--max-steps` 选项**：`cide_cli unified <file> [--max-steps <n>]` 可自定义统一模式最大执行步数（默认 100_000），便于教学场景中长程序的时间旅行调试与性能基线测试
+- **统一模式后端性能基线**：新增 `native/benches/unified_perf_baseline.c`（50 个逆序元素冒泡排序，约 10 万 VM 步）与 `scripts/unified_perf_baseline.py`，生成 `reports/unified_perf_baseline.md` 记录后端吞吐（当前约 18,500 步/秒，release 模式）
 - **统一模式 frameCache 滑动窗口**：为 `UnifiedEngine.frame_cache` 引入有界滑动窗口（默认 2000 帧，超出时丢弃最早的 20%），解决长程序执行时内存无界增长问题
   - Rust 后端：`UnifiedEngine` 新增 `frame_cache_window_size`、`frame_cache_trim_ratio`、`frame_cache_start_step`；`run_batch` 自动截断，`seek_to` 支持窗口外懒加载重放
   - Dart 前端：`UnifiedState` 新增 `frameCacheStartStep`，`UnifiedNotifier` 同步后端窗口；所有读取 `frameCache[currentStep]` 的 Widget 改为按相对索引访问
   - 传输层：`AutoStepResult` / `StepStreamBatch` 增加 `cache_start_step`，`api/cide.rs` 暴露 `get_frame_cache_start_step()`
   - `VarHistoryTab` 改为显示当前窗口内的变量历史，避免遍历全量帧
   - 新增 `native/tests/unified_engine_window_test.rs` 验证窗口化后的公共 API 行为
+
+### Changed (Workspace 模块化拆分)
+- **Rust 后端单 crate 拆分为多 crate workspace**：在 `native/Cargo.toml` 建立 `[workspace]`，将编译器/运行时各阶段下沉为独立 crate，降低编译缓存粒度与模块耦合
+  - 新增 `crates/cide_shared`（`SourceLoc`、`ErrorCode` 等共享基础类型）
+  - 新增 `crates/cide_ast`（AST 节点与类型系统）
+  - 新增 `crates/cide_runtime`（`RuntimeState`/`MemoryState`、符号表、内存布局常量、`unified` 基础数据）
+  - 新增 `crates/cide_vm`（CideVM、host 函数、VFS、JIT、快照）
+  - 新增 `crates/cide_lexer`（词法分析器）
+  - 新增 `crates/cide_parser`（语法分析器）
+  - 新增 `crates/cide_cpp_frontend`（C++ 内置容器布局与类型映射）
+  - 新增 `crates/cide_typeck`（类型检查器）
+  - 新增 `crates/cide_codegen`（字节码生成器）
+  - 新增 `crates/cide_algorithm_steps`（算法步骤语义标注）
+  - `cide_native` 通过 `pub use cide_xxx as xxx;` 保持既有 `crate::compiler::xxx` / `crate::vm::xxx` / `crate::unified::algorithm_steps` 路径兼容
+  - `CheckpointManager` 从 `native/src/unified/checkpoint.rs` 下沉到 `cide_vm::snapshot`，签名去除 `Session`/`StepMeta` 依赖
+  - 引入 `VmContext` 替代部分 `Session` 上帝对象，切断 `vm` 与 `session` 的循环依赖
+  - 受 FRB 孤儿规则与 `Session` 耦合限制，`native/src/unified/`（含 `StepPayload` 等 FRB 导出类型）、`native/src/engine/`、`native/src/api/`、`native/src/diagnostics/` 暂保留在 `cide_native` 内部，已诚实记录为后续拆分障碍
 
 ### Changed (架构重构)
 - **内置容器布局解耦（CPP_BUILTIN_LAYOUT_DECOUPLING_PLAN）**：将 `vector<int>`/`vector<float>`/`vector<char>`/`string`/`list<int>` 的布局与方法签名从 Rust 硬编码迁移到 `.cpp` 接口声明文件
@@ -25,6 +44,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `scripts/precompile_bytecode_libc.py` 扩展 glob 支持 `.cpp`（当前仅识别，不预编译为字节码）
   - 删除已废弃的 `native/runtime_libc/cide/layouts.toml`
   - 全部 600+ 测试通过，零回归
+
+### Fixed (标准库 I/O 行为修复)
+- **修复 `fputs(str, stdout)` 无输出**：`crates/cide_vm/src/host/file.rs` 的 `host_fputs` 现在识别 lexer 预定义的 `stdout`(1)/`stderr`(2) 宏 fd，将字符串直接追加到 `RuntimeState.output_lines`；普通 `FILE*` 文件流写入行为保持不变；新增 `end_to_end_extra_test::test_e2e_fputs_stdout` 回归用例
 
 ### Fixed (Shadow Verification 完整修复)
 - **C Shadow 匹配率从 498/511 提升至 505/511（98.8%）**：编译缺口与输出差异归零

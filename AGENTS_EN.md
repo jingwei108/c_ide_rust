@@ -25,8 +25,17 @@ Cide is a cross-platform C/C++ teaching IDE consisting of:
 ## Key Directories
 
 ```
-native/src/compiler/    Lexer, Parser, TypeChecker, BytecodeGen, AST, CFG, DataFlow, IntentInference (Rust)
-native/src/vm/          CideVM bytecode interpreter (Rust)
+native/crates/          Compiler/runtime sub-crates (crate modularization in progress)
+  cide_shared/          Shared basics: SourceLoc, ErrorCode
+  cide_ast/             AST nodes and type system
+  cide_lexer/           Lexer
+  cide_parser/          Parser
+  cide_cpp_frontend/    C++ frontend support
+  cide_typeck/          Type checker
+  cide_codegen/         Bytecode generator
+  cide_runtime/         VM runtime shared data (memory state, opcode/instruction, symbol table)
+  cide_vm/              CideVM bytecode interpreter
+native/src/compiler/    Remaining local modules: algorithm_detector, cfg, data_flow, intent (Rust)
 native/src/unified/     Unified mode / time-travel engine (Rust)
 native/src/engine/      Compiler pipeline and tools (Rust)
 native/src/capi/        C API (MAUI compatibility layer) (Rust)
@@ -120,7 +129,7 @@ Cide adopts **five layers of collaborative test defenses**. Core philosophy: *te
 
 The same C source is compiled and executed by both **Clang** and **Cide**, and stdout outputs are compared for exact match. Golden outputs must come from Clang, never from Cide itself.
 
-- **Coverage**: 298 Baseline cases + 82 template-generated cases + 76 K&R cases + 92 LeetCode problems (562 C Shadow Verification cases total, 556 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-18)
+- **Coverage**: 298 Baseline cases + 82 template-generated cases + 76 K&R cases + 92 LeetCode problems (562 C Shadow Verification cases total, 555 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-18)
 - **Drivers**: `python native/tests/shadow_verification/shadow_verify.py`, `python scripts/shadow_verify_cpp.py`
 - **Reports**: `native/tests/shadow_verification/reports/`
 
@@ -323,12 +332,13 @@ cd native && cargo build --release --bin cide_cli
 | `compile <file>` | Compile and display diagnostics (error codes + fix suggestions) |
 | `run <file>` | Compile and run at full speed |
 | `step <file>` | Interactive step debugging (supports `p` print variables, `o` print output, `r` run to end, `q` quit) |
-| `unified <file>` | Unified mode (time-travel engine) batch execution and summary output |
+| `unified <file>` | Unified mode (time-travel engine) batch execution and summary output (supports `--max-steps <n>`) |
 | `export <file1> [file2 ...] -o <out.json>` | Precompile to bytecode artifact (multiple files + `--builtin-libc` option) |
 
 ### Options and Special Filenames
 
 - `-i <file>`: read standard input from file (multi-line input for `scanf`/`fgets`)
+- `--max-steps <n>`: maximum execution steps allowed in unified mode (default 100_000), for long programs or performance baseline testing
 - `-`: read source code from standard input for quick code snippet testing
 
 ### Quick Test Examples
@@ -353,6 +363,9 @@ cide_cli run sum.c -i input.txt
 
 # Unified mode execution
 cide_cli unified hello.c
+
+# Unified mode with increased step limit (for long programs or performance baseline)
+cide_cli unified long_sort.c --max-steps 500000
 
 # Precompile bytecode artifact (with Bytecode Libc)
 cide_cli export main.c libc_helper.c -o bundle.json --builtin-libc

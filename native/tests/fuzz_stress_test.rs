@@ -26,7 +26,7 @@ use cide_native::vm::host_funcs::{
     host_putchar, host_rand, host_realloc, host_scanf_n, host_srand, host_strcat, host_strcmp, host_strcpy,
     host_strlen, host_strncpy,
 };
-use cide_native::vm::instruction::SourceLoc;
+use cide_runtime::instruction::SourceLoc;
 
 // ─── 确定性 RNG（SplitMix64）──────────────────────────────────────────────────
 
@@ -140,7 +140,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             0..=4 => {
                 let size = rng.range_i32(1, 256);
                 vm.push(size as u64);
-                host_malloc(&mut vm, &mut session);
+                host_malloc(&mut vm, &mut session.as_vm_context());
                 let addr = vm.pop() as u32;
                 if addr != 0 {
                     // 写入可辨识的填充模式，便于后续数据完整性检查
@@ -156,7 +156,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 if let Some(&idx) = rng.choice(&active_regions) {
                     let addr = session.memory.regions[idx].addr;
                     vm.push(addr as u64);
-                    host_free(&mut vm, &mut session);
+                    host_free(&mut vm, &mut session.as_vm_context());
                     if vm.has_error() {
                         issues.push(format!(
                             "op {}: free 合法指针意外触发 trap: addr=0x{:x} err={}",
@@ -177,7 +177,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     let new_size = rng.range_i32(0, 256);
                     vm.push(new_size as u64);
                     vm.push(addr as u64);
-                    host_realloc(&mut vm, &mut session);
+                    host_realloc(&mut vm, &mut session.as_vm_context());
                     let _new_addr = vm.pop() as u32;
                     if vm.has_error() {
                         issues.push(format!(
@@ -196,7 +196,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             8 => {
                 if let Some(&addr) = rng.choice(&freed_addrs) {
                     vm.push(addr as u64);
-                    host_free(&mut vm, &mut session);
+                    host_free(&mut vm, &mut session.as_vm_context());
                     if !vm.has_error() {
                         issues.push(format!("op {}: Double-Free 未检测: addr=0x{:x}", op_idx, addr));
                     } else if !vm.get_error().contains("E3061") {
@@ -240,7 +240,7 @@ fn fuzz_round_malloc_free(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             // ── free NULL（必须安全）────────────────────────────────────────
             11 => {
                 vm.push(0u64);
-                host_free(&mut vm, &mut session);
+                host_free(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!("op {}: free(NULL) 意外触发 trap: {}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
@@ -298,7 +298,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             0..=3 => {
                 let size = rng.range_i32(4, 64);
                 vm.push(size as u64);
-                host_malloc(&mut vm, &mut session);
+                host_malloc(&mut vm, &mut session.as_vm_context());
                 let addr = vm.pop() as u32;
                 if addr != 0 {
                     let loc = SourceLoc::default();
@@ -313,7 +313,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     write_test_string(&mut vm, src_addr, src_str);
                     vm.push(src_addr as u64);
                     vm.push(addr as u64);
-                    host_strcpy(&mut vm, &mut session);
+                    host_strcpy(&mut vm, &mut session.as_vm_context());
                     let src_len = src_str.len();
                     if src_len + 1 > size as usize {
                         if !vm.has_error() {
@@ -338,7 +338,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     write_test_string(&mut vm, src_addr, src_str);
                     vm.push(src_addr as u64);
                     vm.push(addr as u64);
-                    host_strcat(&mut vm, &mut session);
+                    host_strcat(&mut vm, &mut session.as_vm_context());
                     if vm.has_error() && !vm.get_error().contains("E3070") {
                         issues.push(format!("op {}: strcat 溢出触发但不含 E3070: {}", op_idx, vm.get_error()));
                         let (nv, ns) = fresh_session();
@@ -353,7 +353,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 write_test_string(&mut vm, src_addr, "test");
                 vm.push(src_addr as u64);
                 vm.push(0u64);
-                host_strcpy(&mut vm, &mut session);
+                host_strcpy(&mut vm, &mut session.as_vm_context());
                 if !vm.has_error() {
                     issues.push(format!("op {}: strcpy(NULL, src) 未触发 trap", op_idx));
                 }
@@ -367,7 +367,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 write_test_string(&mut vm, src_addr, "test");
                 vm.push(src_addr as u64);
                 vm.push(0u64);
-                host_strcat(&mut vm, &mut session);
+                host_strcat(&mut vm, &mut session.as_vm_context());
                 if !vm.has_error() {
                     issues.push(format!("op {}: strcat(NULL, src) 未触发 trap", op_idx));
                 }
@@ -385,7 +385,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(n as u64);
                     vm.push(src_addr as u64);
                     vm.push(addr as u64);
-                    host_strncpy(&mut vm, &mut session);
+                    host_strncpy(&mut vm, &mut session.as_vm_context());
                     if vm.has_error() {
                         issues.push(format!("op {}: strncpy 意外触发 trap: n={} err={}", op_idx, n, vm.get_error()));
                         let (nv, ns) = fresh_session();
@@ -404,7 +404,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(n as u64);
                     vm.push(src_addr as u64);
                     vm.push(addr as u64);
-                    host_memcpy(&mut vm, &mut session);
+                    host_memcpy(&mut vm, &mut session.as_vm_context());
                     if vm.has_error() {
                         issues.push(format!("op {}: memcpy 意外触发 trap: n={} err={}", op_idx, n, vm.get_error()));
                         let (nv, ns) = fresh_session();
@@ -424,7 +424,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 vm.push(n as u64);
                 vm.push((buf_addr + src_off as u32) as u64);
                 vm.push((buf_addr + dst_off as u32) as u64);
-                host_memmove(&mut vm, &mut session);
+                host_memmove(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!(
                         "op {}: memmove 意外触发 trap: src_off={} dst_off={} n={} err={}",
@@ -446,7 +446,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(n as u64);
                     vm.push(rng.range_i32(0, 256) as u64);
                     vm.push(addr as u64);
-                    host_memset(&mut vm, &mut session);
+                    host_memset(&mut vm, &mut session.as_vm_context());
                     if vm.has_error() {
                         issues.push(format!(
                             "op {}: memset 意外触发 trap: n={} size={} err={}",
@@ -470,7 +470,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 };
                 write_test_string(&mut vm, addr, ["abc", "", "x"][rng.range_usize(0, 3)]);
                 vm.push(addr as u64);
-                host_strlen(&mut vm, &mut session);
+                host_strlen(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!("op {}: strlen 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
@@ -488,7 +488,7 @@ fn fuzz_round_string_ops(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 write_test_string(&mut vm, b, s2);
                 vm.push(b as u64);
                 vm.push(a as u64);
-                host_strcmp(&mut vm, &mut session);
+                host_strcmp(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!("op {}: strcmp 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
@@ -568,7 +568,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push(rng.next());
                 }
                 vm.push(fmt_addr as u64);
-                host_printf_n(&mut vm, &mut session);
+                host_printf_n(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!(
                         "op {}: printf 意外触发 trap: fmt={:?} err={}",
@@ -598,7 +598,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     vm.push((dst_addr + rng.range_i32(0, 64) as u32) as u64);
                 }
                 vm.push(fmt_addr as u64);
-                host_scanf_n(&mut vm, &mut session);
+                host_scanf_n(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!(
                         "op {}: scanf 意外触发 trap: fmt={:?} err={}",
@@ -619,7 +619,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             }
             // ── getchar ─────────────────────────────────────────────────────
             6 => {
-                host_getchar(&mut vm, &mut session);
+                host_getchar(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!("op {}: getchar 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
@@ -636,7 +636,7 @@ fn fuzz_round_io(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             // ── putchar ─────────────────────────────────────────────────────
             7 => {
                 vm.push(rng.range_i32(32, 127) as u64);
-                host_putchar(&mut vm, &mut session);
+                host_putchar(&mut vm, &mut session.as_vm_context());
                 if vm.has_error() {
                     issues.push(format!("op {}: putchar 意外触发 trap: err={}", op_idx, vm.get_error()));
                     let (nv, ns) = fresh_session();
@@ -697,7 +697,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
         match op {
             0..=2 => {
                 vm.push(rng.range_i32(1, 128) as u64);
-                host_malloc(&mut vm, &mut session);
+                host_malloc(&mut vm, &mut session.as_vm_context());
                 let _ = vm.pop();
             }
             3 => {
@@ -710,7 +710,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                     .collect();
                 if let Some(&addr) = rng.choice(&active) {
                     vm.push(addr as u64);
-                    host_free(&mut vm, &mut session);
+                    host_free(&mut vm, &mut session.as_vm_context());
                 }
             }
             4 => {
@@ -718,28 +718,28 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 write_test_string(&mut vm, fmt_addr, "%d");
                 vm.push(rng.next());
                 vm.push(fmt_addr as u64);
-                host_printf_n(&mut vm, &mut session);
+                host_printf_n(&mut vm, &mut session.as_vm_context());
             }
             5 => {
                 vm.push(rng.range_i32(1, 65535) as u64);
-                host_srand(&mut vm, &mut session);
+                host_srand(&mut vm, &mut session.as_vm_context());
             }
             6 => {
-                host_rand(&mut vm, &mut session);
+                host_rand(&mut vm, &mut session.as_vm_context());
                 let _ = vm.pop();
             }
             7 => {
                 let addr = 0x2000u32;
                 write_test_string(&mut vm, addr, "test");
                 vm.push(addr as u64);
-                host_strlen(&mut vm, &mut session);
+                host_strlen(&mut vm, &mut session.as_vm_context());
                 let _ = vm.pop();
             }
             8 => {
                 let addr = 0x2000u32;
                 write_test_string(&mut vm, addr, "123");
                 vm.push(addr as u64);
-                host_atoi(&mut vm, &mut session);
+                host_atoi(&mut vm, &mut session.as_vm_context());
                 let _ = vm.pop();
             }
             9 => {
@@ -749,7 +749,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 write_test_string(&mut vm, b, "def");
                 vm.push(b as u64);
                 vm.push(a as u64);
-                host_strcmp(&mut vm, &mut session);
+                host_strcmp(&mut vm, &mut session.as_vm_context());
                 let _ = vm.pop();
             }
             10 => {
@@ -779,7 +779,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 let freed: Vec<u32> = vm.get_freed_logs().iter().map(|log| log.addr).collect();
                 if let Some(&addr) = rng.choice(&freed) {
                     vm.push(addr as u64);
-                    host_free(&mut vm, &mut session);
+                    host_free(&mut vm, &mut session.as_vm_context());
                     if !vm.has_error() {
                         issues.push(format!("op {}: 混合序列中 Double-Free 未检测: addr=0x{:x}", op_idx, addr));
                     }
@@ -790,7 +790,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
             }
             14 => {
                 vm.push(0u64);
-                host_putchar(&mut vm, &mut session);
+                host_putchar(&mut vm, &mut session.as_vm_context());
             }
             15 => {
                 let addr = 0x2000u32;
@@ -798,7 +798,7 @@ fn fuzz_round_mixed(rng: &mut FuzzRng, max_ops: usize) -> Vec<String> {
                 let dst = 0x3000u32;
                 vm.push(dst as u64);
                 vm.push(addr as u64);
-                host_scanf_n(&mut vm, &mut session);
+                host_scanf_n(&mut vm, &mut session.as_vm_context());
             }
             _ => {}
         }
@@ -841,7 +841,7 @@ fn fuzz_round_leak_detection(rng: &mut FuzzRng) -> Vec<String> {
     for _ in 0..total_allocs {
         let size = rng.range_i32(8, 64);
         vm.push(size as u64);
-        host_malloc(&mut vm, &mut session);
+        host_malloc(&mut vm, &mut session.as_vm_context());
         let addr = vm.pop() as u32;
         if addr != 0 {
             alloc_addrs.push(addr);
@@ -857,7 +857,7 @@ fn fuzz_round_leak_detection(rng: &mut FuzzRng) -> Vec<String> {
         let idx = rng.range_usize(0, alloc_addrs.len());
         let addr = alloc_addrs.swap_remove(idx);
         vm.push(addr as u64);
-        host_free(&mut vm, &mut session);
+        host_free(&mut vm, &mut session.as_vm_context());
         if vm.has_error() {
             issues.push(format!(
                 "leak fuzz: free 意外触发 trap: addr=0x{:x} err={}",

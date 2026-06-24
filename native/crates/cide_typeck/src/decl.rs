@@ -1,0 +1,753 @@
+use super::*;
+
+impl TypeChecker {
+    // =========================================================================
+    // Function / Statement visitors
+    // =========================================================================
+
+    /// 处理 C++ 类类型变量的构造函数初始化。
+    /// 若 `init` 是 `__ctor__*` 调用，则提前声明变量并在参数列表前插入 `this` 指针。
+    /// 返回是否按构造函数初始化处理。
+    fn try_process_ctor_init(
+        &mut self,
+        var_name: &str,
+        var_type: &Type,
+        init: &mut Option<Expr>,
+        loc: &SourceLoc,
+        is_static: bool,
+    ) -> bool {
+        let is_ctor_init = init
+            .as_ref()
+            .map(|e| matches!(e, Expr::Call { name: n, .. } if n.starts_with("__ctor__") && var_type.is_class()))
+            .unwrap_or(false);
+
+        if !is_ctor_init {
+            return false;
+        }
+
+        self.declare_var(var_name, var_type, false, false, is_static);
+
+        #[allow(clippy::collapsible_match)]
+        if let Some(ref mut init_expr) = init {
+            if let Expr::Call { name, args, loc: ctor_loc, .. } = init_expr {
+                if let Type::Class { name: class_name, .. } = var_type {
+                    // 如果初始化表达式是右值引用（如 std::move），优先选择移动构造函数
+                    let is_rvalue_init = args.len() == 1
+                        && (matches!(&args[0], Expr::Call { name, .. } if name == "std__move")
+                            || matches!(&args[0], Expr::CallPtr { callee, .. } if matches!(callee.as_ref(), Expr::Identifier { name, .. } if name == "std__move"))
+                            || args[0].ty().is_rvalue_ref());
+                    let ctor_name = if is_rvalue_init {
+                        // 优先使用移动构造函数；即使它尚未在 funcs 中注册
+                        // （隐式移动构造在 Pass 3.55 生成），也要让后续阶段能找到它。
+                        Some(format!("__ctor__{}__move", class_name))
+                    } else {
+                        self.resolve_constructor_overload(class_name, args.len(), *ctor_loc)
+                    };
+                    if let Some(ctor_name) = ctor_name {
+                        *name = ctor_name;
+                        let this_expr = Expr::Unary {
+                            op: cide_ast::UnaryOp::Addr,
+                            operand: Box::new(Expr::Identifier {
+                                name: var_name.to_string(),
+                                loc: *ctor_loc,
+                                ty: var_type.clone(),
+                            }),
+                            loc: *ctor_loc,
+                            ty: Type::pointer_to(var_type.clone()),
+                        };
+                        args.insert(0, this_expr);
+                    } else {
+                        self.report_error(
+                            &format!("类 '{}' 没有接受 {} 个参数的构造函数", class_name, args.len()),
+                            loc,
+                            ErrorCode::E3003_FuncRedeclared,
+                        );
+                    }
+                }
+            }
+        }
+        true
+    }
+
+    pub(super) fn visit_func_decl(&mut self, node: &mut FuncDecl) {
+        self.current_file = node.source_file.clone();
+        self.current_func_return = node.return_type.clone();
+        self.current_func_params.clear();
+        self.func_labels.clear();
+        self.pending_gotos.clear();
+        self.enter_scope();
+        for p in &node.params {
+            self.current_func_params.insert(p.name.clone());
+            self.declare_var(&p.name, &p.ty, false, false, false);
+        }
+        if let Some(ref mut body) = node.body {
+            self.dispatch_stmt(body);
+        }
+        let unresolved: Vec<(String, SourceLoc)> = self
+            .pending_gotos
+            .iter()
+            .filter(|(label, _)| !self.func_labels.contains_key(label))
+            .map(|(label, loc)| (label.clone(), *loc))
+            .collect();
+        for (label, loc) in unresolved {
+            self.report_error(
+                &format!("goto 目标标签 '{}' 未定义", label),
+                &loc,
+                ErrorCode::E3071_UndefinedLabel,
+            );
+        }
+        self.pending_gotos.clear();
+        self.func_labels.clear();
+        self.exit_scope();
+        self.current_func_params.clear();
+    }
+
+    fn dispatch_stmt(&mut self, stmt: &mut Stmt) {
+        match stmt {
+            Stmt::Block { stmts, .. } => {
+                self.enter_scope();
+                for s in stmts {
+                    self.dispatch_stmt(s);
+                }
+                self.exit_scope();
+            }
+            Stmt::VarDecl {
+                var_type,
+                name,
+                init,
+                extra_vars,
+                loc,
+                is_static,
+                ..
+            } => {
+                // Auto type deduction for C++
+                if Self::type_has_auto(var_type) {
+                    #[allow(clippy::collapsible_match)]
+                    if let Some(ref mut init_expr) = init {
+                        let deduced = self.deduce_auto_type(init_expr);
+                        *var_type = Self::replace_auto_in_type(var_type, deduced);
+                    } else {
+                        self.report_error(
+                            "auto 类型变量必须有初始化表达式",
+                            loc,
+                            ErrorCode::E4025_AutoRequiresInitializer,
+                        );
+                        *var_type = Self::replace_auto_in_type(var_type, Type::int());
+                    }
+                }
+                // Class template instantiation
+                *var_type = self.resolve_template_id(var_type, loc);
+                // typeof type deduction
+                if Self::type_has_typeof(var_type) {
+                    if let Some(ref mut init_expr) = init {
+                        let deduced = self.resolve_expr_type(init_expr);
+                        *var_type = Self::resolve_typeof_in_type(var_type, deduced);
+                    } else if let Type::Typeof { .. } = var_type {
+                        // 需要临时取出表达式来推断类型
+                        if let Type::Typeof { expr, .. } = var_type.clone() {
+                            let mut expr_mut = *expr;
+                            let deduced = self.resolve_expr_type(&mut expr_mut);
+                            *var_type = Self::resolve_typeof_in_type(var_type, deduced);
+                        }
+                    } else {
+                        *var_type = Self::resolve_typeof_in_type(var_type, Type::int());
+                    }
+                }
+                // 只有 C++ 构造函数初始化语法需要提前声明变量，以便 this 指针（&var_name）能正确解析。
+                // 普通变量（尤其是数组）必须在初始化表达式处理完成后再声明，否则符号表中的类型
+                // 无法反映 check_array_initializer 推断出的数组大小。
+                let is_ctor_init = self.try_process_ctor_init(name, var_type, init, loc, *is_static);
+                if let Some(ref mut init_expr) = init {
+                    if var_type.is_array() {
+                        self.check_array_initializer(var_type, init_expr, loc);
+                    } else if var_type.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
+                        self.check_struct_initializer(var_type, init_expr, loc);
+                    } else if let Expr::Call { name, .. } = init_expr {
+                        if name.starts_with("__ctor__") && var_type.is_class() {
+                            // 移动构造函数在 Pass 3.55 才生成，此时 funcs 中可能还没有，
+                            // 因此跳过完整的函数调用检查；但仍需解析参数表达式以获得正确类型，
+                            // 这样 code generation 阶段才能识别 RValueRef 并按地址传递。
+                            if name.ends_with("__move") {
+                                if let Expr::Call { args, .. } = init_expr {
+                                    for arg in args.iter_mut() {
+                                        self.resolve_expr_type(arg);
+                                    }
+                                }
+                            } else {
+                                self.resolve_expr_type(init_expr);
+                            }
+                        } else {
+                            let init_type = self.resolve_expr_type(init_expr);
+                            if !self.check_assignable(var_type, &init_type, loc) {
+                                self.report_error(
+                                    &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type),
+                                    loc,
+                                    ErrorCode::E3004_TypeMismatch,
+                                );
+                            } else {
+                                // C++ reference binding lvalue check
+                                if let Type::Reference { base, is_const } = var_type {
+                                    let is_const_ref = *is_const || base.is_const();
+                                    if !is_const_ref && !self.is_lvalue(init_expr) {
+                                        self.report_error(
+                                            "非 const 引用必须绑定到左值",
+                                            loc,
+                                            ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                        );
+                                    }
+                                }
+                                insert_implicit_cast(init_expr, var_type);
+                            }
+                        }
+                    } else {
+                        let init_type = self.resolve_expr_type(init_expr);
+                        if !self.check_assignable(var_type, &init_type, loc) {
+                            self.report_error(
+                                &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, var_type),
+                                loc,
+                                ErrorCode::E3004_TypeMismatch,
+                            );
+                        } else {
+                            // C++ reference binding lvalue check
+                            if let Type::Reference { base, is_const } = var_type {
+                                let is_const_ref = *is_const || base.is_const();
+                                if !is_const_ref && !self.is_lvalue(init_expr) {
+                                    self.report_error(
+                                        "非 const 引用必须绑定到左值",
+                                        loc,
+                                        ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                    );
+                                }
+                            }
+                            insert_implicit_cast(init_expr, var_type);
+                        }
+                    }
+                }
+                if !is_ctor_init {
+                    self.declare_var(name, var_type, false, false, *is_static);
+                }
+                for (ety, ename, einit) in extra_vars.iter_mut() {
+                    *ety = self.resolve_template_id(ety, loc);
+                    // B40: extra_vars 中的类类型变量同样需要构造函数 this 指针插入。
+                    let is_extra_ctor = self.try_process_ctor_init(ename, ety, einit, loc, false);
+                    if let Some(ref mut init_expr) = einit {
+                        if ety.is_array() {
+                            self.check_array_initializer(ety, init_expr, loc);
+                        } else if ety.is_struct() && matches!(init_expr, Expr::InitList { .. }) {
+                            self.check_struct_initializer(ety, init_expr, loc);
+                        } else if let Expr::Call { name, .. } = init_expr {
+                            if name.starts_with("__ctor__") && ety.is_class() {
+                                // 移动构造函数在 Pass 3.55 才生成，此时 funcs 中可能还没有，
+                                // 因此跳过完整的函数调用检查；但仍需解析参数表达式以获得正确类型，
+                                // 这样 code generation 阶段才能识别 RValueRef 并按地址传递。
+                                if name.ends_with("__move") {
+                                    if let Expr::Call { args, .. } = init_expr {
+                                        for arg in args.iter_mut() {
+                                            self.resolve_expr_type(arg);
+                                        }
+                                    }
+                                } else {
+                                    self.resolve_expr_type(init_expr);
+                                }
+                            } else {
+                                let init_type = self.resolve_expr_type(init_expr);
+                                if !self.check_assignable(ety, &init_type, loc) {
+                                    self.report_error(
+                                        &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, ety),
+                                        loc,
+                                        ErrorCode::E3004_TypeMismatch,
+                                    );
+                                } else {
+                                    // C++ reference binding lvalue check
+                                    if let Type::Reference { is_const, .. } = ety {
+                                        if !*is_const && !self.is_lvalue(init_expr) {
+                                            self.report_error(
+                                                "非 const 引用必须绑定到左值",
+                                                loc,
+                                                ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                            );
+                                        }
+                                    }
+                                    insert_implicit_cast(init_expr, ety);
+                                }
+                            }
+                        } else {
+                            let init_type = self.resolve_expr_type(init_expr);
+                            if !self.check_assignable(ety, &init_type, loc) {
+                                self.report_error(
+                                    &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, ety),
+                                    loc,
+                                    ErrorCode::E3004_TypeMismatch,
+                                );
+                            } else {
+                                // C++ reference binding lvalue check
+                                if let Type::Reference { is_const, .. } = ety {
+                                    if !*is_const && !self.is_lvalue(init_expr) {
+                                        self.report_error(
+                                            "非 const 引用必须绑定到左值",
+                                            loc,
+                                            ErrorCode::E4029_ReferenceBindLvalueRequired,
+                                        );
+                                    }
+                                }
+                                insert_implicit_cast(init_expr, ety);
+                            }
+                        }
+                    }
+                    if !is_extra_ctor {
+                        self.declare_var(ename, ety, false, false, false);
+                    }
+                }
+            }
+            Stmt::Expr { expr, .. } => {
+                self.resolve_expr_type(expr);
+            }
+            Stmt::If {
+                cond,
+                then_stmt,
+                else_stmt,
+                loc,
+            } => {
+                self.check_condition(cond, "if 条件", loc);
+                self.dispatch_stmt(then_stmt);
+                if let Some(ref mut e) = else_stmt {
+                    self.dispatch_stmt(e);
+                }
+            }
+            Stmt::While { cond, body, loc } => {
+                self.check_condition(cond, "while 条件", loc);
+                self.loop_depth += 1;
+                self.dispatch_stmt(body);
+                self.loop_depth -= 1;
+            }
+            Stmt::DoWhile { body, cond, loc } => {
+                self.loop_depth += 1;
+                self.dispatch_stmt(body);
+                self.loop_depth -= 1;
+                self.check_condition(cond, "do...while 条件", loc);
+            }
+            Stmt::For { init, cond, step, body, loc } => {
+                self.enter_scope();
+                if let Some(ref mut i) = init {
+                    self.dispatch_stmt(i);
+                }
+                if let Some(ref mut c) = cond {
+                    self.check_condition(c, "for 条件", loc);
+                    if let Expr::Binary {
+                        op: BinaryOp::Le, left, right, ..
+                    } = c
+                    {
+                        if self.expr_involves_array_or_pointer(left) || self.expr_involves_array_or_pointer(right) {
+                            self.report_warning("循环条件中使用了 '<='，如果用于数组索引，可能导致越界（off-by-one 错误）。你是否想使用 '<'？", loc, ErrorCode::W3051_ArrayBoundOffByOne);
+                        }
+                    }
+                }
+                for s in step {
+                    self.resolve_expr_type(s);
+                }
+                self.loop_depth += 1;
+                self.dispatch_stmt(body);
+                self.loop_depth -= 1;
+                self.exit_scope();
+            }
+            Stmt::Return { value, loc } => {
+                if self.current_func_return.is_void() {
+                    if value.is_some() {
+                        self.report_error("void 函数不能有返回值", loc, ErrorCode::E3012_VoidFuncReturnValue);
+                    }
+                } else {
+                    if let Some(ref mut v) = value {
+                        let val_type = self.resolve_expr_type(v);
+                        let expected = self.current_func_return.clone();
+                        if !self.check_assignable(&expected, &val_type, loc) {
+                            self.report_error(
+                                &format!("返回类型不匹配：期望 '{}'，实际 '{}'", self.current_func_return, val_type),
+                                loc,
+                                ErrorCode::E3014_ReturnTypeMismatch,
+                            );
+                        }
+                    } else {
+                        self.report_error("非 void 函数必须返回一个值", loc, ErrorCode::E3013_MissingReturnValue);
+                    }
+                }
+            }
+            Stmt::Break { loc } if self.loop_depth <= 0 && self.switch_depth <= 0 => {
+                self.report_error("break 只能在循环或 switch 体内使用", loc, ErrorCode::E3010_BreakOutsideLoop);
+            }
+            Stmt::Continue { loc } if self.loop_depth <= 0 => {
+                self.report_error("continue 只能在循环体内使用", loc, ErrorCode::E3011_ContinueOutsideLoop);
+            }
+            Stmt::Switch { cond, body, loc } => {
+                self.switch_depth += 1;
+                let cond_type = self.resolve_expr_type(cond);
+                if !self.is_int(&cond_type) {
+                    self.report_error("switch 条件必须是整数类型", loc, ErrorCode::E3046_SwitchCondType);
+                }
+                self.dispatch_stmt(body);
+                self.switch_depth -= 1;
+            }
+            Stmt::Case { label, stmt, loc } => {
+                if let Some(ref mut l) = label {
+                    let label_type = self.resolve_expr_type(l);
+                    if !self.is_int(&label_type) {
+                        self.report_error("case 标签必须是整数常量", loc, ErrorCode::E3047_CaseNotConstant);
+                    }
+                }
+                self.dispatch_stmt(stmt);
+            }
+            Stmt::Goto { label, loc } => {
+                if self.func_labels.contains_key(label) {
+                    // Label already defined, ok
+                } else {
+                    self.pending_gotos.push((label.clone(), *loc));
+                }
+            }
+            Stmt::Label { label, stmt, loc } => {
+                if self.func_labels.contains_key(label) {
+                    self.report_error(&format!("标签 '{}' 重复定义", label), loc, ErrorCode::E3001_VarRedeclared);
+                } else {
+                    self.func_labels.insert(label.clone(), *loc);
+                }
+                self.dispatch_stmt(stmt);
+            }
+            Stmt::RangeFor { var, var_type, iter, body, loc } => {
+                self.enter_scope();
+                let iter_type = self.resolve_expr_type(iter);
+                // Deduce element type from iterable
+                let elem_type = if iter_type.is_array() {
+                    iter_type.innermost_element_type()
+                } else if let Type::Pointer { pointee, .. } = &iter_type {
+                    pointee.as_ref().clone()
+                } else if iter_type.is_class() {
+                    match iter_type.name() {
+                        "cide_vec_int" | "cide_list_int" => Type::int(),
+                        "cide_vec_float" => Type::float(),
+                        "cide_vec_char" | "cide_string" => Type::char(),
+                        _ => {
+                            self.report_error("范围 for 不支持该容器类型", loc, ErrorCode::E4020_RangeForNotSupported);
+                            Type::int()
+                        }
+                    }
+                } else {
+                    self.report_error(
+                        "范围 for 的迭代对象必须是数组、指针或内置容器类型",
+                        loc,
+                        ErrorCode::E4020_RangeForNotSupported,
+                    );
+                    Type::int()
+                };
+                let deduced_var_type = match var_type {
+                    Type::Auto => elem_type,
+                    Type::Reference { is_const, .. } => Type::Reference {
+                        base: Box::new(elem_type),
+                        is_const: *is_const,
+                    },
+                    Type::RValueRef { .. } => Type::RValueRef { base: Box::new(elem_type) },
+                    _ => var_type.clone(),
+                };
+                *var_type = deduced_var_type.clone();
+                self.declare_var(var, &deduced_var_type, false, false, false);
+                self.loop_depth += 1;
+                self.dispatch_stmt(body);
+                self.loop_depth -= 1;
+                self.exit_scope();
+            }
+            Stmt::Try { loc, .. } => {
+                self.report_error("try/catch 异常处理不被支持", loc, ErrorCode::E4001_ExceptionNotSupported);
+            }
+            _ => {}
+        }
+    }
+
+    fn check_condition(&mut self, cond: &mut Expr, ctx: &str, loc: &SourceLoc) {
+        let ty = self.resolve_expr_type(cond);
+        if !self.is_scalar(&ty) && !matches!(ty.kind(), TypeKind::Pointer | TypeKind::Array) {
+            self.report_error(
+                &format!("{} 必须是整数、浮点数或指针类型", ctx),
+                loc,
+                ErrorCode::E3015_InvalidCondition,
+            );
+        }
+        let is_assign_expr = |e: &Expr| matches!(e, Expr::Assign { op: AssignOp::Assign, .. });
+        if is_assign_expr(cond) {
+            self.report_warning(
+                "条件中使用了赋值运算符 '='，你是否想使用比较运算符 '=='？",
+                loc,
+                ErrorCode::W3050_AssignInCondition,
+            );
+        } else if let Expr::Binary { left, right, .. } = cond {
+            if is_assign_expr(left) || is_assign_expr(right) {
+                self.report_warning(
+                    "条件中包含了赋值表达式，你是否想使用比较运算符 '=='？",
+                    loc,
+                    ErrorCode::W3050_AssignInCondition,
+                );
+            }
+        }
+    }
+
+    /// Visit a function declaration, pre-registering class fields as variables in the outermost scope.
+    /// Used for checking class method bodies where fields are implicitly accessible.
+    pub(super) fn visit_func_decl_with_fields(&mut self, node: &mut FuncDecl, _fields: &[(Type, String)]) {
+        self.current_file = node.source_file.clone();
+        self.current_func_return = node.return_type.clone();
+        self.current_func_params.clear();
+        self.func_labels.clear();
+        self.pending_gotos.clear();
+        self.enter_scope();
+        // Class fields are resolved via implicit this->field in resolve_expr_type
+        for p in &node.params {
+            self.current_func_params.insert(p.name.clone());
+            self.declare_var(&p.name, &p.ty, false, false, false);
+        }
+        if let Some(ref mut body) = node.body {
+            self.dispatch_stmt(body);
+        }
+        let unresolved: Vec<(String, SourceLoc)> = self
+            .pending_gotos
+            .iter()
+            .filter(|(label, _)| !self.func_labels.contains_key(label))
+            .map(|(label, loc)| (label.clone(), *loc))
+            .collect();
+        for (label, loc) in unresolved {
+            self.report_error(
+                &format!("goto 目标标签 '{}' 未定义", label),
+                &loc,
+                ErrorCode::E3071_UndefinedLabel,
+            );
+        }
+        self.pending_gotos.clear();
+        self.func_labels.clear();
+        self.exit_scope();
+        self.current_func_params.clear();
+    }
+
+    pub(crate) fn check_user_func(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {
+        let sym = self.funcs.get(name).cloned();
+        if let Some(sym) = sym {
+            if args.len() != sym.param_types.len() {
+                self.report_error(
+                    &format!(
+                        "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                        name,
+                        sym.param_types.len(),
+                        args.len()
+                    ),
+                    loc,
+                    ErrorCode::E3037_FuncArgCount,
+                );
+            } else {
+                for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !self.check_assignable(expected, &arg_type, loc) {
+                        self.report_error(
+                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
+                            loc,
+                            ErrorCode::E3038_FuncArgType,
+                        );
+                    } else {
+                        if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                            let arg_loc = *arg.loc();
+                            let old = std::mem::take(arg);
+                            *arg = Expr::Unary {
+                                op: UnaryOp::Addr,
+                                operand: Box::new(old),
+                                loc: arg_loc,
+                                ty: expected.clone(),
+                            };
+                        } else {
+                            insert_implicit_cast(arg, expected);
+                        }
+                    }
+                }
+            }
+            return sym.return_type.clone();
+        }
+
+        if let Some(sym) = self.static_func_sigs.get(name).cloned() {
+            if let Some(files) = self.static_func_files.get(name) {
+                if !files.contains(&self.current_file) {
+                    self.report_error(
+                        &format!("static 函数 '{}' 在其他文件中不可见", name),
+                        loc,
+                        ErrorCode::E3058_StaticFuncAccess,
+                    );
+                    return Type::void();
+                }
+            }
+            if args.len() != sym.param_types.len() {
+                self.report_error(
+                    &format!(
+                        "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                        name,
+                        sym.param_types.len(),
+                        args.len()
+                    ),
+                    loc,
+                    ErrorCode::E3037_FuncArgCount,
+                );
+            } else {
+                for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !self.check_assignable(expected, &arg_type, loc) {
+                        self.report_error(
+                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
+                            loc,
+                            ErrorCode::E3038_FuncArgType,
+                        );
+                    } else {
+                        if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                            let arg_loc = *arg.loc();
+                            let old = std::mem::take(arg);
+                            *arg = Expr::Unary {
+                                op: UnaryOp::Addr,
+                                operand: Box::new(old),
+                                loc: arg_loc,
+                                ty: expected.clone(),
+                            };
+                        } else {
+                            insert_implicit_cast(arg, expected);
+                        }
+                    }
+                }
+            }
+            return sym.return_type.clone();
+        }
+
+        // Try template implicit instantiation
+        if !args.is_empty() {
+            let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
+            if let Some((mangled, maybe_new_func)) = self.try_instantiate_template(name, &arg_types) {
+                if let Some(new_func) = maybe_new_func {
+                    self.pending_instantiations.push((mangled.clone(), new_func));
+                }
+                return self.check_user_func(&mangled, args, loc);
+            }
+        }
+
+        // Fallback: Bytecode Libc functions are pre-registered at codegen time
+        if let Some((ret_ty, param_types)) = cide_runtime::bytecode_libc_sig::bytecode_libc_sig(name) {
+            if args.len() != param_types.len() {
+                self.report_error(
+                    &format!(
+                        "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                        name,
+                        param_types.len(),
+                        args.len()
+                    ),
+                    loc,
+                    ErrorCode::E3037_FuncArgCount,
+                );
+            } else {
+                for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
+                    let arg_type = self.resolve_expr_type(arg);
+                    if !self.check_assignable(expected, &arg_type, loc) {
+                        self.report_error(
+                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
+                            loc,
+                            ErrorCode::E3038_FuncArgType,
+                        );
+                    } else {
+                        insert_implicit_cast(arg, expected);
+                    }
+                }
+            }
+            return ret_ty;
+        }
+
+        self.report_error(&format!("未定义的函数 '{}'", name), loc, ErrorCode::E3036_UndefinedFunc);
+        Type::void()
+    }
+
+    fn type_has_auto(ty: &Type) -> bool {
+        match ty {
+            Type::Auto => true,
+            Type::Pointer { pointee, .. } => Self::type_has_auto(pointee),
+            Type::Reference { base, .. } => Self::type_has_auto(base),
+            Type::RValueRef { base, .. } => Self::type_has_auto(base),
+            Type::Array { element, .. } => Self::type_has_auto(element),
+            _ => false,
+        }
+    }
+
+    fn type_has_typeof(ty: &Type) -> bool {
+        match ty {
+            Type::Typeof { .. } => true,
+            Type::Pointer { pointee, .. } => Self::type_has_typeof(pointee),
+            Type::Reference { base, .. } => Self::type_has_typeof(base),
+            Type::RValueRef { base, .. } => Self::type_has_typeof(base),
+            Type::Array { element, .. } => Self::type_has_typeof(element),
+            _ => false,
+        }
+    }
+
+    fn resolve_typeof_in_type(ty: &Type, replacement: Type) -> Type {
+        match ty {
+            Type::Typeof { is_const, .. } => {
+                let mut t = replacement;
+                t.set_const(*is_const);
+                t
+            }
+            Type::Pointer { pointee, is_const } => Type::Pointer {
+                pointee: Box::new(Self::resolve_typeof_in_type(pointee, replacement)),
+                is_const: *is_const,
+            },
+            Type::Reference { base, is_const } => Type::Reference {
+                base: Box::new(Self::resolve_typeof_in_type(base, replacement)),
+                is_const: *is_const,
+            },
+            Type::RValueRef { base } => Type::RValueRef {
+                base: Box::new(Self::resolve_typeof_in_type(base, replacement)),
+            },
+            Type::Array {
+                element,
+                array_size,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+            } => Type::Array {
+                element: Box::new(Self::resolve_typeof_in_type(element, replacement)),
+                array_size: *array_size,
+                dims: dims.clone(),
+                is_const: *is_const,
+                is_vla: *is_vla,
+                vla_dims: vla_dims.clone(),
+            },
+            _ => ty.clone(),
+        }
+    }
+
+    fn replace_auto_in_type(ty: &Type, replacement: Type) -> Type {
+        match ty {
+            Type::Auto => replacement,
+            Type::Pointer { pointee, is_const } => Type::Pointer {
+                pointee: Box::new(Self::replace_auto_in_type(pointee, replacement)),
+                is_const: *is_const,
+            },
+            Type::Reference { base, is_const } => Type::Reference {
+                base: Box::new(Self::replace_auto_in_type(base, replacement)),
+                is_const: *is_const,
+            },
+            Type::RValueRef { base } => Type::RValueRef {
+                base: Box::new(Self::replace_auto_in_type(base, replacement)),
+            },
+            Type::Array {
+                element,
+                array_size,
+                dims,
+                is_const,
+                is_vla,
+                vla_dims,
+            } => Type::Array {
+                element: Box::new(Self::replace_auto_in_type(element, replacement)),
+                array_size: *array_size,
+                dims: dims.clone(),
+                is_const: *is_const,
+                is_vla: *is_vla,
+                vla_dims: vla_dims.clone(),
+            },
+            _ => ty.clone(),
+        }
+    }
+}

@@ -87,6 +87,16 @@ pub struct ArraySnapshot {
     pub elements: Vec<String>,
 }
 
+impl From<cide_runtime::ArraySnapshotData> for ArraySnapshot {
+    fn from(value: cide_runtime::ArraySnapshotData) -> Self {
+        Self {
+            name: value.name,
+            element_ty: value.element_ty,
+            elements: value.elements,
+        }
+    }
+}
+
 /// FRB 友好的调用帧信息。
 #[frb]
 #[derive(Debug, Clone)]

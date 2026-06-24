@@ -38,7 +38,7 @@ fn bench_source(source: &str) -> (f64, f64, i32) {
         // 禁用 JIT：清空所有 trace
         vm.jit_traces_mut().clear();
         let start2 = Instant::now();
-        let ret2 = vm.run(&mut session2);
+        let ret2 = vm.run(&mut session2.as_vm_context());
         let interp_time = start2.elapsed().as_secs_f64();
         session2.vm = Some(vm);
         assert_eq!(ret, ret2, "JIT and interpreter should produce same return code");

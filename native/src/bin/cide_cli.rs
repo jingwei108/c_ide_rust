@@ -20,7 +20,7 @@ fn print_usage() {
     eprintln!("  cide_cli compile <file.c>           编译并显示诊断信息");
     eprintln!("  cide_cli run    <file.c> [-i <in>] [-- <arg>...]  编译并全速运行（-- 后参数传给 main）");
     eprintln!("  cide_cli step   <file.c> [-i <in>]  交互式单步调试");
-    eprintln!("  cide_cli unified <file.c> [-i <in>] 统一模式（时间旅行）执行并摘要");
+    eprintln!("  cide_cli unified <file.c> [-i <in>] [--max-steps <n>] 统一模式（时间旅行）执行并摘要");
     eprintln!("  cide_cli export <file1.c> [file2.c ...] -o <out.json> [--builtin-libc]  预编译为字节码产物");
     eprintln!();
     eprintln!("特殊文件名:");
@@ -270,7 +270,7 @@ fn cmd_export(source_paths: &[String], output_path: &str, is_builtin_libc: bool)
     struct BytecodeLibcExport {
         version: u32,
         code_len: usize,
-        code: Vec<cide_native::vm::instruction::Instruction>,
+        code: Vec<cide_runtime::instruction::Instruction>,
         func_table: std::collections::HashMap<String, cide_native::session::FuncMeta>,
         func_index: std::collections::HashMap<String, i32>,
         globals_init_32: Vec<(u32, i32)>,
@@ -292,7 +292,7 @@ fn cmd_export(source_paths: &[String], output_path: &str, is_builtin_libc: bool)
     // 这些函数只在 func_index 中有条目（用于用户代码调用固定索引），
     // 但没有 func_table 条目（不是当前源码实际定义的）。
     if is_builtin_libc {
-        use cide_native::vm::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS;
+        use cide_runtime::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS;
         let old_names: Vec<String> = func_index
             .keys()
             .filter(|name| BYTECODE_LIBC_ALL_FUNCS.contains(&name.as_str()) && !func_table.contains_key(name.as_str()))
@@ -305,17 +305,17 @@ fn cmd_export(source_paths: &[String], output_path: &str, is_builtin_libc: bool)
 
     // 移除 BytecodeGen 生成的入口 wrapper（Jump + Call main + Ret）
     // code[0] 是 Jump 到 wrapper_ip，wrapper_ip 位置是 Call main 和 Ret
-    let wrapper_ip = if !code.is_empty() && code[0].op == cide_native::vm::opcode::OpCode::Jump {
+    let wrapper_ip = if !code.is_empty() && code[0].op == cide_runtime::opcode::OpCode::Jump {
         code[0].operand as usize
     } else {
         code.len()
     };
     // 将入口 Jump 替换为 Nop（Bytecode Libc 作为库，不需要入口 Jump）
     if !code.is_empty() {
-        code[0] = cide_native::vm::instruction::Instruction::new(
-            cide_native::vm::opcode::OpCode::Nop,
+        code[0] = cide_runtime::instruction::Instruction::new(
+            cide_runtime::opcode::OpCode::Nop,
             0,
-            cide_native::vm::instruction::SourceLoc::default(),
+            cide_runtime::instruction::SourceLoc::default(),
         );
     }
     // 截断掉 wrapper 部分（Call main + Ret）
@@ -361,7 +361,7 @@ fn cmd_export(source_paths: &[String], output_path: &str, is_builtin_libc: bool)
     println!("  全局变量大小: {} bytes", export.globals_size);
 }
 
-fn cmd_unified(path: &str, input_lines: Vec<String>) {
+fn cmd_unified(path: &str, input_lines: Vec<String>, max_steps: i32) {
     let source = read_source(path);
 
     // 使用底层 API 进行统一模式执行
@@ -383,7 +383,7 @@ fn cmd_unified(path: &str, input_lines: Vec<String>) {
         std::process::exit(1);
     }
 
-    let mut engine = UnifiedEngine::new();
+    let mut engine = UnifiedEngine::with_max_steps(max_steps);
     engine.reset();
 
     let mut vm = CideVM::default();
@@ -393,7 +393,7 @@ fn cmd_unified(path: &str, input_lines: Vec<String>) {
     session.runtime.running = true;
 
     // 保存初始检查点
-    engine.checkpoints.save(0, &mut vm, &session);
+    engine.checkpoints.save(0, &mut vm, &mut session.as_vm_context());
     session.vm = Some(vm);
 
     // 注入输入 (通过 flutter_bridge 的全局 session 不行，因为这里用的是本地 session)
@@ -506,7 +506,22 @@ fn main() {
         "compile" => cmd_compile(file_path),
         "run" => cmd_run(file_path, input_lines, argv),
         "step" => cmd_step(file_path, input_lines),
-        "unified" => cmd_unified(file_path, input_lines),
+        "unified" => {
+            let mut max_steps = 100_000;
+            let mut i = 3;
+            while i < args.len() {
+                if args[i] == "--max-steps" && i + 1 < args.len() {
+                    max_steps = args[i + 1].parse().unwrap_or_else(|_| {
+                        eprintln!("错误: --max-steps 需要有效的整数");
+                        std::process::exit(1);
+                    });
+                    i += 2;
+                } else {
+                    i += 1;
+                }
+            }
+            cmd_unified(file_path, input_lines, max_steps)
+        }
         "export" => {
             // export 命令需要至少一个源文件和 -o 选项
             let mut output_path = String::new();

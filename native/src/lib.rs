@@ -24,4 +24,4 @@ mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be
 pub mod session;
 pub mod shared;
 pub mod unified;
-pub mod vm;
+pub use cide_vm as vm;

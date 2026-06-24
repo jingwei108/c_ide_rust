@@ -4345,6 +4345,24 @@ int main() {
 }
 
 #[test]
+fn test_e2e_fputs_stdout() {
+    let src = r#"
+#include <stdio.h>
+int main() {
+    fputs("hello ", stdout);
+    fputs("world", stdout);
+    fputs("\n", stdout);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(out.join(""), "hello world", "fputs to stdout should produce output: {:?}", out);
+}
+
+#[test]
 fn test_e2e_double_pointer_basic() {
     let src = r#"
 #include <stdio.h>

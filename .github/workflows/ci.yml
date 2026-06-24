@@ -48,7 +48,7 @@ jobs:
         shell: bash
 
       - name: Run Rust tests
-        run: cargo test --all-features
+        run: cargo test --workspace --all-features
         working-directory: native
 
       # cargo test 已覆盖全部单元/集成测试（含 Phase A/B/C/E/Dogfooding），
@@ -65,7 +65,7 @@ jobs:
           path: reports/three_tier_report.md
 
       - name: Run clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         working-directory: native
 
       - name: Shadow Verification

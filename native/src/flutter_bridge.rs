@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use crate::session::{CodeFile, *};
 use crate::unified::engine::UnifiedEngine;
 use crate::unified::types::*;
-use crate::vm::core::NULL_TRAP_SIZE;
+use cide_runtime::NULL_TRAP_SIZE;
 
 // ========== 多 Session 管理 ==========
 
@@ -222,7 +222,7 @@ pub fn step_next() -> StepResult {
         vm.pause();
         session.runtime.waiting_input = false;
         loop {
-            match vm.step(&mut session) {
+            match vm.step(&mut session.as_vm_context()) {
                 crate::vm::core::StepResult::Ok => {
                     // 首次运行：遇到第一个 StepEvent 后暂停，避免无断点时持续执行到 max_steps
                     if vm.was_step_event_hit() {
@@ -277,7 +277,7 @@ pub fn step_next() -> StepResult {
             }
         }
     } else {
-        match vm.step(&mut session) {
+        match vm.step(&mut session.as_vm_context()) {
             crate::vm::core::StepResult::Ok => {
                 session.runtime.current_line = vm.get_current_line();
                 StepResult {
@@ -350,14 +350,18 @@ pub fn get_algorithm_matches() -> Vec<AlgorithmMatch> {
 pub fn get_variables() -> Vec<VariableSnapshot> {
     let session_arc_l319 = current_session();
     let session = lock_or_reset(&session_arc_l319);
-    session.vm.as_ref().map(|vm| vm.get_variable_snapshot()).unwrap_or_default()
+    session
+        .vm
+        .as_ref()
+        .map(|vm| vm.get_variable_snapshot().into_iter().map(Into::into).collect())
+        .unwrap_or_default()
 }
 
 /// 获取内存区域
 pub fn get_memory_regions() -> Vec<MemoryRegion> {
     let session_arc_l325 = current_session();
     let session = lock_or_reset(&session_arc_l325);
-    session.memory.regions.clone()
+    session.memory.regions.clone().into_iter().map(Into::into).collect()
 }
 
 /// 获取当前空闲碎片块（外部碎片）
@@ -377,7 +381,7 @@ pub fn get_heap_stats() -> crate::session::HeapStats {
     let session_arc_l342 = current_session();
     let session = lock_or_reset(&session_arc_l342);
     let mem = &session.memory;
-    let heap_start = crate::vm::core::HEAP_START as i32;
+    let heap_start = cide_runtime::HEAP_START as i32;
     let total_heap = (mem.heap_offset as i32).saturating_sub(heap_start);
     let allocated: i32 = mem.regions.iter().filter(|r| r.is_heap && !r.is_freed).map(|r| r.size).sum();
     let fragmented: i32 = mem.free_list.iter().map(|b| b.size).sum();
@@ -405,7 +409,7 @@ pub fn get_memory_size() -> u32 {
 pub fn get_callstack() -> Vec<TraceEntry> {
     let session_arc_l369 = current_session();
     let session = lock_or_reset(&session_arc_l369);
-    session.runtime.trace.clone()
+    session.runtime.trace.clone().into_iter().map(Into::into).collect()
 }
 
 /// 获取输出
@@ -483,7 +487,7 @@ pub fn provide_input_line(line: String) {
 pub fn get_vis_events() -> Vec<VisEvent> {
     let session_arc_l438 = current_session();
     let session = lock_or_reset(&session_arc_l438);
-    session.runtime.vis_event_cache.clone()
+    session.runtime.vis_event_cache.clone().into_iter().map(Into::into).collect()
 }
 
 /// 清除可视化事件
@@ -582,7 +586,7 @@ pub fn compile_and_run_multi(files: Vec<CodeFile>) -> UnifiedRunResult {
     session.runtime.running = true;
 
     // 保存初始检查点（第 0 步）
-    engine.checkpoints.save(0, &mut vm, &session);
+    engine.checkpoints.save(0, &mut vm, &mut session.as_vm_context());
 
     session.vm = Some(vm);
 
@@ -648,7 +652,7 @@ pub fn step_next_unified() -> Option<StepPayload> {
     let mut vm = session.vm.take().unwrap_or_default();
     let step = vm.get_executed_steps();
 
-    let payload = match vm.step(&mut session) {
+    let payload = match vm.step(&mut session.as_vm_context()) {
         crate::vm::core::StepResult::Ok
         | crate::vm::core::StepResult::Paused
         | crate::vm::core::StepResult::WaitingInput

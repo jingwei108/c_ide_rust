@@ -366,6 +366,25 @@ int main() {
 **预期诊断**：TypeChecker 错误，`Intger` 未定义。  
 **正确写法**：`Integer a = 5;`
 
+### 7.3 union 成员写入后读取另一个成员
+
+```c
+#include <stdio.h>
+union Data {
+    int i;
+    float f;
+};
+int main() {
+    union Data d;
+    d.i = 42;
+    printf("%f\n", d.f);  /* 错误：写入 i 后按 f 读取，值不可预期 */
+    return 0;
+}
+```
+
+**预期诊断**：教学提示 union 成员共享内存，写入一个成员后读取另一个成员是未定义行为（可关联 E3051 类型安全提示）。  
+**正确写法**：通过同一个成员读取，或明确使用 `struct` 替代 `union`。
+
 ---
 
 ## 8. 综合调试挑战
@@ -541,6 +560,48 @@ int main() {
 **预期诊断**：教学提示 move 后源对象处于未指定状态（E4104）。  
 **正确写法**：move 后将源对象视为无效，不再读取其值。
 
+### 9.6 隐式浅拷贝导致双重释放
+
+```cpp
+#include <stdio.h>
+#include <stdlib.h>
+class Buffer {
+public:
+    int* data;
+    int len;
+    Buffer(int n) {
+        data = (int*)malloc(sizeof(int) * n);
+        len = n;
+    }
+    ~Buffer() { free(data); }
+};
+void work(Buffer b) { /* 按值传递 */ }
+int main() {
+    Buffer a(10);
+    work(a);            // 默认拷贝构造只复制 data 指针
+    printf("%d\n", a.data[0]); // 此处 a.data 可能已被释放
+    return 0;
+}
+```
+
+**预期诊断**：教学提示默认浅拷贝风险（E4105）；运行时可能触发 Use-After-Free 或 Double-Free 检测。  
+**正确写法**：自定义拷贝构造/拷贝赋值实现深拷贝，或禁用拷贝（使用 unique_ptr 或移动语义）。
+
+### 9.7 引用绑定到临时对象
+
+```cpp
+#include <stdio.h>
+int make() { return 42; }
+int main() {
+    int& r = make();    // 错误：非 const 引用绑定到临时对象
+    printf("%d\n", r);
+    return 0;
+}
+```
+
+**预期诊断**：TypeChecker 教学提示引用绑定到临时对象风险（E4106）。  
+**正确写法**：使用 `int x = make();` 接收值，或 `const int& r = make();`（生命周期延长）。
+
 ---
 
 ## 测试建议
@@ -552,4 +613,4 @@ int main() {
 | **VM 边界检查** | 3.1、3.3、5.3、8.2 |
 | **自动修复建议** | 1.1、2.1、4.1、5.1、6.1、7.1 |
 | **安全加固验证** | 4.4（step_count）、6.2（死循环）、6.3（除零） |
-| **C++ 教学诊断** | 9.1~9.5（E4100~E4104 知识卡片） |
+| **C++ 教学诊断** | 9.1~9.7（E4100~E4106 知识卡片） |

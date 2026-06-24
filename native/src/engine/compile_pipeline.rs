@@ -185,7 +185,7 @@ pub fn push_hints<T: CompileError>(
 pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     use crate::vm::bytecode_libc_loader::load_artifact;
     use crate::vm::core::{FuncMeta, VMSymbol};
-    use crate::vm::opcode::OpCode;
+    use cide_runtime::opcode::OpCode;
 
     vm.reset();
 
@@ -210,7 +210,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     vm.load_program(full_code);
 
     // ── 4. 注册 Bytecode Libc 函数 ──
-    use crate::vm::bytecode_libc_index::bytecode_libc_index;
+    use cide_runtime::bytecode_libc_index::bytecode_libc_index;
 
     // 预编译产物中的 Call/CallPtr operand 已经被重定位为固定索引，
     // 因此只需注册固定索引即可同时满足内部调用和外部调用。
@@ -353,10 +353,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     };
 
     // 3. TypeChecker
-    let type_checker = TypeChecker {
-        is_library_mode: false,
-        ..TypeChecker::default()
-    };
+    let type_checker = TypeChecker::new(false);
     let (type_errors, type_warnings, type_hints) = type_checker.check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, full_source, None);
@@ -387,7 +384,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.f64_constants = output.f64_constants;
     session.compile.i64_constants = output.i64_constants;
     // 偏移 source_map 以匹配 Bytecode Libc 代码拼接后的 IP
-    let libc_code_len = crate::vm::bytecode_libc_index::BYTECODE_LIBC_CODE_LEN as u32;
+    let libc_code_len = cide_runtime::bytecode_libc_index::BYTECODE_LIBC_CODE_LEN as u32;
     session.compile.source_map = output
         .source_map
         .into_iter()
@@ -566,10 +563,7 @@ pub fn run_multi_file_pipeline(
     }
 
     // 3. TypeChecker
-    let type_checker = TypeChecker {
-        is_library_mode,
-        ..TypeChecker::default()
-    };
+    let type_checker = TypeChecker::new(is_library_mode);
     let (type_errors, type_warnings, type_hints) = type_checker.check(&mut program);
     if !type_errors.is_empty() {
         push_diagnostics(session, &type_errors, &full_source, Some(&file_ranges));
@@ -600,7 +594,7 @@ pub fn run_multi_file_pipeline(
     session.compile.f64_constants = output.f64_constants;
     session.compile.i64_constants = output.i64_constants;
     // 偏移 source_map 以匹配 Bytecode Libc 代码拼接后的 IP
-    let libc_code_len = crate::vm::bytecode_libc_index::BYTECODE_LIBC_CODE_LEN as u32;
+    let libc_code_len = cide_runtime::bytecode_libc_index::BYTECODE_LIBC_CODE_LEN as u32;
     session.compile.source_map = output
         .source_map
         .into_iter()

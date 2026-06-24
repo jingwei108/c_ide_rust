@@ -156,8 +156,8 @@ python scripts/test_mobile.py --install --run --logcat
 ## Verify Project Health
 
 ```bash
-# Rust backend tests (719+ cases)
-cd native && cargo test
+# Rust backend tests (750+ cases)
+cd native && cargo test --workspace --all-features
 
 # C Shadow Verification (compare stdout with Clang)
 python native/tests/shadow_verification/shadow_verify.py

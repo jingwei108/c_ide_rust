@@ -1,23 +1,15 @@
-use crate::compiler::ast::{SourceLoc, Type};
 use crate::engine::completion::CompletionSnapshot;
 use crate::vm::core::CideVM;
-use crate::vm::instruction::Instruction;
 use crate::vm::vfs::VirtualFileSystem;
+use cide_runtime::instruction::Instruction;
 use flutter_rust_bridge::frb;
 use std::collections::HashMap;
 use std::ffi::CString;
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct CompileUnit {
-    pub filename: String,
-    pub source: String,
-}
-
-#[derive(Debug, Clone)]
-pub struct CodeFile {
-    pub filename: String,
-    pub source: String,
-}
+pub use cide_runtime::{
+    CodeFile, CompileUnit, FreeBlock, FuncMeta, InputMode, MemoryState, RuntimeState, Symbol, GLOBAL_START, HEAP_START,
+    MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE, SNAPSHOT_INTERVAL, STACK_START,
+};
 
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -36,8 +28,6 @@ pub struct Diagnostic {
     pub replacement_text: String,
     pub filename: String,
 }
-
-pub use crate::shared::{func_meta::FuncMeta, symbol::Symbol};
 
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -64,7 +54,7 @@ pub struct CompileState {
     pub f64_constants: Vec<f64>,
     pub i64_constants: Vec<i64>,
     pub diagnostics: Vec<Diagnostic>,
-    pub source_map: Vec<(u32, SourceLoc)>,
+    pub source_map: Vec<(u32, cide_shared::source_loc::SourceLoc)>,
     pub func_table: HashMap<String, FuncMeta>,
     pub func_index: HashMap<String, i32>,
     pub string_data: Vec<(u32, String)>,
@@ -82,13 +72,56 @@ pub struct TraceEntry {
     pub operation: String,
 }
 
+impl From<cide_runtime::TraceEntryData> for TraceEntry {
+    fn from(value: cide_runtime::TraceEntryData) -> Self {
+        Self {
+            line: value.line,
+            operation: value.operation,
+        }
+    }
+}
+
+impl From<TraceEntry> for cide_runtime::TraceEntryData {
+    fn from(value: TraceEntry) -> Self {
+        Self {
+            line: value.line,
+            operation: value.operation,
+        }
+    }
+}
+
+#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VariableSnapshot {
     pub name: String,
     pub addr: u32,
     pub is_local: bool,
-    pub ty: Type,
+    pub ty: cide_ast::Type,
     pub value: i64,
+}
+
+impl From<cide_runtime::VariableSnapshotData> for VariableSnapshot {
+    fn from(value: cide_runtime::VariableSnapshotData) -> Self {
+        Self {
+            name: value.name,
+            addr: value.addr,
+            is_local: value.is_local,
+            ty: value.ty,
+            value: value.value,
+        }
+    }
+}
+
+impl From<VariableSnapshot> for cide_runtime::VariableSnapshotData {
+    fn from(value: VariableSnapshot) -> Self {
+        Self {
+            name: value.name,
+            addr: value.addr,
+            is_local: value.is_local,
+            ty: value.ty,
+            value: value.value,
+        }
+    }
 }
 
 #[frb]
@@ -102,71 +135,34 @@ pub struct VisEvent {
     pub context: String,
 }
 
-/// 执行路径热力图：记录每行源代码被执行的次数。
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct ExecutionHeatmap {
-    pub line_counts: HashMap<i32, u64>,
-}
-
-impl ExecutionHeatmap {
-    pub fn record(&mut self, line: i32) {
-        if line > 0 {
-            *self.line_counts.entry(line).or_insert(0) += 1;
+impl From<cide_runtime::VisEventData> for VisEvent {
+    fn from(value: cide_runtime::VisEventData) -> Self {
+        Self {
+            ty: value.ty,
+            line: value.line,
+            extra0: value.extra0,
+            extra1: value.extra1,
+            extra2: value.extra2,
+            context: value.context,
         }
     }
-
-    pub fn max_count(&self) -> u64 {
-        self.line_counts.values().copied().max().unwrap_or(0)
-    }
-
-    pub fn clear(&mut self) {
-        self.line_counts.clear();
-    }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
-pub enum InputMode {
-    #[default]
-    Interactive,
-    Batch,
-}
-
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct RuntimeState {
-    pub error: String,
-    /// 最近一次 `cide_get_runtime_error` 返回的 C 字符串缓存，避免返回 `String` 内部指针导致悬垂。
-    pub last_error_cstring: Option<CString>,
-    pub error_buffer: String,
-    pub output_lines: Vec<String>,
-    pub running: bool,
-    pub trace: Vec<TraceEntry>,
-    pub current_line: i32,
-    pub input_lines: Vec<String>,
-    pub input_index: usize,
-    pub step_mode: bool,
-    pub step_count: i32,
-    pub variable_snapshot: Vec<VariableSnapshot>,
-    pub vis_event_cache: Vec<VisEvent>,
-    pub rand_seed: u32,
-    pub input_char_offset: usize,
-    pub waiting_input: bool,
-    pub heatmap: ExecutionHeatmap,
-    pub input_mode: InputMode,
-    pub ungetc_char: Option<i32>,
-    /// 命令行参数个数（供 `main(int argc, char *argv[])` 使用）。
-    pub argc: i32,
-    /// 命令行参数字符串数组（供 `main(int argc, char *argv[])` 使用）。
-    pub argv: Vec<String>,
-}
-
-impl RuntimeState {
-    /// 拼接所有输出片段为完整输出字符串。
-    /// output_lines 中每个元素是独立的输出单元（如一次 printf/putchar 调用产生的字节），
-    /// 不再自动添加换行符；换行由格式字符串或 puts 等函数显式提供，与 C 标准一致。
-    pub fn output(&self) -> String {
-        self.output_lines.join("")
+impl From<VisEvent> for cide_runtime::VisEventData {
+    fn from(value: VisEvent) -> Self {
+        Self {
+            ty: value.ty,
+            line: value.line,
+            extra0: value.extra0,
+            extra1: value.extra1,
+            extra2: value.extra2,
+            context: value.context,
+        }
     }
 }
+
+/// 执行路径热力图：记录每行源代码被执行的次数。
+pub use cide_runtime::ExecutionHeatmap;
 
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -183,11 +179,59 @@ pub struct MemoryRegion {
     pub alloc_by: String,
 }
 
+impl From<cide_runtime::MemoryRegionData> for MemoryRegion {
+    fn from(value: cide_runtime::MemoryRegionData) -> Self {
+        Self {
+            addr: value.addr,
+            size: value.size,
+            name: value.name,
+            ty: value.ty,
+            is_heap: value.is_heap,
+            is_freed: value.is_freed,
+            alloc_line: value.alloc_line,
+            alloc_by: value.alloc_by,
+        }
+    }
+}
+
+impl From<MemoryRegion> for cide_runtime::MemoryRegionData {
+    fn from(value: MemoryRegion) -> Self {
+        Self {
+            addr: value.addr,
+            size: value.size,
+            name: value.name,
+            ty: value.ty,
+            is_heap: value.is_heap,
+            is_freed: value.is_freed,
+            alloc_line: value.alloc_line,
+            alloc_by: value.alloc_by,
+        }
+    }
+}
+
 #[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryFragment {
     pub addr: u32,
     pub size: i32,
+}
+
+impl From<cide_runtime::MemoryFragmentData> for MemoryFragment {
+    fn from(value: cide_runtime::MemoryFragmentData) -> Self {
+        Self {
+            addr: value.addr,
+            size: value.size,
+        }
+    }
+}
+
+impl From<MemoryFragment> for cide_runtime::MemoryFragmentData {
+    fn from(value: MemoryFragment) -> Self {
+        Self {
+            addr: value.addr,
+            size: value.size,
+        }
+    }
 }
 
 #[frb]
@@ -203,126 +247,25 @@ pub struct HeapStats {
     pub fragmentation_rate: i32,
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct FreeBlock {
-    pub addr: u32,
-    pub size: i32,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct MemoryState {
-    pub regions: Vec<MemoryRegion>,
-    pub free_list: Vec<FreeBlock>,
-    pub heap_offset: u32,
-    pub alloc_counter: i32,
-}
-
-impl Default for MemoryState {
-    fn default() -> Self {
+impl From<cide_runtime::HeapStatsData> for HeapStats {
+    fn from(value: cide_runtime::HeapStatsData) -> Self {
         Self {
-            regions: Vec::new(),
-            free_list: Vec::new(),
-            heap_offset: crate::vm::core::HEAP_START,
-            alloc_counter: 0,
+            total_heap: value.total_heap,
+            allocated: value.allocated,
+            fragmented: value.fragmented,
+            fragmentation_rate: value.fragmentation_rate,
         }
     }
 }
 
-impl MemoryState {
-    /// 从 free_list 或 heap 顶部分配 `aligned_size` 字节。
-    /// 成功返回地址，失败返回 None。
-    pub fn allocate_raw(&mut self, aligned_size: u32, mem_limit: u32) -> Option<u32> {
-        if aligned_size == 0 {
-            return Some(0);
+impl From<HeapStats> for cide_runtime::HeapStatsData {
+    fn from(value: HeapStats) -> Self {
+        Self {
+            total_heap: value.total_heap,
+            allocated: value.allocated,
+            fragmented: value.fragmented,
+            fragmentation_rate: value.fragmentation_rate,
         }
-        let mut addr = 0u32;
-        let mut found_idx = None;
-        for (i, block) in self.free_list.iter().enumerate() {
-            if (block.size as u32) >= aligned_size {
-                addr = block.addr;
-                found_idx = Some(i);
-                break;
-            }
-        }
-        if let Some(idx) = found_idx {
-            let block = &mut self.free_list[idx];
-            if (block.size as u32) > aligned_size {
-                block.addr += aligned_size;
-                block.size -= aligned_size as i32;
-                // 若该 free block 恰位于 heap 顶部，更新 heap_offset 避免后续分配冲突
-                if addr == self.heap_offset {
-                    self.heap_offset = block.addr;
-                }
-            } else {
-                self.free_list.remove(idx);
-                // 若整块被分配且位于 heap 顶部，推进 heap_offset
-                if addr == self.heap_offset {
-                    self.heap_offset = addr + aligned_size;
-                }
-            }
-        } else {
-            addr = self.heap_offset;
-            let new_offset = addr as u64 + aligned_size as u64;
-            if new_offset > mem_limit as u64 || new_offset > u32::MAX as u64 {
-                return None;
-            }
-            self.heap_offset = new_offset as u32;
-        }
-        // 清理 free_list 中与刚分配区域重叠的 stale 块
-        let alloc_end = addr + aligned_size;
-        let mut i = 0;
-        while i < self.free_list.len() {
-            let block = &self.free_list[i];
-            let block_end = block.addr + block.size as u32;
-            if block.addr >= alloc_end || block_end <= addr {
-                i += 1;
-                continue;
-            }
-            if block.addr >= addr && block_end <= alloc_end {
-                // 完全被覆盖
-                self.free_list.remove(i);
-            } else if block.addr < addr && block_end > alloc_end {
-                // 分配在块内部：拆分为前后两部分
-                let tail_size = block_end - alloc_end;
-                let head_size = addr - block.addr;
-                self.free_list[i].size = head_size as i32;
-                if tail_size > 0 {
-                    self.free_list.push(FreeBlock {
-                        addr: alloc_end,
-                        size: tail_size as i32,
-                    });
-                }
-                i += 1;
-            } else if block.addr < addr {
-                // 覆盖块的后部
-                self.free_list[i].size = (addr - block.addr) as i32;
-                i += 1;
-            } else {
-                // 覆盖块的前部
-                self.free_list[i].addr = alloc_end;
-                self.free_list[i].size = (block_end - alloc_end) as i32;
-                i += 1;
-            }
-        }
-        Some(addr)
-    }
-
-    /// 合并 free_list 中地址相邻的空闲块。
-    pub fn merge_free_list(&mut self) {
-        self.free_list.sort_by_key(|b| b.addr);
-        let mut merged: Vec<FreeBlock> = Vec::new();
-        for block in self.free_list.drain(..) {
-            if let Some(last) = merged.last_mut() {
-                if (last.addr as u64) + (last.size as u64) == (block.addr as u64) {
-                    last.size += block.size;
-                } else {
-                    merged.push(block);
-                }
-            } else {
-                merged.push(block);
-            }
-        }
-        self.free_list = merged;
     }
 }
 
@@ -369,6 +312,17 @@ pub struct Session {
     pub vfs: VirtualFileSystem,
 }
 
+impl Session {
+    /// 构造 VM 执行上下文，将 VM 所需的运行时/内存/VFS 可变引用聚合起来。
+    pub fn as_vm_context(&mut self) -> crate::vm::context::VmContext<'_> {
+        crate::vm::context::VmContext {
+            runtime: &mut self.runtime,
+            memory: &mut self.memory,
+            vfs: &mut self.vfs,
+        }
+    }
+}
+
 impl Default for Session {
     fn default() -> Self {
         Self {
@@ -378,5 +332,28 @@ impl Default for Session {
             vm: Some(CideVM::default()),
             vfs: VirtualFileSystem::new(),
         }
+    }
+}
+
+impl cide_algorithm_steps::AlgorithmContext for Session {
+    fn source_line(&self, line: i32) -> Option<String> {
+        let unit = self.compile.compile_units.first()?;
+        let line = unit.source.lines().nth((line - 1) as usize)?;
+        Some(line.trim().to_string())
+    }
+
+    fn find_algorithm(&self, func_name: &str) -> Option<cide_algorithm_steps::AlgorithmMatch> {
+        self.compile
+            .algorithm_matches
+            .iter()
+            .find(|m| m.func_name == func_name)
+            .map(|m| cide_algorithm_steps::AlgorithmMatch {
+                name: m.name.clone(),
+                display_name: m.display_name.clone(),
+                func_name: m.func_name.clone(),
+                confidence: m.confidence,
+                suggestion: m.suggestion.clone(),
+                line: m.line,
+            })
     }
 }

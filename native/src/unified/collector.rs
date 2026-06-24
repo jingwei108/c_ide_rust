@@ -1,9 +1,9 @@
 use crate::session::Session;
-use crate::unified::algorithm_steps::infer_algorithm_step;
 use crate::unified::types::{
     AccessedVar, ApiFrameInfo, ApiVariableSnapshot, PointerSnapshot, PointerStatus, StepPayload,
 };
 use crate::vm::core::CideVM;
+use cide_algorithm_steps::infer_algorithm_step;
 
 /// 每步数据收集器：从 VM 和 Session 中提取轻量 `StepPayload`。
 pub struct StepCollector;
@@ -38,13 +38,30 @@ impl StepCollector {
             .collect();
 
         // 取出该步产生的可视化事件
-        let vis_events = vm.take_vis_events();
+        let vis_events: Vec<crate::session::VisEvent> = vm.take_vis_events().into_iter().map(Into::into).collect();
 
         let heatmap_line = code_line;
         let heatmap_count = session.runtime.heatmap.line_counts.get(&code_line).copied().unwrap_or(0);
 
         let semantic_label = infer_semantic_label(code_line, &local_vars, &func_name, session);
-        let algorithm_step = infer_algorithm_step(code_line, &local_vars, &func_name, session);
+        let algorithm_step = {
+            let ctx: &dyn cide_algorithm_steps::AlgorithmContext = session;
+            let algo_vars: Vec<cide_algorithm_steps::VariableSnapshot> = local_vars
+                .iter()
+                .map(|v| cide_algorithm_steps::VariableSnapshot {
+                    name: v.name.clone(),
+                    value: v.value.clone(),
+                })
+                .collect();
+            infer_algorithm_step(code_line, &algo_vars, &func_name, ctx).map(|s| {
+                crate::unified::types::AlgorithmStepSnapshot {
+                    algorithm_name: s.algorithm_name,
+                    display_name: s.display_name,
+                    phase: s.phase,
+                    description: s.description,
+                }
+            })
+        };
 
         let accessed_vars = vm
             .get_last_accessed_vars()
@@ -58,7 +75,8 @@ impl StepCollector {
             })
             .collect();
 
-        let array_snapshots = vm.get_array_snapshots();
+        let array_snapshots: Vec<crate::unified::types::ArraySnapshot> =
+            vm.get_array_snapshots().into_iter().map(Into::into).collect();
         let pointer_snapshots = collect_pointer_snapshots(vm, session, &local_vars);
 
         StepPayload {
@@ -98,7 +116,7 @@ fn collect_pointer_snapshots(
 
         let status = if target_addr == 0 {
             PointerStatus::Null
-        } else if !(crate::vm::core::NULL_TRAP_SIZE..crate::vm::core::MEM_SIZE).contains(&target_addr) {
+        } else if !(cide_runtime::NULL_TRAP_SIZE..cide_runtime::MEM_SIZE).contains(&target_addr) {
             PointerStatus::Dangling
         } else if is_freed_heap(&session.memory.regions, target_addr) {
             PointerStatus::Freed
@@ -136,7 +154,7 @@ fn parse_addr(value: &str) -> Option<u32> {
     }
 }
 
-fn is_freed_heap(regions: &[crate::session::MemoryRegion], addr: u32) -> bool {
+fn is_freed_heap(regions: &[cide_runtime::MemoryRegionData], addr: u32) -> bool {
     regions.iter().any(|r| r.is_heap && r.addr == addr && r.is_freed)
 }
 
@@ -149,7 +167,7 @@ fn find_var_name_at_addr(local_vars: &[ApiVariableSnapshot], addr: u32) -> Strin
     String::new()
 }
 
-fn format_value(v: &crate::session::VariableSnapshot) -> String {
+fn format_value(v: &cide_runtime::VariableSnapshotData) -> String {
     use crate::compiler::ast::TypeKind;
     match v.ty.kind() {
         TypeKind::Double => {

@@ -1,10 +1,10 @@
 use crate::session::Session;
-use crate::unified::checkpoint::CheckpointManager;
 use crate::unified::collector::StepCollector;
 use crate::unified::trace_analyzer::TraceAnalyzer;
 use crate::unified::types::{AutoStepResult, SeekResult, StepMeta, StepPayload};
 use crate::vm::core::{CideVM, StepResult};
 use crate::vm::snapshot::VMSnapshot;
+use cide_vm::snapshot::CheckpointManager;
 
 /// 统一模式引擎：整合检查点管理、数据收集和批量执行。
 ///
@@ -34,10 +34,18 @@ impl Default for UnifiedEngine {
 
 impl UnifiedEngine {
     pub fn new() -> Self {
+        Self::with_max_steps(100_000)
+    }
+
+    /// 使用自定义最大步数限制创建引擎。
+    ///
+    /// `max_steps` 用于防止无限循环耗尽资源；教学场景中的长程序可通过此接口
+    /// 获得更大的执行预算。
+    pub fn with_max_steps(max_steps: i32) -> Self {
         Self {
             checkpoints: CheckpointManager::new(20),
             frame_cache: Vec::new(),
-            max_steps: 100_000,
+            max_steps,
             is_paused: false,
             is_cancelled: false,
             pre_step_snap: None,
@@ -169,17 +177,17 @@ impl UnifiedEngine {
                 loop_depth: 0,
                 semantic_label,
             };
-            if self.checkpoints.should_checkpoint(step, &meta) {
-                self.checkpoints.save(step, vm, session);
+            if self.checkpoints.should_checkpoint(step, &meta.semantic_label) {
+                self.checkpoints.save(step, vm, &mut session.as_vm_context());
             }
 
             // 执行前快照：用于 Trap 时自动回退。
             // 复用已有 VMSnapshot 的 1MB buffer，避免每步分配新 Vec。
-            let pre_step_snap = self.pre_step_snap.get_or_insert_with(|| vm.snapshot(session));
-            vm.snapshot_into(session, pre_step_snap);
+            let pre_step_snap = self.pre_step_snap.get_or_insert_with(|| vm.snapshot(&session.as_vm_context()));
+            vm.snapshot_into(&session.as_vm_context(), pre_step_snap);
 
             // 执行一步
-            match vm.step(session) {
+            match vm.step(&mut session.as_vm_context()) {
                 StepResult::Ok => {
                     let payload = StepCollector::collect(vm, session, step);
                     payloads.push(payload);
@@ -203,7 +211,7 @@ impl UnifiedEngine {
                 }
                 StepResult::Trap => {
                     // 自动回退到上一步状态
-                    vm.restore(pre_step_snap, session);
+                    vm.restore(pre_step_snap, &mut session.as_vm_context());
                     let mut payload = StepCollector::collect(vm, session, step);
 
                     // Build full history for trace analysis.
@@ -271,7 +279,7 @@ impl UnifiedEngine {
         };
 
         // 恢复 VM 状态
-        vm.restore(&snap, session);
+        vm.restore(&snap, &mut session.as_vm_context());
 
         // 正向重放到目标步
         for step in checkpoint_step..target {
@@ -285,10 +293,10 @@ impl UnifiedEngine {
 
             // 重放过程中动态保存检查点，加速后续 seek
             if step > checkpoint_step && step % self.checkpoints.interval == 0 {
-                self.checkpoints.save(step, vm, session);
+                self.checkpoints.save(step, vm, &mut session.as_vm_context());
             }
 
-            match vm.step(session) {
+            match vm.step(&mut session.as_vm_context()) {
                 StepResult::Ok | StepResult::Paused => {
                     let payload = StepCollector::collect(vm, session, step);
                     self.push_or_replace_in_replay(step, payload);

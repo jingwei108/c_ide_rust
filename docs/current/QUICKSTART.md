@@ -156,8 +156,8 @@ python scripts/test_mobile.py --install --run --logcat
 ## 验证项目是否健康
 
 ```bash
-# Rust 后端测试（719+ 用例）
-cd native && cargo test
+# Rust 后端测试（750+ 用例）
+cd native && cargo test --workspace --all-features
 
 # C Shadow Verification（与 Clang 对比 stdout）
 python native/tests/shadow_verification/shadow_verify.py

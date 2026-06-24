@@ -28,13 +28,14 @@ cide_cli <command> <file> [options]
 | `compile <file>` | Compile C file and display diagnostics (errors/warnings/suggestions) |
 | `run <file>` | Compile and run program at full speed |
 | `step <file>` | Interactive step debugging |
-| `unified <file>` | Unified mode (time-travel engine) batch execution and summary output |
+| `unified <file>` | Unified mode (time-travel engine) batch execution and summary output (supports `--max-steps <n>`) |
 
 ## Options
 
 | Option | Description |
 |:-------|:------------|
 | `-i <file>` | Read standard input from specified file (multi-line input for `scanf`/`fgets`, etc.) |
+| `--max-steps <n>` | Maximum execution steps allowed in unified mode (default 100_000), for long programs or performance baseline testing |
 
 ## Special Filenames
 
@@ -153,6 +154,12 @@ sum=15
 ```
 
 Unified mode records every VM state step, supports checkpoint save and rollback, and uses the same engine as the frontend "time-travel" feature.
+
+For long programs that may exceed the default 100,000-step limit, use `--max-steps` to raise the limit:
+
+```bash
+cide_cli unified long_sort.c --max-steps 500000
+```
 
 ## Quick Test Snippets
 

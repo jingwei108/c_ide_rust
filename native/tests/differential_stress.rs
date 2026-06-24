@@ -12,6 +12,7 @@
 
 use cide_native::engine::compile_pipeline::{run_multi_file_pipeline, setup_vm};
 use cide_native::session::{CompileUnit, Session};
+use cide_native::vm::context::VmContext;
 use cide_native::vm::core::CideVM;
 use cide_native::vm::host_funcs::{
     host_abs, host_atoi, host_isalnum, host_isalpha, host_iscntrl, host_isdigit, host_islower, host_isprint,
@@ -63,12 +64,12 @@ fn test_diff_abs() {
         let mut hvm = CideVM::new();
         let mut hsess = Session::default();
         hvm.push(n as u64);
-        host_abs(&mut hvm, &mut hsess);
+        host_abs(&mut hvm, &mut hsess.as_vm_context());
         let host_result = hvm.pop() as i32;
 
         // Bytecode 路径（使用同一个 VM 实例）
         let bc_result = vm
-            .call_user_function(&mut session, func_idx, &[n], 10000)
+            .call_user_function(&mut session.as_vm_context(), func_idx, &[n], 10000)
             .expect("Bytecode abs 调用失败");
 
         assert_eq!(
@@ -94,12 +95,12 @@ fn test_diff_strlen() {
 
         // Host 路径
         vm.push(base_addr as u64);
-        host_strlen(&mut vm, &mut session);
+        host_strlen(&mut vm, &mut session.as_vm_context());
         let host_result = vm.pop() as i32;
 
         // Bytecode 路径
         let bc_result = vm
-            .call_user_function(&mut session, func_idx, &[base_addr as i32], 10000)
+            .call_user_function(&mut session.as_vm_context(), func_idx, &[base_addr as i32], 10000)
             .expect("Bytecode strlen 调用失败");
 
         assert_eq!(
@@ -125,12 +126,12 @@ fn test_diff_atoi() {
 
         // Host 路径
         vm.push(base_addr as u64);
-        host_atoi(&mut vm, &mut session);
+        host_atoi(&mut vm, &mut session.as_vm_context());
         let host_result = vm.pop() as i32;
 
         // Bytecode 路径
         let bc_result = vm
-            .call_user_function(&mut session, func_idx, &[base_addr as i32], 10000)
+            .call_user_function(&mut session.as_vm_context(), func_idx, &[base_addr as i32], 10000)
             .expect("Bytecode atoi 调用失败");
 
         assert_eq!(
@@ -166,12 +167,12 @@ fn test_diff_strcmp() {
         // Host 路径（注意：host_strcmp 先 pop s1 再 pop s2）
         vm.push(addr2 as u64);
         vm.push(addr1 as u64);
-        host_strcmp(&mut vm, &mut session);
+        host_strcmp(&mut vm, &mut session.as_vm_context());
         let host_result = vm.pop() as i32;
 
         // Bytecode 路径
         let bc_result = vm
-            .call_user_function(&mut session, func_idx, &[addr1 as i32, addr2 as i32], 10000)
+            .call_user_function(&mut session.as_vm_context(), func_idx, &[addr1 as i32, addr2 as i32], 10000)
             .expect("Bytecode strcmp 调用失败");
 
         let sign_host = host_result.signum();
@@ -197,7 +198,7 @@ fn read_test_string(vm: &CideVM, addr: u32) -> String {
 
 // ─── ctype 差分测试（批量） ─────────────────────────────────────────────────
 
-fn diff_ctype_test(func_name: &str, inputs: &[i32], host_fn: fn(&mut CideVM, &mut Session)) {
+fn diff_ctype_test(func_name: &str, inputs: &[i32], host_fn: fn(&mut CideVM, &mut VmContext<'_>)) {
     let (mut vm, mut session) = prepare_bc_vm(&[("ctype.c", BC_CTYPE)]);
     let func_idx = find_func_idx(&vm, func_name);
 
@@ -206,12 +207,12 @@ fn diff_ctype_test(func_name: &str, inputs: &[i32], host_fn: fn(&mut CideVM, &mu
         let mut hvm = CideVM::new();
         let mut hsess = Session::default();
         hvm.push(c as u64);
-        host_fn(&mut hvm, &mut hsess);
+        host_fn(&mut hvm, &mut hsess.as_vm_context());
         let host_result = hvm.pop() as i32;
 
         // Bytecode 路径
         let bc_result = vm
-            .call_user_function(&mut session, func_idx, &[c], 10000)
+            .call_user_function(&mut session.as_vm_context(), func_idx, &[c], 10000)
             .unwrap_or_else(|| panic!("Bytecode {} 调用失败", func_name));
 
         assert_eq!(
@@ -301,7 +302,7 @@ fn test_diff_strncpy() {
         vm.push(*n as u64);
         vm.push(src_addr as u64);
         vm.push(dst_addr as u64);
-        host_strncpy(&mut vm, &mut session);
+        host_strncpy(&mut vm, &mut session.as_vm_context());
         let _ = vm.pop();
 
         let host_result = read_test_string(&vm, dst_addr);
@@ -309,7 +310,12 @@ fn test_diff_strncpy() {
         // Bytecode 路径
         vm.memory_ref_mut()[dst_addr as usize..dst_end].fill(0);
         let bc_ret = vm
-            .call_user_function(&mut session, func_idx, &[dst_addr as i32, src_addr as i32, *n], 10000)
+            .call_user_function(
+                &mut session.as_vm_context(),
+                func_idx,
+                &[dst_addr as i32, src_addr as i32, *n],
+                10000,
+            )
             .unwrap_or_else(|| panic!("Bytecode strncpy 调用失败: error={}", vm.get_error()));
 
         let bc_result = read_test_string(&vm, dst_addr);
@@ -337,14 +343,19 @@ fn test_diff_memcpy() {
         vm.push(n as u64);
         vm.push(src_addr as u64);
         vm.push(dst_addr as u64);
-        host_memcpy(&mut vm, &mut session);
+        host_memcpy(&mut vm, &mut session.as_vm_context());
         let _ = vm.pop();
         let host_result = read_test_string(&vm, dst_addr);
 
         // Bytecode 路径
         vm.memory_ref_mut()[dst_addr as usize..dst_addr as usize + 16].fill(0);
         let bc_ret = vm
-            .call_user_function(&mut session, func_idx, &[dst_addr as i32, src_addr as i32, n], 10000)
+            .call_user_function(
+                &mut session.as_vm_context(),
+                func_idx,
+                &[dst_addr as i32, src_addr as i32, n],
+                10000,
+            )
             .expect("Bytecode memcpy 调用失败");
 
         let bc_result = read_test_string(&vm, dst_addr);
@@ -368,7 +379,7 @@ fn test_diff_memmove() {
     vm.push(n as u64);
     vm.push((buf_addr + src_off) as u64);
     vm.push((buf_addr + dst_off) as u64);
-    host_memmove(&mut vm, &mut session);
+    host_memmove(&mut vm, &mut session.as_vm_context());
     let _ = vm.pop();
     let host_result = read_test_string(&vm, buf_addr);
 
@@ -376,7 +387,7 @@ fn test_diff_memmove() {
     vm.write_cstring(buf_addr, init);
     let bc_ret = vm
         .call_user_function(
-            &mut session,
+            &mut session.as_vm_context(),
             func_idx,
             &[(buf_addr + dst_off) as i32, (buf_addr + src_off) as i32, n],
             10000,

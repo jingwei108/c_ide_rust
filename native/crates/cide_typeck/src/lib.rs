@@ -1,0 +1,496 @@
+//! Cide 类型检查器。
+//!
+//! 从 `cide_native::compiler::typeck` 拆分而来，负责 C/C++ 教学子集的语义检查与类型推断。
+
+// TypeChecker 入口模块。核心检查流程保留在此，作用域/转换/初始化等逻辑已下沉到子模块。
+use cide_ast::*;
+use cide_shared::ErrorCode;
+use std::collections::{HashMap, HashSet};
+
+mod context;
+mod convert;
+mod init;
+pub(crate) mod symbols;
+
+pub(crate) use convert::insert_implicit_cast;
+pub(crate) use symbols::*;
+
+#[derive(Debug, Clone)]
+pub struct TypeError {
+    pub message: String,
+    pub line: i32,
+    pub column: i32,
+    pub code: i32,
+}
+
+pub struct TypeChecker {
+    /// 库模式：当前正在预编译 Bytecode Libc 本身，不应再混入 builtin_layout 预注册类。
+    pub is_library_mode: bool,
+    pub(crate) errors: Vec<TypeError>,
+    pub(crate) warnings: Vec<TypeError>,
+    pub(crate) hints: Vec<TypeError>,
+    pub(crate) funcs: HashMap<String, FuncSymbol>,
+    pub(crate) static_func_sigs: HashMap<String, FuncSymbol>,
+    pub(crate) static_func_files: HashMap<String, Vec<String>>,
+    pub(crate) static_global_files: HashMap<String, Vec<String>>,
+    pub(crate) structs: HashMap<String, StructSymbol>,
+    pub(crate) unions: HashMap<String, StructSymbol>,
+    pub(crate) classes: HashMap<String, ClassSymbol>,
+    pub(crate) templates: HashMap<String, TemplateSymbol>,
+    pub(crate) scopes: Vec<HashMap<String, VarSymbol>>,
+    pub(crate) current_func_return: Type,
+    pub(crate) current_file: String,
+    pub(crate) loop_depth: i32,
+    pub(crate) switch_depth: i32,
+    pub(crate) current_func_params: HashSet<String>,
+    pub(crate) func_labels: HashMap<String, SourceLoc>,
+    pub(crate) pending_gotos: Vec<(String, SourceLoc)>,
+    pub(crate) current_class: Option<String>,
+    pub(crate) current_method_is_const: bool,
+    /// Template instantiations discovered during type checking; appended to program.funcs at the end.
+    pub(crate) pending_instantiations: Vec<(String, FuncDecl)>,
+    /// Class template instantiations discovered during type checking; appended to program.classes at the end.
+    pub(crate) pending_class_instantiations: Vec<(String, ClassDecl)>,
+    /// Lambdas discovered during type checking; lifted to ClassDecl + FuncDecl at the end.
+    pub(crate) pending_lambdas: Vec<LambdaInfo>,
+}
+
+impl Default for TypeChecker {
+    fn default() -> Self {
+        Self {
+            is_library_mode: false,
+            errors: Vec::new(),
+            warnings: Vec::new(),
+            hints: Vec::new(),
+            funcs: HashMap::new(),
+            static_func_sigs: HashMap::new(),
+            static_func_files: HashMap::new(),
+            static_global_files: HashMap::new(),
+            structs: HashMap::new(),
+            unions: HashMap::new(),
+            classes: HashMap::new(),
+            templates: HashMap::new(),
+            scopes: Vec::new(),
+            current_func_return: Type::void(),
+            current_file: String::new(),
+            loop_depth: 0,
+            switch_depth: 0,
+            current_func_params: HashSet::new(),
+            func_labels: HashMap::new(),
+            pending_gotos: Vec::new(),
+            current_class: None,
+            current_method_is_const: false,
+            pending_instantiations: Vec::new(),
+            pending_class_instantiations: Vec::new(),
+            pending_lambdas: Vec::new(),
+        }
+    }
+}
+
+impl TypeChecker {
+    pub fn new(is_library_mode: bool) -> Self {
+        Self {
+            is_library_mode,
+            ..Self::default()
+        }
+    }
+
+    pub fn check(mut self, program: &mut ProgramNode) -> (Vec<TypeError>, Vec<TypeError>, Vec<TypeError>) {
+        // Pass 1: Register structs and unions
+        for s in &program.structs {
+            if self.structs.contains_key(&s.name) {
+                self.report_error(
+                    &format!("结构体 '{}' 重复定义", s.name),
+                    &s.loc,
+                    ErrorCode::E3002_StructRedeclared,
+                );
+                continue;
+            }
+            let sym = StructSymbol {
+                fields: s.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect(),
+            };
+            self.structs.insert(s.name.clone(), sym);
+        }
+        for u in &program.unions {
+            if self.unions.contains_key(&u.name) {
+                self.report_error(
+                    &format!("联合体 '{}' 重复定义", u.name),
+                    &u.loc,
+                    ErrorCode::E3002_StructRedeclared,
+                );
+                continue;
+            }
+            let sym = StructSymbol {
+                fields: u.fields.iter().map(|f| (f.ty.clone(), f.name.clone())).collect(),
+            };
+            self.unions.insert(u.name.clone(), sym);
+        }
+
+        // Pass 1.5: Register classes and compute layouts
+        self.register_class_layouts(program);
+
+        // Pass 1.6: Merge out-of-line method definitions into class declarations.
+        // This handles C++ idiom `void Foo::bar() { ... }` and `Foo::Foo() { ... }`
+        // by attaching the body to the in-class declaration, avoiding duplicate
+        // function symbols and giving method bodies access to class fields.
+        self.merge_out_of_line_method_definitions(program);
+
+        // Pass 2: Register function signatures (including class methods as mangled funcs)
+        for f in &program.funcs {
+            let new_sym = FuncSymbol {
+                return_type: f.return_type.clone(),
+                param_types: f.params.iter().map(|p| p.ty.clone()).collect(),
+            };
+            if f.is_static {
+                if let Some(existing) = self.static_func_sigs.get(&f.name) {
+                    if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
+                        self.report_error(
+                            &format!("函数 '{}' 的声明与之前定义签名不一致", f.name),
+                            &f.loc,
+                            ErrorCode::E3003_FuncRedeclared,
+                        );
+                    }
+                } else {
+                    self.static_func_sigs.insert(f.name.clone(), new_sym);
+                }
+                self.static_func_files
+                    .entry(f.name.clone())
+                    .or_default()
+                    .push(f.source_file.clone());
+            } else {
+                if let Some(existing) = self.funcs.get(&f.name) {
+                    if existing.return_type != new_sym.return_type || existing.param_types != new_sym.param_types {
+                        self.report_error(
+                            &format!("函数 '{}' 的声明与之前定义签名不一致", f.name),
+                            &f.loc,
+                            ErrorCode::E3003_FuncRedeclared,
+                        );
+                    }
+                    continue;
+                }
+                self.funcs.insert(f.name.clone(), new_sym);
+            }
+        }
+
+        // Class methods, constructors, and destructors are already registered as
+        // mangled global function symbols by register_single_class_layout, including
+        // overload-aware names (Class__method__N) when a class contains multiple
+        // overloads of the same method.
+        // Pass 2.4: Register class static fields as mangled global variables
+        let mut static_field_globals: Vec<GlobalDecl> = Vec::new();
+        for c in &program.classes {
+            for member in &c.members {
+                if let ClassMember::Field {
+                    name: field_name,
+                    ty,
+                    is_static: true,
+                    ..
+                } = member
+                {
+                    let mangled = format!("{}__{}", c.name, field_name);
+                    if !program.globals.iter().any(|g| g.name == mangled) {
+                        static_field_globals.push(GlobalDecl {
+                            loc: c.loc,
+                            ty: ty.clone(),
+                            name: mangled,
+                            init: None,
+                            is_static: false,
+                            is_extern: false,
+                            source_file: String::new(),
+                        });
+                    }
+                }
+            }
+        }
+        program.globals.extend(static_field_globals);
+
+        // Pass 2.6: Register templates
+        for t in &program.templates {
+            let name = match &t.decl {
+                Templateable::Func(f) => f.name.clone(),
+                Templateable::Class(c) => c.name.clone(),
+            };
+            if self.templates.contains_key(&name) {
+                self.report_error(&format!("模板 '{}' 重复定义", name), &t.loc, ErrorCode::E3003_FuncRedeclared);
+                continue;
+            }
+            let sym = TemplateSymbol {
+                params: t.params.clone(),
+                decl: t.decl.clone(),
+            };
+            self.templates.insert(name, sym);
+        }
+
+        // Pass 2.65: Process explicit template class instantiations
+        // (e.g. `template class cide_vec<int>;`).
+        for inst in &program.template_instantiations {
+            if let Some((mangled, new_class)) = self.try_monomorphize_class(&inst.base, &inst.args) {
+                self.pending_class_instantiations.push((mangled, new_class));
+            } else if !self.templates.contains_key(&inst.base) {
+                self.report_error(
+                    &format!("未知模板类 '{}'", inst.base),
+                    &inst.loc,
+                    ErrorCode::E3023_UndeclaredVar,
+                );
+            }
+        }
+
+        // Pass 2.5: Register globals and check initializers
+        self.enter_scope();
+        for g in &mut program.globals {
+            self.declare_var(&g.name, &g.ty, true, g.is_extern, g.is_static);
+            if g.is_static {
+                self.static_global_files
+                    .entry(g.name.clone())
+                    .or_default()
+                    .push(g.source_file.clone());
+            }
+        }
+        for g in &mut program.globals {
+            if let Some(ref mut init) = g.init {
+                if g.ty.is_array() {
+                    self.check_array_initializer(&mut g.ty, init, &g.loc);
+                } else if g.ty.is_struct() && matches!(init, Expr::InitList { .. }) {
+                    self.check_struct_initializer(&g.ty, init, &g.loc);
+                } else {
+                    let init_type = self.resolve_expr_type(init);
+                    if !self.check_assignable(&g.ty, &init_type, &g.loc) {
+                        self.report_error(
+                            &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, g.ty),
+                            &g.loc,
+                            ErrorCode::E3004_TypeMismatch,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Pass 3: Check function bodies
+        for f in &mut program.funcs {
+            if f.body.is_some() {
+                self.visit_func_decl(f);
+            }
+        }
+
+        // Drain class template instantiations discovered during Pass 3
+        // so Pass 3.5 can check their methods.
+        let pending_classes: Vec<_> = self.pending_class_instantiations.drain(..).collect();
+        for (_name, c) in pending_classes {
+            program.classes.push(c);
+        }
+
+        // Pass 3.5: Check class method / constructor / destructor bodies
+        self.check_class_methods(program);
+
+        // Pass 3.55: Generate implicit move constructors for resource-holding classes
+        self.generate_implicit_move_ctors(program);
+
+        // Pass 3.6: Check pending function template instantiations recursively.
+        // Function template instantiations discovered during Pass 3/3.5 may contain
+        // further template calls (e.g. sort__int calls sort_rec__int), so we loop
+        // until no new instantiations are generated.
+        while !self.pending_instantiations.is_empty() {
+            let pending: Vec<_> = self.pending_instantiations.drain(..).collect();
+            for (_, mut f) in pending {
+                if f.body.is_some() {
+                    self.visit_func_decl(&mut f);
+                }
+                program.funcs.push(f);
+            }
+        }
+
+        self.exit_scope();
+
+        // Pass 4: Lift lambdas to ClassDecl + FuncDecl
+        let lambdas: Vec<_> = self.pending_lambdas.drain(..).collect();
+        for info in lambdas {
+            let lambda_name = format!("__lambda_{}", info.id);
+            let call_name = format!("{}__call", lambda_name);
+
+            // Create ClassDecl with capture fields
+            let class_members: Vec<ClassMember> = info
+                .captures
+                .iter()
+                .map(|(name, ty, _)| ClassMember::Field {
+                    name: name.clone(),
+                    ty: ty.clone(),
+                    access: AccessSpec::Public,
+                    is_static: false,
+                })
+                .collect();
+            program.classes.push(ClassDecl {
+                loc: info.loc,
+                name: lambda_name.clone(),
+                base: None,
+                members: class_members,
+                vtable: None,
+            });
+
+            // Create FuncDecl for __call
+            let mut call_params = vec![Param {
+                name: "this".to_string(),
+                ty: Type::Pointer {
+                    pointee: Box::new(Type::Class {
+                        name: lambda_name.clone(),
+                        is_const: false,
+                    }),
+                    is_const: false,
+                },
+                loc: info.loc,
+            }];
+            call_params.extend(info.params.iter().cloned());
+
+            let mut func_decl = FuncDecl {
+                loc: info.loc,
+                return_type: Type::int(),
+                name: call_name,
+                params: call_params,
+                body: Some(info.body),
+                is_static: false,
+                is_extern: false,
+                source_file: self.current_file.clone(),
+            };
+
+            // Rewrite capture variable accesses to this->field
+            if let Some(ref mut body) = func_decl.body {
+                Self::rewrite_lambda_captures(body, &info.captures, &lambda_name);
+            }
+
+            // Type-check the generated function body
+            self.current_class = Some(lambda_name.clone());
+            self.visit_func_decl(&mut func_decl);
+            self.current_class = None;
+            program.funcs.push(func_decl);
+        }
+
+        (self.errors, self.warnings, self.hints)
+    }
+
+    pub(crate) fn report_error(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
+        self.errors.push(TypeError {
+            message: msg.to_string(),
+            line: loc.line,
+            column: loc.column,
+            code: code as i32,
+        });
+    }
+
+    pub(crate) fn report_warning(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
+        self.warnings.push(TypeError {
+            message: msg.to_string(),
+            line: loc.line,
+            column: loc.column,
+            code: code as i32,
+        });
+    }
+
+    fn report_hint(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {
+        self.hints.push(TypeError {
+            message: msg.to_string(),
+            line: loc.line,
+            column: loc.column,
+            code: code as i32,
+        });
+    }
+}
+
+mod builtin;
+mod cpp;
+mod cpp_auto;
+mod cpp_class_layout;
+mod cpp_container;
+mod cpp_monomorph;
+mod cpp_overload;
+mod decl;
+mod expr;
+
+#[cfg(test)]
+mod tests {
+    use super::convert::implicit_cast_target;
+    use super::*;
+
+    fn loc() -> SourceLoc {
+        SourceLoc::default()
+    }
+
+    #[test]
+    fn test_implicit_cast_target_int_to_double() {
+        assert_eq!(implicit_cast_target(&Type::int(), &Type::double()), Some(Type::double()));
+    }
+
+    #[test]
+    fn test_implicit_cast_target_double_to_int() {
+        assert_eq!(implicit_cast_target(&Type::double(), &Type::int()), Some(Type::int()));
+    }
+
+    #[test]
+    fn test_implicit_cast_target_float_to_int() {
+        assert_eq!(implicit_cast_target(&Type::float(), &Type::int()), Some(Type::int()));
+    }
+
+    #[test]
+    fn test_implicit_cast_target_int_to_float() {
+        assert_eq!(implicit_cast_target(&Type::int(), &Type::float()), Some(Type::float()));
+    }
+
+    #[test]
+    fn test_implicit_cast_target_char_to_longlong() {
+        assert_eq!(implicit_cast_target(&Type::char(), &Type::long_long()), Some(Type::long_long()));
+    }
+
+    #[test]
+    fn test_implicit_cast_target_longlong_to_char() {
+        assert_eq!(implicit_cast_target(&Type::long_long(), &Type::char()), Some(Type::char()));
+    }
+
+    #[test]
+    fn test_implicit_cast_target_pointer_no_cast() {
+        let p = Type::pointer_to(Type::int());
+        assert_eq!(implicit_cast_target(&p, &Type::int()), None);
+        assert_eq!(implicit_cast_target(&Type::int(), &p), None);
+    }
+
+    #[test]
+    fn test_implicit_cast_target_reference_no_cast() {
+        let r = Type::Reference {
+            base: Box::new(Type::int()),
+            is_const: false,
+        };
+        assert_eq!(implicit_cast_target(&r, &Type::double()), None);
+        assert_eq!(implicit_cast_target(&Type::double(), &r), None);
+    }
+
+    #[test]
+    fn test_insert_implicit_cast_int_literal_to_double() {
+        let mut expr = Expr::Literal {
+            value: 42,
+            loc: loc(),
+            ty: Type::int(),
+        };
+        insert_implicit_cast(&mut expr, &Type::double());
+        assert!(matches!(
+            expr,
+            Expr::Cast {
+                target_type: Type::Double { .. },
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn test_insert_implicit_cast_float_literal_to_int() {
+        let mut expr = Expr::FloatLiteral {
+            value: 2.5,
+            loc: loc(),
+            ty: Type::float(),
+        };
+        insert_implicit_cast(&mut expr, &Type::int());
+        assert!(matches!(
+            expr,
+            Expr::Cast {
+                target_type: Type::Int { .. },
+                ..
+            }
+        ));
+    }
+}

@@ -64,7 +64,7 @@ int main() {
     );
 
     let mut session = Session::default();
-    vm.run(&mut session);
+    vm.run(&mut session.as_vm_context());
 
     assert!(!vm.get_error().is_empty(), "expected trap but got none");
     assert!(

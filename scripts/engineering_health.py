@@ -27,6 +27,8 @@ if hasattr(sys.stdout, "reconfigure"):
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 REPORTS_DIR = PROJECT_ROOT / "reports"
 NATIVE_SRC = PROJECT_ROOT / "native" / "src"
+NATIVE_CRATES = PROJECT_ROOT / "native" / "crates"
+NATIVE_CODE_DIRS = [NATIVE_SRC, NATIVE_CRATES]
 FLUTTER_LIB = PROJECT_ROOT / "CideFlutter" / "lib"
 SHADOW_REPORT_DIR = PROJECT_ROOT / "native" / "tests" / "shadow_verification" / "reports"
 FAILURES_FILES = [
@@ -59,19 +61,21 @@ def count_lines(path: Path) -> int:
     return sum(1 for line in text.splitlines() if line.strip())
 
 
-def gather_files(root: Path, suffix: str) -> list[Path]:
+def gather_files(root: Path | list[Path], suffix: str) -> list[Path]:
     """递归收集指定后缀文件，排除生成目录与 target。"""
-    if not root.exists():
-        return []
+    roots = [root] if isinstance(root, Path) else root
     exclude = {"target", ".dart_tool", "build"}
     ignored_names = {"frb_generated.rs", "frb_generated.dart", "frb_generated.io.dart", "frb_generated.web.dart"}
     files = []
-    for p in root.rglob(f"*.{suffix}"):
-        if any(part in exclude for part in p.parts):
+    for r in roots:
+        if not r.exists():
             continue
-        if p.name in ignored_names:
-            continue
-        files.append(p)
+        for p in r.rglob(f"*.{suffix}"):
+            if any(part in exclude for part in p.parts):
+                continue
+            if p.name in ignored_names:
+                continue
+            files.append(p)
     return files
 
 
@@ -107,7 +111,7 @@ def count_production_unwrap_expect() -> tuple[int, Counter]:
     pattern = re.compile(r"\b(unwrap\(\)|expect\()")
     per_file = Counter()
     total = 0
-    for p in gather_files(NATIVE_SRC, "rs"):
+    for p in gather_files(NATIVE_CODE_DIRS, "rs"):
         if p.name == "frb_generated.rs":
             continue
         text = p.read_text(encoding="utf-8", errors="ignore")
@@ -285,7 +289,7 @@ def generate_report() -> str:
     rev = get_git_rev()
     dirty = " (dirty)" if get_git_dirty() else ""
 
-    rust_top = top_files_by_lines(NATIVE_SRC, "rs")
+    rust_top = top_files_by_lines(NATIVE_CODE_DIRS, "rs")
     dart_top = top_files_by_lines(FLUTTER_LIB, "dart")
 
     todo_total, todo_per_file = count_pattern_in_files(
@@ -296,7 +300,7 @@ def generate_report() -> str:
     )
 
     unwrap_total, unwrap_per_file = count_pattern_in_files(
-        NATIVE_SRC, "rs", r"\b(unwrap\(\)|expect\()"
+        NATIVE_CODE_DIRS, "rs", r"\b(unwrap\(\)|expect\()"
     )
     # 生产代码 unwrap/expect：排除测试代码与 FRB 生成文件
     prod_unwrap_total, prod_unwrap_per_file = count_production_unwrap_expect()

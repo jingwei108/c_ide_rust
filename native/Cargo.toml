@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/cide_ast", "crates/cide_shared", "."]
+members = ["crates/cide_algorithm_steps", "crates/cide_ast", "crates/cide_codegen", "crates/cide_cpp_frontend", "crates/cide_lexer", "crates/cide_parser", "crates/cide_runtime", "crates/cide_shared", "crates/cide_typeck", "crates/cide_vm", "."]
 resolver = "2"
 
 [package]
@@ -26,8 +26,16 @@ too_many_lines = "warn"
 type_complexity = "allow"
 
 [dependencies]
+cide_algorithm_steps = { path = "crates/cide_algorithm_steps" }
 cide_ast = { path = "crates/cide_ast" }
+cide_cpp_frontend = { path = "crates/cide_cpp_frontend" }
+cide_lexer = { path = "crates/cide_lexer" }
+cide_parser = { path = "crates/cide_parser" }
+cide_runtime = { path = "crates/cide_runtime" }
+cide_typeck = { path = "crates/cide_typeck" }
 cide_shared = { path = "crates/cide_shared" }
+cide_codegen = { path = "crates/cide_codegen" }
+cide_vm = { path = "crates/cide_vm" }
 serde = { version = "~1.0.228", features = ["derive"] }
 serde_json = "~1.0.149"
 flutter_rust_bridge = "=2.12.0"

@@ -41,7 +41,7 @@ int main() {
 
     // 执行若干步
     for _ in 0..5 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
     let step_count_before = vm.get_executed_steps();
@@ -50,16 +50,16 @@ int main() {
     let current_line_before = vm.get_current_line();
 
     // 创建快照
-    let snap = vm.snapshot(&session);
+    let snap = vm.snapshot(&session.as_vm_context());
 
     // 继续执行若干步，改变状态
     for _ in 0..10 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
     assert_ne!(vm.get_executed_steps(), step_count_before);
 
     // 从快照恢复
-    vm.restore(&snap, &mut session);
+    vm.restore(&snap, &mut session.as_vm_context());
 
     // 验证状态完全一致
     assert_eq!(vm.get_executed_steps(), step_count_before);
@@ -82,18 +82,18 @@ int main() {
 
     // 执行到 main 内部
     for _ in 0..20 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
-    let snap = vm.snapshot(&session);
+    let snap = vm.snapshot(&session.as_vm_context());
 
     // 继续执行，修改内存
     for _ in 0..10 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
     // 恢复
-    vm.restore(&snap, &mut session);
+    vm.restore(&snap, &mut session.as_vm_context());
 
     // 读取内存验证
     let _mem = vm.memory_ref();
@@ -123,7 +123,7 @@ int main() {
 
     // 执行完整程序
     loop {
-        match vm.step(&mut session) {
+        match vm.step(&mut session.as_vm_context()) {
             cide_native::vm::core::StepResult::Finished => break,
             cide_native::vm::core::StepResult::Trap => panic!("trap: {}", vm.get_error()),
             _ => {}
@@ -159,20 +159,20 @@ int main() {
 
     // 执行若干步后创建快照
     for _ in 0..5 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
-    let snap = vm.snapshot(&session);
+    let snap = vm.snapshot(&session.as_vm_context());
 
     // 继续执行改变状态
     for _ in 0..5 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
     // 恢复不应 panic
-    vm.restore(&snap, &mut session);
+    vm.restore(&snap, &mut session.as_vm_context());
 
     // 恢复后 VM 应能继续执行而不 trap
-    let result = vm.step(&mut session);
+    let result = vm.step(&mut session.as_vm_context());
     assert!(
         !matches!(result, cide_native::vm::core::StepResult::Trap),
         "VM should continue after restore, got trap: {}",
@@ -196,7 +196,7 @@ int main() {
     let mut session_a = make_session(source);
     let mut vm_a = setup_vm_for_session(&mut session_a);
     loop {
-        match vm_a.step(&mut session_a) {
+        match vm_a.step(&mut session_a.as_vm_context()) {
             cide_native::vm::core::StepResult::Finished => break,
             cide_native::vm::core::StepResult::Trap => panic!("path A trap: {}", vm_a.get_error()),
             _ => {}
@@ -210,21 +210,21 @@ int main() {
     let mut session_b = make_session(source);
     let mut vm_b = setup_vm_for_session(&mut session_b);
     for _ in 0..15 {
-        let _ = vm_b.step(&mut session_b);
+        let _ = vm_b.step(&mut session_b.as_vm_context());
     }
-    let snap = vm_b.snapshot(&session_b);
+    let snap = vm_b.snapshot(&session_b.as_vm_context());
 
     // 修改状态（模拟执行）
     for _ in 0..5 {
-        let _ = vm_b.step(&mut session_b);
+        let _ = vm_b.step(&mut session_b.as_vm_context());
     }
 
     // 从快照恢复
-    vm_b.restore(&snap, &mut session_b);
+    vm_b.restore(&snap, &mut session_b.as_vm_context());
 
     // 继续执行到结束
     loop {
-        match vm_b.step(&mut session_b) {
+        match vm_b.step(&mut session_b.as_vm_context()) {
             cide_native::vm::core::StepResult::Finished => break,
             cide_native::vm::core::StepResult::Trap => panic!("path B trap: {}", vm_b.get_error()),
             _ => {}
@@ -286,16 +286,16 @@ int main() {
 
     // 执行到 main 内部，产生一些内存写入
     for _ in 0..30 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
     // 全量快照
-    let full = vm.snapshot(&session);
+    let full = vm.snapshot(&session.as_vm_context());
     let full_size = full.memory.byte_size();
     assert_eq!(full_size, 1024 * 1024, "Full snapshot should be 1MB");
 
     // 增量快照（假设 base_step=0）
-    let inc = vm.snapshot_incremental(&session, 0);
+    let inc = vm.snapshot_incremental(&session.as_vm_context(), 0);
     let inc_size = inc.memory.byte_size();
 
     // 增量应该远小于 1MB（通常只写入了栈上的 arr 和少量局部变量）
@@ -308,14 +308,14 @@ int main() {
     // 验证增量可以正确恢复
     // 先继续执行改变内存
     for _ in 0..10 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
     let mem_before_restore = vm.memory_ref().to_vec();
 
     // 恢复增量快照（此时 vm.memory 应该被增量覆盖）
     // 注意：增量快照假设当前 memory 已经是 base 状态，这里直接用全量做 base 测试
-    vm.restore(&full, &mut session); // 先恢复到全量基准
-    vm.restore(&inc, &mut session); // 再应用增量
+    vm.restore(&full, &mut session.as_vm_context()); // 先恢复到全量基准
+    vm.restore(&inc, &mut session.as_vm_context()); // 再应用增量
 
     let mem_after_restore = vm.memory_ref().to_vec();
     assert_eq!(
@@ -326,7 +326,7 @@ int main() {
 
 #[test]
 fn test_checkpoint_manager_incremental_chain() {
-    use cide_native::unified::checkpoint::CheckpointManager;
+    use cide_vm::snapshot::CheckpointManager;
 
     let source = r#"
 int main() {
@@ -346,9 +346,9 @@ int main() {
     // 模拟执行并保存检查点
     for step in 0..35 {
         if step % 5 == 0 {
-            cp.save(step, &mut vm, &session);
+            cp.save(step, &mut vm, &mut session.as_vm_context());
         }
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
     // 应该保存了 7 个检查点（0,5,10,15,20,25,30）
@@ -365,10 +365,13 @@ int main() {
     }
 
     // 验证恢复后 VM 能继续执行
-    vm.restore(&reconstructed, &mut session);
+    vm.restore(&reconstructed, &mut session.as_vm_context());
     let mut steps_after = 0;
     for _ in step..35 {
-        if matches!(vm.step(&mut session), cide_native::vm::core::StepResult::Finished) {
+        if matches!(
+            vm.step(&mut session.as_vm_context()),
+            cide_native::vm::core::StepResult::Finished
+        ) {
             break;
         }
         steps_after += 1;
@@ -381,22 +384,21 @@ int main() {
 
 #[test]
 fn test_smart_checkpoint_triggers() {
-    use cide_native::unified::checkpoint::CheckpointManager;
-    use cide_native::unified::types::StepMeta;
+    use cide_vm::snapshot::CheckpointManager;
 
     let mut cp = CheckpointManager::new(20);
     cp.smart_mode = true;
 
     // 固定间隔保底
-    assert!(cp.should_checkpoint(0, &StepMeta::default()));
-    assert!(cp.should_checkpoint(20, &StepMeta::default()));
-    assert!(!cp.should_checkpoint(5, &StepMeta::default()));
+    assert!(cp.should_checkpoint(0, ""));
+    assert!(cp.should_checkpoint(20, ""));
+    assert!(!cp.should_checkpoint(5, ""));
 
     // 模拟保存步 0 的检查点，使后续智能判断能感知到上一个检查点位置
     cp.checkpoints.push((
         0,
-        cide_native::vm::snapshot::VMSnapshot {
-            memory: cide_native::vm::snapshot::MemoryImage::Full(vec![0; 1024 * 1024]),
+        cide_vm::snapshot::VMSnapshot {
+            memory: cide_vm::snapshot::MemoryImage::Full(vec![0; 1024 * 1024]),
             stack: Vec::new(),
             call_stack: Vec::new(),
             ip: 0,
@@ -416,7 +418,7 @@ fn test_smart_checkpoint_triggers() {
             breakpoints: std::collections::HashSet::new(),
             global_count: 0,
             freed_logs: Vec::new(),
-            runtime: cide_native::vm::snapshot::RuntimeSnapshot {
+            runtime: cide_vm::snapshot::RuntimeSnapshot {
                 output_lines: Vec::new(),
                 trace: Vec::new(),
                 current_line: 0,
@@ -427,7 +429,7 @@ fn test_smart_checkpoint_triggers() {
                 vis_event_cache: Vec::new(),
                 ungetc_char: None,
             },
-            memory_state: cide_native::vm::snapshot::MemorySnapshot {
+            memory_state: cide_vm::snapshot::MemorySnapshot {
                 regions: Vec::new(),
                 free_list: Vec::new(),
                 heap_offset: 0,
@@ -437,40 +439,20 @@ fn test_smart_checkpoint_triggers() {
     ));
 
     // 智能触发：函数调用
-    let meta_call = StepMeta {
-        semantic_label: "调用 printf".to_string(),
-        ..StepMeta::default()
-    };
-    assert!(cp.should_checkpoint(21, &meta_call));
+    assert!(cp.should_checkpoint(21, "调用 printf"));
     cp.checkpoints.push((21, cp.checkpoints[0].1.clone()));
 
     // 密集保护：距离上一个检查点太近时不触发
-    let meta_call2 = StepMeta {
-        semantic_label: "调用 scanf".to_string(),
-        ..StepMeta::default()
-    };
-    assert!(!cp.should_checkpoint(22, &meta_call2)); // 只离 21 差 1 步
+    assert!(!cp.should_checkpoint(22, "调用 scanf")); // 只离 21 差 1 步
 
     // 智能触发：返回
-    let meta_ret = StepMeta {
-        semantic_label: "返回".to_string(),
-        ..StepMeta::default()
-    };
-    assert!(cp.should_checkpoint(30, &meta_ret));
+    assert!(cp.should_checkpoint(30, "返回"));
 
     // 智能触发：内存分配
-    let meta_malloc = StepMeta {
-        semantic_label: "内存分配".to_string(),
-        ..StepMeta::default()
-    };
-    assert!(cp.should_checkpoint(35, &meta_malloc));
+    assert!(cp.should_checkpoint(35, "内存分配"));
 
     // 智能触发：交换
-    let meta_swap = StepMeta {
-        semantic_label: "交换 arr[0]↔arr[1]".to_string(),
-        ..StepMeta::default()
-    };
-    assert!(cp.should_checkpoint(40, &meta_swap));
+    assert!(cp.should_checkpoint(40, "交换 arr[0]↔arr[1]"));
 }
 
 #[test]
@@ -489,19 +471,19 @@ int main() {
 
     // 执行若干步，产生栈/内存状态
     for _ in 0..20 {
-        let _ = vm.step(&mut session);
+        let _ = vm.step(&mut session.as_vm_context());
     }
 
     // 全量快照作为 ground truth
-    let full_snap = vm.snapshot(&session);
+    let full_snap = vm.snapshot(&session.as_vm_context());
 
     // 用 snapshot_into 复写到另一个 VMSnapshot
-    let mut reused_snap = vm.snapshot(&session);
+    let mut reused_snap = vm.snapshot(&session.as_vm_context());
     // 先破坏 reused_snap 的内存，确保 copy 真正发生
     if let cide_native::vm::snapshot::MemoryImage::Full(buf) = &mut reused_snap.memory {
         buf.fill(0xAA);
     }
-    vm.snapshot_into(&session, &mut reused_snap);
+    vm.snapshot_into(&session.as_vm_context(), &mut reused_snap);
 
     // 两者必须等价
     assert_eq!(reused_snap.step_count, full_snap.step_count);
@@ -517,11 +499,11 @@ int main() {
     // 分别恢复到两个独立 VM 并验证状态一致
     let mut session_a = make_session(source);
     let mut vm_a = setup_vm_for_session(&mut session_a);
-    vm_a.restore(&full_snap, &mut session_a);
+    vm_a.restore(&full_snap, &mut session_a.as_vm_context());
 
     let mut session_b = make_session(source);
     let mut vm_b = setup_vm_for_session(&mut session_b);
-    vm_b.restore(&reused_snap, &mut session_b);
+    vm_b.restore(&reused_snap, &mut session_b.as_vm_context());
 
     assert_eq!(vm_a.get_executed_steps(), vm_b.get_executed_steps());
     assert_eq!(vm_a.get_stack(), vm_b.get_stack());
