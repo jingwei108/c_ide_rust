@@ -57,6 +57,7 @@ impl TypeChecker {
             FuncSymbol {
                 return_type: new_func.return_type.clone(),
                 param_types: new_func.params.iter().map(|p| p.ty.clone()).collect(),
+                is_variadic: new_func.is_variadic,
             },
         );
 
@@ -169,10 +170,12 @@ impl TypeChecker {
                 return_type,
                 param_types,
                 is_const,
+                is_variadic,
             } => Type::Function {
                 return_type: Box::new(Self::replace_template_type(return_type, type_map)),
                 param_types: param_types.iter().map(|t| Self::replace_template_type(t, type_map)).collect(),
                 is_const: *is_const,
+                is_variadic: *is_variadic,
             },
             _ => ty.clone(),
         }

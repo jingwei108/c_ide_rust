@@ -8,7 +8,7 @@
 use std::collections::HashMap;
 
 use crate::core::CideVM;
-use cide_runtime::{FreeBlock, MemoryRegionData, MemoryState};
+use cide_runtime::{MemoryRegionData, MemoryState};
 
 #[derive(Debug, Clone, Default)]
 pub struct VirtualFileSystem {
@@ -711,18 +711,7 @@ fn malloc_raw(memory: &mut MemoryState, aligned_size: usize, mem_size: u32) -> O
 
 /// 释放原始内存到 MemoryState（类似 host_free）
 fn free_raw(memory: &mut MemoryState, addr: u32) {
-    for r in &mut memory.regions {
-        if r.addr == addr && !r.is_freed {
-            r.is_freed = true;
-            let aligned_size = ((r.size as u32) + 3) & !3;
-            memory.free_list.push(FreeBlock {
-                addr: r.addr,
-                size: aligned_size as i32,
-            });
-            memory.merge_free_list();
-            break;
-        }
-    }
+    memory.free_region(addr);
 }
 
 /// 为 VFS 文件扩容（类似 realloc，原地缩容/扩容）

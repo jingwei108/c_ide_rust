@@ -120,21 +120,26 @@
 - **是否环境差异**: 否
 - **涉及语法特性**: 数组索引表达式中同时包含对两个不同对象的 `++`/`--` 副作用
 - **学生影响评级**: P1
-- **当前处理**: 已将 `obj->out[++obj->outTop] = obj->in[obj->inTop--];` 拆分为独立语句（先自增、再赋值、再自减），用例已通过。
-- **建议**: 进一步分析 BytecodeGen 或 VM 对含副作用数组索引的求值顺序/地址计算；在 `AGENTS.md` 已知限制中补充说明。
+- **修复时间**: 2026-06-25
+- **是否 Cide 限制**: 是（已修复）
+- **根因**: `gen_mem_inc_dec`（`++`/`--` 内存操作）使用 `temp_slot0` 保存新值，而 `gen_assign` 的 Index 赋值也使用 `temp_slot0` 保存左侧地址；右侧索引表达式的副作用在赋值完成前覆盖了左侧地址临时变量，导致最后读取赋值表达式返回值时访问错误地址。
+- **修复方案**: `gen_mem_inc_dec` 改用 `temp_slot3` 保存新值；新增 `baseline/side_effect_index.c` 回归用例。
+- **当前处理**: 原 `lc_232.c` 已保留拆分写法以兼容旧版本；新增 `baseline/side_effect_index.c` 专门验证复合副作用数组索引修复。
 
-### lc_4：函数返回 `double` 值在 Cide VM 下异常
+### lc_4：函数返回 `double` 值在 Cide VM 下异常（已修复）
 
 - **来源**: LeetCode 4 — Median of Two Sorted Arrays
 - **发现时间**: 2026-06-18
+- **修复时间**: 2026-06-24
 - **现象**: 原始实现使用 `double findMedianSortedArrays(...)` 返回值，在 Clang 下正确输出 `2.00000`、`2.50000`、`1.00000`；在 Cide VM 下调用该函数后 `printf("%.5f", ...)` 输出全为 `0.00000`。进一步简化测试表明：`double x = 2.5; printf(...)` 正常，但 `printf(..., f())`（`f` 返回 `double`）输出 `0.0`，说明问题集中在函数 double 返回路径。
-- **是否 Cide 限制**: 是
+- **是否 Cide 限制**: 是（已修复）
 - **是否代码本身问题**: 否（代码在 Clang/GCC 下行为正确）
 - **是否环境差异**: 否
 - **涉及语法特性**: 函数返回值类型为 `double` 时的传值语义
 - **学生影响评级**: P1
-- **当前处理**: 已将该用例改为返回整数缩放结果（中位数 × 100000），规避 double 返回值问题，用例已通过 Shadow Verification。
-- **建议**: 进一步分析 BytecodeGen 对 `double` 返回值的 ABI 处理（如浮点寄存器/栈返回约定）；在 `AGENTS.md` 已知限制中补充说明，并考虑在教学中提醒学生避免依赖 `double` 函数返回值。
+- **根因**: `return` 语句未对返回值表达式插入隐式类型转换。`return 2.5;` 中的 `2.5` 被解析为 `float` 字面量，在函数返回类型为 `double` 时生成 `PushConstF` 而非 `PushConstD`。
+- **修复方案**: TypeChecker 在 `return` 语句的 `check_assignable` 成功后调用 `insert_implicit_cast`，并新增 `baseline/float_func_return.c` 回归用例。
+- **当前处理**: `lc_4.c` 已恢复为原始 `double` 返回实现，golden 同步更新，Shadow Verification 通过。
 
 ## 已知失败详情
 

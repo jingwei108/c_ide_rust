@@ -144,4 +144,6 @@ define_opcode! {
     Strlen = 126,
     PushArgc = 127,
     PushArgv = 128,
+    TrapBoundsVla = 129,
+    CallVar = 133,
 }

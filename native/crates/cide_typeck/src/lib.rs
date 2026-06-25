@@ -12,7 +12,7 @@ mod convert;
 mod init;
 pub(crate) mod symbols;
 
-pub(crate) use convert::insert_implicit_cast;
+pub(crate) use convert::{apply_default_argument_promotions, insert_implicit_cast};
 pub(crate) use symbols::*;
 
 #[derive(Debug, Clone)]
@@ -140,6 +140,7 @@ impl TypeChecker {
             let new_sym = FuncSymbol {
                 return_type: f.return_type.clone(),
                 param_types: f.params.iter().map(|p| p.ty.clone()).collect(),
+                is_variadic: f.is_variadic,
             };
             if f.is_static {
                 if let Some(existing) = self.static_func_sigs.get(&f.name) {
@@ -349,6 +350,7 @@ impl TypeChecker {
                 is_static: false,
                 is_extern: false,
                 source_file: self.current_file.clone(),
+                is_variadic: false,
             };
 
             // Rewrite capture variable accesses to this->field

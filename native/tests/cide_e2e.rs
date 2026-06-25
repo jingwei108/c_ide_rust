@@ -5,10 +5,12 @@ use std::path::Path;
 
 use cide_native::session::InputMode;
 
+#[allow(dead_code)]
 fn compile_and_run(source: &str, input: Option<&str>, input_mode: InputMode) -> Result<(i32, Vec<String>), String> {
     compile_and_run_with_filename(source, input, input_mode, "main.c")
 }
 
+#[allow(dead_code)]
 fn compile_and_run_cpp(source: &str, input: Option<&str>, input_mode: InputMode) -> Result<(i32, Vec<String>), String> {
     compile_and_run_with_filename(source, input, input_mode, "main.cpp")
 }
@@ -182,11 +184,18 @@ fn run_case_with_compiler(
     input_mode: InputMode,
     is_cpp: bool,
 ) -> Result<(), String> {
-    let result = if is_cpp {
-        compile_and_run_cpp(source, input, input_mode)
+    // 使用真实源文件路径作为编译单元文件名，使 #include "..." 能基于同一目录解析自定义头文件。
+    // 模板生成用例 golden_subdir 为空，保持默认 main.c/main.cpp 行为。
+    let filename = if golden_subdir.is_empty() {
+        if is_cpp {
+            "main.cpp".to_string()
+        } else {
+            "main.c".to_string()
+        }
     } else {
-        compile_and_run(source, input, input_mode)
+        format!("tests/cases/{}/{}.{}", golden_subdir, name, if is_cpp { "cpp" } else { "c" })
     };
+    let result = compile_and_run_with_filename(source, input, input_mode, &filename);
     match result {
         Ok((ret, outputs)) => {
             if ret != 0 {

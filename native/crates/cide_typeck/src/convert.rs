@@ -62,6 +62,17 @@ pub(crate) fn insert_implicit_cast(expr: &mut Expr, target: &Type) {
     }
 }
 
+/// 对可变参数实参应用默认实参提升（C 标准）。
+/// 当前处理：float -> double，char -> int。
+pub(crate) fn apply_default_argument_promotions(expr: &mut Expr) {
+    let ty = expr.ty().clone();
+    match ty.kind() {
+        TypeKind::Float => insert_implicit_cast(expr, &Type::double()),
+        TypeKind::Char => insert_implicit_cast(expr, &Type::int()),
+        _ => {}
+    }
+}
+
 impl TypeChecker {
     pub(crate) fn is_int(&self, t: &Type) -> bool {
         matches!(t.kind(), TypeKind::Int | TypeKind::Char)

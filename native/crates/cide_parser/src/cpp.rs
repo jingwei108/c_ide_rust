@@ -63,7 +63,7 @@ impl Parser {
         self.consume(TokenType::ColonColon, "预期 '::'");
         let name_tok = self.consume(TokenType::Identifier, "预期构造函数名").clone();
         self.consume(TokenType::LParen, "预期 '('");
-        let params = self.parse_param_list();
+        let (params, _) = self.parse_param_list();
         self.consume(TokenType::RParen, "预期 ')'");
         let body = if self.check(TokenType::LBrace) {
             Some(self.parse_block())
@@ -83,6 +83,7 @@ impl Parser {
             is_static,
             is_extern,
             source_file: String::new(),
+            is_variadic: false,
         });
         true
     }

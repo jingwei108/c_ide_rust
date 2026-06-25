@@ -493,3 +493,33 @@ pub fn host_set_array_guard(vm: &mut CideVM, _session: &mut VmContext<'_>) {
 pub fn host_clear_array_guard(vm: &mut CideVM, _session: &mut VmContext<'_>) {
     vm.pending_array_construction = None;
 }
+
+// ============================================================================
+// stdarg.h 变参支持
+// ============================================================================
+
+pub fn host_va_start(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+    let ap_addr = vm.pop() as i32;
+    let last_addr = vm.pop() as i32;
+    let last_size = vm.pop() as i32;
+    let loc = SourceLoc::default();
+    // ap 指向最后一个命名参数之后的位置（即变参区域起始）
+    let va_base = last_addr + last_size;
+    vm.store_i32(ap_addr as u32, va_base, &loc);
+}
+
+pub fn host_va_arg(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+    let ap_addr = vm.pop() as i32;
+    let size = vm.pop() as i32;
+    let loc = SourceLoc::default();
+    let current_ap = vm.load_i32(ap_addr as u32, &loc);
+    let new_ap = current_ap + size;
+    vm.store_i32(ap_addr as u32, new_ap, &loc);
+    // __cide_va_arg 返回 void*，指向当前变参参数的地址
+    vm.push(current_ap as u64);
+}
+
+pub fn host_va_end(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+    let _ap_addr = vm.pop() as i32;
+    // 无操作；保留函数以匹配标准接口
+}

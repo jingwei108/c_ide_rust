@@ -85,6 +85,10 @@ pub fn host_fclose(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let vfs = &mut session.vfs;
     let ret = vfs.fclose(fd, session.memory);
 
+    // 释放 fopen 在 VM Heap 中为 FILE* 结构体分配的 4 字节内存。
+    // stdout/stderr 等非堆分配 stream 找不到对应 region，free_region 返回 false，安全忽略。
+    session.memory.free_region(stream);
+
     vm.push(ret as u64);
 }
 

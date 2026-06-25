@@ -41,6 +41,7 @@ int main() {
                     local_count: meta.local_count,
                     param_sizes: meta.param_sizes.clone(),
                     return_type: meta.return_type.clone(),
+                    is_variadic: meta.is_variadic,
                 },
             );
             vm.register_function_name(idx as u32, name.clone());

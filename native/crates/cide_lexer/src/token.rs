@@ -111,6 +111,7 @@ pub enum TokenType {
     LBracket,
     RBracket,
     Dot,
+    Ellipsis,
     Arrow,
     Colon,
     Question,

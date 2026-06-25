@@ -118,6 +118,7 @@ impl TypeChecker {
                                 return_type: Box::new(msig.ret.clone()),
                                 param_types: msig.param_types.clone(),
                                 is_const: false,
+                                is_variadic: false,
                             };
                             vtable_entries.push((mname.clone(), func_ty));
                         }
@@ -170,6 +171,7 @@ impl TypeChecker {
                             return_type: Box::new(ret.clone()),
                             param_types,
                             is_const: false,
+                            is_variadic: false,
                         };
                         // Override check: if base has same virtual method, replace
                         if let Some(pos) = vtable_entries.iter().position(|(n, _)| n == method_name) {
@@ -254,9 +256,17 @@ impl TypeChecker {
         // Compute has_resource immediately so implicit move ctor generation works
         // for class template instantiations created during Pass 3.
         let has_resource = self.compute_class_has_resource(name);
-        // TODO(#D08): 刚 insert 的 key，理论上必存在；可考虑返回错误而非 unwrap。
-        #[allow(clippy::unwrap_used)]
-        let class_sym = self.classes.get_mut(name).unwrap();
+        let class_sym = match self.classes.get_mut(name) {
+            Some(sym) => sym,
+            None => {
+                self.report_error(
+                    &format!("类 '{}' 布局注册失败：内部状态不一致", name),
+                    &c.loc,
+                    ErrorCode::E3002_StructRedeclared,
+                );
+                return;
+            }
+        };
         class_sym.size = total_field_size;
         class_sym.has_resource = has_resource;
 
@@ -299,6 +309,7 @@ impl TypeChecker {
                         FuncSymbol {
                             return_type: ret.clone(),
                             param_types,
+                            is_variadic: false,
                         },
                     );
                 }
@@ -325,6 +336,7 @@ impl TypeChecker {
                         FuncSymbol {
                             return_type: Type::void(),
                             param_types,
+                            is_variadic: false,
                         },
                     );
                 }
@@ -345,6 +357,7 @@ impl TypeChecker {
                         FuncSymbol {
                             return_type: Type::void(),
                             param_types,
+                            is_variadic: false,
                         },
                     );
                 }
@@ -375,6 +388,7 @@ impl TypeChecker {
                     }),
                     is_const: false,
                 }],
+                is_variadic: false,
             });
         }
 

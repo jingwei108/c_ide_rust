@@ -137,6 +137,9 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut VmContext<'_>, id: u32) 
         host_func_id::STRPBRK => host_strpbrk(vm, session),
         host_func_id::STRSPN => host_strspn(vm, session),
         host_func_id::STRCSPN => host_strcspn(vm, session),
+        host_func_id::VA_START => host_va_start(vm, session),
+        host_func_id::VA_ARG => host_va_arg(vm, session),
+        host_func_id::VA_END => host_va_end(vm, session),
         _ => {}
     }
 }

@@ -218,6 +218,7 @@ impl CideVM {
             | OpCode::JumpIfZero
             | OpCode::JumpIfNotZero
             | OpCode::Call
+            | OpCode::CallVar
             | OpCode::CallPtr
             | OpCode::CallHost
             | OpCode::Ret
@@ -225,7 +226,7 @@ impl CideVM {
                 return self.execute_control_flow(op, operand, loc, session);
             }
 
-            OpCode::StepEvent | OpCode::TrapBounds => {
+            OpCode::StepEvent | OpCode::TrapBounds | OpCode::TrapBoundsVla => {
                 return self.execute_debug(op, operand, loc);
             }
         }

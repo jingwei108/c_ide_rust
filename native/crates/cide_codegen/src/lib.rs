@@ -204,10 +204,10 @@ impl BytecodeGen {
         while !pending.is_empty() {
             let mut resolved = Vec::new();
             for class_name in &pending {
-                // TODO(#D08): pending 来自 self.class_defs.keys()，理论上必存在；
-                // 未来可改为 if-let 或返回错误，避免 unwrap。
-                #[allow(clippy::unwrap_used)]
-                let class = self.class_defs.get(class_name).unwrap();
+                let class = match self.class_defs.get(class_name) {
+                    Some(c) => c,
+                    None => continue,
+                };
                 let mut can_compute = true;
                 if let Some(ref base) = class.base {
                     if !self.class_sizes.contains_key(base) {
@@ -448,6 +448,7 @@ impl BytecodeGen {
                     local_count: 0,
                     param_sizes: param_sizes.clone(),
                     return_type: f.return_type.clone(),
+                    is_variadic: f.is_variadic,
                 },
             );
         }
@@ -461,7 +462,7 @@ impl BytecodeGen {
             if let Some(meta) = self.func_table.get_mut(&f.name) {
                 meta.ip = func_ip;
             }
-            self.enter_function(&f.name, &f.params);
+            self.enter_function(&f.name, &f.params, f.is_variadic);
             if let Some(ref mut body) = f.body {
                 self.gen_stmt(body);
             }

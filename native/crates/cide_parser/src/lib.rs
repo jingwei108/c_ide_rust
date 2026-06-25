@@ -23,13 +23,13 @@ pub(crate) enum DeclaratorNode {
     Reference(Box<DeclaratorNode>, bool /* is_const */),
     RValueRef(Box<DeclaratorNode>),
     Array(Box<DeclaratorNode>, Option<Box<Expr>>),
-    Function(Box<DeclaratorNode>, Vec<Param>),
+    Function(Box<DeclaratorNode>, Vec<Param>, bool),
 }
 
 #[derive(Debug, Clone)]
 enum DeclaratorSuffix {
     Array(Option<Box<Expr>>),
-    Function(Vec<Param>),
+    Function(Vec<Param>, bool),
 }
 
 #[derive(Debug, Clone, Default)]
@@ -45,12 +45,12 @@ fn node_cross_count(node: &DeclaratorNode) -> i32 {
         DeclaratorNode::Base => 0,
         DeclaratorNode::Pointer(inner) | DeclaratorNode::Reference(inner, _) | DeclaratorNode::RValueRef(inner) => {
             let add = match inner.as_ref() {
-                DeclaratorNode::Array(_, _) | DeclaratorNode::Function(_, _) => 1,
+                DeclaratorNode::Array(_, _) | DeclaratorNode::Function(_, _, _) => 1,
                 _ => 0,
             };
             node_cross_count(inner) + add
         }
-        DeclaratorNode::Array(inner, _) | DeclaratorNode::Function(inner, _) => node_cross_count(inner),
+        DeclaratorNode::Array(inner, _) | DeclaratorNode::Function(inner, _, _) => node_cross_count(inner),
     }
 }
 

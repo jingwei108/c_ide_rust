@@ -55,6 +55,7 @@ impl TypeChecker {
                             is_static: *is_static,
                             is_extern: false,
                             source_file: String::new(),
+                            is_variadic: false,
                         };
                         self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                         self.current_method_is_const = false;
@@ -91,6 +92,7 @@ impl TypeChecker {
                             is_static: false,
                             is_extern: false,
                             source_file: String::new(),
+                            is_variadic: false,
                         };
                         self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                         class_methods.push(func_decl);
@@ -115,6 +117,7 @@ impl TypeChecker {
                             is_static: false,
                             is_extern: false,
                             source_file: String::new(),
+                            is_variadic: false,
                         };
                         self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                         class_methods.push(func_decl);
@@ -231,6 +234,7 @@ impl TypeChecker {
                 is_static: false,
                 is_extern: false,
                 source_file: String::new(),
+                is_variadic: false,
             };
 
             self.funcs.insert(
@@ -238,6 +242,7 @@ impl TypeChecker {
                 FuncSymbol {
                     return_type: Type::void(),
                     param_types: func_decl.params.iter().map(|p| p.ty.clone()).collect(),
+                    is_variadic: false,
                 },
             );
             move_ctors.push((class_name.clone(), func_decl));

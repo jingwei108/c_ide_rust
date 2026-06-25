@@ -26,6 +26,7 @@ fn func(ret: Type, params: Vec<Type>) -> Type {
         return_type: Box::new(ret),
         param_types: params,
         is_const: false,
+        is_variadic: false,
     }
 }
 

@@ -14,6 +14,7 @@ pub(crate) struct VarSymbol {
 pub(crate) struct FuncSymbol {
     pub(crate) return_type: Type,
     pub(crate) param_types: Vec<Type>,
+    pub(crate) is_variadic: bool,
 }
 
 #[derive(Debug, Clone)]

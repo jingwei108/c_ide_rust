@@ -76,6 +76,7 @@ jobs:
       # 然后在 Gitee 仓库「服务 → Gitee Pages」中选择 pages 分支、根目录部署。
       - name: Deploy to Gitee Pages branch
         if: ${{ env.GITEE_TOKEN != '' }}
+        continue-on-error: true 
         run: |
           git config --global user.email "ci@example.com"
           git config --global user.name "GitHub Actions"

@@ -129,7 +129,7 @@ Cide adopts **five layers of collaborative test defenses**. Core philosophy: *te
 
 The same C source is compiled and executed by both **Clang** and **Cide**, and stdout outputs are compared for exact match. Golden outputs must come from Clang, never from Cide itself.
 
-- **Coverage**: 298 Baseline cases + 82 template-generated cases + 76 K&R cases + 92 LeetCode problems (562 C Shadow Verification cases total, 555 matched); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-18)
+- **Coverage**: 304 Baseline cases + 82 template-generated cases + 76 K&R cases + 92 LeetCode problems (568 C Shadow Verification cases total, 564 matched, counting match + cide_better + known_issue); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-25)
 - **Drivers**: `python native/tests/shadow_verification/shadow_verify.py`, `python scripts/shadow_verify_cpp.py`
 - **Reports**: `native/tests/shadow_verification/reports/`
 
@@ -137,8 +137,8 @@ The same C source is compiled and executed by both **Clang** and **Cide**, and s
 
 Collect real teaching/competition code as end-to-end regression cases to verify "can real-world code run".
 
-- **Baseline**: `native/tests/cases/baseline/` (298 cases, all green)
-- **K&R**: *The C Programming Language* exercises (69 cases, 69 green, 0 known failures)
+- **Baseline**: `native/tests/cases/baseline/` (302 cases, all green)
+- **K&R**: *The C Programming Language* exercises (76 cases, 76 green, 0 known failures)
 - **Template Generated**: algorithm template batch generation (82 cases, 78 green, 4 known failures)
 - **LeetCode**: Phase 4 + Phase 5 fully implemented; current 92 problems all pass, see `native/tests/LEETCODE_FAILURES.md`
 - **Reports**: `native/tests/TEST_REPORT.md`, `KR_FAILURES.md`, `E2E_FAILURES.md`, `LEETCODE_FAILURES.md`
@@ -235,19 +235,26 @@ The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** ca
 ## Known Limitations
 
 ### Currently Not Supported
-- **Parameterized macro calls followed by semicolon** — forms like `SWAP(int,x,y);`, if the macro body already contains braces `{ ... }`, expand into `{ ... };` (compound statement + empty statement), which the current Parser cannot parse correctly. Workaround: do not add an extra semicolon after macro calls, or use the `do { ... } while(0)` pattern
-- **VLA bounds checking** — VLA array indexes do not yet support compile-time/runtime `TrapBounds` bounds checking (`bound_size` is 0, checks are skipped)
-- **`#include` non-standard library paths** — only stub loading for `<stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` is supported; custom headers or `"header.h"` form are not yet supported
+- ~~**Parameterized macro calls followed by semicolon**~~ — **Fixed (extension, 2026-06-25)**. During parametric macro expansion, `cide_lexer` dynamically wraps a brace-enclosed macro body as `do { ... } while(0)` when the call is immediately followed by a semicolon, so `SWAP(int,x,y);` now parses correctly inside `if/else` and similar contexts. Regression test added at `end_to_end_extra_test::test_e2e_parametric_macro_swap_semicolon`.
+  - ⚠️ **Behavioral difference from Clang**: Clang rejects `if (...) { ... }; else ...` with "expected expression"; Cide supports this common teaching idiom via automatic wrapping. For strict Clang compatibility, use `do { ... } while(0)` in the macro body.
+- ~~**VLA bounds checking**~~ — **Fixed (2026-06-25)**. `gen_index` now emits runtime bounds checking when the first dimension of a VLA is a variable expression: new `TrapBoundsVla` opcode evaluates the VLA dimension expression at index time and compares the index against the runtime bound in the VM. Regression case added at `baseline/vla_bounds.c`. VLA parameters that have decayed to pointers (e.g. `void f(int n, int a[n])`) still cannot be checked because their bound is not available at the use site.
+- ~~**`#include` non-standard library paths**~~ — **Fixed (2026-06-25)**. `#include "header.h"` now loads custom headers relative to the source file directory; standard libraries still use stubs. Regression cases added at `baseline/include_custom_header.c` and `include_custom_header.h`. Absolute paths, system include search paths (`<>` non-standard libraries), and recursive includes remain future work.
 - **`va_list` / `va_start` / `va_arg` / `va_end`** — custom variadic functions are not yet supported (`printf`/`scanf` are built-in)
-- **Global VLA** — variable-length arrays in global/static scope are not yet supported
+- **Global VLA** — variable-length arrays in global/static scope are prohibited by the C99 standard itself (Clang reports "variable length array declaration not allowed at file scope"); Cide intentionally does not support this.
 - **VFS text mode newline conversion (fixed)** — as of 2026-06-15, Windows text-mode newline conversion is fully implemented: in `"r"`/`"w"` mode, `\n` is expanded to `\r\n` on write and collapsed to `\n` on read; `fseek`/`ftell` distinguish logical/physical cursor to match Windows CRT behavior. `vfs_io_extensions.c` and `file_fread.c` are restored to matching.
 
 ### Known Behavioral Differences Between Cide and Clang (Honest Records)
 
 The following inconsistencies between Cide and Clang were discovered during LeetCode defense filling:
 
-- **Compound side-effect array indexing** — forms like `a[++i] = b[j--]` (containing `++`/`--` side effects on two different objects) behave correctly under Clang/GCC, but may incorrectly trigger "accessing NULL pointer" traps in the Cide VM (see `native/tests/LEETCODE_FAILURES.md` for `lc_232` record). Workaround: split the increment/decrement into separate statements.
-- **Function returning `double` value is incorrect** — when a function's return type is `double`, the caller may receive `0.0` (discovered in the original `lc_4` implementation: `double findMedianSortedArrays(...)` returns the correct median under Clang, but prints all `0.00000` under Cide VM). Declaring `double x = 2.5;` and printing it works correctly, indicating the issue is in the function return path rather than the `double` type itself. Workaround: use integer-scaled return values, or output the floating-point result via a pointer from the caller.
+- ~~**Compound side-effect array indexing**~~ — **Fixed (2026-06-25)**. Root cause: `gen_mem_inc_dec` (pre-/post-increment/decrement memory operation) and `gen_assign` reused the same temporary slot (`temp_slot0`) for Index assignment, so the side effect of the right-hand index expression overwrote the left-hand address temporary. The fix uses `temp_slot3` to save the new value in `gen_mem_inc_dec`; regression case added at `baseline/side_effect_index.c`.
+- ~~**Function returning `double` value is incorrect**~~ — **Fixed (2026-06-25)**. Root cause: the `return` statement did not insert an implicit cast for the return expression, so `return 2.5;` (where `2.5` is parsed as a `float` literal) generated `PushConstF` instead of `PushConstD` when the function return type was `double`. The fix calls `insert_implicit_cast` after `check_assignable` in `cide_typeck::decl.rs`; regression case added at `baseline/float_func_return.c`. `lc_4.c` has been restored to the original `double` return implementation.
+- ~~**`scanf` `%s` format specifier not supported**~~ — **Fixed (2026-06-25)**. `host_scanf_n`/`host_sscanf` in `crates/cide_vm/src/host/io.rs` now handle the `'s'` specifier: skip leading whitespace, read a sequence of non-whitespace characters, and write them to the target buffer terminated by `'\0'`. Regression case added at `baseline/scanf_string.c` (based on `sscanf` to avoid uncontrollable input between Shadow Verification cases).
+- ~~**`fputs(str, stdout)` produces no output**~~ — **Fixed (2026-06-19)**. `host_fputs` in `crates/cide_vm/src/host/file.rs` now recognizes the lexer-predefined `stdout`(1)/`stderr`(2) macro fds and appends the string directly to `RuntimeState.output_lines`; writing to ordinary `FILE*` streams remains unchanged.
+- ~~**`FILE*` still reported as memory leak after `fclose`**~~ — **Fixed (2026-06-25)**. Root cause: `host_fclose` only closed the VFS file descriptor but did not release the 4-byte `FILE*` struct allocated on the VM Heap by `host_fopen`. The fix adds `MemoryState::free_region` and calls it from `host_fclose`; non-heap streams such as `stdout`/`stderr` are safely ignored when no matching region is found. Regression case added at `baseline/fclose_leak.c`.
+- ~~**VLA bounds checking missing**~~ — **Fixed (2026-06-25)**. `gen_index` now emits runtime bounds checking for VLAs whose first dimension is a variable expression via the new `TrapBoundsVla` opcode; the VM compares the index against the runtime-evaluated bound. Regression case added at `baseline/vla_bounds.c`. VLA parameters decayed to pointers are still unchecked.
+- ~~**Parameterized macro calls followed by semicolon**~~ — **Fixed (extension, 2026-06-25)**. `cide_lexer` dynamically wraps brace-enclosed parametric macro bodies as `do { ... } while(0)` when the call is followed by a semicolon, allowing `SWAP(int,x,y);` to parse inside `if/else`. Regression test added at `end_to_end_extra_test::test_e2e_parametric_macro_swap_semicolon`.
+  - ⚠️ **Behavioral difference from Clang**: Clang rejects the unwrapped `{ ... };` form, while Cide supports it as a teaching convenience.
 
 > Historical feature details and bug-fix records are in [`CHANGELOG.md`](CHANGELOG.md) and [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md).
 

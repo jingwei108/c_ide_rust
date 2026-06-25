@@ -62,6 +62,30 @@ impl CideVM {
                 }
                 None
             }
+            OpCode::TrapBoundsVla => {
+                let bound = self.pop() as i64;
+                let index = if let Some(&val) = self.stack.last() {
+                    val as i64
+                } else {
+                    self.trap("TrapBoundsVla: 值栈为空，无法获取索引", loc);
+                    return Some(StepResult::Trap);
+                };
+                let mut name = "数组".to_string();
+                if operand >= 0 {
+                    let sym_idx = operand as usize;
+                    if sym_idx < self.symbols.len() {
+                        name = self.symbols[sym_idx].name.clone();
+                    }
+                }
+                if index < 0 || index >= bound {
+                    let diag = format!(
+                        "🚫 数组越界：你访问了 {}[{}]，但数组 '{}' 当前只有 {} 个元素，有效索引是 0~{}。\n\n💡 原因：变长数组(VLA)索引超出了运行时边界。\n✅ 检查方法：确认索引变量值在 0 到 {} 之间。",
+                        name, index, name, bound, bound.saturating_sub(1), bound.saturating_sub(1)
+                    );
+                    self.trap(&diag, loc);
+                }
+                None
+            }
             _ => None,
         }
     }

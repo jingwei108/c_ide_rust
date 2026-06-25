@@ -122,6 +122,25 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 vm.store_i8(ptr, ch as i32, &SourceLoc::default());
                 pos += 1;
             }
+            's' => {
+                // 跳过前导空白
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() {
+                    break;
+                }
+                let start = pos;
+                while pos < chars.len() && !chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                let token: String = chars[start..pos].iter().collect();
+                // 写入目标缓冲区并追加 '\0'
+                for (j, ch) in token.chars().enumerate() {
+                    vm.store_i8(ptr + j as u32, ch as i32, &SourceLoc::default());
+                }
+                vm.store_i8(ptr + token.len() as u32, 0, &SourceLoc::default());
+            }
             _ => {}
         }
     }

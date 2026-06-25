@@ -95,10 +95,10 @@ fn convert_layout(json: &ClassLayoutJson) -> ClassLayout {
 
 static LAYOUT_DATA: LazyLock<LayoutData> = LazyLock::new(|| {
     let json = include_str!("builtin_layout_data.json");
-    // SAFETY: builtin_layout_data.json 由 extract_cpp_builtin_layout.py 生成并嵌入，格式固定；
-    // 解析失败说明构建产物损坏，应直接 panic 提示重新生成。
-    #[allow(clippy::expect_used)]
-    serde_json::from_str(json).expect("builtin_layout_data.json is invalid")
+    match serde_json::from_str(json) {
+        Ok(data) => data,
+        Err(e) => panic!("builtin_layout_data.json is invalid: {}", e),
+    }
 });
 
 static BUILTIN_LAYOUTS: LazyLock<HashMap<String, ClassLayout>> = LazyLock::new(|| {

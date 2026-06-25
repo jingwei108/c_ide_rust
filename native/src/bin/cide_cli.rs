@@ -155,9 +155,9 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
         let source_line = source.lines().nth((line.saturating_sub(1)) as usize).unwrap_or("").trim();
 
         print!("步 {:4} | 行 {:3}: {}  > ", step_count, line, source_line);
-        // SAFETY: CLI 交互场景下 stdout 可用；flush 失败说明终端异常，允许 panic。
-        #[allow(clippy::unwrap_used)]
-        io::stdout().flush().unwrap();
+        if io::stdout().flush().is_err() {
+            break;
+        }
 
         let mut buf = String::new();
         if io::stdin().read_line(&mut buf).is_err() {
@@ -437,9 +437,7 @@ fn cmd_unified(path: &str, input_lines: Vec<String>, max_steps: i32) {
 
         if total_steps % 500 == 0 {
             print!("\r  已执行 {} 步...", total_steps);
-            // SAFETY: CLI 进度输出场景下 stdout 可用；flush 失败说明终端异常，允许 panic。
-            #[allow(clippy::unwrap_used)]
-            io::stdout().flush().unwrap();
+            let _ = io::stdout().flush();
         }
     }
 

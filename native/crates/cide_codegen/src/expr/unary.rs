@@ -11,7 +11,7 @@ fn gen_mem_inc_dec(gen: &mut BytecodeGen, is_inc: bool, is_pre: bool, step: i32,
     }
     gen.emit(OpCode::PushConst, step, loc);
     gen.emit(if is_inc { OpCode::Add } else { OpCode::Sub }, 0, loc);
-    let val_temp = gen.get_temp_slot(0);
+    let val_temp = gen.get_temp_slot(3);
     gen.emit(OpCode::StoreLocal, val_temp, loc); // save new value
     gen.emit(OpCode::LoadLocal, addr_temp, loc);
     gen.emit(OpCode::LoadLocal, val_temp, loc);

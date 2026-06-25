@@ -5,6 +5,7 @@
 // TODO(#D08): Lexer 已承载 C/C++ 混合词法，未来应将 C++ 专属词法拆分到 lexer/cpp.rs。
 use cide_shared::ErrorCode;
 use std::collections::{HashMap, HashSet};
+use std::path::PathBuf;
 
 pub mod comment;
 pub mod keyword;
@@ -25,14 +26,24 @@ pub struct Lexer {
     pub(crate) macros: HashMap<String, MacroDef>,
     pub(crate) conditional_stack: Vec<ConditionalState>,
     pub(crate) is_cpp_mode: bool,
+    /// 源文件所在目录，用于解析 `#include "..."` / `#include <...>` 非标准库路径。
+    pub(crate) base_path: Option<PathBuf>,
 }
 
 impl Lexer {
     pub fn new(source: &str) -> Self {
-        Self::with_mode(source, false)
+        Self::with_mode_and_path(source, false, None)
     }
 
     pub fn with_mode(source: &str, is_cpp_mode: bool) -> Self {
+        Self::with_mode_and_path(source, is_cpp_mode, None)
+    }
+
+    pub fn with_base_path(source: &str, base_path: Option<PathBuf>) -> Self {
+        Self::with_mode_and_path(source, false, base_path)
+    }
+
+    pub fn with_mode_and_path(source: &str, is_cpp_mode: bool, base_path: Option<PathBuf>) -> Self {
         let mut macros = HashMap::new();
         // Predefine common stdio macros for fprintf compatibility
         macros.insert(
@@ -243,6 +254,277 @@ impl Lexer {
                 }],
             },
         );
+        // stdarg.h 宏：将标准写法映射到 Cide 内部 host func 调用
+        macros.insert(
+            "va_start".to_string(),
+            MacroDef {
+                params: vec!["ap".to_string(), "last".to_string()],
+                body: vec![
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "__cide_va_start".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Ampersand,
+                        text: "&".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "ap".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Comma,
+                        text: ",".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Ampersand,
+                        text: "&".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "last".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Comma,
+                        text: ",".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Sizeof,
+                        text: "sizeof".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "last".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                ],
+            },
+        );
+        macros.insert(
+            "va_arg".to_string(),
+            MacroDef {
+                params: vec!["ap".to_string(), "type".to_string()],
+                body: vec![
+                    Token {
+                        ty: TokenType::Star,
+                        text: "*".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "type".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Star,
+                        text: "*".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "__cide_va_arg".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Ampersand,
+                        text: "&".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "ap".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Comma,
+                        text: ",".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Sizeof,
+                        text: "sizeof".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "type".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                ],
+            },
+        );
+        macros.insert(
+            "va_end".to_string(),
+            MacroDef {
+                params: vec!["ap".to_string()],
+                body: vec![
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "__cide_va_end".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Ampersand,
+                        text: "&".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::LParen,
+                        text: "(".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::Identifier,
+                        text: "ap".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                    Token {
+                        ty: TokenType::RParen,
+                        text: ")".to_string(),
+                        line: 0,
+                        column: 0,
+                    },
+                ],
+            },
+        );
         Self {
             chars: source.chars().collect(),
             errors: Vec::new(),
@@ -252,6 +534,7 @@ impl Lexer {
             macros,
             conditional_stack: Vec::new(),
             is_cpp_mode,
+            base_path,
         }
     }
 
@@ -489,6 +772,12 @@ impl Lexer {
                 if self.match_char('*') {
                     return self.make_token(TokenType::DotStar, ".*");
                 }
+                if self.peek(1) == '.' && self.peek(2) == '.' {
+                    self.advance();
+                    self.advance();
+                    self.advance();
+                    return self.make_token(TokenType::Ellipsis, "...");
+                }
                 self.advance();
                 self.make_token(TokenType::Dot, ".")
             }
@@ -627,6 +916,50 @@ impl Lexer {
                                 }
                                 substituted.push(bt.clone());
                             }
+
+                            // H01: 参数化宏体为大括号块且调用后紧跟分号时，
+                            // 动态包装为 do { ... } while(0)，使宏调用在 if/else 等语句中可正确解析。
+                            let body_is_brace_block =
+                                mdef.body.first().map(|t| t.ty == TokenType::LBrace).unwrap_or(false)
+                                    && mdef.body.last().map(|t| t.ty == TokenType::RBrace).unwrap_or(false);
+                            let followed_by_semicolon =
+                                j + 1 < tokens.len() && tokens[j + 1].ty == TokenType::Semicolon;
+                            if body_is_brace_block && followed_by_semicolon {
+                                substituted.insert(
+                                    0,
+                                    Token {
+                                        ty: TokenType::Do,
+                                        text: "do".to_string(),
+                                        line: tok.line,
+                                        column: tok.column,
+                                    },
+                                );
+                                substituted.push(Token {
+                                    ty: TokenType::While,
+                                    text: "while".to_string(),
+                                    line: tok.line,
+                                    column: tok.column,
+                                });
+                                substituted.push(Token {
+                                    ty: TokenType::LParen,
+                                    text: "(".to_string(),
+                                    line: tok.line,
+                                    column: tok.column,
+                                });
+                                substituted.push(Token {
+                                    ty: TokenType::Number,
+                                    text: "0".to_string(),
+                                    line: tok.line,
+                                    column: tok.column,
+                                });
+                                substituted.push(Token {
+                                    ty: TokenType::RParen,
+                                    text: ")".to_string(),
+                                    line: tok.line,
+                                    column: tok.column,
+                                });
+                            }
+
                             let expanded = self.expand_macros_inner(&substituted, expanding);
                             expanding.remove(&tok.text);
                             for mut mt in expanded {

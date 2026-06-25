@@ -173,6 +173,24 @@ impl MemoryState {
         }
         self.free_list = merged;
     }
+
+    /// 释放 `addr` 对应的已分配堆区域（若存在且未释放）。
+    /// 成功释放返回 `true`，找不到对应区域或已释放返回 `false`。
+    pub fn free_region(&mut self, addr: u32) -> bool {
+        for r in &mut self.regions {
+            if r.addr == addr && !r.is_freed {
+                r.is_freed = true;
+                let aligned_size = ((r.size as u32) + 3) & !3;
+                self.free_list.push(FreeBlock {
+                    addr: r.addr,
+                    size: aligned_size as i32,
+                });
+                self.merge_free_list();
+                return true;
+            }
+        }
+        false
+    }
 }
 
 /// 从 regions 中按地址查找指定内存块（供测试与诊断使用）。

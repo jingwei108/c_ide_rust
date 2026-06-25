@@ -12,4 +12,7 @@ pub struct FuncMeta {
     /// 函数返回类型（codegen 使用；session/vm 中保持默认 Void 即可）。
     #[serde(default)]
     pub return_type: Type,
+    /// 是否为变参函数。
+    #[serde(default)]
+    pub is_variadic: bool,
 }

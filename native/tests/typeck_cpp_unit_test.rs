@@ -296,6 +296,7 @@ fn test_try_stmt_typecheck() {
         is_static: false,
         is_extern: false,
         source_file: String::new(),
+        is_variadic: false,
     });
     let (errors, _warnings, _hints) = checker.check(&mut program);
     let has_try_error = errors.iter().any(|e| e.message.contains("异常"));

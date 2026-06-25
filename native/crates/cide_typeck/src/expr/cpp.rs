@@ -200,6 +200,7 @@ impl TypeChecker {
                     FuncSymbol {
                         return_type: Type::int(),
                         param_types: call_params.iter().map(|p| p.ty.clone()).collect(),
+                        is_variadic: false,
                     },
                 );
             }

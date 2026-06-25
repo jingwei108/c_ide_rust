@@ -56,7 +56,7 @@ Criticism is real motivation for the project to continue improving. If you are w
 
 ## Current Status
 
-- **C subset**: Covers common teaching syntax, Shadow Verification 562 cases / 555 matched (measured 2026-06-18)
+- **C subset**: Covers common teaching syntax, Shadow Verification 568 cases / 564 matched (measured 2026-06-25; counting match + cide_better + known_issue)
 - **C++14 teaching subset extension**: M7 Beta Readiness is ready, 83/83 C++ Shadow Verification green, 61 C++ E2E cases green
 - **Editor**: Third-party `re_editor` has been removed; current editor is self-developed `CideEditor` (`CideFlutter/lib/editor/`) (originally derived from `re_editor` and heavily modified)
 - **Unified mode / Time travel**: Implemented
@@ -119,14 +119,14 @@ For environment requirements, full build commands, and development conventions, 
 The project adopts five layers of collaborative test defenses. The core philosophy is: *tests are not for boasting about pass rates, but for honestly discovering problems*.
 
 1. **Shadow Verification**: Compare stdout output with Clang/Clang++
-2. **K&R + LeetCode real-program regression**: K&R 69 exercises, LeetCode 92 problems
+2. **K&R + LeetCode real-program regression**: K&R 76 exercises, LeetCode 92 problems
 3. **Three-tier contract verification**: Host / Bytecode Libc / Differential Stress
 4. **Fuzz stress testing**
 5. **CI integration and consistency monitoring**
 
 Current status:
 
-- C Shadow Verification: **562 cases, 555 matched** (differences are honestly recorded known limitations; measured 2026-06-18)
+- C Shadow Verification: **568 cases, 564 matched** (differences are honestly recorded known limitations; measured 2026-06-25; counting match + cide_better + known_issue)
 - C++ Shadow Verification: **83/83 green, 0 gap**
 - C++ E2E regression cases: **61/61 green**
 - Full `cargo test --workspace --all-features`: **750 passed, 0 failed**

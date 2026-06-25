@@ -365,6 +365,8 @@ impl TypeChecker {
                                 loc,
                                 ErrorCode::E3014_ReturnTypeMismatch,
                             );
+                        } else {
+                            insert_implicit_cast(v, &expected);
                         }
                     } else {
                         self.report_error("非 void 函数必须返回一个值", loc, ErrorCode::E3013_MissingReturnValue);
@@ -525,7 +527,7 @@ impl TypeChecker {
     pub(crate) fn check_user_func(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {
         let sym = self.funcs.get(name).cloned();
         if let Some(sym) = sym {
-            if args.len() != sym.param_types.len() {
+            if args.len() < sym.param_types.len() || (args.len() != sym.param_types.len() && !sym.is_variadic) {
                 self.report_error(
                     &format!(
                         "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
@@ -560,6 +562,12 @@ impl TypeChecker {
                         }
                     }
                 }
+                if sym.is_variadic {
+                    for arg in args.iter_mut().skip(sym.param_types.len()) {
+                        self.resolve_expr_type(arg);
+                        apply_default_argument_promotions(arg);
+                    }
+                }
             }
             return sym.return_type.clone();
         }
@@ -575,7 +583,7 @@ impl TypeChecker {
                     return Type::void();
                 }
             }
-            if args.len() != sym.param_types.len() {
+            if args.len() < sym.param_types.len() || (args.len() != sym.param_types.len() && !sym.is_variadic) {
                 self.report_error(
                     &format!(
                         "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
@@ -608,6 +616,12 @@ impl TypeChecker {
                         } else {
                             insert_implicit_cast(arg, expected);
                         }
+                    }
+                }
+                if sym.is_variadic {
+                    for arg in args.iter_mut().skip(sym.param_types.len()) {
+                        self.resolve_expr_type(arg);
+                        apply_default_argument_promotions(arg);
                     }
                 }
             }

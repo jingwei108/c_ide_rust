@@ -188,7 +188,7 @@ impl Parser {
             {
                 self.advance(); // class name
                 self.consume(TokenType::LParen, "预期 '('");
-                let params = self.parse_param_list();
+                let (params, _) = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
                 let init_list = self.parse_ctor_init_list();
                 let body = if self.check(TokenType::LBrace) {
@@ -255,7 +255,7 @@ impl Parser {
                 }
                 let method_name = self.advance().text.clone();
                 self.consume(TokenType::LParen, "预期 '('");
-                let params = self.parse_param_list();
+                let (params, _) = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
 
                 // 检查 const（仅对方法有效）
@@ -417,11 +417,15 @@ impl Parser {
             params.push(TemplateParam { name: param_name.clone(), loc });
             // 将模板参数注册为类型名，使其在函数/类体中可被识别
             // 使用 Class 类型作为占位符，以便 TypeChecker 在单态化时识别模板参数
-            // SAFETY: 循环内刚 push 一个 TemplateParam，params 非空。
-            #[allow(clippy::unwrap_used)]
-            let tp_name = params.last().unwrap().name.clone();
-            self.typedef_names
-                .insert(param_name, Type::Class { name: tp_name, is_const: false });
+            if let Some(tp) = params.last() {
+                self.typedef_names.insert(
+                    param_name,
+                    Type::Class {
+                        name: tp.name.clone(),
+                        is_const: false,
+                    },
+                );
+            }
             if !self.match_token(TokenType::Comma) {
                 break;
             }
@@ -585,7 +589,7 @@ impl Parser {
         }
         self.consume(TokenType::LParen, "预期 '('");
 
-        let params = self.parse_param_list();
+        let (params, is_variadic) = self.parse_param_list();
         self.consume(TokenType::RParen, "预期 ')'");
         if self.is_cpp_mode {
             self.match_token(TokenType::Const);
@@ -609,6 +613,7 @@ impl Parser {
             is_static,
             is_extern,
             source_file: String::new(),
+            is_variadic,
         }
     }
     pub(crate) fn parse_typedef(&mut self) {

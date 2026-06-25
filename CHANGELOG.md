@@ -47,6 +47,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (标准库 I/O 行为修复)
 - **修复 `fputs(str, stdout)` 无输出**：`crates/cide_vm/src/host/file.rs` 的 `host_fputs` 现在识别 lexer 预定义的 `stdout`(1)/`stderr`(2) 宏 fd，将字符串直接追加到 `RuntimeState.output_lines`；普通 `FILE*` 文件流写入行为保持不变；新增 `end_to_end_extra_test::test_e2e_fputs_stdout` 回归用例
+- **修复 `fclose` 后 VFS `FILE*` 被误报为内存泄漏**：`crates/cide_vm/src/host/file.rs` 的 `host_fclose` 现在除关闭 VFS 文件描述符外，还会释放 `host_fopen` 在 VM Heap 中为 `FILE*` 结构体分配的 4 字节内存；stdout/stderr 等非堆分配 stream 找不到对应 region 时安全忽略；新增 `native/tests/cases/baseline/fclose_leak.c` 回归用例
+
+### Fixed (VLA 运行时边界检查)
+- **修复 VLA 数组索引缺失边界检查**：`cide_codegen::expr::gen_index` 现在对首维为变量表达式的 VLA 生成运行时边界检查；新增 `TrapBoundsVla` opcode（值为 129），在索引前将 VLA 维度表达式求值并压栈，VM 运行时将索引与该运行时边界比较，越界时触发教学诊断；新增 `native/tests/cases/baseline/vla_bounds.c` 回归用例。参数退化为指针的 VLA 形参仍无法在调用点获知边界，保持跳过。
+
+### Fixed (参数化宏扩展支持)
+- **修复参数化宏调用后带分号无法解析**：`cide_lexer` 在参数化宏展开时，若宏体为大括号块且调用位置后紧跟分号，则动态将宏体包装为 `do { ... } while(0)`，使 `SWAP(int,x,y);` 在 `if/else` 等语句中可正确解析；新增 `native/tests/end_to_end_extra_test.rs::test_e2e_parametric_macro_swap_semicolon` 回归测试。⚠️ 此为 Cide 教学子集扩展，Clang 标准模式仍报"预期表达式"；若需严格兼容 Clang，建议宏体手动使用 `do { ... } while(0)`。
+
+### Changed (工程质量)
+- **生产代码 `unwrap`/`expect` 收敛**：继续推进维护计划任务 C，移除 5 处生产路径 `unwrap`
+  - `cide_codegen::lib.rs` 类大小拓扑计算：将 `class_defs.get(class_name).unwrap()` 改为 `if let Some(class)` / `continue`
+  - `cide_codegen::expr::call.rs`：`gen_call` / `gen_call_ptr` 中结构体/类返回值临时偏移从 `ret_temp_offset.unwrap()` 改为 `if let Some(offset)`，删除冗余 `is_struct_ret` 变量
+  - `cide_codegen::expr::struct_.rs`：类方法调用返回值临时偏移同样改为 `if let Some(offset)`
+  - 生产代码 `unwrap`/`expect` 从 17 处降至 0 处，全量从 45 处降至 28 处
+  - 确认 `templates/bTree/source.c` 的 `bTree_default` 运行时缺口为模板代码访问未初始化子节点指针的已知偏差（`E2E_FAILURES.md` 已记录为 `KNOWN_DIVERGENCE`），与本次 unwrap 收敛无关
+
+### Fixed (变参函数支持)
+- **修复 `va_list` / `va_start` / `va_arg` / `va_end` 自定义变参函数不支持**：
+  - 根因是 Parser 将函数调用统一解析为 `Expr::CallPtr`，而 `cide_codegen::expr::call` 仅在 `gen_call` 中处理变参 `CallVar`，导致变参调用走普通 `Call` 指令，只弹出命名参数；修复方案为在 `gen_call_ptr` 中同步识别变参函数并生成 `PushConst total_arg_words` + `CallVar`。
+  - 修复 `CallVar` 总参数 word 数计算：对变参实参按实际 `type_size` 计算 word 数（支持 `double`/`long long` 等 8 字节类型），并对 `float` 等类型应用 C 默认实参提升（`float` → `double`，`char` → `int`）。
+  - 修复 `double`/`long long` 变参在栈帧中的存储顺序：codegen 对变参 callee 的 8 字节实参使用 `StoreLocalD/Q` + 高低 32 位分段加载，保证 VM `do_call_inner` 顺序存储后内存为小端布局。
+  - 调整 `stdarg.h` 与 lexer 预定义宏：`__cide_va_arg` 返回 `void*`，`va_arg(ap, type)` 宏展开为 `*(type*)__cide_va_arg(&(ap), sizeof(type))`，从而直接按目标类型位模式读取内存。
+  - 修复 `gen_expr_with_cast` 对 `long long` 目标类型的错误截断：原实现对所有非浮点目标都把 `LongLong` 表达式截断为 `int`，导致 `long long total = total + x;` 等赋值只保留低 32 位；改为传递完整目标类型，仅在目标为 `int`/`char` 时才截断。
+  - 修复复合赋值（`+=`/`-=`/`*=`/`/=`）对 `long long` 使用 32 位指令的问题：在 `gen_assign` 的复合赋值闭包中为 `left_is_long_long` 分支添加 `AddQ`/`SubQ`/`MulQ`/`DivQ`。
+  - 新增 `native/tests/cases/baseline/variadic.c` 回归用例，覆盖 `int`/`double`/`long long` 变参求和。
+
+### Fixed (类型系统行为修复)
+- **修复函数返回 `double` 值异常**：根因是 `return` 语句未对返回值表达式插入隐式类型转换，`return 2.5;` 中的 `2.5` 被解析为 `float` 字面量，导致返回类型为 `double` 时生成 `PushConstF` 而非 `PushConstD`。修复方案为 `cide_typeck::decl.rs` 在 `return` 语句 `check_assignable` 成功后调用 `insert_implicit_cast`，并新增 `native/tests/cases/baseline/float_func_return.c` 回归用例；`native/tests/cases/leetcode/lc_4.c` 恢复为原始 `double` 返回实现
+
+### Fixed (标准库 I/O 行为修复)
+- **修复 `scanf`/`sscanf` 的 `%s` 格式符不支持**：`crates/cide_vm/src/host/io.rs` 的 `host_scanf_n`/`host_sscanf` 现在处理 `'s'` 格式符，跳过前导空白、读取非空白字符序列并以 `'\0'` 结尾写入目标缓冲区；新增 `native/tests/cases/baseline/scanf_string.c` 回归用例
+
+### Fixed (代码生成行为修复)
+- **修复复合副作用数组索引触发 NULL 指针陷阱**：形如 `a[++i] = b[j--]` 的表达式在 Clang/GCC 下正确，但 Cide 运行时访问 NULL 指针区域。根因是 `crates/cide_codegen/src/expr/unary.rs` 的 `gen_mem_inc_dec` 与 `gen_assign` 的 Index 赋值复用 `temp_slot0`，右侧索引副作用覆盖了左侧地址临时变量。修复方案为 `gen_mem_inc_dec` 改用 `temp_slot3` 保存新值；新增 `native/tests/cases/baseline/side_effect_index.c` 回归用例
+
+### Fixed (自定义头文件 include 支持)
+- **修复 `#include` 非标准库路径不支持**：`#include "header.h"` 现在可基于源文件所在目录加载自定义头文件；`Lexer` 新增 `base_path` 字段与 `with_mode_and_path` 构造函数，`compile_pipeline.rs` 从首个编译单元文件名提取目录传入；`shadow_verify.py` 与 `cide_e2e.rs` 改用真实源文件路径调用 `cide_compile_unit`，使 Shadow Verification 与 E2E 测试中的 include 行为与 Clang 一致。新增 `native/tests/cases/baseline/include_custom_header.c` / `include_custom_header.h` 回归用例
 
 ### Fixed (Shadow Verification 完整修复)
 - **C Shadow 匹配率从 498/511 提升至 505/511（98.8%）**：编译缺口与输出差异归零

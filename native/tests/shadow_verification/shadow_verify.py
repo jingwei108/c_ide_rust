@@ -57,6 +57,7 @@ class ShadowCase:
     source: str
     category: str  # 预期分类，如 "double", "function_pointer", "file_io"
     src_dir: str = "builtin"  # 用例来源目录，如 "baseline", "knr", "leetcode", "template"
+    path: Optional[Path] = None  # 源文件路径（文件加载的用例），供 #include 解析使用
 
 
 @dataclass
@@ -69,15 +70,22 @@ class ShadowDiff:
     src_dir: str = "builtin"
 
 
-def run_with_clang(source: str) -> RunResult:
+def run_with_clang(source: str, path: Optional[Path] = None) -> RunResult:
     """用 Clang 编译并运行 C 代码"""
     start = time.time()
-    # 为 Clang 添加最小化头文件（Cide 有内置函数不需要）
-    clang_source = make_clang_header(source) + source
+
     with tempfile.TemporaryDirectory() as tmpdir:
-        c_file = Path(tmpdir) / "test.c"
-        exe_file = Path(tmpdir) / "test.exe" if sys.platform == "win32" else Path(tmpdir) / "test"
-        c_file.write_text(clang_source, encoding="utf-8")
+        exe_file = Path(tmpdir) / ("test.exe" if sys.platform == "win32" else "test")
+
+        # 若提供了原始文件路径且存在，直接在原目录编译（c_file 指向原文件），
+        # 保证 #include "..." 可解析；exe 仍输出到临时目录，避免污染用例目录。
+        # 文件用例通常自带 #include <stdio.h>，无需再补充头文件。
+        if path and path.exists():
+            c_file = path
+        else:
+            clang_source = make_clang_header(source) + source
+            c_file = Path(tmpdir) / "test.c"
+            c_file.write_text(clang_source, encoding="utf-8")
 
         # 编译（Windows MSVC 环境下不需要 -lm，Linux/Android 需要）
         compile_cmd = [CLANG_PATH, str(c_file), "-o", str(exe_file), "-Wno-implicit-function-declaration"]
@@ -143,7 +151,7 @@ def run_with_clang(source: str) -> RunResult:
             )
 
 
-def run_with_cide(source: str) -> RunResult:
+def run_with_cide(source: str, filename: Optional[str] = None) -> RunResult:
     """通过 C API 调用 Cide 编译并运行"""
     import ctypes
 
@@ -155,6 +163,10 @@ def run_with_cide(source: str) -> RunResult:
     dll.cide_session_destroy.argtypes = [ctypes.c_void_p]
     dll.cide_compile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     dll.cide_compile.restype = ctypes.c_int
+    dll.cide_compile_unit.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+    dll.cide_compile_unit.restype = ctypes.c_int
+    dll.cide_compile_all.argtypes = [ctypes.c_void_p]
+    dll.cide_compile_all.restype = ctypes.c_int
     dll.cide_run.argtypes = [ctypes.c_void_p]
     dll.cide_run.restype = ctypes.c_int
     dll.cide_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
@@ -176,7 +188,16 @@ def run_with_cide(source: str) -> RunResult:
         )
 
     try:
-        compile_ret = dll.cide_compile(session, source.encode("utf-8"))
+        if filename:
+            compile_ret = dll.cide_compile_unit(
+                session,
+                filename.encode("utf-8"),
+                source.encode("utf-8"),
+            )
+            if compile_ret == 0:
+                compile_ret = dll.cide_compile_all(session)
+        else:
+            compile_ret = dll.cide_compile(session, source.encode("utf-8"))
         if compile_ret != 0:
             err_ptr = dll.cide_get_compile_errors(session)
             err_msg = err_ptr.decode("utf-8", errors="replace") if err_ptr else "Unknown compile error"
@@ -420,6 +441,7 @@ def load_case_files() -> List[ShadowCase]:
                 source=clean_source,
                 category=category,
                 src_dir=src_dir,
+                path=path,
             ))
     return cases
 
@@ -809,10 +831,11 @@ def main():
         print(f"\n[{i}/{len(CASES)}] {case.name} ({case.category})")
 
         prepare_test_files()
-        clang_res = run_with_clang(case.source)
+        clang_res = run_with_clang(case.source, path=case.path)
         print(f"  Clang: compile={'OK' if clang_res.compile_success else 'FAIL'}, run={'OK' if clang_res.run_success else 'FAIL'}")
 
-        cide_res = run_with_cide(case.source)
+        cide_filename = str(case.path) if case.path else None
+        cide_res = run_with_cide(case.source, filename=cide_filename)
         print(f"  Cide:  compile={'OK' if cide_res.compile_success else 'FAIL'}, run={'OK' if cide_res.run_success else 'FAIL'}")
 
         diff = analyze_diff(case, clang_res, cide_res)

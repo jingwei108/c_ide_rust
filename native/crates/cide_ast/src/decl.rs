@@ -22,6 +22,7 @@ pub struct FuncDecl {
     pub is_static: bool,
     pub is_extern: bool,
     pub source_file: String,
+    pub is_variadic: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

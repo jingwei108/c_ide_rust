@@ -4219,6 +4219,33 @@ int main() {
 }
 
 #[test]
+fn test_e2e_parametric_macro_swap_semicolon() {
+    let src = r#"
+#include <stdio.h>
+#define SWAP(t,a,b) { t temp=a; a=b; b=temp; }
+int main() {
+    int x = 1;
+    int y = 2;
+    if (x < y)
+        SWAP(int, x, y);
+    else
+        x = 0;
+    printf("%d %d\n", x, y);
+    return 0;
+}
+"#;
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "Compile/run failed: {:?}", result);
+    let (_, output) = result.unwrap();
+    let out = filter_outputs(output);
+    assert_eq!(
+        out.join(""),
+        "2 1",
+        "Parametric macro SWAP with trailing semicolon in if/else should work"
+    );
+}
+
+#[test]
 fn test_e2e_parametric_macro_nested() {
     let src = r#"
 #include <stdio.h>

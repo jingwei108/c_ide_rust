@@ -116,7 +116,7 @@ impl Parser {
         }
         self.consume(TokenType::RBracket, "Lambda 预期 ']'");
         self.consume(TokenType::LParen, "Lambda 预期 '('");
-        let params = self.parse_param_list();
+        let (params, _) = self.parse_param_list();
         self.consume(TokenType::RParen, "Lambda 预期 ')'");
 
         // 可选的返回类型 -> Type

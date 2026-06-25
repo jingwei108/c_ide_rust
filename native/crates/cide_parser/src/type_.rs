@@ -312,9 +312,9 @@ impl Parser {
                 if !is_abstract {
                     guard.suffix_count += 1;
                 }
-                let params = self.parse_param_list();
+                let (params, is_variadic) = self.parse_param_list();
                 self.consume(TokenType::RParen, "预期 ')'");
-                suffixes.push(DeclaratorSuffix::Function(params));
+                suffixes.push(DeclaratorSuffix::Function(params, is_variadic));
             } else {
                 break;
             }
@@ -326,8 +326,8 @@ impl Parser {
                 DeclaratorSuffix::Array(size_expr) => {
                     node = DeclaratorNode::Array(Box::new(node), size_expr);
                 }
-                DeclaratorSuffix::Function(params) => {
-                    node = DeclaratorNode::Function(Box::new(node), params);
+                DeclaratorSuffix::Function(params, is_variadic) => {
+                    node = DeclaratorNode::Function(Box::new(node), params, is_variadic);
                 }
             }
         }
@@ -456,7 +456,7 @@ impl Parser {
                     }
                 }
             }
-            DeclaratorNode::Function(inner, params) => {
+            DeclaratorNode::Function(inner, params, is_variadic) => {
                 match inner.as_ref() {
                     DeclaratorNode::Pointer(ptr_inner) => {
                         match ptr_inner.as_ref() {
@@ -470,6 +470,7 @@ impl Parser {
                                             return_type: Box::new(elem_ty),
                                             param_types: params.iter().map(|p| p.ty.clone()).collect(),
                                             is_const: false,
+                                            is_variadic: *is_variadic,
                                         }),
                                         is_const: false,
                                     }),
@@ -486,6 +487,7 @@ impl Parser {
                                         return_type: Box::new(base_type.clone()),
                                         param_types: params.iter().map(|p| p.ty.clone()).collect(),
                                         is_const: false,
+                                        is_variadic: *is_variadic,
                                     }),
                                     is_const: false,
                                 };
@@ -500,6 +502,7 @@ impl Parser {
                                 return_type: Box::new(inner_ty),
                                 param_types: params.iter().map(|p| p.ty.clone()).collect(),
                                 is_const: false,
+                                is_variadic: *is_variadic,
                             }),
                             is_const: false,
                         }
@@ -508,16 +511,23 @@ impl Parser {
             }
         }
     }
-    pub(crate) fn parse_param_list(&mut self) -> Vec<Param> {
+    pub(crate) fn parse_param_list(&mut self) -> (Vec<Param>, bool) {
         let mut params = Vec::new();
+        let mut is_variadic = false;
         if self.check(TokenType::RParen) {
-            return params;
+            return (params, is_variadic);
         }
         if self.check(TokenType::Void) && self.peek(1).ty == TokenType::RParen {
             self.advance();
-            return params;
+            return (params, is_variadic);
         }
         loop {
+            // C 变参参数列表末尾的 "..."
+            if self.check(TokenType::Ellipsis) {
+                self.advance();
+                is_variadic = true;
+                break;
+            }
             let base_type = self.parse_base_type();
             let (pty, pname) = if self.check(TokenType::Comma) || self.check(TokenType::RParen) {
                 // 无名参数（函数原型声明）：int foo(int);
@@ -562,7 +572,7 @@ impl Parser {
                 break;
             }
         }
-        params
+        (params, is_variadic)
     }
     /// Parse optional constructor member initializer list: `: field1(expr1), field2(expr2)`
     pub(crate) fn parse_ctor_init_list(&mut self) -> Vec<(String, Expr)> {

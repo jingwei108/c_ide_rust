@@ -99,9 +99,10 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
     // `mut` 在 desktop 下会触发 unused_mut 警告，因此统一允许。
     #[allow(unused_mut)]
     let mut run_vm = || {
-        // SAFETY: vm_slot 在闭包外已用 Some(session.vm.take()) 初始化，始终为 Some。
-        #[allow(clippy::unwrap_used)]
-        let vm = vm_slot.as_mut().unwrap();
+        let vm = match vm_slot.as_mut() {
+            Some(vm) => vm,
+            None => return -1,
+        };
         if !is_resume {
             setup_vm(vm, session);
             inject_preset_files(vm, session);
@@ -114,9 +115,13 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
     let run_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run_vm));
     #[cfg(target_arch = "wasm32")]
     let run_result: Result<i32, ()> = Ok(run_vm());
-    // SAFETY: run_vm 在闭包内通过 as_mut() 消费了 vm_slot，闭包返回后仍保留 Some。
-    #[allow(clippy::unwrap_used)]
-    let vm = vm_slot.take().unwrap();
+    let vm = match vm_slot.take() {
+        Some(vm) => vm,
+        None => {
+            session.runtime.running = false;
+            return Err("VM 状态异常：运行前未正确初始化".to_string());
+        }
+    };
 
     match run_result {
         Ok(ret) => {

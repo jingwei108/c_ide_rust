@@ -9,6 +9,35 @@ impl CideVM {
             return;
         }
         let meta = self.func_table[idx].clone();
+        self.do_call_inner(func_idx, meta.arg_count, loc, session, op_name);
+    }
+
+    pub(crate) fn do_call_with_arg_count(
+        &mut self,
+        func_idx: u32,
+        arg_count: i32,
+        loc: &SourceLoc,
+        session: &mut VmContext<'_>,
+        op_name: &str,
+    ) {
+        let idx = func_idx as usize;
+        if idx >= self.func_table.len() || self.func_table[idx].ip == 0 {
+            self.trap(&format!("{}: 未知函数索引 {}", op_name, func_idx), loc);
+            return;
+        }
+        self.do_call_inner(func_idx, arg_count, loc, session, op_name);
+    }
+
+    fn do_call_inner(
+        &mut self,
+        func_idx: u32,
+        arg_count: i32,
+        loc: &SourceLoc,
+        session: &mut VmContext<'_>,
+        op_name: &str,
+    ) {
+        let idx = func_idx as usize;
+        let meta = self.func_table[idx].clone();
         let func_name = if idx < self.func_names.len() {
             self.func_names[idx].clone()
         } else {
@@ -36,6 +65,7 @@ impl CideVM {
         self.mem_stack_top -= frame_size_u32;
         let locals_base = self.mem_stack_top;
         let mut word_offset = 0;
+        // 先弹出命名参数
         for word_count in meta.param_sizes.iter() {
             let words = *word_count as u32;
             let addr = locals_base + word_offset * 4;
@@ -45,8 +75,24 @@ impl CideVM {
             }
             word_offset += words;
         }
+        // 变参函数：弹出额外的变参参数（按 int word 处理）
+        if meta.is_variadic {
+            while word_offset < arg_count as u32 {
+                let addr = locals_base + word_offset * 4;
+                let val = self.pop() as i32;
+                self.store_i32(addr, val, loc);
+                word_offset += 1;
+            }
+        }
         let arg_bytes = word_offset * 4;
-        for addr in (locals_base + arg_bytes)..(locals_base + meta.local_count as u32) {
+        // 变参函数预留 64 字节变参区域，清零仅从实际局部变量开始，避免覆盖变参参数。
+        let zero_start = if meta.is_variadic {
+            let named_bytes: u32 = meta.param_sizes.iter().sum::<i32>() as u32 * 4;
+            locals_base + named_bytes + 64
+        } else {
+            locals_base + arg_bytes
+        };
+        for addr in zero_start..(locals_base + meta.local_count as u32) {
             self.store_i8(addr, 0, loc);
         }
         self.call_stack.push(CallFrame {
@@ -112,6 +158,15 @@ impl CideVM {
                 self.do_call(operand as u32, loc, session, "Call");
                 None
             }
+            OpCode::CallVar => {
+                if self.stack.is_empty() {
+                    self.trap("CallVar: 栈下溢（缺少参数数量）", loc);
+                } else {
+                    let arg_count = self.pop() as i32;
+                    self.do_call_with_arg_count(operand as u32, arg_count, loc, session, "CallVar");
+                }
+                None
+            }
             OpCode::CallPtr => {
                 if self.stack.is_empty() {
                     self.trap("CallPtr: 栈下溢（缺少函数索引）", loc);
@@ -138,9 +193,10 @@ impl CideVM {
                     return Some(StepResult::Finished);
                 }
                 let ret_val = self.pop();
-                // SAFETY: 上面已检查 call_stack 非空。
-                #[allow(clippy::unwrap_used)]
-                let frame = self.call_stack.pop().unwrap();
+                let frame = match self.call_stack.pop() {
+                    Some(f) => f,
+                    None => return Some(StepResult::Finished),
+                };
                 const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                 if frame.return_ip == HOST_CALLBACK_SENTINEL {
                     self.mem_stack_top = frame.original_stack_top;
@@ -159,9 +215,10 @@ impl CideVM {
                 if self.call_stack.is_empty() {
                     return Some(StepResult::Finished);
                 }
-                // SAFETY: 上面已检查 call_stack 非空。
-                #[allow(clippy::unwrap_used)]
-                let frame = self.call_stack.pop().unwrap();
+                let frame = match self.call_stack.pop() {
+                    Some(f) => f,
+                    None => return Some(StepResult::Finished),
+                };
                 const HOST_CALLBACK_SENTINEL: usize = usize::MAX;
                 if frame.return_ip == HOST_CALLBACK_SENTINEL {
                     self.mem_stack_top = frame.original_stack_top;

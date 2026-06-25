@@ -246,8 +246,14 @@ def read_shadow_match_rate() -> dict[str, str]:
         try:
             data = json.loads(latest.read_text(encoding="utf-8"))
             summary = data.get("summary", {})
+            details = data.get("details", [])
             total = summary.get("total", 0)
-            matched = summary.get("match", 0)
+            # 与 README/AGENTS.md 对外口径一致：完全匹配 + Cide 更优 + 已知差异均计入匹配
+            matched = sum(
+                1
+                for c in details
+                if c.get("diff_type") in ("match", "cide_better", "known_issue")
+            )
             result["C"] = f"{matched}/{total}"
         except Exception:
             result["C"] = "N/A"

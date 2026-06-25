@@ -136,6 +136,11 @@ pub const STRPBRK: u32 = 128;
 pub const STRSPN: u32 = 129;
 pub const STRCSPN: u32 = 130;
 
+// stdarg.h 变参支持
+pub const VA_START: u32 = 140;
+pub const VA_ARG: u32 = 141;
+pub const VA_END: u32 = 142;
+
 /// 已由 Bytecode Libc 覆盖的纯计算函数。
 /// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
 /// 诊断敏感的函数（strcpy、printf、malloc 等）继续保留 Host Func 路径。
@@ -261,6 +266,9 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "strpbrk" => Some(STRPBRK),
         "strspn" => Some(STRSPN),
         "strcspn" => Some(STRCSPN),
+        "__cide_va_start" => Some(VA_START),
+        "__cide_va_arg" => Some(VA_ARG),
+        "__cide_va_end" => Some(VA_END),
         _ => None,
     }
 }

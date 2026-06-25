@@ -57,9 +57,10 @@ impl TypeChecker {
         if self.scopes.is_empty() {
             self.scopes.push(HashMap::new());
         }
-        // SAFETY: scopes 在上一步已确保非空。
-        #[allow(clippy::expect_used)]
-        let scope = self.scopes.last_mut().expect("scopes 在上一步已确保非空");
+        let scope = match self.scopes.last_mut() {
+            Some(s) => s,
+            None => return,
+        };
         if let Some(existing) = scope.get(name) {
             if is_extern {
                 // extern declaration of an existing symbol is allowed

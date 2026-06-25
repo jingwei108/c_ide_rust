@@ -3,8 +3,7 @@ use super::*;
 pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
     if let Expr::Call { name, args, ty, .. } = expr {
-        let is_struct_ret = ty.is_struct() || ty.is_class();
-        let ret_temp_offset = if is_struct_ret {
+        let ret_temp_offset = if ty.is_struct() || ty.is_class() {
             let sz = (gen.type_size(ty) + 3) & !3;
             let offset = gen.next_local_offset;
             gen.next_local_offset += sz;
@@ -12,6 +11,8 @@ pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
         } else {
             None
         };
+        let is_variadic_callee =
+            gen.func_table.get(name).map(|m| m.is_variadic).unwrap_or(false) && gen.func_index.contains_key(name);
         for arg in args.iter_mut().rev() {
             let arg_ty_kind = arg.ty().kind();
             let arg_ty = arg.ty();
@@ -84,12 +85,30 @@ pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
             } else if arg_ty.kind() == TypeKind::Double {
                 gen.gen_expr(arg);
                 if gen.func_index.contains_key(name) {
-                    gen.emit(OpCode::SplitD, 0, &loc);
+                    if is_variadic_callee {
+                        // 变参函数：按 VM 变参循环顺序 push（低地址在前），
+                        // 因此先压入高 32 位，再压入低 32 位。
+                        let temp0 = gen.get_temp_slot(0);
+                        let _temp1 = gen.get_temp_slot(1);
+                        gen.emit(OpCode::StoreLocalD, temp0, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0 + 4, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0, &loc);
+                    } else {
+                        gen.emit(OpCode::SplitD, 0, &loc);
+                    }
                 }
             } else if arg_ty.kind() == TypeKind::LongLong {
                 gen.gen_expr(arg);
                 if gen.func_index.contains_key(name) {
-                    gen.emit(OpCode::SplitQ, 0, &loc);
+                    if is_variadic_callee {
+                        let temp0 = gen.get_temp_slot(0);
+                        let _temp1 = gen.get_temp_slot(1);
+                        gen.emit(OpCode::StoreLocalQ, temp0, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0 + 4, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0, &loc);
+                    } else {
+                        gen.emit(OpCode::SplitQ, 0, &loc);
+                    }
                 }
             } else {
                 gen.gen_expr(arg);
@@ -104,7 +123,27 @@ pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
             gen.emit(OpCode::Add, 0, &loc);
         }
         if let Some(&idx) = gen.func_index.get(name) {
-            gen.emit(OpCode::Call, idx, &loc);
+            if let Some(meta) = gen.func_table.get(name) {
+                if meta.is_variadic {
+                    let named_words: i32 = meta.param_sizes.iter().sum();
+                    let user_named_count = if meta.return_type.is_struct() || meta.return_type.is_class() {
+                        (meta.param_count - 1).max(0)
+                    } else {
+                        meta.param_count
+                    };
+                    let extra_variadic_words: i32 = args[user_named_count as usize..]
+                        .iter()
+                        .map(|a| (gen.type_size(a.ty()) + 3) / 4)
+                        .sum();
+                    let total_arg_words = named_words + extra_variadic_words;
+                    gen.emit(OpCode::PushConst, total_arg_words, &loc);
+                    gen.emit(OpCode::CallVar, idx, &loc);
+                } else {
+                    gen.emit(OpCode::Call, idx, &loc);
+                }
+            } else {
+                gen.emit(OpCode::Call, idx, &loc);
+            }
         } else {
             if let Some(host_id) = cide_runtime::host_func_id::by_user_name(name.as_str()) {
                 gen.emit(OpCode::CallHost, host_id as i32, &loc);
@@ -124,7 +163,6 @@ pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
 pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
     if let Expr::CallPtr { callee, args, ty, .. } = expr {
-        let is_struct_ret = ty.is_struct() || ty.is_class();
         // std::move(x) is a compile-time cast to RValueRef; no function call.
         if let Expr::Identifier { name, .. } = callee.as_ref() {
             if name == "std__move" && args.len() == 1 {
@@ -132,7 +170,7 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
                 return;
             }
         }
-        let ret_temp_offset = if is_struct_ret {
+        let ret_temp_offset = if ty.is_struct() || ty.is_class() {
             let sz = (gen.type_size(ty) + 3) & !3;
             let offset = gen.next_local_offset;
             gen.next_local_offset += sz;
@@ -146,6 +184,11 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
             gen.func_index.contains_key(name) || gen.resolve_host_func_id(name) < 0
         } else {
             true // indirect calls are always user calls
+        };
+        let is_variadic_callee = if let Expr::Identifier { name, .. } = callee.as_ref() {
+            gen.func_index.contains_key(name) && gen.func_table.get(name).map(|m| m.is_variadic).unwrap_or(false)
+        } else {
+            false
         };
         for arg in args.iter_mut().rev() {
             let arg_ty = arg.ty().clone();
@@ -217,12 +260,30 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
             } else if arg_ty.kind() == TypeKind::Double {
                 gen.gen_expr(arg);
                 if is_user_call {
-                    gen.emit(OpCode::SplitD, 0, &loc);
+                    if is_variadic_callee {
+                        // 变参函数：按 VM 变参循环顺序 push（低地址在前），
+                        // 因此先压入高 32 位，再压入低 32 位。
+                        let temp0 = gen.get_temp_slot(0);
+                        let _temp1 = gen.get_temp_slot(1);
+                        gen.emit(OpCode::StoreLocalD, temp0, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0 + 4, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0, &loc);
+                    } else {
+                        gen.emit(OpCode::SplitD, 0, &loc);
+                    }
                 }
             } else if arg_ty.kind() == TypeKind::LongLong {
                 gen.gen_expr(arg);
                 if is_user_call {
-                    gen.emit(OpCode::SplitQ, 0, &loc);
+                    if is_variadic_callee {
+                        let temp0 = gen.get_temp_slot(0);
+                        let _temp1 = gen.get_temp_slot(1);
+                        gen.emit(OpCode::StoreLocalQ, temp0, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0 + 4, &loc);
+                        gen.emit(OpCode::LoadLocal, temp0, &loc);
+                    } else {
+                        gen.emit(OpCode::SplitQ, 0, &loc);
+                    }
                 }
             } else {
                 gen.gen_expr(arg);
@@ -240,13 +301,30 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
         }
         if let Expr::Identifier { name, .. } = callee.as_ref() {
             if let Some(&idx) = gen.func_index.get(name) {
-                gen.emit(OpCode::Call, idx, &loc);
-                if is_struct_ret {
-                    // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
-                    #[allow(clippy::unwrap_used)]
+                if let Some(meta) = gen.func_table.get(name) {
+                    if meta.is_variadic {
+                        let named_words: i32 = meta.param_sizes.iter().sum();
+                        let user_named_count = if meta.return_type.is_struct() || meta.return_type.is_class() {
+                            (meta.param_count - 1).max(0)
+                        } else {
+                            meta.param_count
+                        };
+                        let extra_variadic_words: i32 = args[user_named_count as usize..]
+                            .iter()
+                            .map(|a| (gen.type_size(a.ty()) + 3) / 4)
+                            .sum();
+                        let total_arg_words = named_words + extra_variadic_words;
+                        gen.emit(OpCode::PushConst, total_arg_words, &loc);
+                        gen.emit(OpCode::CallVar, idx, &loc);
+                    } else {
+                        gen.emit(OpCode::Call, idx, &loc);
+                    }
+                } else {
+                    gen.emit(OpCode::Call, idx, &loc);
+                }
+                if let Some(offset) = ret_temp_offset {
                     gen.emit(OpCode::GetFrameBase, 0, &loc);
-                    #[allow(clippy::unwrap_used)]
-                    gen.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+                    gen.emit(OpCode::PushConst, offset, &loc);
                     gen.emit(OpCode::Add, 0, &loc);
                 }
                 return;
@@ -255,12 +333,9 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
             let host_id = gen.resolve_host_func_id(name);
             if host_id >= 0 {
                 gen.emit(OpCode::CallHost, host_id, &loc);
-                if is_struct_ret {
-                    // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
-                    #[allow(clippy::unwrap_used)]
+                if let Some(offset) = ret_temp_offset {
                     gen.emit(OpCode::GetFrameBase, 0, &loc);
-                    #[allow(clippy::unwrap_used)]
-                    gen.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+                    gen.emit(OpCode::PushConst, offset, &loc);
                     gen.emit(OpCode::Add, 0, &loc);
                 }
                 return;
@@ -268,12 +343,9 @@ pub(crate) fn gen_call_ptr(gen: &mut BytecodeGen, expr: &mut Expr) {
         }
         gen.gen_expr(callee);
         gen.emit(OpCode::CallPtr, args.len() as i32, &loc);
-        if is_struct_ret {
-            // SAFETY: ret_temp_offset 在 is_struct_ret 时已在上方赋值。
-            #[allow(clippy::unwrap_used)]
+        if let Some(offset) = ret_temp_offset {
             gen.emit(OpCode::GetFrameBase, 0, &loc);
-            #[allow(clippy::unwrap_used)]
-            gen.emit(OpCode::PushConst, ret_temp_offset.unwrap(), &loc);
+            gen.emit(OpCode::PushConst, offset, &loc);
             gen.emit(OpCode::Add, 0, &loc);
         }
     }

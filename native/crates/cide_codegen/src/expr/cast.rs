@@ -143,20 +143,11 @@ pub(crate) fn gen_offsetof_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
 }
 
 impl BytecodeGen {
-    pub(crate) fn gen_expr_with_cast(
-        &mut self,
-        expr: &mut Expr,
-        target_is_fp: bool,
-        target_is_double: bool,
-        loc: &SourceLoc,
-    ) {
+    pub(crate) fn gen_expr_with_cast(&mut self, expr: &mut Expr, target_ty: &Type, loc: &SourceLoc) {
         self.gen_expr(expr);
-        let _target_is_long_long = !target_is_fp
-            && expr.ty().kind() != TypeKind::Int
-            && expr.ty().kind() != TypeKind::Char
-            && expr.ty().kind() != TypeKind::Float
-            && expr.ty().kind() != TypeKind::Double;
-        // Note: target_is_long_long heuristic is approximate; caller ensures correct cast via Cast nodes
+        let target_is_fp = matches!(target_ty.kind(), TypeKind::Float | TypeKind::Double);
+        let target_is_double = target_ty.kind() == TypeKind::Double;
+        let target_is_long_long = target_ty.kind() == TypeKind::LongLong;
         if target_is_double
             && expr.ty().kind() != TypeKind::Float
             && expr.ty().kind() != TypeKind::Double
@@ -167,18 +158,17 @@ impl BytecodeGen {
             self.emit(OpCode::CastF2D, 0, loc);
         } else if target_is_double && expr.ty().kind() == TypeKind::LongLong {
             self.emit(OpCode::CastQ2D, 0, loc);
-        } else if !target_is_double
-            && target_is_fp
+        } else if target_is_fp
             && expr.ty().kind() != TypeKind::Float
             && expr.ty().kind() != TypeKind::Double
             && expr.ty().kind() != TypeKind::LongLong
         {
             self.emit(OpCode::CastI2F, 0, loc);
-        } else if !target_is_fp && expr.ty().kind() == TypeKind::Double {
+        } else if !target_is_fp && !target_is_long_long && expr.ty().kind() == TypeKind::Double {
             self.emit(OpCode::CastD2I, 0, loc);
-        } else if !target_is_fp && expr.ty().kind() == TypeKind::Float {
+        } else if !target_is_fp && !target_is_long_long && expr.ty().kind() == TypeKind::Float {
             self.emit(OpCode::CastF2I, 0, loc);
-        } else if !target_is_fp && expr.ty().kind() == TypeKind::LongLong {
+        } else if !target_is_fp && !target_is_long_long && expr.ty().kind() == TypeKind::LongLong {
             self.emit(OpCode::CastQ2I, 0, loc);
         }
     }

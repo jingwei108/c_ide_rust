@@ -108,7 +108,9 @@ impl Lexer {
                 if !self.is_skipping() {
                     self.skip_whitespace();
                     if let Some(path) = self.parse_include_path() {
-                        if let Some(stub) = Self::load_stub(&path) {
+                        let is_stub = Self::load_stub(&path);
+                        let content = is_stub.map(|s| s.to_string()).or_else(|| self.load_include_file(&path));
+                        if let Some(content) = content {
                             let mut line_end = self.pos;
                             while line_end < self.chars.len() && self.chars[line_end] != '\n' {
                                 line_end += 1;
@@ -116,8 +118,14 @@ impl Lexer {
                             if line_end < self.chars.len() && self.chars[line_end] == '\n' {
                                 line_end += 1;
                             }
-                            let stub_chars: Vec<char> = stub.replace('\n', " ").chars().collect();
-                            self.chars.splice(line_end..line_end, stub_chars);
+                            // 标准库存根保持原行为（换行替换为空格，避免源文件行号大幅偏移）；
+                            // 自定义头文件保留原始换行，使 #ifndef / #define / #endif 等预处理指令可正常解析。
+                            let content_chars: Vec<char> = if is_stub.is_some() {
+                                content.replace('\n', " ").chars().collect()
+                            } else {
+                                content.chars().collect()
+                            };
+                            self.chars.splice(line_end..line_end, content_chars);
                         }
                     }
                 }
@@ -238,6 +246,17 @@ impl Lexer {
         Some(path)
     }
 
+    /// 尝试从源文件所在目录加载非标准库头文件。
+    pub(crate) fn load_include_file(&self, path: &str) -> Option<String> {
+        if let Some(base) = &self.base_path {
+            let full = base.join(path);
+            if full.exists() {
+                return std::fs::read_to_string(full).ok();
+            }
+        }
+        None
+    }
+
     pub(crate) fn load_stub(path: &str) -> Option<&'static str> {
         match path {
             "stdio.h" => Some(include_str!("../../../runtime_libc/include/stdio.h")),
@@ -245,6 +264,7 @@ impl Lexer {
             "ctype.h" => Some(include_str!("../../../runtime_libc/include/ctype.h")),
             "math.h" => Some(include_str!("../../../runtime_libc/include/math.h")),
             "string.h" => Some(include_str!("../../../runtime_libc/include/string.h")),
+            "stdarg.h" => Some(include_str!("../../../runtime_libc/include/stdarg.h")),
             "limits.h" => Some(include_str!("../../../runtime_libc/include/limits.h")),
             "stdbool.h" => Some(include_str!("../../../runtime_libc/include/stdbool.h")),
             "stddef.h" => Some(include_str!("../../../runtime_libc/include/stddef.h")),
@@ -353,10 +373,9 @@ impl Lexer {
         let body: String = self.chars[body_start..self.pos].iter().collect();
 
         let (body_tokens, _) = Lexer::new(&body).tokenize();
-        let mdef = MacroDef {
-            params,
-            body: body_tokens.into_iter().filter(|t| t.ty != TokenType::Eof).collect(),
-        };
+        let body_tokens: Vec<Token> = body_tokens.into_iter().filter(|t| t.ty != TokenType::Eof).collect();
+
+        let mdef = MacroDef { params, body: body_tokens };
         self.macros.insert(name, mdef);
     }
 }

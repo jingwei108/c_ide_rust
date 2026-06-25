@@ -225,6 +225,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                     local_count: meta.local_count,
                     param_sizes: meta.param_sizes.clone(),
                     return_type: meta.return_type.clone(),
+                    is_variadic: meta.is_variadic,
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -243,6 +244,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                     local_count: meta.local_count,
                     param_sizes: meta.param_sizes.clone(),
                     return_type: meta.return_type.clone(),
+                    is_variadic: meta.is_variadic,
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -410,6 +412,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
                 local_count: meta.local_count,
                 param_sizes: meta.param_sizes,
                 return_type: meta.return_type,
+                is_variadic: meta.is_variadic,
             },
         );
     }
@@ -532,8 +535,14 @@ pub fn run_multi_file_pipeline(
         name.ends_with(".cpp") || name.ends_with(".cxx") || name.ends_with(".cidecpp")
     });
 
+    // 提取首个非空源文件所在目录，供 #include 非标准库路径解析使用
+    let base_path = units
+        .iter()
+        .find(|u| !u.filename.is_empty())
+        .and_then(|u| std::path::Path::new(&u.filename).parent().map(|p| p.to_path_buf()));
+
     // 1. Lexer
-    let (tokens, lex_errors) = Lexer::with_mode(&full_source, is_cpp_mode).tokenize();
+    let (tokens, lex_errors) = Lexer::with_mode_and_path(&full_source, is_cpp_mode, base_path).tokenize();
     if !lex_errors.is_empty() {
         push_diagnostics(session, &lex_errors, &full_source, Some(&file_ranges));
         return Err("词法错误".to_string());
@@ -620,6 +629,7 @@ pub fn run_multi_file_pipeline(
                 local_count: meta.local_count,
                 param_sizes: meta.param_sizes,
                 return_type: meta.return_type,
+                is_variadic: meta.is_variadic,
             },
         );
     }

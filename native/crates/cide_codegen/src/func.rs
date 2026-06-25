@@ -6,7 +6,7 @@ use cide_runtime::Symbol;
 use super::BytecodeGen;
 
 impl BytecodeGen {
-    pub(crate) fn enter_function(&mut self, name: &str, params: &[Param]) {
+    pub(crate) fn enter_function(&mut self, name: &str, params: &[Param], is_variadic: bool) {
         self.current_func = name.to_string();
         self.local_indices.clear();
         self.local_types.clear();
@@ -45,8 +45,12 @@ impl BytecodeGen {
             });
             offset += aligned_sz;
         }
+        // 变参函数预留变参区域（最多 16 个 int / 64 字节），避免 va_list 局部变量与变参参数重叠。
+        if is_variadic {
+            offset += 64;
+        }
         self.next_local_offset = offset;
-        self.current_func_arg_bytes = offset;
+        self.current_func_arg_bytes = offset - if is_variadic { 64 } else { 0 };
         self.current_func_arg_count = params.len() as i32;
         if returns_struct {
             self.current_func_arg_count += 1;
@@ -57,6 +61,7 @@ impl BytecodeGen {
         self.temp_slot3 = -1;
         if let Some(meta) = self.func_table.get_mut(name) {
             meta.param_sizes = param_sizes;
+            meta.is_variadic = is_variadic;
         }
     }
 

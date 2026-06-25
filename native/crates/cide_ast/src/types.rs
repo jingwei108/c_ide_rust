@@ -67,6 +67,7 @@ pub enum Type {
         return_type: Box<Type>,
         param_types: Vec<Type>,
         is_const: bool,
+        is_variadic: bool,
     },
     Struct {
         name: String,
@@ -141,13 +142,15 @@ impl PartialEq for Type {
                     return_type: a,
                     param_types: a2,
                     is_const: a3,
+                    is_variadic: a4,
                 },
                 Type::Function {
                     return_type: b,
                     param_types: b2,
                     is_const: b3,
+                    is_variadic: b4,
                 },
-            ) => a == b && a2 == b2 && a3 == b3,
+            ) => a == b && a2 == b2 && a3 == b3 && a4 == b4,
             (Type::Struct { name: a, is_const: a2 }, Type::Struct { name: b, is_const: b2 }) => a == b && a2 == b2,
             (Type::Union { name: a, is_const: a2 }, Type::Union { name: b, is_const: b2 }) => a == b && a2 == b2,
             // === C++ 新增 ===
@@ -255,6 +258,7 @@ impl Type {
             return_type: Box::new(return_type),
             param_types,
             is_const: false,
+            is_variadic: false,
         }
     }
     pub fn function_pointer(return_type: Type, param_types: Vec<Type>) -> Self {
@@ -263,6 +267,7 @@ impl Type {
                 return_type: Box::new(return_type),
                 param_types,
                 is_const: false,
+                is_variadic: false,
             }),
             is_const: false,
         }
@@ -355,9 +360,8 @@ impl Type {
             }
             Type::Auto => buf.push_str("auto"),
             Type::Typeof { expr, .. } => {
-                // SAFETY: write! to an in-memory String is infallible.
-                #[allow(clippy::unwrap_used)]
-                write!(buf, "typeof({:?})", expr).unwrap();
+                // write! to an in-memory String is infallible.
+                let _ = write!(buf, "typeof({:?})", expr);
             }
             Type::TemplateId { base, args, .. } => {
                 buf.push_str(base);
