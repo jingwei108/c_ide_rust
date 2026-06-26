@@ -129,7 +129,7 @@ Cide adopts **five layers of collaborative test defenses**. Core philosophy: *te
 
 The same C source is compiled and executed by both **Clang** and **Cide**, and stdout outputs are compared for exact match. Golden outputs must come from Clang, never from Cide itself.
 
-- **Coverage**: 304 Baseline cases + 82 template-generated cases + 76 K&R cases + 92 LeetCode problems (568 C Shadow Verification cases total, 564 matched, counting match + cide_better + known_issue); 83 C++ cases (C++ Shadow Verification, 83/83 green; measured 2026-06-25)
+- **Coverage**: 305 Baseline cases + 82 template-generated cases + 81 K&R cases + 138 LeetCode problems + 14 gap cases (620 C Shadow Verification cases total, 616 matched, counting match + cide_better + known_issue); 93 C++ cases (C++ Shadow Verification, 93/93 green; measured 2026-06-26)
 - **Drivers**: `python native/tests/shadow_verification/shadow_verify.py`, `python scripts/shadow_verify_cpp.py`
 - **Reports**: `native/tests/shadow_verification/reports/`
 
@@ -140,7 +140,7 @@ Collect real teaching/competition code as end-to-end regression cases to verify 
 - **Baseline**: `native/tests/cases/baseline/` (302 cases, all green)
 - **K&R**: *The C Programming Language* exercises (76 cases, 76 green, 0 known failures)
 - **Template Generated**: algorithm template batch generation (82 cases, 78 green, 4 known failures)
-- **LeetCode**: Phase 4 + Phase 5 fully implemented; current 92 problems all pass, see `native/tests/LEETCODE_FAILURES.md`
+- **LeetCode**: Phase 4 + Phase 5 fully implemented; current 138 problems all pass, see `native/tests/LEETCODE_FAILURES.md`
 - **Reports**: `native/tests/TEST_REPORT.md`, `KR_FAILURES.md`, `E2E_FAILURES.md`, `LEETCODE_FAILURES.md`
 
 ### Defense 3: Three-Tier Contract Verification
@@ -230,7 +230,9 @@ The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** ca
 
 **C++ classes and templates (Phase 31+)**: `class`, member access control, `this` pointer, virtual functions, template class monomorphization, stack object RAII (auto ctor/dtor), constructor initialization syntax `Type name(args);`, implicit default/move constructors, `std::move`, simplified `unique_ptr<T>` dogfooding (construction/`get`/`release`/`reset`/dtor/ownership transfer)
 
-**Explicitly not supported**: bitfield, `va_list` variadics, full preprocessor (only `#define` constant macros + `#include` standard library stubs)
+**Explicitly not supported**: bitfield, global VLA, full preprocessor (only `#define` constant macros + `#include` standard library stubs)
+
+**C++ subset boundaries (honest record)**: class types as template arguments for built-in containers such as `vector<T>` / `list<T>`, non-type template parameters, nested class `Outer::Inner` instantiation, const reference parameters, default arguments, and user-defined copy constructors are not yet supported (recorded 2026-06-26). These features are outside the current Cide C++ teaching subset (Stages 0~6) and will be extended as teaching needs evolve.
 
 ## Known Limitations
 
@@ -239,7 +241,7 @@ The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** ca
   - ⚠️ **Behavioral difference from Clang**: Clang rejects `if (...) { ... }; else ...` with "expected expression"; Cide supports this common teaching idiom via automatic wrapping. For strict Clang compatibility, use `do { ... } while(0)` in the macro body.
 - ~~**VLA bounds checking**~~ — **Fixed (2026-06-25)**. `gen_index` now emits runtime bounds checking when the first dimension of a VLA is a variable expression: new `TrapBoundsVla` opcode evaluates the VLA dimension expression at index time and compares the index against the runtime bound in the VM. Regression case added at `baseline/vla_bounds.c`. VLA parameters that have decayed to pointers (e.g. `void f(int n, int a[n])`) still cannot be checked because their bound is not available at the use site.
 - ~~**`#include` non-standard library paths**~~ — **Fixed (2026-06-25)**. `#include "header.h"` now loads custom headers relative to the source file directory; standard libraries still use stubs. Regression cases added at `baseline/include_custom_header.c` and `include_custom_header.h`. Absolute paths, system include search paths (`<>` non-standard libraries), and recursive includes remain future work.
-- **`va_list` / `va_start` / `va_arg` / `va_end`** — custom variadic functions are not yet supported (`printf`/`scanf` are built-in)
+- ~~**`va_list` / `va_start` / `va_arg` / `va_end`**~~ — **Fixed (2026-06-25)**. Custom variadic functions now work end-to-end: `va_list` is modeled as `char*`, `va_start`/`va_arg`/`va_end` are implemented via internal host functions, and `va_arg` reads by dereferencing the address according to the target type. Common types such as `int`, `double`, and `long long` are supported (following C default argument promotions: `float` → `double`, `char` → `int`). Regression case added at `baseline/variadic.c`.
 - **Global VLA** — variable-length arrays in global/static scope are prohibited by the C99 standard itself (Clang reports "variable length array declaration not allowed at file scope"); Cide intentionally does not support this.
 - **VFS text mode newline conversion (fixed)** — as of 2026-06-15, Windows text-mode newline conversion is fully implemented: in `"r"`/`"w"` mode, `\n` is expanded to `\r\n` on write and collapsed to `\n` on read; `fseek`/`ftell` distinguish logical/physical cursor to match Windows CRT behavior. `vfs_io_extensions.c` and `file_fread.c` are restored to matching.
 

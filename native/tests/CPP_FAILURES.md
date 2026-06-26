@@ -5,14 +5,14 @@
 
 ## 当前状态
 
-截至 M6（测试防线收尾）完成：
+截至 Phase 42 维护计划任务 G 推进后：
 
 - `parser_cpp_unit_test.rs`: 33/33 通过
 - `typeck_cpp_unit_test.rs`: 28/28 通过
 - `bytecode_gen_cpp_unit_test.rs`: 38/38 通过
 - `cpp_dogfooding_test.rs`: 全部通过（含 Stage 5 基础设施自验证 + Stage 6 `vector<int>` / `list<int>` / `string` Dogfooding）
-- **C++ E2E 回归：`native/tests/cases/cpp/` 61 个用例全部通过，`KNOWN_CPP_FAILURES` 为空**
-- **C++ 扩展合计: 162/162 通过**（99 单元测试 + 2 个 E2E 监控测试 + 61 个 E2E 实际用例；Dogfooding 测试另行统计）
+- **C++ E2E 回归：`native/tests/cases/cpp/` 71 个用例全部通过，`KNOWN_CPP_FAILURES` 为空**
+- **C++ 扩展合计: 172/172 通过**（99 单元测试 + 2 个 E2E 监控测试 + 71 个 E2E 实际用例；Dogfooding 测试另行统计）
 
 ### M6 E2E 回归覆盖
 
@@ -23,6 +23,13 @@
 | 核心语言 | 18 | class / ctor / dtor / 引用 / auto / 范围 for / 模板 / 虚函数 / this / 方法重载 / unique_ptr |
 | 容器与算法 | 15 | 自实现 vector<int/float/char> / list<int> / string / 排序 / 栈 / 队列 / 链表 / 二叉树 |
 | 教学/OJ 题目 | 28 | Two Sum / 去重 / 移除元素 / 二分 / 最大子数组 / 股票 / 单数 / 多数 / 旋转 / 移动零 / 回文 / 括号 / 反转链表 / 合并链表 / 树深度 / 相同树 / 翻转树 / 爬楼梯 / 帕斯卡 / 平方根 / 罗马数字 / 缺失数字 / 公共前缀 / 首个唯一字符 |
+
+### 维护计划任务 G 补充用例（10 个）
+
+| 类别 | 用例数 | 新增用例 |
+|---|---|---|
+| 核心语言 | 6 | `cpp_pair_template` / `cpp_template_func_multi` / `cpp_reference_member` / `cpp_reference_param_chain` / `cpp_ctor_init_list` / `cpp_function_overload_template` |
+| 容器与算法 | 4 | `cpp_template_array` / `cpp_template_stack` / `cpp_unique_ptr_reset` / `cpp_class_array` |
 
 Golden 全部由 Clang++ (`-std=c++14 -O0`) 生成，Cide 输出与之逐行对比。
 

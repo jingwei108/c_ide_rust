@@ -293,6 +293,7 @@ dependencies = [
  "cide_ast",
  "cide_runtime",
  "cide_shared",
+ "js-sys",
  "libm",
  "serde",
  "serde_json",
