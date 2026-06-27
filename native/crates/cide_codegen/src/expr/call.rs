@@ -13,13 +13,98 @@ pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
         };
         let is_variadic_callee =
             gen.func_table.get(name).map(|m| m.is_variadic).unwrap_or(false) && gen.func_index.contains_key(name);
+        // 记录需要在本条完整表达式结束后销毁的临时类对象（按值/按 const 引用传递的右值）。
+        let mut temp_cleanups: Vec<(i32, String)> = Vec::new();
         for arg in args.iter_mut().rev() {
             let arg_ty_kind = arg.ty().kind();
-            let arg_ty = arg.ty();
+            let arg_ty = arg.ty().clone();
+            // const T& / T& 绑定到按值返回的类右值时，先生成临时对象、记录析构，再传地址。
+            if arg_ty.is_reference() {
+                if let Expr::Unary { op: UnaryOp::Addr, operand, .. } = arg {
+                    let (class_name, has_dtor) = {
+                        let operand_ty = operand.ty();
+                        if (operand_ty.is_class() || operand_ty.is_struct())
+                            && matches!(operand.as_ref(), Expr::Call { .. } | Expr::CallPtr { .. })
+                        {
+                            let class_name = operand_ty.name().to_string();
+                            let dtor_name = format!("__dtor__{}", class_name);
+                            let has = gen.func_index.contains_key(&dtor_name);
+                            (class_name, has)
+                        } else {
+                            (String::new(), false)
+                        }
+                    };
+                    if has_dtor {
+                        let cleanup_slot = gen.next_local_offset;
+                        gen.next_local_offset += 4;
+                        gen.gen_expr(operand);
+                        gen.emit(OpCode::StoreLocal, cleanup_slot, &loc);
+                        temp_cleanups.push((cleanup_slot, class_name));
+                        gen.emit(OpCode::LoadLocal, cleanup_slot, &loc);
+                    } else {
+                        gen.gen_expr(arg);
+                    }
+                    continue;
+                }
+            }
             if arg_ty.is_struct() || arg_ty.is_class() {
                 let is_lambda = arg_ty.is_class() && arg_ty.name().starts_with("__lambda_");
-                let sz = gen.type_size(arg_ty);
+                let sz = gen.type_size(&arg_ty);
                 let words = (sz + 3) / 4;
+
+                // 按值传递的类右值来自函数返回的临时对象：直接复用其隐藏返回缓冲区，
+                // 并在本完整表达式结束时调用析构函数，避免内存泄漏。
+                if matches!(arg, Expr::Call { .. } | Expr::CallPtr { .. }) {
+                    let class_name = arg_ty.name().to_string();
+                    let dtor_name = format!("__dtor__{}", class_name);
+                    let cleanup_slot = gen.next_local_offset;
+                    gen.next_local_offset += 4;
+                    gen.gen_expr(arg);
+                    gen.emit(OpCode::StoreLocal, cleanup_slot, &loc);
+                    if gen.func_index.contains_key(&dtor_name) {
+                        temp_cleanups.push((cleanup_slot, class_name));
+                    }
+                    for i in 0..words {
+                        gen.emit(OpCode::LoadLocal, cleanup_slot, &loc);
+                        if i > 0 {
+                            gen.emit(OpCode::PushConst, i * 4, &loc);
+                            gen.emit(OpCode::Add, 0, &loc);
+                        }
+                        gen.emit(OpCode::LoadMem, 0, &loc);
+                    }
+                    continue;
+                }
+
+                // 如果类有自定义拷贝构造函数且实参是左值，先调用拷贝构造生成临时对象，
+                // 再按值传递该临时对象。这避免了按字段位拷贝导致的双重释放问题。
+                if !is_lambda {
+                    if let Type::Class { name: class_name, .. } = arg_ty {
+                        let copy_ctor_name = format!("__ctor__{}__copy", class_name);
+                        if gen.func_index.contains_key(&copy_ctor_name) && is_lvalue_expr(arg) {
+                            let aligned_sz = (sz + 3) & !3;
+                            let temp_offset = gen.next_local_offset;
+                            gen.next_local_offset += aligned_sz;
+                            // other = source address
+                            gen.gen_addr(arg, &loc);
+                            // this = temp address
+                            gen.emit(OpCode::GetFrameBase, 0, &loc);
+                            gen.emit(OpCode::PushConst, temp_offset, &loc);
+                            gen.emit(OpCode::Add, 0, &loc);
+                            if let Some(&idx) = gen.func_index.get(&copy_ctor_name) {
+                                gen.emit(OpCode::Call, idx, &loc);
+                            }
+                            // push temp object words onto the stack for the outer call
+                            for i in 0..words {
+                                gen.emit(OpCode::GetFrameBase, 0, &loc);
+                                gen.emit(OpCode::PushConst, temp_offset + i * 4, &loc);
+                                gen.emit(OpCode::Add, 0, &loc);
+                                gen.emit(OpCode::LoadMem, 0, &loc);
+                            }
+                            continue;
+                        }
+                    }
+                }
+
                 if let Expr::Identifier { name: arg_name, .. } = arg {
                     if let Some(&offset) = gen.local_indices.get(arg_name) {
                         if is_lambda {
@@ -150,6 +235,16 @@ pub(crate) fn gen_call(gen: &mut BytecodeGen, expr: &mut Expr) {
             } else {
                 gen.report_error(&format!("未定义的函数 '{}'", name), &loc);
                 gen.emit(OpCode::PushConst, 0, &loc);
+            }
+        }
+        // 销毁本函数调用中为按值/按引用传递而生成的临时类对象。
+        // 构造顺序与参数求值顺序一致，析构按逆序进行。
+        for (slot, class_name) in temp_cleanups.iter().rev() {
+            let dtor_name = format!("__dtor__{}", class_name);
+            if let Some(&idx) = gen.func_index.get(&dtor_name) {
+                // slot 中保存的是临时对象本身的地址，直接作为 this 传入析构函数。
+                gen.emit(OpCode::LoadLocal, *slot, &loc);
+                gen.emit(OpCode::Call, idx, &loc);
             }
         }
         if let Some(offset) = ret_temp_offset {

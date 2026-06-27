@@ -63,6 +63,8 @@ pub struct Parser {
     anonymous_structs: Vec<StructDecl>,
     is_cpp_mode: bool,
     next_lambda_id: u64,
+    /// C++ 嵌套类解析上下文：当前外层类名栈，如 ["Outer"] -> ["Outer", "Inner"]。
+    current_class: Vec<String>,
 }
 
 impl Parser {
@@ -88,6 +90,7 @@ impl Parser {
             anonymous_structs: Vec::new(),
             is_cpp_mode,
             next_lambda_id: 0,
+            current_class: Vec::new(),
         }
     }
 
@@ -517,6 +520,89 @@ impl Parser {
             }
             self.consume(TokenType::Semicolon, "全局变量声明后预期 ';'");
         }
+    }
+
+    /// 在模板实参列表中解析非类型表达式实参。
+    ///
+    /// 模板实参中的 `>` 应作为实参列表结束符，而不是关系运算符。本方法先扫描出
+    /// 当前实参的结束位置（顶层逗号或匹配的 `>`），然后在截取的 token 子流中调用
+    /// 普通表达式解析器，避免 `>` 被误解析为 `>` 运算符。
+    pub(crate) fn parse_template_arg_expr(&mut self) -> Expr {
+        let (end_idx, _delim_ty) = self.find_template_arg_delimiter();
+        if end_idx <= self.pos {
+            self.errors.push(ParseError {
+                message: "空模板非类型实参".to_string(),
+                line: self.current().line,
+                column: self.current().column,
+                code: ErrorCode::E2003_ExpectedExpr as i32,
+            });
+            return Expr::Literal {
+                value: 0,
+                loc: SourceLoc {
+                    line: self.current().line,
+                    column: self.current().column,
+                },
+                ty: Type::int(),
+            };
+        }
+
+        let saved_tokens = std::mem::take(&mut self.tokens);
+        let saved_pos = self.pos;
+        self.tokens = saved_tokens[saved_pos..end_idx].to_vec();
+        self.pos = 0;
+        let expr = self.parse_assign();
+        let consumed = self.pos;
+        self.tokens = saved_tokens;
+        self.pos = saved_pos + consumed;
+        expr
+    }
+
+    /// 从当前位置扫描，找到当前模板实参的结束位置。
+    ///
+    /// 返回的索引指向顶层分隔符（逗号或匹配的 `>`），调用者负责消费该分隔符。
+    /// 扫描会正确跳过括号、方括号、花括号内部以及嵌套的 `<...>`。
+    fn find_template_arg_delimiter(&self) -> (usize, TokenType) {
+        let mut i = self.pos;
+        let mut template_depth: i32 = 1;
+        let mut paren: i32 = 0;
+        let mut bracket: i32 = 0;
+        let mut brace: i32 = 0;
+
+        while i < self.tokens.len() {
+            let t = &self.tokens[i];
+            match t.ty {
+                TokenType::LParen => paren += 1,
+                TokenType::RParen if paren > 0 => {
+                    paren -= 1;
+                }
+                TokenType::LBracket => bracket += 1,
+                TokenType::RBracket if bracket > 0 => {
+                    bracket -= 1;
+                }
+                TokenType::LBrace => brace += 1,
+                TokenType::RBrace if brace > 0 => {
+                    brace -= 1;
+                }
+                TokenType::Lt if paren == 0 && bracket == 0 && brace == 0 => template_depth += 1,
+                TokenType::Gt if paren == 0 && bracket == 0 && brace == 0 => {
+                    template_depth -= 1;
+                    if template_depth == 0 {
+                        return (i, TokenType::Gt);
+                    }
+                }
+                TokenType::Comma if template_depth == 1
+                    && paren == 0
+                    && bracket == 0
+                    && brace == 0 =>
+                {
+                    return (i, TokenType::Comma);
+                }
+                _ => {}
+            }
+            i += 1;
+        }
+
+        (i, TokenType::Eof)
     }
 }
 

@@ -1116,3 +1116,105 @@ int main() {
     assert_eq!(ret, 0);
     assert_eq!(outputs, vec!["42"]);
 }
+
+#[test]
+fn test_cpp_nttp_class() {
+    let src = r#"
+#include <stdio.h>
+template<typename T, int N>
+class Array {
+public:
+    T data[N];
+    int size() { return N; }
+};
+int main() {
+    Array<int, 5> a;
+    printf("%d\n", a.size());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["5"]);
+}
+
+#[test]
+fn test_cpp_copy_ctor() {
+    let src = r#"
+#include <stdio.h>
+class Box {
+public:
+    int* p;
+    Box(int v) { p = new int(v); }
+    Box(const Box& other) { p = new int(*other.p); }
+    ~Box() { delete p; }
+    int value() { return *p; }
+};
+int main() {
+    Box a(5);
+    Box b(a);
+    Box c = a;
+    printf("%d %d %d\n", a.value(), b.value(), c.value());
+    *b.p = 10;
+    printf("%d %d %d\n", a.value(), b.value(), c.value());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["5 5 5", "5 10 5"]);
+}
+
+#[test]
+fn test_cpp_copy_ctor_return_by_value() {
+    let src = r#"
+#include <stdio.h>
+class Box {
+public:
+    int* p;
+    Box(int v) { p = new int(v); }
+    Box(const Box& other) { p = new int(*other.p); }
+    ~Box() { delete p; }
+    int value() { return *p; }
+};
+Box make_box(int v) {
+    Box t(v);
+    return t;
+}
+int main() {
+    Box b = make_box(7);
+    printf("%d\n", b.value());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["7"]);
+}
+
+#[test]
+fn test_cpp_copy_ctor_pass_by_value() {
+    let src = r#"
+#include <stdio.h>
+class Box {
+public:
+    int* p;
+    Box(int v) { p = new int(v); }
+    Box(const Box& other) { p = new int(*other.p); }
+    ~Box() { delete p; }
+    int value() { return *p; }
+};
+void print(Box x) {
+    printf("%d\n", x.value());
+}
+int main() {
+    Box a(5);
+    print(a);
+    printf("%d\n", a.value());
+    return 0;
+}
+"#;
+    let (ret, outputs) = compile_and_run_cpp(src).expect("Compile/run failed");
+    assert_eq!(ret, 0);
+    assert_eq!(outputs, vec!["5", "5"]);
+}

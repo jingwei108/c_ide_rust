@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use cide_native::compiler::ast::{AccessSpec, ClassMember, Stmt, Type, TypeKind};
+use cide_native::compiler::ast::{AccessSpec, ClassMember, Stmt, TemplateArg, TemplateParam, Type, TypeKind};
 use cide_native::compiler::lexer::Lexer;
 use cide_native::compiler::parser::Parser;
 
@@ -209,7 +209,11 @@ int main() { return 0; }
     let program = program.unwrap();
     assert_eq!(program.templates.len(), 1);
     assert_eq!(program.templates[0].params.len(), 1);
-    assert_eq!(program.templates[0].params[0].name, "T");
+    match &program.templates[0].params[0] {
+        TemplateParam::Type { name, .. } | TemplateParam::NonType { name, .. } => {
+            assert_eq!(name, "T");
+        }
+    }
     match &program.templates[0].decl {
         cide_native::compiler::ast::Templateable::Func(ref f) => {
             assert_eq!(f.name, "max");
@@ -438,7 +442,7 @@ int main() {
             if let cide_native::compiler::ast::Type::TemplateId { base, args, .. } = var_type {
                 assert_eq!(base, "vector");
                 assert_eq!(args.len(), 1);
-                assert!(matches!(args[0], cide_native::compiler::ast::Type::Int { .. }));
+                assert!(matches!(args[0], TemplateArg::Type(Type::Int { .. })));
             } else {
                 panic!("Expected TemplateId, got {:?}", var_type);
             }
@@ -469,7 +473,7 @@ int main() {
                 if let cide_native::compiler::ast::Type::TemplateId { base, args, .. } = pointee.as_ref() {
                     assert_eq!(base, "vector");
                     assert_eq!(args.len(), 1);
-                    assert!(matches!(args[0], cide_native::compiler::ast::Type::Int { .. }));
+                    assert!(matches!(args[0], TemplateArg::Type(Type::Int { .. })));
                 } else {
                     panic!("Expected Pointer<TemplateId>, got {:?}", pointee);
                 }
@@ -602,7 +606,11 @@ int main() { return 0; }
     let program = program.unwrap();
     assert_eq!(program.templates.len(), 1);
     assert_eq!(program.templates[0].params.len(), 1);
-    assert_eq!(program.templates[0].params[0].name, "T");
+    match &program.templates[0].params[0] {
+        TemplateParam::Type { name, .. } | TemplateParam::NonType { name, .. } => {
+            assert_eq!(name, "T");
+        }
+    }
     match &program.templates[0].decl {
         cide_native::compiler::ast::Templateable::Class(c) => {
             assert_eq!(c.name, "Pair");

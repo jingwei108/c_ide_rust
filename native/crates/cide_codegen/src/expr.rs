@@ -492,6 +492,45 @@ impl ExprGen for BytecodeGen {
 
     fn gen_struct_copy_to_local(&mut self, local_offset: i32, right: &mut Expr, loc: &SourceLoc) {
         let size = self.type_size(right.ty());
+        if size <= 0 {
+            return;
+        }
+
+        // 如果右端是函数按值返回的类临时对象，在拷贝后调用其析构函数，
+        // 避免临时对象内的资源泄漏。
+        let is_temporary_return = matches!(right, Expr::Call { .. } | Expr::CallPtr { .. })
+            && right.ty().is_class();
+        let dtor_name = if is_temporary_return {
+            format!("__dtor__{}", right.ty().name())
+        } else {
+            String::new()
+        };
+        let has_dtor = is_temporary_return && self.func_index.contains_key(&dtor_name);
+
+        if has_dtor {
+            // 函数返回值已在栈顶留下临时对象地址。
+            self.gen_expr(right);
+            let src_temp = self.get_temp_slot(0);
+            self.emit(OpCode::StoreLocal, src_temp, loc);
+            for i in 0..size / 4 {
+                self.emit(OpCode::GetFrameBase, 0, loc);
+                self.emit(OpCode::PushConst, local_offset + i * 4, loc);
+                self.emit(OpCode::Add, 0, loc);
+                self.emit(OpCode::LoadLocal, src_temp, loc);
+                if i > 0 {
+                    self.emit(OpCode::PushConst, i * 4, loc);
+                    self.emit(OpCode::Add, 0, loc);
+                }
+                self.emit(OpCode::LoadMem, 0, loc);
+                self.emit(OpCode::StoreMem, 0, loc);
+            }
+            self.emit(OpCode::LoadLocal, src_temp, loc);
+            if let Some(&idx) = self.func_index.get(&dtor_name) {
+                self.emit(OpCode::Call, idx, loc);
+            }
+            return;
+        }
+
         self.gen_struct_copy_common(
             size,
             right,

@@ -215,6 +215,21 @@ impl BytecodeGen {
                     }
                 }
                 if can_compute {
+                    // Fields that are classes/structs must have their sizes already computed.
+                    for member in &class.members {
+                        if let ClassMember::Field {
+                            ty: Type::Class { name: field_class, .. },
+                            ..
+                        } = member
+                        {
+                            if !self.class_sizes.contains_key(field_class) {
+                                can_compute = false;
+                                break;
+                            }
+                        }
+                    }
+                }
+                if can_compute {
                     let needs_vptr = class.vtable.is_some();
                     let mut size = if needs_vptr { 4 } else { 0 };
                     if let Some(ref base_name) = class.base {

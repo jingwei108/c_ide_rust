@@ -1,4 +1,4 @@
-use cide_ast::{AccessSpec, Param, TemplateParam, Templateable, Type, VTable};
+use cide_ast::{AccessSpec, Expr, Param, TemplateParam, Templateable, Type, VTable};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
@@ -15,6 +15,8 @@ pub(crate) struct FuncSymbol {
     pub(crate) return_type: Type,
     pub(crate) param_types: Vec<Type>,
     pub(crate) is_variadic: bool,
+    /// 用户参数的默认表达式（this 指针等编译器插入参数不含默认值）。
+    pub(crate) param_defaults: Vec<Option<Expr>>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +28,7 @@ pub(crate) struct StructSymbol {
 pub(crate) struct MethodSig {
     pub(crate) ret: Type,
     pub(crate) param_types: Vec<Type>,
+    pub(crate) param_defaults: Vec<Option<Expr>>,
     pub(crate) is_virtual: bool,
     #[allow(dead_code)]
     pub(crate) is_static: bool,

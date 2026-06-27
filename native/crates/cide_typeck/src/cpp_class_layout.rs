@@ -3,8 +3,20 @@ use super::*;
 impl TypeChecker {
     /// Pass 1.5: Register classes and compute layouts (fields, methods, vtables, sizes).
     pub(crate) fn register_class_layouts(&mut self, program: &mut ProgramNode) {
+        // First pass: register top-level classes and collect nested classes so
+        // that their methods/constructors/destructors are lowered and generated.
+        let mut nested: Vec<ClassDecl> = Vec::new();
         for c in &program.classes {
             self.register_single_class_layout(&c.name, c);
+            self.collect_nested_classes(c, &mut nested);
+        }
+        // Add nested classes to program.classes so subsequent passes (method body
+        // checking, codegen) process them as standalone classes. They have already
+        // been registered during the recursive layout pass above.
+        for c in nested {
+            if !program.classes.iter().any(|existing| existing.name == c.name) {
+                program.classes.push(c);
+            }
         }
 
         // Second pass: compute has_resource for all registered classes (including builtins)
@@ -20,6 +32,16 @@ impl TypeChecker {
         for c in &mut program.classes {
             if let Some(sym) = self.classes.get(&c.name) {
                 c.vtable = sym.vtable.clone();
+            }
+        }
+    }
+
+    /// Recursively collect nested class declarations from a class.
+    fn collect_nested_classes(&self, c: &ClassDecl, out: &mut Vec<ClassDecl>) {
+        for member in &c.members {
+            if let ClassMember::NestedClass { decl, .. } = member {
+                out.push(decl.clone());
+                self.collect_nested_classes(decl, out);
             }
         }
     }
@@ -84,11 +106,7 @@ impl TypeChecker {
                     declared_method_names.insert(name.clone());
                 }
                 ClassMember::Constructor { params, .. } => {
-                    let key = if params.is_empty() {
-                        format!("__ctor__{}", name)
-                    } else {
-                        format!("__ctor__{}__{}", name, params.len())
-                    };
+                    let key = TypeChecker::constructor_mangled_name(name, params);
                     declared_method_names.insert(key);
                 }
                 ClassMember::Destructor { .. } => {
@@ -156,9 +174,11 @@ impl TypeChecker {
                     let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
                     // A method that overrides a base virtual function is itself virtual.
                     let overrides_virtual = vtable_entries.iter().any(|(n, _)| n == method_name);
+                    let param_defaults: Vec<Option<Expr>> = params.iter().map(|p| p.default.clone()).collect();
                     let sig = MethodSig {
                         ret: ret.clone(),
                         param_types: param_types.clone(),
+                        param_defaults,
                         is_virtual: *is_virtual || overrides_virtual,
                         is_static: *is_static,
                         is_explicit: false,
@@ -187,20 +207,18 @@ impl TypeChecker {
                     let acc = *access;
                     let is_exp = *is_explicit;
                     let param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
+                    let param_defaults: Vec<Option<Expr>> = params.iter().map(|p| p.default.clone()).collect();
                     let sig = MethodSig {
                         ret: Type::void(),
                         param_types: param_types.clone(),
+                        param_defaults,
                         is_virtual: false,
                         is_static: false,
                         is_explicit: is_exp,
                         is_const: false,
                         access: acc,
                     };
-                    let ctor_key = if param_types.is_empty() {
-                        format!("__ctor__{}", name)
-                    } else {
-                        format!("__ctor__{}__{}", name, param_types.len())
-                    };
+                    let ctor_key = TypeChecker::constructor_mangled_name(name, params);
                     methods.entry(ctor_key).or_default().push(sig);
                 }
                 ClassMember::Destructor { access, .. } => {
@@ -214,6 +232,7 @@ impl TypeChecker {
                             }),
                             is_const: false,
                         }],
+                        param_defaults: vec![],
                         is_virtual: false,
                         is_static: false,
                         is_explicit: false,
@@ -304,41 +323,84 @@ impl TypeChecker {
                         .chain(params.iter().map(|p| p.ty.clone()))
                         .collect()
                     };
+                    let param_defaults: Vec<Option<Expr>> = if *is_static {
+                        params.iter().map(|p| p.default.clone()).collect()
+                    } else {
+                        std::iter::once(None)
+                            .chain(params.iter().map(|p| p.default.clone()))
+                            .collect()
+                    };
                     self.funcs.insert(
                         mangled,
                         FuncSymbol {
                             return_type: ret.clone(),
                             param_types,
                             is_variadic: false,
+                            param_defaults,
                         },
                     );
                 }
                 ClassMember::Constructor { params, .. } => {
-                    let mangled = if params.is_empty() {
-                        format!("__ctor__{}", name)
-                    } else {
-                        format!("__ctor__{}__{}", name, params.len())
-                    };
-                    if self.funcs.contains_key(&mangled) {
-                        continue;
-                    }
-                    let param_types: Vec<Type> = std::iter::once(Type::Pointer {
-                        pointee: Box::new(Type::Class {
-                            name: name.to_string(),
+                    let mangled = TypeChecker::constructor_mangled_name(name, params);
+                    if !self.funcs.contains_key(&mangled) {
+                        let param_types: Vec<Type> = std::iter::once(Type::Pointer {
+                            pointee: Box::new(Type::Class {
+                                name: name.to_string(),
+                                is_const: false,
+                            }),
                             is_const: false,
-                        }),
-                        is_const: false,
-                    })
-                    .chain(params.iter().map(|p| p.ty.clone()))
-                    .collect();
-                    self.funcs.insert(
-                        mangled,
-                        FuncSymbol {
-                            return_type: Type::void(),
-                            param_types,
-                            is_variadic: false,
-                        },
-                    );
+                        })
+                        .chain(params.iter().map(|p| p.ty.clone()))
+                        .collect();
+                        let param_defaults: Vec<Option<Expr>> = std::iter::once(None)
+                            .chain(params.iter().map(|p| p.default.clone()))
+                            .collect();
+                        self.funcs.insert(
+                            mangled.clone(),
+                            FuncSymbol {
+                                return_type: Type::void(),
+                                param_types,
+                                is_variadic: false,
+                                param_defaults,
+                            },
+                        );
+                    }
+                    // If all user parameters have defaults, this constructor can act as
+                    // a default constructor. Register a zero-arg alias if not already present.
+                    if !params.is_empty() && params.iter().all(|p| p.default.is_some()) {
+                        let default_ctor_name = format!("__ctor__{}", name);
+                        if !self.funcs.contains_key(&default_ctor_name) {
+                            self.funcs.insert(
+                                default_ctor_name.clone(),
+                                FuncSymbol {
+                                    return_type: Type::void(),
+                                    param_types: vec![Type::Pointer {
+                                        pointee: Box::new(Type::Class {
+                                            name: name.to_string(),
+                                            is_const: false,
+                                        }),
+                                        is_const: false,
+                                    }],
+                                    is_variadic: false,
+                                    param_defaults: vec![None],
+                                },
+                            );
+                            class_sym
+                                .methods
+                                .entry(default_ctor_name)
+                                .or_default()
+                                .push(MethodSig {
+                                    ret: Type::void(),
+                                    param_types: vec![],
+                                    param_defaults: vec![],
+                                    is_virtual: false,
+                                    is_static: false,
+                                    is_explicit: false,
+                                    is_const: false,
+                                    access: AccessSpec::Public,
+                                });
+                        }
+                    }
                 }
                 ClassMember::Destructor { .. } => {
                     let mangled = format!("__dtor__{}", name);
@@ -358,6 +420,7 @@ impl TypeChecker {
                             return_type: Type::void(),
                             param_types,
                             is_variadic: false,
+                            param_defaults: vec![None],
                         },
                     );
                 }
@@ -373,6 +436,7 @@ impl TypeChecker {
             class_sym.methods.entry(default_ctor_name.clone()).or_default().push(MethodSig {
                 ret: Type::void(),
                 param_types: vec![],
+                param_defaults: vec![],
                 is_virtual: false,
                 is_static: false,
                 is_explicit: false,
@@ -389,6 +453,7 @@ impl TypeChecker {
                     is_const: false,
                 }],
                 is_variadic: false,
+                param_defaults: vec![None],
             });
         }
 
@@ -414,6 +479,7 @@ impl TypeChecker {
                         methods.entry(m.name.clone()).or_default().push(MethodSig {
                             ret: m.ret.clone(),
                             param_types: m.params.clone(),
+                            param_defaults: vec![None; m.params.len()],
                             is_virtual: m.is_virtual,
                             is_static: false,
                             is_explicit: false,

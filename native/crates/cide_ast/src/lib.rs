@@ -11,7 +11,7 @@ pub use cide_shared::source_loc::SourceLoc;
 
 pub use decl::{
     AccessSpec, CaptureMode, ClassDecl, ClassMember, FuncDecl, GlobalDecl, Param, ProgramNode, StructDecl, StructField,
-    TemplateDecl, TemplateInstantiation, TemplateParam, Templateable, VTable,
+    TemplateArg, TemplateDecl, TemplateInstantiation, TemplateParam, Templateable, VTable,
 };
 pub use expr::{AssignOp, BinaryOp, Designator, Expr, InitElement, UnaryOp};
 pub use stmt::{CatchClause, Stmt};

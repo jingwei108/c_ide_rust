@@ -92,7 +92,7 @@ pub enum Type {
     Auto,
     TemplateId {
         base: String,
-        args: Vec<Type>,
+        args: Vec<super::decl::TemplateArg>,
         is_const: bool,
     },
     Typeof {
@@ -529,6 +529,9 @@ impl Type {
     }
     pub fn is_reference(&self) -> bool {
         matches!(self, Type::Reference { .. })
+    }
+    pub fn is_const_reference(&self) -> bool {
+        matches!(self, Type::Reference { is_const: true, .. })
     }
     pub fn is_rvalue_ref(&self) -> bool {
         matches!(self, Type::RValueRef { .. })

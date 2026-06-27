@@ -87,7 +87,16 @@ impl Parser {
         } else {
             self.consume(TokenType::Class, "预期 'class'");
         }
-        let name = self.consume(TokenType::Identifier, "预期类名").text.clone();
+        let short_name = self.consume(TokenType::Identifier, "预期类名").text.clone();
+        let name = if self.current_class.is_empty() {
+            short_name.clone()
+        } else {
+            let mut full = self.current_class.join("__");
+            full.push_str("__");
+            full.push_str(&short_name);
+            full
+        };
+        self.current_class.push(name.clone());
 
         let mut base = None;
         if self.match_token(TokenType::Colon) {
@@ -183,9 +192,12 @@ impl Parser {
                 continue;
             }
 
-            // 构造函数检查（无返回类型）
-            if self.check(TokenType::Identifier) && self.current().text == name && self.peek(1).ty == TokenType::LParen
-            {
+            // 构造函数检查（无返回类型）。嵌套类可用短名定义构造。
+            let ctor_name_matches =
+                self.check(TokenType::Identifier)
+                    && (self.current().text == name || self.current().text == short_name)
+                    && self.peek(1).ty == TokenType::LParen;
+            if ctor_name_matches {
                 self.advance(); // class name
                 self.consume(TokenType::LParen, "预期 '('");
                 let (params, _) = self.parse_param_list();
@@ -328,6 +340,7 @@ impl Parser {
         self.consume(TokenType::RBrace, "预期 '}'");
         self.consume(TokenType::Semicolon, "类声明后预期 ';'");
 
+        self.current_class.pop();
         ClassDecl {
             loc,
             name,
@@ -390,7 +403,12 @@ impl Parser {
         self.consume(TokenType::Lt, "预期 '<'");
         let mut args = Vec::new();
         while !self.check(TokenType::Gt) && !self.is_at_end() {
-            args.push(self.parse_base_type());
+            let arg = if self.is_type_token() {
+                cide_ast::TemplateArg::Type(self.parse_base_type())
+            } else {
+                cide_ast::TemplateArg::Expr(self.parse_template_arg_expr())
+            };
+            args.push(arg);
             if !self.match_token(TokenType::Comma) {
                 break;
             }
@@ -409,22 +427,40 @@ impl Parser {
 
         let mut params = Vec::new();
         while !self.check(TokenType::Gt) && !self.is_at_end() {
-            // typename T 或 class T
             if self.check(TokenType::Typename) || self.check(TokenType::Class) {
+                // 类型模板参数：typename T / class T
                 self.advance();
-            }
-            let param_name = self.consume(TokenType::Identifier, "预期模板参数名").text.clone();
-            params.push(TemplateParam { name: param_name.clone(), loc });
-            // 将模板参数注册为类型名，使其在函数/类体中可被识别
-            // 使用 Class 类型作为占位符，以便 TypeChecker 在单态化时识别模板参数
-            if let Some(tp) = params.last() {
+                let param_name = self.consume(TokenType::Identifier, "预期模板参数名").text.clone();
+                params.push(TemplateParam::Type {
+                    name: param_name.clone(),
+                    loc,
+                });
+                // 将模板参数注册为类型名，使其在函数/类体中可被识别
+                // 使用 Class 类型作为占位符，以便 TypeChecker 在单态化时识别模板参数
                 self.typedef_names.insert(
-                    param_name,
+                    param_name.clone(),
                     Type::Class {
-                        name: tp.name.clone(),
+                        name: param_name,
                         is_const: false,
                     },
                 );
+            } else if self.is_type_token() {
+                // 非类型模板参数：int N, unsigned M, ...
+                let ty = self.parse_base_type();
+                let param_name = self.consume(TokenType::Identifier, "预期模板参数名").text.clone();
+                params.push(TemplateParam::NonType {
+                    name: param_name.clone(),
+                    ty,
+                    loc,
+                });
+            } else {
+                self.errors.push(ParseError {
+                    message: "预期 'typename'、'class' 或类型名".to_string(),
+                    line: self.current().line,
+                    column: self.current().column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                break;
             }
             if !self.match_token(TokenType::Comma) {
                 break;

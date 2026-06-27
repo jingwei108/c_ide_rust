@@ -322,6 +322,23 @@ impl TypeChecker {
                 }
             }
             Some((sig, mangled)) => {
+                // Fill default arguments for trailing missing parameters.
+                if let Expr::MemberCall { args, .. } = expr {
+                    let filled = self.try_fill_default_args(args, &sig.param_defaults, &loc);
+                    if !filled || args.len() != sig.param_types.len() {
+                        self.report_error(
+                            &format!(
+                                "方法 '{}' 参数数量不匹配：期望 {}，实际 {}",
+                                method,
+                                sig.param_types.len(),
+                                args.len()
+                            ),
+                            &loc,
+                            ErrorCode::E3037_FuncArgCount,
+                        );
+                    }
+                }
+
                 // Check access control (simplified: allow public, block private from outside)
                 if matches!(sig.access, AccessSpec::Private) && self.current_class.as_ref() != Some(&class_name) {
                     self.report_error(
@@ -378,14 +395,24 @@ impl TypeChecker {
                                 ErrorCode::E3038_FuncArgType,
                             );
                         } else if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
-                            let arg_loc = *arg.loc();
-                            let old = std::mem::take(arg);
-                            *arg = Expr::Unary {
-                                op: UnaryOp::Addr,
-                                operand: Box::new(old),
-                                loc: arg_loc,
-                                ty: expected.clone(),
-                            };
+                            let is_const_ref = expected.is_const_reference()
+                                || expected.reference_base().map(|b| b.is_const()).unwrap_or(false);
+                            if !is_const_ref && !self.is_lvalue(arg) {
+                                self.report_error(
+                                    &format!("方法 '{}' 参数：非 const 引用不能绑定到右值", method),
+                                    &loc,
+                                    ErrorCode::E3038_FuncArgType,
+                                );
+                            } else {
+                                let arg_loc = *arg.loc();
+                                let old = std::mem::take(arg);
+                                *arg = Expr::Unary {
+                                    op: UnaryOp::Addr,
+                                    operand: Box::new(old),
+                                    loc: arg_loc,
+                                    ty: expected.clone(),
+                                };
+                            }
                         } else {
                             insert_implicit_cast(arg, expected);
                         }

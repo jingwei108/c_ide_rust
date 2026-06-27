@@ -22,6 +22,59 @@ impl TypeChecker {
             .unwrap_or(false);
 
         if !is_ctor_init {
+            // 拷贝初始化语法：`Class b = a;` / `Class b = make();` 等，
+            // 若类定义了拷贝/移动构造函数，则重写为对应构造函数调用。
+            if var_type.is_class() {
+                if let Some(ref mut init_expr) = init {
+                    let init_ty = self.resolve_expr_type(init_expr);
+                    if let (Type::Class { name: class_name, .. }, Type::Class { name: src_name, .. }) =
+                        (var_type, &init_ty)
+                    {
+                        if class_name.as_str() == src_name.as_str() {
+                            let ctor_loc = *init_expr.loc();
+                            let is_rvalue = !self.is_lvalue(init_expr) || init_ty.is_rvalue_ref();
+                            if is_rvalue {
+                                let move_ctor_name = format!("__ctor__{}__move", class_name);
+                                let has_move = self
+                                    .classes
+                                    .get(class_name)
+                                    .map(|s| s.methods.contains_key(&move_ctor_name))
+                                    .unwrap_or(false);
+                                if has_move {
+                                    let source = init.take().unwrap();
+                                    *init = Some(Expr::Call {
+                                        name: move_ctor_name,
+                                        args: vec![Expr::Move {
+                                            expr: Box::new(source),
+                                            loc: ctor_loc,
+                                            ty: Type::default(),
+                                        }],
+                                        loc: ctor_loc,
+                                        ty: Type::void(),
+                                    });
+                                    return self.try_process_ctor_init(var_name, var_type, init, loc, is_static);
+                                }
+                            }
+                            let copy_ctor_name = format!("__ctor__{}__copy", class_name);
+                            let has_copy = self
+                                .classes
+                                .get(class_name)
+                                .map(|s| s.methods.contains_key(&copy_ctor_name))
+                                .unwrap_or(false);
+                            if has_copy {
+                                let source = init.take().unwrap();
+                                *init = Some(Expr::Call {
+                                    name: copy_ctor_name,
+                                    args: vec![source],
+                                    loc: ctor_loc,
+                                    ty: Type::void(),
+                                });
+                                return self.try_process_ctor_init(var_name, var_type, init, loc, is_static);
+                            }
+                        }
+                    }
+                }
+            }
             return false;
         }
 
@@ -31,6 +84,8 @@ impl TypeChecker {
         if let Some(ref mut init_expr) = init {
             if let Expr::Call { name, args, loc: ctor_loc, .. } = init_expr {
                 if let Type::Class { name: class_name, .. } = var_type {
+                    // 先解析用户实参类型，用于拷贝构造/重载决议。
+                    let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
                     // 如果初始化表达式是右值引用（如 std::move），优先选择移动构造函数
                     let is_rvalue_init = args.len() == 1
                         && (matches!(&args[0], Expr::Call { name, .. } if name == "std__move")
@@ -41,9 +96,17 @@ impl TypeChecker {
                         // （隐式移动构造在 Pass 3.55 生成），也要让后续阶段能找到它。
                         Some(format!("__ctor__{}__move", class_name))
                     } else {
-                        self.resolve_constructor_overload(class_name, args.len(), *ctor_loc)
+                        self.resolve_constructor_overload(class_name, &arg_types, *ctor_loc)
                     };
                     if let Some(ctor_name) = ctor_name {
+                        // Fill trailing default arguments for constructors.
+                        if !is_rvalue_init {
+                            if let Some(sigs) = self.find_class_method_sigs(class_name, &ctor_name) {
+                                if let Some(sig) = sigs.first() {
+                                    self.try_fill_default_args(args, &sig.param_defaults, ctor_loc);
+                                }
+                            }
+                        }
                         *name = ctor_name;
                         let this_expr = Expr::Unary {
                             op: cide_ast::UnaryOp::Addr,
@@ -524,10 +587,104 @@ impl TypeChecker {
         self.current_func_params.clear();
     }
 
-    pub(crate) fn check_user_func(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {
+    /// 求值编译期常量表达式（用于非类型模板参数）。
+    /// 支持字面量、sizeof、模板参数值、简单四则运算和一元负号。
+    pub(crate) fn evaluate_constexpr(
+        &self,
+        expr: &Expr,
+        value_map: &std::collections::HashMap<String, i32>,
+    ) -> Option<i32> {
+        match expr {
+            Expr::Literal { value, .. } => Some(*value),
+            Expr::Identifier { name, .. } => value_map.get(name).copied(),
+            Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
+                self.evaluate_constexpr(operand, value_map).map(|v| -v)
+            }
+            Expr::Binary { op, left, right, .. } => {
+                let l = self.evaluate_constexpr(left, value_map)?;
+                let r = self.evaluate_constexpr(right, value_map)?;
+                match op {
+                    BinaryOp::Add => Some(l + r),
+                    BinaryOp::Sub => Some(l - r),
+                    BinaryOp::Mul => Some(l * r),
+                    BinaryOp::Div => if r == 0 { None } else { Some(l / r) },
+                    BinaryOp::Mod => if r == 0 { None } else { Some(l % r) },
+                    _ => None,
+                }
+            }
+            Expr::Sizeof { target_type, .. } => {
+                target_type.as_ref().map(|ty| self.compute_type_size(ty))
+            }
+            _ => None,
+        }
+    }
+
+    /// 若 args 长度不足且缺失的尾部参数均有默认值，则把默认参数表达式追加到 args 中。
+    /// 返回 true 表示成功填充，调用方不再报参数数量错误。
+    pub(crate) fn try_fill_default_args(
+        &self,
+        args: &mut Vec<Expr>,
+        param_defaults: &[Option<Expr>],
+        _loc: &SourceLoc,
+    ) -> bool {
+        if args.len() >= param_defaults.len() {
+            return true;
+        }
+        // 只允许尾部缺失，中间缺失视为不匹配。
+        for default in param_defaults.iter().skip(args.len()) {
+            if default.is_none() {
+                return false;
+            }
+        }
+        for default in param_defaults.iter().skip(args.len()) {
+            args.push(default.clone().unwrap());
+        }
+        true
+    }
+
+    /// 检查并调整函数调用参数：类型检查、隐式转换、引用参数隐式取地址。
+    fn check_and_adjust_call_args(&mut self, name: &str, param_types: &[Type], args: &mut [Expr], loc: &SourceLoc) {
+        for (i, (arg, expected)) in args.iter_mut().zip(param_types.iter()).enumerate() {
+            let arg_type = self.resolve_expr_type(arg);
+            if !self.check_assignable(expected, &arg_type, loc) {
+                self.report_error(
+                    &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
+                    loc,
+                    ErrorCode::E3038_FuncArgType,
+                );
+            } else if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
+                let is_const_ref =
+                    expected.is_const_reference() || expected.reference_base().map(|b| b.is_const()).unwrap_or(false);
+                if !is_const_ref && !self.is_lvalue(arg) {
+                    self.report_error(
+                        &format!("函数 '{}' 第 {} 个参数：非 const 引用不能绑定到右值", name, i + 1),
+                        loc,
+                        ErrorCode::E3038_FuncArgType,
+                    );
+                } else {
+                    let arg_loc = *arg.loc();
+                    let old = std::mem::take(arg);
+                    *arg = Expr::Unary {
+                        op: UnaryOp::Addr,
+                        operand: Box::new(old),
+                        loc: arg_loc,
+                        ty: expected.clone(),
+                    };
+                }
+            } else {
+                insert_implicit_cast(arg, expected);
+            }
+        }
+    }
+
+    pub(crate) fn check_user_func(&mut self, name: &str, args: &mut Vec<Expr>, loc: &SourceLoc) -> Type {
         let sym = self.funcs.get(name).cloned();
         if let Some(sym) = sym {
-            if args.len() < sym.param_types.len() || (args.len() != sym.param_types.len() && !sym.is_variadic) {
+            let filled = self.try_fill_default_args(args, &sym.param_defaults, loc);
+            if !filled
+                || args.len() < sym.param_types.len()
+                || (args.len() != sym.param_types.len() && !sym.is_variadic)
+            {
                 self.report_error(
                     &format!(
                         "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
@@ -539,29 +696,7 @@ impl TypeChecker {
                     ErrorCode::E3037_FuncArgCount,
                 );
             } else {
-                for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
-                    let arg_type = self.resolve_expr_type(arg);
-                    if !self.check_assignable(expected, &arg_type, loc) {
-                        self.report_error(
-                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
-                            loc,
-                            ErrorCode::E3038_FuncArgType,
-                        );
-                    } else {
-                        if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
-                            let arg_loc = *arg.loc();
-                            let old = std::mem::take(arg);
-                            *arg = Expr::Unary {
-                                op: UnaryOp::Addr,
-                                operand: Box::new(old),
-                                loc: arg_loc,
-                                ty: expected.clone(),
-                            };
-                        } else {
-                            insert_implicit_cast(arg, expected);
-                        }
-                    }
-                }
+                self.check_and_adjust_call_args(name, &sym.param_types, args, loc);
                 if sym.is_variadic {
                     for arg in args.iter_mut().skip(sym.param_types.len()) {
                         self.resolve_expr_type(arg);
@@ -583,7 +718,11 @@ impl TypeChecker {
                     return Type::void();
                 }
             }
-            if args.len() < sym.param_types.len() || (args.len() != sym.param_types.len() && !sym.is_variadic) {
+            let filled = self.try_fill_default_args(args, &sym.param_defaults, loc);
+            if !filled
+                || args.len() < sym.param_types.len()
+                || (args.len() != sym.param_types.len() && !sym.is_variadic)
+            {
                 self.report_error(
                     &format!(
                         "函数 '{}' 参数数量不匹配：期望 {}，实际 {}",
@@ -595,29 +734,7 @@ impl TypeChecker {
                     ErrorCode::E3037_FuncArgCount,
                 );
             } else {
-                for (i, (arg, expected)) in args.iter_mut().zip(sym.param_types.iter()).enumerate() {
-                    let arg_type = self.resolve_expr_type(arg);
-                    if !self.check_assignable(expected, &arg_type, loc) {
-                        self.report_error(
-                            &format!("函数 '{}' 第 {} 个参数类型不匹配", name, i + 1),
-                            loc,
-                            ErrorCode::E3038_FuncArgType,
-                        );
-                    } else {
-                        if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
-                            let arg_loc = *arg.loc();
-                            let old = std::mem::take(arg);
-                            *arg = Expr::Unary {
-                                op: UnaryOp::Addr,
-                                operand: Box::new(old),
-                                loc: arg_loc,
-                                ty: expected.clone(),
-                            };
-                        } else {
-                            insert_implicit_cast(arg, expected);
-                        }
-                    }
-                }
+                self.check_and_adjust_call_args(name, &sym.param_types, args, loc);
                 if sym.is_variadic {
                     for arg in args.iter_mut().skip(sym.param_types.len()) {
                         self.resolve_expr_type(arg);

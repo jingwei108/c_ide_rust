@@ -94,8 +94,14 @@ impl TypeChecker {
         let sigs = self.find_class_method_sigs(class_name, method_name)?;
         let mut best: Option<(MethodSig, usize)> = None;
         for sig in &sigs {
-            if sig.param_types.len() != arg_types.len() {
+            if sig.param_types.len() < arg_types.len() {
                 continue;
+            }
+            if sig.param_types.len() > arg_types.len() {
+                let has_defaults = sig.param_defaults.iter().skip(arg_types.len()).all(|d| d.is_some());
+                if !has_defaults {
+                    continue;
+                }
             }
             let mut score = 0usize;
             let mut ok = true;

@@ -12,7 +12,7 @@ impl TypeChecker {
             || cide_runtime::bytecode_libc_index::BYTECODE_LIBC_ALL_FUNCS.contains(&name)
     }
 
-    pub(crate) fn visit_call(&mut self, name: &str, args: &mut [Expr], loc: &SourceLoc) -> Type {
+    pub(crate) fn visit_call(&mut self, name: &str, args: &mut Vec<Expr>, loc: &SourceLoc) -> Type {
         match name {
             "malloc" => self.check_builtin_malloc(args, loc),
             "free" => self.check_builtin_free(args, loc),

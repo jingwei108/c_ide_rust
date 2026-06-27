@@ -146,7 +146,12 @@ impl Parser {
                     self.advance(); // consume '<'
                     let mut args = Vec::new();
                     while !self.check(TokenType::Gt) && !self.is_at_end() {
-                        args.push(self.parse_base_type());
+                        let arg = if self.is_type_token() {
+                            cide_ast::TemplateArg::Type(self.parse_base_type())
+                        } else {
+                            cide_ast::TemplateArg::Expr(self.parse_template_arg_expr())
+                        };
+                        args.push(arg);
                         if !self.match_token(TokenType::Comma) {
                             break;
                         }
@@ -162,9 +167,39 @@ impl Parser {
                 }
             } else if let Some(ty) = self.typedef_names.get(&name).cloned() {
                 self.advance();
+                // C++ 限定嵌套类型名，如 typedef 的类名后接 ::Inner。
+                // 注意：要保留 `Class::Class()` 类外构造函数定义的可能性，
+                // 因此当 :: 后是同名标识符时（构造定义），不在这里 consume。
+                if self.is_cpp_mode && self.check(TokenType::ColonColon) {
+                    if let Type::Class { name: ref class_name, .. } = ty {
+                        if self.peek(1).ty == TokenType::Identifier && self.peek(1).text != *class_name {
+                            let mut full_name = class_name.clone();
+                            while self.check(TokenType::ColonColon) {
+                                self.advance();
+                                let inner = self.consume(TokenType::Identifier, "预期嵌套类名").text.clone();
+                                full_name.push_str("__");
+                                full_name.push_str(&inner);
+                            }
+                            return Type::Class {
+                                name: full_name,
+                                is_const: false,
+                            };
+                        }
+                    }
+                }
                 ty
             } else if self.is_cpp_mode {
-                let name = self.advance().text.clone();
+                let first_name = self.advance().text.clone();
+                // 类外构造函数定义 `Class::Class()` 不要在这里 consume ::Class。
+                let mut name = first_name.clone();
+                while self.check(TokenType::ColonColon)
+                    && !(self.peek(1).ty == TokenType::Identifier && self.peek(1).text == first_name)
+                {
+                    self.advance(); // consume '::'
+                    let inner = self.consume(TokenType::Identifier, "预期嵌套类名").text.clone();
+                    name.push_str("__");
+                    name.push_str(&inner);
+                }
                 Type::Class { name, is_const: false }
             } else {
                 if is_unsigned {
@@ -560,6 +595,12 @@ impl Parser {
             } else {
                 pty
             };
+            let default_expr = if self.match_token(TokenType::Assign) {
+                // 默认参数使用赋值表达式级别，避免逗号运算符把后续参数吞掉。
+                Some(self.parse_assign())
+            } else {
+                None
+            };
             params.push(Param {
                 ty: pty,
                 name: pname,
@@ -567,6 +608,7 @@ impl Parser {
                     line: self.current().line,
                     column: self.current().column,
                 },
+                default: default_expr,
             });
             if !self.match_token(TokenType::Comma) {
                 break;

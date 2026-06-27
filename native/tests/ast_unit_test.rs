@@ -1,6 +1,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
-use cide_native::compiler::ast::Type;
+use cide_native::compiler::ast::{TemplateArg, Type};
 
 fn ptr(ty: Type) -> Type {
     Type::Pointer {
@@ -54,7 +54,7 @@ fn test_mangle_name_into_matches_mangle_name() {
         Type::RValueRef { base: Box::new(Type::int()) },
         Type::TemplateId {
             base: "list".to_string(),
-            args: vec![Type::int(), ptr(Type::int())],
+            args: vec![TemplateArg::Type(Type::int()), TemplateArg::Type(ptr(Type::int()))],
             is_const: false,
         },
     ];

@@ -1,7 +1,7 @@
 //! 控制流语句代码生成（if / while / do-while / for / break / continue / return）。
 
-use crate::expr::ExprGen;
-use cide_ast::{Expr, SourceLoc, Stmt, TypeKind};
+use crate::expr::{is_lvalue_expr, ExprGen};
+use cide_ast::{Expr, SourceLoc, Stmt, Type, TypeKind};
 use cide_runtime::opcode::OpCode;
 
 use super::super::BytecodeGen;
@@ -115,24 +115,46 @@ impl BytecodeGen {
                 let ret_ptr_offset = self.resolve_local("__ret_ptr");
                 let size = self.type_size(v.ty());
                 if size > 0 {
-                    let src_temp = self.get_temp_slot(0);
-                    self.gen_addr(v, loc);
-                    self.emit(OpCode::StoreLocal, src_temp, loc);
-                    for i in 0..size / 4 {
+                    // 如果类有自定义拷贝构造函数且返回值是左值，调用拷贝构造。
+                    let copy_ctor_name = if let Type::Class { name: class_name, .. } = v.ty() {
+                        let name = format!("__ctor__{}__copy", class_name);
+                        if self.func_index.contains_key(&name) && is_lvalue_expr(v) {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(copy_ctor_name) = copy_ctor_name {
+                        // 拷贝构造参数：other（源地址，先压栈）、this（目标地址，后压栈）
+                        self.gen_addr(v, loc);
                         self.emit(OpCode::LoadLocal, ret_ptr_offset, loc);
-                        if i > 0 {
-                            self.emit(OpCode::PushConst, i * 4, loc);
-                            self.emit(OpCode::Add, 0, loc);
+                        if let Some(&idx) = self.func_index.get(&copy_ctor_name) {
+                            self.emit(OpCode::Call, idx, loc);
                         }
-                        self.emit(OpCode::LoadLocal, src_temp, loc);
-                        if i > 0 {
-                            self.emit(OpCode::PushConst, i * 4, loc);
-                            self.emit(OpCode::Add, 0, loc);
+                    } else {
+                        let src_temp = self.get_temp_slot(0);
+                        self.gen_addr(v, loc);
+                        self.emit(OpCode::StoreLocal, src_temp, loc);
+                        for i in 0..size / 4 {
+                            self.emit(OpCode::LoadLocal, ret_ptr_offset, loc);
+                            if i > 0 {
+                                self.emit(OpCode::PushConst, i * 4, loc);
+                                self.emit(OpCode::Add, 0, loc);
+                            }
+                            self.emit(OpCode::LoadLocal, src_temp, loc);
+                            if i > 0 {
+                                self.emit(OpCode::PushConst, i * 4, loc);
+                                self.emit(OpCode::Add, 0, loc);
+                            }
+                            self.emit(OpCode::LoadMem, 0, loc);
+                            self.emit(OpCode::StoreMem, 0, loc);
                         }
-                        self.emit(OpCode::LoadMem, 0, loc);
-                        self.emit(OpCode::StoreMem, 0, loc);
                     }
                 }
+                // C++ 栈对象 RAII：return 前按 LIFO 调用所有活跃 scope 的析构函数
+                self.emit_dtors_for_scope_exit(0, loc);
                 self.emit(OpCode::RetVoid, 0, loc);
             } else {
                 let ret_is_ref = self

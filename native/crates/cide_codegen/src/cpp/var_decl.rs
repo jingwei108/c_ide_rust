@@ -30,17 +30,50 @@ impl BytecodeGen {
                 if let Type::Class { name: class_name, .. } = vty {
                     // VM do_call pops args in parameter-declaration order.
                     // Args already include this as the first parameter.
+                    let mut temp_cleanups: Vec<(i32, String)> = Vec::new();
                     for arg in ctor_args.iter_mut().rev() {
                         // RValueRef arguments (e.g. std::move) must be passed
                         // as the address of the source object.
                         if arg.ty().is_rvalue_ref() {
                             self.gen_addr(arg, loc);
+                        } else if let Expr::Unary { op: UnaryOp::Addr, operand, .. } = arg {
+                            let (temp_class, has_dtor) = {
+                                let operand_ty = operand.ty();
+                                if (operand_ty.is_class() || operand_ty.is_struct())
+                                    && matches!(operand.as_ref(), Expr::Call { .. } | Expr::CallPtr { .. })
+                                {
+                                    let name = operand_ty.name().to_string();
+                                    let dtor = format!("__dtor__{}", name);
+                                    (name, self.func_index.contains_key(&dtor))
+                                } else {
+                                    (String::new(), false)
+                                }
+                            };
+                            if has_dtor {
+                                let cleanup_slot = self.next_local_offset;
+                                self.next_local_offset += 4;
+                                self.gen_expr(operand);
+                                self.emit(OpCode::StoreLocal, cleanup_slot, loc);
+                                temp_cleanups.push((cleanup_slot, temp_class));
+                                self.emit(OpCode::LoadLocal, cleanup_slot, loc);
+                            } else {
+                                self.gen_expr(arg);
+                            }
                         } else {
                             self.gen_expr(arg);
                         }
                     }
                     if let Some(&idx) = self.func_index.get(ctor_name) {
                         self.emit(OpCode::Call, idx, loc);
+                    }
+                    // 析构为按 const 引用传递而生成的临时类对象。
+                    for (slot, temp_class) in temp_cleanups.iter().rev() {
+                        let dtor_name = format!("__dtor__{}", temp_class);
+                        if let Some(&idx) = self.func_index.get(&dtor_name) {
+                            // slot 中保存的是临时对象本身的地址，直接作为 this 传入析构函数。
+                            self.emit(OpCode::LoadLocal, *slot, loc);
+                            self.emit(OpCode::Call, idx, loc);
+                        }
                     }
                     self.record_class_var(local_offset, class_name);
                     return true;

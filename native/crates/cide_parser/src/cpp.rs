@@ -36,6 +36,14 @@ pub(crate) fn register_cpp_builtin_types(
     // 避免与用户代码中的 typedef struct cide_string { ... } 冲突。
     for name in ["cide_vec", "cide_list"] {
         template_names.insert(name.to_string());
+        // 同时加入 typedef_names，使变量声明等类型上下文能识别该模板名。
+        typedef_names.insert(
+            name.to_string(),
+            Type::Class {
+                name: name.to_string(),
+                is_const: false,
+            },
+        );
     }
 }
 

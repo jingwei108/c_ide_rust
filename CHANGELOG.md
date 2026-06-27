@@ -8,12 +8,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **C++ 扩展 Stage A/B/C**：默认参数、嵌套类实例化、类模板非类型模板参数（NTTP）
+  - 默认参数：支持函数/方法参数 `int f(int a = 0)`，调用时可省略尾部实参；TypeChecker 在普通函数调用、方法调用、无限定方法调用中统一填充默认值；修复隐式移动构造被误选为 0 参默认构造的回归。
+  - 嵌套类 `Outer::Inner` 实例化：Parser 将 `Outer::Inner` 解析为 `Outer__Inner` 限定类名，`TypeChecker` 按限定名注册/查找类布局；新增 `native/tests/cases/cpp/cpp_nested_class_instance.cpp` 回归用例。
+  - 类模板 NTTP：AST/Parser/TypeChecker 支持 `template<typename T, int N> class Array { T data[N]; ... }; Array<int, 5> a;`。
+    - Parser：新增 `parse_template_arg_expr`，通过扫描顶层分隔符（逗号/匹配 `>`）并在截取的 token 子流中解析表达式，解决 `>` 被误解析为关系运算符的问题；正确跳过括号、方括号、花括号内的 `>`/`<`。
+    - TypeChecker：`try_monomorphize_class` 构建 `type_map` 与 `value_map`；`replace_template_type` 评估 VLA 维度表达式；`replace_template_types_in_expr` 将非类型模板参数标识符替换为整数常量；`evaluate_constexpr` 支持字面量、变量、`sizeof` 与四则运算。
+    - 新增 `native/tests/cases/cpp/cpp_nttp_class.cpp` 回归用例（输出 `5`）。
+  - C++ Shadow Verification 扩展至 99 个用例，97 个一致 + 2 个已记录 `clang_compile_fail`（`cpp_cide_vec_class` / `cpp_cide_list_class`）。
+- **C++ 扩展 Stage D：自定义拷贝构造函数**
+  - 支持 `Class(const Class& other)` 用户定义拷贝构造函数；`Class b(a);` 与 `Class b = a;` 两种初始化语法均会调用拷贝构造。
+  - TypeChecker：新增 `constructor_mangled_name` / `is_copy_constructor_param` 辅助函数；`resolve_constructor_overload` 按实参类型选择 `__ctor__{Class}__copy`；`try_process_ctor_init` 将拷贝初始化重写为拷贝构造调用；`check_assignable` 允许 `const Class&` 绑定到非 const `Class` 对象。
+  - 新增 `native/tests/cases/cpp/cpp_copy_ctor.cpp` 与 `bytecode_gen_cpp_unit_test::test_cpp_copy_ctor` 回归用例（输出 `5 5 5` / `5 10 5`）。
+  - C++ Shadow Verification 扩展至 100 个用例，98 个一致 + 2 个已记录 `clang_compile_fail`。
 - **教学用例库大规模扩展**：继续推进维护计划任务 G，新增 LeetCode / K&R / C++ E2E 用例
   - LeetCode 防线扩展至 128 题（新增 `lc_7` Reverse Integer、`lc_67` Add Binary、`lc_83` Remove Duplicates from Sorted List、`lc_190` Reverse Bits、`lc_191` Number of 1 Bits、`lc_202` Happy Number、`lc_205` Isomorphic Strings、`lc_219` Contains Duplicate II、`lc_231` Power of Two、`lc_263` Ugly Number、`lc_292` Nim Game、`lc_345` Reverse Vowels of a String、`lc_349` Intersection of Two Arrays、`lc_367` Valid Perfect Square、`lc_383` Ransom Note、`lc_389` Find the Difference、`lc_392` Is Subsequence、`lc_401` Binary Watch、`lc_409` Longest Palindrome、`lc_412` Fizz Buzz、`lc_415` Add Strings 等）
   - K&R 新增 5 个变体：`kr_1_hello`、`kr_2_celsius`、`kr_4_atoi`、`kr_5_itoa`、`kr_6_getword`；K&R 防线扩展至 81 个用例
-  - C++ E2E 新增 10 题：`cpp_pair_template`、`cpp_template_func_multi`、`cpp_reference_member`、`cpp_template_array`、`cpp_template_stack`、`cpp_unique_ptr_reset`、`cpp_class_array`、`cpp_ctor_init_list`、`cpp_reference_param_chain`、`cpp_function_overload_template`；C++ E2E 防线扩展至 71 题
-  - 诚实记录 Cide C++ 子集当前不支持类类型作为 `vector<T>`/`list<T>` 模板实参、非类型模板参数、嵌套类 `Outer::Inner` 实例化、const 引用参数、默认参数、自定义拷贝构造等特性
-  - C Shadow Verification 更新为 606/610，C++ Shadow Verification 更新为 93/93
+  - C++ E2E 新增 11 题：`cpp_pair_template`、`cpp_template_func_multi`、`cpp_reference_member`、`cpp_template_array`、`cpp_template_stack`、`cpp_unique_ptr_reset`、`cpp_class_array`、`cpp_ctor_init_list`、`cpp_reference_param_chain`、`cpp_function_overload_template`、`cpp_cide_vec_class`；C++ E2E 防线扩展至 72 题
+  - 诚实记录 Cide C++ 子集当前已支持默认参数、嵌套类 `Outer::Inner` 实例化、类模板非类型模板参数、自定义拷贝构造函数（`cide_vec<T>` / `cide_list<T>` 类类型模板实参已支持）；函数模板显式 `<>` 调用等特性暂不支持
+  - C Shadow Verification 更新为 616/620，C++ Shadow Verification 更新为 100 个用例（98 个一致 + 2 个已记录 `clang_compile_fail`）
 - **CLI `unified` 命令支持 `--max-steps` 选项**：`cide_cli unified <file> [--max-steps <n>]` 可自定义统一模式最大执行步数（默认 100_000），便于教学场景中长程序的时间旅行调试与性能基线测试
 - **统一模式后端性能基线**：新增 `native/benches/unified_perf_baseline.c`（50 个逆序元素冒泡排序，约 10 万 VM 步）与 `scripts/unified_perf_baseline.py`，生成 `reports/unified_perf_baseline.md` 记录后端吞吐（当前约 18,500 步/秒，release 模式）
 - **统一模式 frameCache 滑动窗口**：为 `UnifiedEngine.frame_cache` 引入有界滑动窗口（默认 2000 帧，超出时丢弃最早的 20%），解决长程序执行时内存无界增长问题
@@ -62,12 +75,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **修复参数化宏调用后带分号无法解析**：`cide_lexer` 在参数化宏展开时，若宏体为大括号块且调用位置后紧跟分号，则动态将宏体包装为 `do { ... } while(0)`，使 `SWAP(int,x,y);` 在 `if/else` 等语句中可正确解析；新增 `native/tests/end_to_end_extra_test.rs::test_e2e_parametric_macro_swap_semicolon` 回归测试。⚠️ 此为 Cide 教学子集扩展，Clang 标准模式仍报"预期表达式"；若需严格兼容 Clang，建议宏体手动使用 `do { ... } while(0)`。
 
 ### Changed (工程质量)
+- **拆分 `native/src/unified/trace_analyzer.rs` 继续推进维护计划任务 B**：将 838 行的统一模式根因推断模块按运行时陷阱类型拆分为 `trace_analyzer/bounds.rs`（数组越界 / `BoundsCategory` 推断）、`trace_analyzer/use_after_free.rs`、`trace_analyzer/double_free.rs`、`trace_analyzer/div_zero.rs`、`trace_analyzer/null_deref.rs`、`trace_analyzer/utils.rs`（共享工具 / `LoopInfo`）、`trace_analyzer/tests.rs`（单元测试），入口文件 `trace_analyzer/mod.rs` 仅保留 `TraceAnalyzer::analyze_trap` 分发逻辑（55 行）；所有子文件 <800 行，C/C++ Shadow Verification 无新增失败
 - **生产代码 `unwrap`/`expect` 收敛**：继续推进维护计划任务 C，移除 5 处生产路径 `unwrap`
   - `cide_codegen::lib.rs` 类大小拓扑计算：将 `class_defs.get(class_name).unwrap()` 改为 `if let Some(class)` / `continue`
   - `cide_codegen::expr::call.rs`：`gen_call` / `gen_call_ptr` 中结构体/类返回值临时偏移从 `ret_temp_offset.unwrap()` 改为 `if let Some(offset)`，删除冗余 `is_struct_ret` 变量
   - `cide_codegen::expr::struct_.rs`：类方法调用返回值临时偏移同样改为 `if let Some(offset)`
   - 生产代码 `unwrap`/`expect` 从 17 处降至 0 处，全量从 45 处降至 28 处
   - 确认 `templates/bTree/source.c` 的 `bTree_default` 运行时缺口为模板代码访问未初始化子节点指针的已知偏差（`E2E_FAILURES.md` 已记录为 `KNOWN_DIVERGENCE`），与本次 unwrap 收敛无关
+
+### Added (C++ const 引用参数)
+- **支持 `const T&` 函数/方法参数绑定到右值**：此前 `const int& x` 参数只能绑定左值变量，绑定字面量或表达式右值会在 CodeGen 阶段失败。修复分为 TypeChecker 与 CodeGen 两层：
+  - `cide_typeck::decl.rs` / `expr/mod.rs` / `expr/call.rs`：统一函数调用、方法调用、函数指针调用的参数检查，对 `const T&` 形参允许右值实参隐式取地址；对非 const 引用形参绑定右值给出明确错误诊断。
+  - `cide_codegen::expr::unary.rs`：`UnaryOp::Addr` 对字面量 / 调用返回值等右值表达式自动物化临时局部变量（`StoreLocal`/`StoreLocalD`/`StoreLocalQ`），再返回临时变量地址，使被调用函数可通过引用安全读取。
+  - `cide_ast::types.rs` 新增 `is_const_reference()` 辅助方法；const 判断同时兼容 `const int&`（const 在 base）与 `int const&`（const 在引用）两种写法。
+  - 新增 `native/tests/cases/cpp/cpp_const_reference_param.cpp` 回归用例，覆盖字面量、变量、表达式右值三种绑定场景。
+
+### Added (C++ 内置容器类类型模板实参)
+- **支持 `cide_vec<T>` / `cide_list<T>` 类类型模板实参**：`crates/cide_typeck/src/cpp_monomorph.rs` 新增 `try_synthesize_builtin_container_class` / `synthesize_vec_class` / `synthesize_list_class`，当内置容器 `cide_vec<T>` / `cide_list<T>` 的模板实参为类类型时，合成走普通类模板路径的容器实例化
+  - `cide_vec<T>`：默认构造、析构、`size()`、`get(int)`、`push_back(T)`，自动扩容与元素拷贝/析构
+  - `cide_list<T>`：合成辅助节点类 `cide_list_node<T>`，支持默认构造、析构、`size()`、`get(int)`、`push_back(T)`、自动节点释放
+  - `crates/cide_codegen/src/expr/new_delete.rs` 修复 `delete[]` 释放逻辑：无论元素类型是否有显式析构函数，都必须释放 `new[]` 返回地址前 4 字节处的 `base` 地址，避免类类型数组泄漏
+  - `crates/cide_codegen/src/lib.rs` 修复类大小拓扑计算：字段类型为类类型时，必须等依赖类大小计算完成后才计算当前类，避免合成嵌套类（如 `cide_list_node<T>`）时因依赖类尚未入 `class_sizes` 导致大小为 0
+  - `crates/cide_parser/src/cpp.rs` 透传类类型模板实参
+  - 新增 `native/tests/cases/cpp/cpp_cide_vec_class.cpp` / `cpp_cide_list_class.cpp` 与 golden，验证 `push_back` / `get` / 自动构造析构
+  - `scripts/shadow_verify_cpp.py` 支持首行 `// category: gap` 标记，用于 Clang++ 无法直接编译的 Cide 内置容器用例
 
 ### Fixed (变参函数支持)
 - **修复 `va_list` / `va_start` / `va_arg` / `va_end` 自定义变参函数不支持**：

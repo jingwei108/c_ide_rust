@@ -141,6 +141,7 @@ impl TypeChecker {
                 return_type: f.return_type.clone(),
                 param_types: f.params.iter().map(|p| p.ty.clone()).collect(),
                 is_variadic: f.is_variadic,
+                param_defaults: f.params.iter().map(|p| p.default.clone()).collect(),
             };
             if f.is_static {
                 if let Some(existing) = self.static_func_sigs.get(&f.name) {
@@ -338,6 +339,7 @@ impl TypeChecker {
                     is_const: false,
                 },
                 loc: info.loc,
+                default: None,
             }];
             call_params.extend(info.params.iter().cloned());
 

@@ -69,14 +69,24 @@ impl TypeChecker {
             if !self.check_assignable(expected, &arg_type, loc) {
                 self.report_error(&format!("方法 '{}' 参数类型不匹配", name), loc, ErrorCode::E3038_FuncArgType);
             } else if expected.is_reference() && !arg_type.is_reference() && !arg_type.is_rvalue_ref() {
-                let arg_loc = *arg.loc();
-                let old = std::mem::take(arg);
-                *arg = Expr::Unary {
-                    op: UnaryOp::Addr,
-                    operand: Box::new(old),
-                    loc: arg_loc,
-                    ty: expected.clone(),
-                };
+                let is_const_ref =
+                    expected.is_const_reference() || expected.reference_base().map(|b| b.is_const()).unwrap_or(false);
+                if !is_const_ref && !self.is_lvalue(arg) {
+                    self.report_error(
+                        &format!("方法 '{}' 参数：非 const 引用不能绑定到右值", name),
+                        loc,
+                        ErrorCode::E3038_FuncArgType,
+                    );
+                } else {
+                    let arg_loc = *arg.loc();
+                    let old = std::mem::take(arg);
+                    *arg = Expr::Unary {
+                        op: UnaryOp::Addr,
+                        operand: Box::new(old),
+                        loc: arg_loc,
+                        ty: expected.clone(),
+                    };
+                }
             } else {
                 insert_implicit_cast(arg, expected);
             }

@@ -502,10 +502,14 @@ def load_directory_cases() -> List[ShadowCase]:
     if cases_dir.exists():
         for cpp_file in sorted(cases_dir.glob("*.cpp")):
             source = cpp_file.read_text(encoding="utf-8")
+            category = "e2e_regression"
+            first_line = source.lstrip().splitlines()[0] if source.lstrip() else ""
+            if first_line.startswith("// category:"):
+                category = first_line.split(":", 1)[1].strip()
             cases.append(ShadowCase(
                 name=cpp_file.stem,
                 source=source,
-                category="e2e_regression",
+                category=category,
             ))
     return cases
 

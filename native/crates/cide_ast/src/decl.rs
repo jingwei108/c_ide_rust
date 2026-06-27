@@ -10,6 +10,8 @@ pub struct Param {
     pub ty: Type,
     pub name: String,
     pub loc: SourceLoc,
+    /// C++ 默认参数表达式（仅用于函数/方法/构造函数声明）。
+    pub default: Option<Expr>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -115,9 +117,58 @@ pub struct ClassDecl {
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct TemplateParam {
-    pub name: String,
-    pub loc: SourceLoc,
+pub enum TemplateParam {
+    Type {
+        name: String,
+        loc: SourceLoc,
+    },
+    NonType {
+        name: String,
+        ty: Type,
+        loc: SourceLoc,
+    },
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum TemplateArg {
+    Type(Type),
+    Expr(Expr),
+    Int(i32),
+}
+
+impl PartialEq for TemplateArg {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (TemplateArg::Type(a), TemplateArg::Type(b)) => a == b,
+            (TemplateArg::Int(a), TemplateArg::Int(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
+impl Eq for TemplateArg {}
+
+impl TemplateArg {
+    pub fn mangle_name_into(&self, buf: &mut String) {
+        match self {
+            TemplateArg::Type(ty) => ty.mangle_name_into(buf),
+            TemplateArg::Int(v) => buf.push_str(&v.to_string()),
+            TemplateArg::Expr(expr) => {
+                // Fallback: unevaluated expressions use their debug representation.
+                buf.push_str(&format!("{:?}", expr));
+            }
+        }
+    }
+}
+
+impl std::fmt::Display for TemplateArg {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TemplateArg::Type(ty) => write!(f, "{}", ty),
+            TemplateArg::Int(v) => write!(f, "{}", v),
+            TemplateArg::Expr(expr) => write!(f, "{:?}", expr),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -137,7 +188,7 @@ pub struct TemplateDecl {
 pub struct TemplateInstantiation {
     pub loc: SourceLoc,
     pub base: String,
-    pub args: Vec<Type>,
+    pub args: Vec<TemplateArg>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

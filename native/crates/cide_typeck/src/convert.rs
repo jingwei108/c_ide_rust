@@ -351,6 +351,12 @@ impl TypeChecker {
             if t_base.as_ref() == value {
                 return true;
             }
+            // const Class& 可以绑定到非 const Class 对象（按类名比较）。
+            if let (Type::Class { name: t_name, .. }, Type::Class { name: v_name, .. }) = (t_base.as_ref(), value) {
+                if t_name == v_name {
+                    return true;
+                }
+            }
             if t_base.kind() == value.kind()
                 && matches!(
                     t_base.kind(),

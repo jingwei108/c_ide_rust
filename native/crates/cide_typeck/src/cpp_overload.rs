@@ -37,6 +37,7 @@ impl TypeChecker {
                                     is_const: *is_const,
                                 },
                                 loc: c.loc,
+                                default: None,
                             })
                             .chain(params.iter().cloned())
                             .collect()
@@ -62,15 +63,7 @@ impl TypeChecker {
                         class_methods.push(func_decl);
                     }
                     ClassMember::Constructor { params, body: Some(ref b), .. } => {
-                        let ctor_name =
-                            self.resolve_constructor_overload(&c.name, params.len(), c.loc)
-                                .unwrap_or_else(|| {
-                                    if params.is_empty() {
-                                        format!("__ctor__{}", c.name)
-                                    } else {
-                                        format!("__ctor__{}__{}", c.name, params.len())
-                                    }
-                                });
+                        let ctor_name = Self::constructor_mangled_name(&c.name, params);
                         let mut func_decl = FuncDecl {
                             loc: c.loc,
                             return_type: Type::void(),
@@ -85,6 +78,7 @@ impl TypeChecker {
                                     is_const: false,
                                 },
                                 loc: c.loc,
+                                default: None,
                             })
                             .chain(params.iter().cloned())
                             .collect(),
@@ -96,6 +90,60 @@ impl TypeChecker {
                         };
                         self.visit_func_decl_with_fields(&mut func_decl, &class_fields);
                         class_methods.push(func_decl);
+
+                        // Synthesize a zero-arg default constructor wrapper if all user
+                        // parameters have default values.
+                        if !params.is_empty() && params.iter().all(|p| p.default.is_some()) {
+                            let default_ctor_name = format!("__ctor__{}", c.name);
+                            let full_ctor_name = Self::constructor_mangled_name(&c.name, params);
+                            let this_ty = Type::Pointer {
+                                pointee: Box::new(Type::Class {
+                                    name: c.name.clone(),
+                                    is_const: false,
+                                }),
+                                is_const: false,
+                            };
+                            let this_expr = Expr::Identifier {
+                                name: "this".to_string(),
+                                loc: c.loc,
+                                ty: this_ty.clone(),
+                            };
+                            let mut call_args: Vec<Expr> = vec![this_expr];
+                            for p in params.iter() {
+                                if let Some(ref d) = p.default {
+                                    call_args.push(d.clone());
+                                }
+                            }
+                            let wrapper_body = Stmt::Block {
+                                stmts: vec![Stmt::Expr {
+                                    expr: Expr::Call {
+                                        name: full_ctor_name,
+                                        args: call_args,
+                                        loc: c.loc,
+                                        ty: Type::void(),
+                                    },
+                                    loc: c.loc,
+                                }],
+                                loc: c.loc,
+                            };
+                            let wrapper = FuncDecl {
+                                loc: c.loc,
+                                return_type: Type::void(),
+                                name: default_ctor_name,
+                                params: vec![Param {
+                                    name: "this".to_string(),
+                                    ty: this_ty,
+                                    loc: c.loc,
+                                    default: None,
+                                }],
+                                body: Some(wrapper_body),
+                                is_static: false,
+                                is_extern: false,
+                                source_file: String::new(),
+                                is_variadic: false,
+                            };
+                            class_methods.push(wrapper);
+                        }
                     }
                     ClassMember::Destructor { body: Some(ref b), .. } => {
                         let mut func_decl = FuncDecl {
@@ -112,6 +160,7 @@ impl TypeChecker {
                                     is_const: false,
                                 },
                                 loc: c.loc,
+                                default: None,
                             }],
                             body: Some(b.clone()),
                             is_static: false,
@@ -130,53 +179,108 @@ impl TypeChecker {
         program.funcs.extend(class_methods);
     }
 
+    /// 判断参数类型是否是类 `class_name` 的拷贝构造参数（`Class&` 或 `const Class&`）。
+    pub(crate) fn is_copy_constructor_param(class_name: &str, ty: &Type) -> bool {
+        match ty {
+            Type::Reference { base, .. } | Type::RValueRef { base } => {
+                if let Type::Class { name, .. } = base.as_ref() {
+                    return name == class_name;
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+
+    /// 根据参数列表得到构造函数 mangled 名称。
+    /// 拷贝构造函数使用 `__ctor__{Class}__copy`，其他按参数个数编码。
+    pub(crate) fn constructor_mangled_name(class_name: &str, params: &[Param]) -> String {
+        if params.len() == 1 && Self::is_copy_constructor_param(class_name, &params[0].ty) {
+            return format!("__ctor__{}__copy", class_name);
+        }
+        if params.is_empty() {
+            format!("__ctor__{}", class_name)
+        } else {
+            format!("__ctor__{}__{}", class_name, params.len())
+        }
+    }
+
     /// 重载决议：从候选构造函数中选择最佳匹配。
-    /// 当前实现根据参数数量选择构造函数。默认（零参数）构造函数保持
-    /// `__ctor__{Class}` 名称；带 N 个参数的构造函数编码为 `__ctor__{Class}__N`。
+    /// 默认（零参数）构造函数保持 `__ctor__{Class}` 名称；
+    /// 拷贝构造函数使用 `__ctor__{Class}__copy`；
+    /// 其他带 N 个参数的构造函数编码为 `__ctor__{Class}__N`。
     /// 如果同一个类存在多个**同参数个数但参数类型不同**的构造函数，当前 mangling
     /// 方案无法区分，会报告 E4031 歧义错误而不是静默选择错误路径。
     pub(crate) fn resolve_constructor_overload(
         &mut self,
         class_name: &str,
-        arg_count: usize,
+        arg_types: &[Type],
         loc: SourceLoc,
     ) -> Option<String> {
         let sym = self.classes.get(class_name)?;
-        let target = if arg_count == 0 {
-            format!("__ctor__{}", class_name)
-        } else {
-            format!("__ctor__{}__{}", class_name, arg_count)
-        };
+        let arg_count = arg_types.len();
 
-        // 检查是否存在同参数个数但不同类型的构造函数重载（当前不支持）
-        if let Some(sigs) = sym.methods.get(&target) {
-            if sigs.len() > 1 {
-                self.report_error(
-                    &format!(
-                        "类 '{}' 的构造函数存在歧义：存在多个接受 {} 个参数的构造函数（当前 Cide C++ 子集不支持同参数个数不同类型的构造函数重载）",
-                        class_name, arg_count
-                    ),
-                    &loc,
-                    ErrorCode::E4031_ConstructorOverloadAmbiguous,
-                );
-                return None;
-            }
-            if !sigs.is_empty() {
-                return Some(target);
+        // 拷贝构造函数：单参数且实参为同类（或同类引用）。
+        let is_same_class_arg = arg_count == 1
+            && match &arg_types[0] {
+                Type::Class { name, .. } => name == class_name,
+                Type::Reference { base, .. } | Type::RValueRef { base } => {
+                    if let Type::Class { name, .. } = base.as_ref() {
+                        name == class_name
+                    } else {
+                        false
+                    }
+                }
+                _ => false,
+            };
+        if is_same_class_arg {
+            let copy_name = format!("__ctor__{}__copy", class_name);
+            if sym.methods.contains_key(&copy_name) {
+                return Some(copy_name);
             }
         }
 
-        // Fallback: scan methods for any ctor with matching user param count
+        // Collect all constructors that can accept `arg_count` arguments,
+        // either exactly or by filling trailing default arguments.
+        let mut candidates: Vec<(String, usize)> = Vec::new();
+        let ctor_prefix = format!("__ctor__{}", class_name);
         for (name, sigs) in &sym.methods {
-            if name.starts_with("__ctor__") && !name.ends_with("__move") {
-                for sig in sigs {
-                    if sig.param_types.len() == arg_count {
-                        return Some(name.clone());
+            if name.ends_with("__move") || name.ends_with("__copy") {
+                continue;
+            }
+            if !(*name == ctor_prefix || name.starts_with(&format!("{}__", ctor_prefix))) {
+                continue;
+            }
+            for (idx, sig) in sigs.iter().enumerate() {
+                let user_count = sig.param_types.len();
+                if user_count == arg_count {
+                    candidates.push((name.clone(), idx));
+                } else if user_count > arg_count {
+                    let all_have_defaults = sig.param_defaults.iter().skip(arg_count).all(|d| d.is_some());
+                    if all_have_defaults {
+                        candidates.push((name.clone(), idx));
                     }
                 }
             }
         }
-        None
+
+        if candidates.is_empty() {
+            return None;
+        }
+
+        if candidates.len() > 1 {
+            self.report_error(
+                &format!(
+                    "类 '{}' 的构造函数存在歧义：存在多个接受 {} 个参数的构造函数",
+                    class_name, arg_count
+                ),
+                &loc,
+                ErrorCode::E4031_ConstructorOverloadAmbiguous,
+            );
+            return None;
+        }
+
+        Some(candidates[0].0.clone())
     }
 
     /// Generate implicit move constructors for classes that contain resources
@@ -218,6 +322,7 @@ impl TypeChecker {
                             is_const: false,
                         },
                         loc: SourceLoc { line: 0, column: 0 },
+                        default: None,
                     },
                     Param {
                         name: "other".to_string(),
@@ -228,6 +333,7 @@ impl TypeChecker {
                             }),
                         },
                         loc: SourceLoc { line: 0, column: 0 },
+                        default: None,
                     },
                 ],
                 body: Some(body),
@@ -243,6 +349,7 @@ impl TypeChecker {
                     return_type: Type::void(),
                     param_types: func_decl.params.iter().map(|p| p.ty.clone()).collect(),
                     is_variadic: false,
+                    param_defaults: func_decl.params.iter().map(|p| p.default.clone()).collect(),
                 },
             );
             move_ctors.push((class_name.clone(), func_decl));
@@ -254,6 +361,7 @@ impl TypeChecker {
                 sym.methods.entry(func.name.clone()).or_default().push(MethodSig {
                     ret: Type::void(),
                     param_types: func.params.iter().map(|p| p.ty.clone()).collect(),
+                    param_defaults: func.params.iter().map(|p| p.default.clone()).collect(),
                     is_virtual: false,
                     is_static: false,
                     is_explicit: false,

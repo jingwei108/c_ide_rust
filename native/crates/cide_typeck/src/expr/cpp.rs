@@ -31,14 +31,20 @@ impl TypeChecker {
                 if let Expr::Call { name, args, .. } = i {
                     if name.starts_with("__ctor__") {
                         if let Type::Class { name: class_name, .. } = elem_type {
-                            let arg_count = args.len();
-                            if let Some(resolved) = self.resolve_constructor_overload(class_name, arg_count, loc) {
+                            let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
+                            if let Some(resolved) = self.resolve_constructor_overload(class_name, &arg_types, loc) {
+                                // Fill trailing default arguments.
+                                if let Some(sigs) = self.find_class_method_sigs(class_name, &resolved) {
+                                    if let Some(sig) = sigs.first() {
+                                        self.try_fill_default_args(args, &sig.param_defaults, &loc);
+                                    }
+                                }
                                 *name = resolved.clone();
                                 ctor_class_name = class_name.clone();
                                 ctor_name = resolved;
                             } else {
                                 self.report_error(
-                                    &format!("类 '{}' 没有接受 {} 个参数的构造函数", class_name, arg_count),
+                                    &format!("类 '{}' 没有接受 {} 个参数的构造函数", class_name, arg_types.len()),
                                     &loc,
                                     ErrorCode::E3003_FuncRedeclared,
                                 );
@@ -193,6 +199,7 @@ impl TypeChecker {
                         is_const: false,
                     },
                     loc: *loc,
+                    default: None,
                 }];
                 call_params.extend(params.iter().cloned());
                 self.funcs.insert(
@@ -201,6 +208,7 @@ impl TypeChecker {
                         return_type: Type::int(),
                         param_types: call_params.iter().map(|p| p.ty.clone()).collect(),
                         is_variadic: false,
+                        param_defaults: call_params.iter().map(|p| p.default.clone()).collect(),
                     },
                 );
             }

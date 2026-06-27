@@ -216,20 +216,23 @@ impl BytecodeGen {
 
         if is_class {
             let dtor_name = format!("__dtor__{}", class_name);
-            if self.func_index.contains_key(&dtor_name) {
-                if *is_array {
-                    // delete[]: 从 base 读取 count，逆序调用析构函数，然后 free(base)
-                    let user_ptr_temp = self.get_temp_slot(2);
-                    let base_temp = self.get_temp_slot(1);
-                    let count_temp = self.get_temp_slot(0);
-                    let i_temp = self.get_temp_slot(3);
+            let has_dtor = self.func_index.contains_key(&dtor_name);
+            if *is_array {
+                // delete[]: 无论元素是否有显式析构函数，都需要释放 base 地址。
+                // new[] 在返回地址前 4 字节保存元素个数；释放时必须 free(base)。
+                let user_ptr_temp = self.get_temp_slot(2);
+                let base_temp = self.get_temp_slot(1);
+                let count_temp = self.get_temp_slot(0);
+                let i_temp = self.get_temp_slot(3);
 
-                    self.emit(OpCode::Dup, 0, loc);
-                    self.emit(OpCode::StoreLocal, user_ptr_temp, loc);
+                self.emit(OpCode::Dup, 0, loc);
+                self.emit(OpCode::StoreLocal, user_ptr_temp, loc);
 
-                    // base = user_ptr - 4
-                    self.emit(OpCode::PushConst, 4, loc);
-                    self.emit(OpCode::Sub, 0, loc);
+                // base = user_ptr - 4
+                self.emit(OpCode::PushConst, 4, loc);
+                self.emit(OpCode::Sub, 0, loc);
+
+                if has_dtor {
                     self.emit(OpCode::Dup, 0, loc);
                     self.emit(OpCode::StoreLocal, base_temp, loc);
 
@@ -272,16 +275,23 @@ impl BytecodeGen {
 
                     // free(base)
                     self.emit(OpCode::LoadLocal, base_temp, loc);
-                } else {
-                    // delete: 直接调用析构函数后 free(ptr)
+                }
+
+                // free(base): base is already on the stack
+                self.emit(OpCode::CallHost, cide_runtime::host_func_id::FREE as i32, loc);
+            } else {
+                // delete: 直接调用析构函数后 free(ptr)
+                if has_dtor {
                     self.emit(OpCode::Dup, 0, loc);
                     if let Some(&idx) = self.func_index.get(&dtor_name) {
                         self.emit(OpCode::Call, idx, loc);
                     }
                 }
+                self.emit(OpCode::CallHost, cide_runtime::host_func_id::FREE as i32, loc);
             }
+        } else {
+            self.emit(OpCode::CallHost, cide_runtime::host_func_id::FREE as i32, loc);
         }
-        self.emit(OpCode::CallHost, cide_runtime::host_func_id::FREE as i32, loc);
     }
 
     pub(crate) fn gen_move(&mut self, expr: &mut Expr, _loc: &SourceLoc) {

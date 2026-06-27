@@ -11,8 +11,8 @@
 - `typeck_cpp_unit_test.rs`: 28/28 通过
 - `bytecode_gen_cpp_unit_test.rs`: 38/38 通过
 - `cpp_dogfooding_test.rs`: 全部通过（含 Stage 5 基础设施自验证 + Stage 6 `vector<int>` / `list<int>` / `string` Dogfooding）
-- **C++ E2E 回归：`native/tests/cases/cpp/` 71 个用例全部通过，`KNOWN_CPP_FAILURES` 为空**
-- **C++ 扩展合计: 172/172 通过**（99 单元测试 + 2 个 E2E 监控测试 + 71 个 E2E 实际用例；Dogfooding 测试另行统计）
+- **C++ E2E 回归：`native/tests/cases/cpp/` 74 个用例全部通过，`KNOWN_CPP_FAILURES` 为空**
+- **C++ 扩展合计: 175/175 通过**（99 单元测试 + 2 个 E2E 监控测试 + 74 个 E2E 实际用例；Dogfooding 测试另行统计）
 
 ### M6 E2E 回归覆盖
 
@@ -30,6 +30,15 @@
 |---|---|---|
 | 核心语言 | 6 | `cpp_pair_template` / `cpp_template_func_multi` / `cpp_reference_member` / `cpp_reference_param_chain` / `cpp_ctor_init_list` / `cpp_function_overload_template` |
 | 容器与算法 | 4 | `cpp_template_array` / `cpp_template_stack` / `cpp_unique_ptr_reset` / `cpp_class_array` |
+
+### 本次新增用例
+
+| 类别 | 用例数 | 新增用例 |
+|---|---|---|
+| 容器与算法 | 2 | `cpp_cide_vec_class` — 验证 `cide_vec<T>` 对 class 类型模板实参的支持（push_back / get / 自动构造析构）；`cpp_cide_list_class` — 验证 `cide_list<T>` 对 class 类型模板实参的支持（push_back / get / 自动构造析构） |
+| 核心语言 | 1 | `cpp_const_reference_param` — 验证 `const T&` 参数可绑定到字面量、变量与表达式右值 |
+
+> `cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器 `cide_vec<T>` / `cide_list<T>`，Clang++ 无法直接编译。影子验证脚本通过文件首行 `// category: gap` 将其标记为预期差异。
 
 Golden 全部由 Clang++ (`-std=c++14 -O0`) 生成，Cide 输出与之逐行对比。
 

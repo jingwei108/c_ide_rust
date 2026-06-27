@@ -1,5 +1,13 @@
 use super::*;
 
+/// Whether the type can be stored in a temporary local slot for `&rvalue`.
+fn can_materialize_temporary(ty: &Type) -> bool {
+    matches!(
+        ty.kind(),
+        TypeKind::Int | TypeKind::Char | TypeKind::Float | TypeKind::Double | TypeKind::LongLong | TypeKind::Pointer
+    )
+}
+
 fn gen_mem_inc_dec(gen: &mut BytecodeGen, is_inc: bool, is_pre: bool, step: i32, loc: &SourceLoc) {
     // stack top: address
     let addr_temp = gen.get_temp_slot(2);
@@ -81,9 +89,32 @@ pub(crate) fn gen_unary(gen: &mut BytecodeGen, expr: &mut Expr) {
                     } => {
                         gen.gen_expr(inner);
                     }
+                    Expr::Call { ty, .. } | Expr::CallPtr { ty, .. } if ty.is_struct() || ty.is_class() => {
+                        // 函数按值返回结构体/类时，gen_expr 已经压入隐藏返回缓冲区的地址。
+                        // 取地址直接复用该地址即可，避免再包一层临时变量导致源地址错位。
+                        gen.gen_expr(operand);
+                    }
                     _ => {
-                        gen.report_error("取地址暂不支持此表达式", &loc);
-                        gen.emit(OpCode::PushConst, 0, &loc);
+                        // Materialize a temporary for rvalues when taking their address.
+                        // This enables `const T&` parameters to bind to literals / temporaries.
+                        let operand_ty = operand.ty().clone();
+                        if can_materialize_temporary(&operand_ty) {
+                            let sz = gen.type_size(&operand_ty);
+                            let offset = gen.next_local_offset;
+                            gen.next_local_offset += (sz + 3) & !3;
+                            gen.gen_expr(operand);
+                            match operand_ty.kind() {
+                                TypeKind::Double => gen.emit(OpCode::StoreLocalD, offset, &loc),
+                                TypeKind::LongLong => gen.emit(OpCode::StoreLocalQ, offset, &loc),
+                                _ => gen.emit(OpCode::StoreLocal, offset, &loc),
+                            }
+                            gen.emit(OpCode::GetFrameBase, 0, &loc);
+                            gen.emit(OpCode::PushConst, offset, &loc);
+                            gen.emit(OpCode::Add, 0, &loc);
+                        } else {
+                            gen.report_error("取地址暂不支持此表达式", &loc);
+                            gen.emit(OpCode::PushConst, 0, &loc);
+                        }
                     }
                 }
             }
