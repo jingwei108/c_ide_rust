@@ -24,14 +24,15 @@ import sys
 from pathlib import Path
 
 from build_utils import (
+    build_rust_android,
     error,
     find_flutter,
+    get_project_root,
     header,
     info,
     run,
     success,
     warn,
-    get_project_root,
 )
 
 

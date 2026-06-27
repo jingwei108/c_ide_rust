@@ -59,7 +59,8 @@ def error(text: str) -> None:
 
 
 def info(text: str) -> None:
-    print(_c(f"  ℹ {text}", Colors.YELLOW))
+    # 使用 ASCII 字符避免 Windows GBK 终端编码失败
+    print(_c(f"  [i] {text}", Colors.YELLOW))
 
 
 def run(

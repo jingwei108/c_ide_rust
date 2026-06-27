@@ -247,3 +247,60 @@ jobs:
         with:
           name: android-apk
           path: CideFlutter/build/app/outputs/flutter-apk/app-debug.apk
+
+  ios:
+    name: iOS Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.29.x'
+          cache: true
+
+      - name: Install Rust (with iOS targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native
+
+      - name: Install flutter_rust_bridge_codegen
+        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: CideFlutter
+
+      - name: Generate FRB bindings
+        run: flutter_rust_bridge_codegen generate
+        working-directory: CideFlutter
+
+      # CocoaPods 已随 Xcode 安装在 macOS runner 上。
+      # pod install 会读取 rust_builder/ios/cide_native.podspec，
+      # 其中通过 cargokit build_pod.sh 在 Xcode 编译阶段自动构建 Rust 静态库。
+      - name: Install CocoaPods dependencies
+        run: |
+          cd CideFlutter/ios
+          pod install --repo-update
+        env:
+          LANG: en_US.UTF-8
+
+      # --no-codesign 仅验证编译通过，不上传 App Store，适合 CI 回归。
+      - name: Build iOS (Release, no codesign)
+        run: flutter build ios --release --no-codesign
+        working-directory: CideFlutter
+
+      - name: Upload iOS build artifacts
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: ios-build
+          path: |
+            CideFlutter/build/ios/iphoneos/Runner.app
+            CideFlutter/build/ios/Release-iphoneos/*.app
