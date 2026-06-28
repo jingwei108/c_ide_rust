@@ -177,3 +177,50 @@ fn test_type_checker_incompatible_pointer_assignment_warns() {
         warnings
     );
 }
+
+#[test]
+fn test_type_checker_pointer_add_assign_valid() {
+    let (errors, _, _) = type_check("int main() { int a[5]; int *p = a; p += 2; return 0; }");
+    assert!(errors.is_empty(), "Pointer += int should be valid: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_pointer_sub_assign_valid() {
+    let (errors, _, _) = type_check("int main() { int a[5]; int *p = a + 4; p -= 1; return 0; }");
+    assert!(errors.is_empty(), "Pointer -= int should be valid: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_void_pointer_add_assign_valid() {
+    let (errors, _, _) = type_check("int main() { char buf[10]; void *p = buf; p += 3; return 0; }");
+    assert!(errors.is_empty(), "void* += int should be valid: {:?}", errors);
+}
+
+#[test]
+fn test_type_checker_pointer_mul_assign_error() {
+    let (errors, _, _) = type_check("int main() { int *p; p *= 2; return 0; }");
+    assert!(!errors.is_empty(), "Pointer *= should report an error");
+    assert!(errors.iter().any(|e| e.code == 3045), "Expected E3045_CompoundAssignType");
+}
+
+#[test]
+fn test_type_checker_pointer_add_assign_pointer_error() {
+    let (errors, _, _) = type_check("int main() { int *p, *q; p += q; return 0; }");
+    assert!(!errors.is_empty(), "Pointer += pointer should report an error");
+    assert!(errors.iter().any(|e| e.code == 3045), "Expected E3045_CompoundAssignType");
+}
+
+#[test]
+fn test_type_checker_function_pointer_add_assign_error() {
+    let src = r#"
+        int f(int x) { return x; }
+        int main() {
+            int (*fp)(int) = f;
+            fp += 1;
+            return 0;
+        }
+    "#;
+    let (errors, _, _) = type_check(src);
+    assert!(!errors.is_empty(), "Function pointer += should report an error");
+    assert!(errors.iter().any(|e| e.code == 3045), "Expected E3045_CompoundAssignType");
+}

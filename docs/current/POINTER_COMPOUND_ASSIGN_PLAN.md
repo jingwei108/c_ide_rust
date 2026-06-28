@@ -291,14 +291,14 @@ StoreLocal p
 
 ## 7. 实施顺序与里程碑
 
-| 阶段 | 任务 | 预计文件 | 验收标准 |
-|------|------|----------|----------|
-| P0 | TypeChecker 支持 `p += n` / `p -= n` 类型检查 | `cide_typeck/src/expr/ops.rs` | `int* p; p += 2;` 不再报 E3045；错误场景仍正确报错 |
-| P1 | BytecodeGen 生成指针步长缩放字节码 | `cide_codegen/src/expr/assign.rs` | 输出与 Clang 一致 |
-| P2 | Baseline 回归用例 | `native/tests/cases/baseline/` | Shadow Verification 通过 |
-| P3 | 错误诊断用例与单元测试 | `native/tests/` | 错误码与提示准确 |
-| P4 | 文档同步 | `C_SUBSET_SPEC.md` / `AGENTS.md` / `CHANGELOG.md` | 文档与实现一致 |
-| P5 | CI 全量回归 | `.github/workflows/ci.yml` | `cargo test` / `shadow_verify.py` / `flutter test` 全绿 |
+| 阶段 | 任务 | 预计文件 | 验收标准 | 状态 |
+|------|------|----------|----------|------|
+| P0 | TypeChecker 支持 `p += n` / `p -= n` 类型检查 | `cide_typeck/src/expr/ops.rs` | `int* p; p += 2;` 不再报 E3045；错误场景仍正确报错 | ✅ 2026-06-28 |
+| P1 | BytecodeGen 生成指针步长缩放字节码 | `cide_codegen/src/expr/assign.rs` | 输出与 Clang 一致 | ✅ 2026-06-28 |
+| P2 | Baseline 回归用例 | `native/tests/cases/baseline/` | Shadow Verification 通过 | ✅ 2026-06-28（9 个用例） |
+| P3 | 错误诊断用例与单元测试 | `native/tests/` | 错误码与提示准确 | ✅ 2026-06-28（新增 6 个 TypeChecker 单元测试） |
+| P4 | 文档同步 | `C_SUBSET_SPEC.md` / `CPP_SUBSET_SPEC.md` / `AGENTS.md` / `AGENTS_EN.md` / `CHANGELOG.md` | 文档与实现一致 | ✅ 2026-06-28 |
+| P5 | CI 全量回归 | `.github/workflows/ci.yml` | `cargo test` / `shadow_verify.py` / `flutter test` 全绿 | ✅ 2026-06-28（`cargo test` 全绿；Shadow Verification baseline 314/314 匹配） |
 
 ## 8. 风险与回退策略
 

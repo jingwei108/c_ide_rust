@@ -35,6 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - 传输层：`AutoStepResult` / `StepStreamBatch` 增加 `cache_start_step`，`api/cide.rs` 暴露 `get_frame_cache_start_step()`
   - `VarHistoryTab` 改为显示当前窗口内的变量历史，避免遍历全量帧
   - 新增 `native/tests/unified_engine_window_test.rs` 验证窗口化后的公共 API 行为
+- **指针复合赋值运算符全面拓展**：支持指针与整数的 `+=` / `-=` 复合赋值
+  - `cide_typeck`：对 `AddAssign` / `SubAssign` 单独分支，允许左侧为完整对象类型指针（含 `void*`）、右侧为整数；函数指针、指针与指针的运算、其他复合赋值运算符保持清晰报错（`E3045_CompoundAssignType`）。
+  - `cide_codegen`：在 `gen_assign` 中提取 `ptr_step` 并在 `AddAssign` / `SubAssign` 分支中生成 `PushConst step`、`Mul`、`Add`/`Sub` 序列，复用现有标量复合赋值的左值形态处理（局部/全局/静态/解引用/成员/数组索引）。
+  - 新增 9 个 `baseline/pointer_add_assign*.c` 回归用例，覆盖普通数据指针、`char*`、`double*`、`struct S*`、多级指针 `int**`、负整数偏移、结构体成员指针、`void*` 扩展以及右侧带副作用表达式。
+  - 诚实记录：`void*` 算术按 GCC/Clang 扩展以 1 字节处理，严格 C 标准未定义；复合赋值表达式返回值在 Cide 中为右值指针，与 C 标准左值语义存在差异。
 
 ### Fixed (模板系统修复与测试框架)
 - **模板系统全面修复**：修复点击模板后无法退出、C++ 模板无法加载、覆盖率显示超过 100% 等问题

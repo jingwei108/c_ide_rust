@@ -129,7 +129,7 @@ Cide adopts **five layers of collaborative test defenses**. Core philosophy: *te
 
 The same C source is compiled and executed by both **Clang** and **Cide**, and stdout outputs are compared for exact match. Golden outputs must come from Clang, never from Cide itself.
 
-- **Coverage**: 305 Baseline cases + 82 template-generated cases + 81 K&R cases + 138 LeetCode problems + 14 gap cases (620 C Shadow Verification cases total, 616 matched, counting match + cide_better + known_issue); 93 C++ cases (C++ Shadow Verification, 93/93 green; measured 2026-06-26)
+- **Coverage**: 314 Baseline cases + 82 template-generated cases + 81 K&R cases + 138 LeetCode problems + 14 gap cases (629 C Shadow Verification cases total, 607 exact match + 16 cide_better + 2 known_issue, counting match + cide_better + known_issue); 100 C++ cases (C++ Shadow Verification, 98 match + 2 recorded `clang_compile_fail`: `cpp_cide_vec_class` / `cpp_cide_list_class` cannot be compiled directly by Clang++ because they use Cide built-in containers; measured 2026-06-28)
 - **Drivers**: `python native/tests/shadow_verification/shadow_verify.py`, `python scripts/shadow_verify_cpp.py`
 - **Reports**: `native/tests/shadow_verification/reports/`
 
@@ -137,7 +137,7 @@ The same C source is compiled and executed by both **Clang** and **Cide**, and s
 
 Collect real teaching/competition code as end-to-end regression cases to verify "can real-world code run".
 
-- **Baseline**: `native/tests/cases/baseline/` (302 cases, all green)
+- **Baseline**: `native/tests/cases/baseline/` (314 cases, all green)
 - **K&R**: *The C Programming Language* exercises (76 cases, 76 green, 0 known failures)
 - **Template Generated**: algorithm template batch generation (82 cases, 78 green, 4 known failures)
 - **LeetCode**: Phase 4 + Phase 5 fully implemented; current 138 problems all pass, see `native/tests/LEETCODE_FAILURES.md`
@@ -208,7 +208,7 @@ The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** ca
 
 **Statements**: variable declarations (including multiple variables, block scope), `if/else`, `while`, `do...while`, `for` (C99-style variable declaration), `switch/case/default`, `break`, `continue`, `return`
 
-**Expressions**: arithmetic, comparison, logical (short-circuit evaluation), bitwise `& | ^ ~ << >>`, assignment (including compound assignment), ternary `?:`, array index, function call, `&`, `*`, struct access `.` / `->`, `++` / `--`, `sizeof`
+**Expressions**: arithmetic, comparison, logical (short-circuit evaluation), bitwise `& | ^ ~ << >>`, assignment (including compound assignment; pointer `+=` / `-=` with integer is supported with pointee-size scaling, and `void*` arithmetic uses 1-byte steps as a GCC/Clang extension), ternary `?:`, array index, function call, `&`, `*`, struct access `.` / `->`, `++` / `--`, `sizeof`
 
 **Functions**: definition/call/recursion/forward declaration, **functions returning struct by value** (Hidden Return Pointer ABI)
 
@@ -257,6 +257,8 @@ The following inconsistencies between Cide and Clang were discovered during Leet
 - ~~**VLA bounds checking missing**~~ — **Fixed (2026-06-25)**. `gen_index` now emits runtime bounds checking for VLAs whose first dimension is a variable expression via the new `TrapBoundsVla` opcode; the VM compares the index against the runtime-evaluated bound. Regression case added at `baseline/vla_bounds.c`. VLA parameters decayed to pointers are still unchecked.
 - ~~**Parameterized macro calls followed by semicolon**~~ — **Fixed (extension, 2026-06-25)**. `cide_lexer` dynamically wraps brace-enclosed parametric macro bodies as `do { ... } while(0)` when the call is followed by a semicolon, allowing `SWAP(int,x,y);` to parse inside `if/else`. Regression test added at `end_to_end_extra_test::test_e2e_parametric_macro_swap_semicolon`.
   - ⚠️ **Behavioral difference from Clang**: Clang rejects the unwrapped `{ ... };` form, while Cide supports it as a teaching convenience.
+- **Pointer compound assignment `+=` / `-=`** — **Supported (2026-06-28)**. `int* p; p += n;` and `p -= n;` are supported end-to-end with pointee-size scaling; `void* p; p += n;` uses 1-byte steps as a GCC/Clang extension. Function pointer arithmetic, pointer-pointer `+=` / `-=`, and other compound operators (`*=`, `/=`, etc.) remain errors. Regression cases added at `baseline/pointer_add_assign*.c`.
+  - ⚠️ **Behavioral difference from Clang**: `void*` arithmetic is a GCC/Clang extension and is undefined in strict C; prefer concrete pointer types in teaching. The value returned by a compound assignment expression is an rvalue pointer in Cide, differing from the C standard lvalue semantics, though this is rarely relied upon in teaching code.
 
 > Historical feature details and bug-fix records are in [`CHANGELOG.md`](CHANGELOG.md) and [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md).
 

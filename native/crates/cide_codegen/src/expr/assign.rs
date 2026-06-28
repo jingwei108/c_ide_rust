@@ -31,17 +31,44 @@ impl BytecodeGen {
     // TODO(#D08): gen_assign 超过 500 行，未来可按赋值目标类型（标量/结构体/数组）拆分子函数。
     #[allow(clippy::too_many_lines)]
     pub(crate) fn gen_assign(&mut self, op: &AssignOp, left: &mut Expr, right: &mut Expr, loc: &SourceLoc) {
-        let left_is_double = left.ty().kind() == TypeKind::Double;
-        let left_is_float = left.ty().kind() == TypeKind::Float;
-        let left_is_long_long = left.ty().kind() == TypeKind::LongLong;
-        let left_is_unsigned = left.ty().is_unsigned();
+        let left_ty = left.ty().clone();
+        let left_is_double = left_ty.kind() == TypeKind::Double;
+        let left_is_float = left_ty.kind() == TypeKind::Float;
+        let left_is_long_long = left_ty.kind() == TypeKind::LongLong;
+        let left_is_unsigned = left_ty.is_unsigned();
+        let left_is_ptr = left_ty.is_pointer();
+        let is_ptr_compound = matches!(*op, AssignOp::AddAssign | AssignOp::SubAssign);
+        let ptr_step = if left_is_ptr {
+            if let Type::Pointer { pointee, .. } = &left_ty {
+                if pointee.is_void() {
+                    1
+                } else {
+                    self.ptr_step_size(&left_ty)
+                }
+            } else {
+                self.ptr_step_size(&left_ty)
+            }
+        } else {
+            0
+        };
+        let mut gen_right = |this: &mut Self| {
+            if left_is_ptr && is_ptr_compound {
+                this.gen_expr(right);
+            } else {
+                this.gen_expr_with_cast(right, &left_ty, loc);
+            }
+        };
         if (left.ty().is_struct() || left.ty().is_class()) && *op == AssignOp::Assign {
             self.gen_struct_copy(left, right, loc);
             return;
         }
         let emit_compound = |this: &mut Self, loc: &SourceLoc| match op {
             AssignOp::AddAssign => {
-                if left_is_double {
+                if left_is_ptr {
+                    this.emit(OpCode::PushConst, ptr_step, loc);
+                    this.emit(OpCode::Mul, 0, loc);
+                    this.emit(OpCode::Add, 0, loc);
+                } else if left_is_double {
                     this.emit(OpCode::AddD, 0, loc);
                 } else if left_is_float {
                     this.emit(OpCode::AddF, 0, loc);
@@ -54,7 +81,11 @@ impl BytecodeGen {
                 }
             }
             AssignOp::SubAssign => {
-                if left_is_double {
+                if left_is_ptr {
+                    this.emit(OpCode::PushConst, ptr_step, loc);
+                    this.emit(OpCode::Mul, 0, loc);
+                    this.emit(OpCode::Sub, 0, loc);
+                } else if left_is_double {
                     this.emit(OpCode::SubD, 0, loc);
                 } else if left_is_float {
                     this.emit(OpCode::SubF, 0, loc);
@@ -312,10 +343,10 @@ impl BytecodeGen {
                     } else {
                         self.emit(OpCode::LoadGlobal, static_offset, loc);
                     }
-                    self.gen_expr_with_cast(right, left.ty(), loc);
+                    gen_right(self);
                     emit_compound(self, loc);
                 } else {
-                    self.gen_expr_with_cast(right, left.ty(), loc);
+                    gen_right(self);
                 }
                 if left_is_double {
                     self.emit(OpCode::StoreGlobalD, static_offset, loc);
@@ -343,10 +374,10 @@ impl BytecodeGen {
                     } else {
                         self.emit(OpCode::LoadLocal, local_offset, loc);
                     }
-                    self.gen_expr_with_cast(right, left.ty(), loc);
+                    gen_right(self);
                     emit_compound(self, loc);
                 } else {
-                    self.gen_expr_with_cast(right, left.ty(), loc);
+                    gen_right(self);
                 }
                 if left_is_double {
                     self.emit(OpCode::StoreLocalD, local_offset, loc);
@@ -374,10 +405,10 @@ impl BytecodeGen {
                     } else {
                         self.emit(OpCode::LoadGlobal, global_offset, loc);
                     }
-                    self.gen_expr_with_cast(right, left.ty(), loc);
+                    gen_right(self);
                     emit_compound(self, loc);
                 } else {
-                    self.gen_expr_with_cast(right, left.ty(), loc);
+                    gen_right(self);
                 }
                 if left_is_double {
                     self.emit(OpCode::StoreGlobalD, global_offset, loc);
@@ -412,7 +443,7 @@ impl BytecodeGen {
                 self.emit(OpCode::Swap, 0, loc);
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
-                self.gen_expr_with_cast(right, left.ty(), loc);
+                gen_right(self);
                 emit_compound(self, loc);
                 self.emit(OpCode::LoadLocal, addr_temp, loc);
                 self.emit(OpCode::Swap, 0, loc);
@@ -439,7 +470,7 @@ impl BytecodeGen {
                 self.emit(OpCode::Dup, 0, loc);
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
-                self.gen_expr_with_cast(right, left.ty(), loc);
+                gen_right(self);
                 if result_ty.kind() == TypeKind::Char {
                     self.emit(OpCode::StoreMemByte, 0, loc);
                 } else if result_ty.kind() == TypeKind::Double {
@@ -481,7 +512,7 @@ impl BytecodeGen {
                 self.emit(OpCode::Swap, 0, loc);
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
-                self.gen_expr_with_cast(right, left.ty(), loc);
+                gen_right(self);
                 emit_compound(self, loc);
                 self.emit(OpCode::LoadLocal, addr_temp, loc);
                 self.emit(OpCode::Swap, 0, loc);
@@ -508,7 +539,7 @@ impl BytecodeGen {
                 self.emit(OpCode::Dup, 0, loc);
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
-                self.gen_expr_with_cast(right, left.ty(), loc);
+                gen_right(self);
                 if left_is_char {
                     self.emit(OpCode::StoreMemByte, 0, loc);
                 } else if left_is_double {
@@ -556,7 +587,7 @@ impl BytecodeGen {
                 self.emit(OpCode::Swap, 0, loc);
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
-                self.gen_expr_with_cast(right, left.ty(), loc);
+                gen_right(self);
                 emit_compound(self, loc);
                 self.emit(OpCode::LoadLocal, addr_temp, loc);
                 self.emit(OpCode::Swap, 0, loc);
@@ -579,7 +610,7 @@ impl BytecodeGen {
                 self.emit(OpCode::Dup, 0, loc);
                 let addr_temp = self.get_temp_slot(0);
                 self.emit(OpCode::StoreLocal, addr_temp, loc);
-                self.gen_expr_with_cast(right, left.ty(), loc);
+                gen_right(self);
                 if left_is_double {
                     self.emit(OpCode::StoreMemD, 0, loc);
                 } else if left_is_long_long {
@@ -600,7 +631,7 @@ impl BytecodeGen {
         }
 
         self.report_error("赋值目标不支持", loc);
-        self.gen_expr_with_cast(right, left.ty(), loc);
+        gen_right(self);
         self.emit(OpCode::Pop, 0, loc);
         self.emit(OpCode::PushConst, 0, loc);
     }

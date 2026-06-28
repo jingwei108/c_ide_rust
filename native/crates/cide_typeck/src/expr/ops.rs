@@ -272,7 +272,15 @@ impl TypeChecker {
                 }
             }
         }
-        if !self.check_assignable(&left_type, &right_type, loc) {
+        let is_ptr_compound = matches!(*op, AssignOp::AddAssign | AssignOp::SubAssign);
+        let left_is_ptr = left_type.is_pointer();
+        let left_is_func_ptr = left_type.is_function_pointer();
+        let right_is_int = self.is_int(&right_type) || right_type.kind() == TypeKind::LongLong;
+        let ptr_compound_ok = is_ptr_compound && left_is_ptr && !left_is_func_ptr && right_is_int;
+
+        if ptr_compound_ok {
+            // 指针 +=/-= 整数：跳过普通赋值兼容性检查，右侧保持整数类型。
+        } else if !self.check_assignable(&left_type, &right_type, loc) {
             self.report_error(
                 &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", right_type, left_type),
                 loc,
@@ -281,12 +289,26 @@ impl TypeChecker {
         } else {
             insert_implicit_cast(right, &left_type);
         }
-        if *op != AssignOp::Assign && (!self.is_scalar(&left_type) || !self.is_scalar(&right_type)) {
-            self.report_error(
-                "复合赋值要求两边都是标量类型（int、float、double 或 long long）",
-                loc,
-                ErrorCode::E3045_CompoundAssignType,
-            );
+
+        if *op != AssignOp::Assign {
+            if ptr_compound_ok {
+                // 指针与整数的 +=/-= 已允许。
+            } else if left_is_ptr {
+                let msg = if is_ptr_compound && left_is_func_ptr {
+                    "函数指针不支持算术运算"
+                } else if is_ptr_compound && !right_is_int {
+                    "指针的复合赋值要求右侧为整数类型"
+                } else {
+                    "指针不支持此复合赋值运算符"
+                };
+                self.report_error(msg, loc, ErrorCode::E3045_CompoundAssignType);
+            } else if !self.is_scalar(&left_type) || !self.is_scalar(&right_type) {
+                self.report_error(
+                    "复合赋值要求两边都是标量类型（int、float、double 或 long long）",
+                    loc,
+                    ErrorCode::E3045_CompoundAssignType,
+                );
+            }
         }
         *ty = left_type.clone();
         ty.clone()
