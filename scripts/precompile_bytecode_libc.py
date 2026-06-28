@@ -4,7 +4,7 @@
 开发流程：
 1. 修改 native/runtime_libc/src/*.c
 2. 运行 python scripts/precompile_bytecode_libc.py
-3. git add native/src/vm/bytecode_libc_data.json native/src/vm/bytecode_libc_index.rs
+3. git add native/crates/cide_vm/src/bytecode_libc_data.json native/crates/cide_runtime/src/bytecode_libc_index.rs
 4. git commit
 
 CI 检查：
@@ -24,11 +24,13 @@ RUNTIME_LIBC_SRC_DIRS = [
     os.path.join(NATIVE_DIR, "runtime_libc", "src"),
     os.path.join(NATIVE_DIR, "runtime_libc", "cide"),
 ]
-VM_DIR = os.path.join(NATIVE_DIR, "src", "vm")
+VM_DIR = os.path.join(NATIVE_DIR, "crates", "cide_vm", "src")
 OUTPUT_JSON = os.path.join(VM_DIR, "bytecode_libc_data.json")
-OUTPUT_RS = os.path.join(VM_DIR, "bytecode_libc_index.rs")
+OUTPUT_RS = os.path.join(
+    NATIVE_DIR, "crates", "cide_runtime", "src", "bytecode_libc_index.rs"
+)
 LAYOUT_JSON = os.path.join(
-    NATIVE_DIR, "src", "compiler", "cpp_frontend", "builtin_layout_data.json"
+    NATIVE_DIR, "crates", "cide_cpp_frontend", "src", "builtin_layout_data.json"
 )
 
 

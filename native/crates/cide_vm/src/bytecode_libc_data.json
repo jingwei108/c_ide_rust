@@ -3084,7 +3084,7 @@
     },
     {
       "op": "StoreGlobal",
-      "operand": 12288,
+      "operand": 13312,
       "loc": {
         "line": 437,
         "column": 5
@@ -3092,7 +3092,7 @@
     },
     {
       "op": "LoadGlobal",
-      "operand": 12288,
+      "operand": 13312,
       "loc": {
         "line": 437,
         "column": 5
@@ -3132,7 +3132,7 @@
     },
     {
       "op": "LoadGlobal",
-      "operand": 12288,
+      "operand": 13312,
       "loc": {
         "line": 441,
         "column": 19
@@ -3172,7 +3172,7 @@
     },
     {
       "op": "StoreGlobal",
-      "operand": 12288,
+      "operand": 13312,
       "loc": {
         "line": 441,
         "column": 5
@@ -3180,7 +3180,7 @@
     },
     {
       "op": "LoadGlobal",
-      "operand": 12288,
+      "operand": 13312,
       "loc": {
         "line": 441,
         "column": 5
@@ -3204,7 +3204,7 @@
     },
     {
       "op": "LoadGlobal",
-      "operand": 12288,
+      "operand": 13312,
       "loc": {
         "line": 442,
         "column": 19
@@ -7516,7 +7516,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 12,
+      "operand": 20,
       "loc": {
         "line": 34,
         "column": 10
@@ -7532,7 +7532,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 12,
+      "operand": 20,
       "loc": {
         "line": 34,
         "column": 10
@@ -8100,7 +8100,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 12,
+      "operand": 20,
       "loc": {
         "line": 45,
         "column": 10
@@ -8116,7 +8116,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 12,
+      "operand": 20,
       "loc": {
         "line": 45,
         "column": 10
@@ -9228,7 +9228,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 68,
         "column": 10
@@ -9244,7 +9244,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 68,
         "column": 10
@@ -10156,7 +10156,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 100,
         "column": 10
@@ -10172,7 +10172,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 100,
         "column": 10
@@ -12244,7 +12244,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 209,
         "column": 12
@@ -12260,7 +12260,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 209,
         "column": 12
@@ -12860,7 +12860,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 12,
+      "operand": 16,
       "loc": {
         "line": 218,
         "column": 12
@@ -12884,7 +12884,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 12,
+      "operand": 16,
       "loc": {
         "line": 218,
         "column": 12
@@ -14196,7 +14196,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 259,
         "column": 10
@@ -14212,7 +14212,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 259,
         "column": 10
@@ -15876,7 +15876,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 302,
         "column": 12
@@ -15892,7 +15892,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 302,
         "column": 12
@@ -17348,7 +17348,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 341,
         "column": 10
@@ -17364,7 +17364,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 341,
         "column": 10
@@ -18812,7 +18812,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 302,
         "column": 12
@@ -18828,7 +18828,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 302,
         "column": 12
@@ -20308,7 +20308,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 341,
         "column": 10
@@ -20324,7 +20324,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 341,
         "column": 10
@@ -21772,7 +21772,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 302,
         "column": 12
@@ -21788,7 +21788,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 24,
       "loc": {
         "line": 302,
         "column": 12
@@ -23244,7 +23244,7 @@
     },
     {
       "op": "StoreLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 341,
         "column": 10
@@ -23260,7 +23260,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 8,
+      "operand": 16,
       "loc": {
         "line": 341,
         "column": 10
@@ -23996,6 +23996,438 @@
     },
     {
       "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "PushConst",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "RetVoid",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Dup",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "StoreMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Pop",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadLocal",
       "operand": 0,
       "loc": {
         "line": 0,
@@ -24468,374 +24900,6 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Add",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Dup",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Add",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Pop",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Add",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Dup",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Pop",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "RetVoid",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Dup",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Pop",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Add",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Dup",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Add",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Pop",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
       "operand": 4,
       "loc": {
         "line": 0,
@@ -24996,70 +25060,6 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Dup",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "PushConst",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "StoreMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Pop",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadLocal",
       "operand": 0,
       "loc": {
         "line": 0,
@@ -25164,7 +25164,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 4,
+      "operand": 0,
       "loc": {
         "line": 0,
         "column": 0
@@ -25172,7 +25172,7 @@
     },
     {
       "op": "PushConst",
-      "operand": 4,
+      "operand": 8,
       "loc": {
         "line": 0,
         "column": 0
@@ -25203,7 +25203,31 @@
       }
     },
     {
+      "op": "LoadLocal",
+      "operand": 4,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
       "op": "PushConst",
+      "operand": 8,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "Add",
+      "operand": 0,
+      "loc": {
+        "line": 0,
+        "column": 0
+      }
+    },
+    {
+      "op": "LoadMem",
       "operand": 0,
       "loc": {
         "line": 0,
@@ -25244,7 +25268,7 @@
     },
     {
       "op": "LoadLocal",
-      "operand": 0,
+      "operand": 4,
       "loc": {
         "line": 0,
         "column": 0
@@ -25283,31 +25307,7 @@
       }
     },
     {
-      "op": "LoadLocal",
-      "operand": 4,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
       "op": "PushConst",
-      "operand": 8,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "Add",
-      "operand": 0,
-      "loc": {
-        "line": 0,
-        "column": 0
-      }
-    },
-    {
-      "op": "LoadMem",
       "operand": 0,
       "loc": {
         "line": 0,
@@ -27100,88 +27100,53 @@
     }
   ],
   "func_table": {
-    "__dtor__cide_list_int": {
-      "ip": 1379,
+    "cide_string__size": {
+      "ip": 1618,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "strcpy": {
-      "ip": 479,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 16,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_vec_float__back": {
-      "ip": 2445,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_float__pop_back": {
-      "ip": 2366,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 12,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_list_int__push_back": {
-      "ip": 859,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 20,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "__ctor__cide_vec_int": {
-      "ip": 1840,
+    "strlen": {
+      "ip": 408,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 8,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_int__back": {
-      "ip": 2076,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
+    "__ctor__cide_vec_int__move": {
+      "ip": 3044,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 12,
       "param_sizes": [
+        1,
         1
-      ]
-    },
-    "cide_vec_float__front": {
-      "ip": 2419,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "tolower": {
-      "ip": 105,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "cide_string__get": {
       "ip": 1634,
@@ -27191,7 +27156,156 @@
       "param_sizes": [
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "isalpha": {
+      "ip": 51,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_string__move": {
+      "ip": 3123,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 12,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_char__push_back": {
+      "ip": 2610,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 28,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__dtor__cide_vec_char": {
+      "ip": 2936,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_string__back": {
+      "ip": 1682,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_list_int__back": {
+      "ip": 1190,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_vec_int": {
+      "ip": 1840,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_string__pop_back": {
+      "ip": 1562,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 20,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_char__front": {
+      "ip": 2788,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "abs": {
       "ip": 270,
@@ -27200,45 +27314,14 @@
       "local_count": 4,
       "param_sizes": [
         1
-      ]
-    },
-    "cide_vec_char__get": {
-      "ip": 2911,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 8,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "__ctor__cide_string__move": {
-      "ip": 3169,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 12,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_vec_int__front": {
-      "ip": 2051,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_float__capacity": {
-      "ip": 2410,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "cide_string__clear": {
       "ip": 1797,
@@ -27247,122 +27330,92 @@
       "local_count": 8,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_float__pop_front": {
-      "ip": 2474,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 16,
-      "param_sizes": [
-        1
-      ]
-    },
-    "srand": {
-      "ip": 382,
+    "cide_vec_float__capacity": {
+      "ip": 2410,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "isxdigit": {
-      "ip": 239,
+    "islower": {
+      "ip": 77,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_char__push_back": {
-      "ip": 2610,
+    "__ctor__cide_list_int": {
+      "ip": 826,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "strcmp": {
+      "ip": 439,
       "arg_count": 2,
       "param_count": 2,
-      "local_count": 24,
+      "local_count": 8,
       "param_sizes": [
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_char__size": {
-      "ip": 2772,
+    "cide_string__pop_front": {
+      "ip": 1710,
       "arg_count": 1,
       "param_count": 1,
-      "local_count": 4,
+      "local_count": 20,
       "param_sizes": [
         1
-      ]
-    },
-    "isspace": {
-      "ip": 155,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__ctor__cide_list_int__move": {
-      "ip": 3115,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 12,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_vec_float__size": {
-      "ip": 2403,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_sort_int_qsort__int": {
-      "ip": 3231,
-      "arg_count": 3,
-      "param_count": 3,
-      "local_count": 24,
-      "param_sizes": [
-        1,
-        1,
-        1
-      ]
-    },
-    "cide_string__pop_back": {
-      "ip": 1562,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 16,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_string__push_back": {
-      "ip": 1417,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 24,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "strncpy": {
-      "ip": 594,
-      "arg_count": 3,
-      "param_count": 3,
-      "local_count": 24,
-      "param_sizes": [
-        1,
-        1,
-        1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "__ctor__cide_vec_char": {
       "ip": 2577,
@@ -27371,36 +27424,29 @@
       "local_count": 8,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_int__get": {
-      "ip": 2174,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 8,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_vec_float__push_back": {
-      "ip": 2240,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 24,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_vec_int__capacity": {
-      "ip": 2042,
+    "toupper": {
+      "ip": 130,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "memcpy": {
       "ip": 681,
@@ -27411,98 +27457,57 @@
         1,
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Pointer": {
+          "pointee": {
+            "Void": {
+              "is_const": false
+            }
+          },
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_char__front": {
-      "ip": 2788,
+    "isalnum": {
+      "ip": 193,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "iscntrl": {
-      "ip": 219,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__cide_force_instantiate_cide_sort_int": {
-      "ip": 1,
-      "arg_count": 0,
-      "param_count": 0,
+    "strncpy": {
+      "ip": 594,
+      "arg_count": 3,
+      "param_count": 3,
       "local_count": 24,
-      "param_sizes": []
-    },
-    "islower": {
-      "ip": 77,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_list_int__back": {
-      "ip": 1190,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_sort_int_swap__int": {
-      "ip": 3362,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 16,
       "param_sizes": [
         1,
-        1
-      ]
-    },
-    "cide_string__c_str": {
-      "ip": 1648,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__ctor__cide_vec_float__move": {
-      "ip": 2990,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 12,
-      "param_sizes": [
         1,
         1
-      ]
-    },
-    "cide_list_int__clear": {
-      "ip": 1321,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 16,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_sort_int__int": {
-      "ip": 3215,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 8,
-      "param_sizes": [
-        1,
-        1
-      ]
+      ],
+      "return_type": {
+        "Pointer": {
+          "pointee": {
+            "Char": {
+              "is_unsigned": false,
+              "is_const": false
+            }
+          },
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "cide_list_int__get": {
       "ip": 1275,
@@ -27512,245 +27517,47 @@
       "param_sizes": [
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "atoi": {
-      "ip": 283,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 12,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__dtor__cide_vec_float": {
-      "ip": 2569,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "isdigit": {
-      "ip": 37,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_char__pop_back": {
-      "ip": 2736,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 12,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__dtor__cide_string": {
-      "ip": 1832,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__ctor__cide_vec_float": {
-      "ip": 2207,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 8,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_int__pop_back": {
-      "ip": 1999,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 12,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_int__push_back": {
-      "ip": 1873,
+    "__ctor__cide_list_int__move": {
+      "ip": 2990,
       "arg_count": 2,
       "param_count": 2,
+      "local_count": 12,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_sort_int_qsort__int": {
+      "ip": 3231,
+      "arg_count": 3,
+      "param_count": 3,
       "local_count": 24,
       "param_sizes": [
         1,
-        1
-      ]
-    },
-    "cide_vec_char__clear": {
-      "ip": 2925,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 8,
-      "param_sizes": [
-        1
-      ]
-    },
-    "__ctor__cide_vec_char__move": {
-      "ip": 3036,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 12,
-      "param_sizes": [
         1,
         1
-      ]
-    },
-    "__ctor__cide_string": {
-      "ip": 1384,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 8,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_int__clear": {
-      "ip": 2188,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 8,
-      "param_sizes": [
-        1
-      ]
-    },
-    "toupper": {
-      "ip": 130,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "isalpha": {
-      "ip": 51,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_string__front": {
-      "ip": 1657,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "isprint": {
-      "ip": 205,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_int__pop_front": {
-      "ip": 2104,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 16,
-      "param_sizes": [
-        1
-      ]
-    },
-    "isalnum": {
-      "ip": 193,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_int__size": {
-      "ip": 2035,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_string__pop_front": {
-      "ip": 1710,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 16,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_float__get": {
-      "ip": 2544,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 8,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_list_int__pop_front": {
-      "ip": 1212,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 16,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_list_int__push_front": {
-      "ip": 945,
-      "arg_count": 2,
-      "param_count": 2,
-      "local_count": 20,
-      "param_sizes": [
-        1,
-        1
-      ]
-    },
-    "cide_string__back": {
-      "ip": 1682,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_float__clear": {
-      "ip": 2558,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 8,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_vec_char__back": {
-      "ip": 2813,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 4,
-      "param_sizes": [
-        1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "memmove": {
       "ip": 728,
@@ -27761,34 +27568,79 @@
         1,
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Pointer": {
+          "pointee": {
+            "Void": {
+              "is_const": false
+            }
+          },
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "isupper": {
-      "ip": 91,
+    "__cide_force_instantiate_cide_sort_int": {
+      "ip": 1,
+      "arg_count": 0,
+      "param_count": 0,
+      "local_count": 24,
+      "param_sizes": [],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "isxdigit": {
+      "ip": 239,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_char__capacity": {
-      "ip": 2779,
+    "cide_vec_int__pop_front": {
+      "ip": 2104,
       "arg_count": 1,
       "param_count": 1,
-      "local_count": 4,
+      "local_count": 20,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "strlen": {
-      "ip": 408,
-      "arg_count": 1,
-      "param_count": 1,
+    "cide_vec_char__get": {
+      "ip": 2911,
+      "arg_count": 2,
+      "param_count": 2,
       "local_count": 8,
       "param_sizes": [
+        1,
         1
-      ]
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "cide_list_int__size": {
       "ip": 1163,
@@ -27797,33 +27649,61 @@
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_vec_char__pop_front": {
-      "ip": 2841,
+    "__dtor__cide_list_int": {
+      "ip": 1379,
       "arg_count": 1,
       "param_count": 1,
-      "local_count": 16,
+      "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "rand": {
-      "ip": 389,
-      "arg_count": 0,
-      "param_count": 0,
-      "local_count": 0,
-      "param_sizes": []
+    "cide_string__front": {
+      "ip": 1657,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "strcmp": {
-      "ip": 439,
+    "cide_vec_float__push_back": {
+      "ip": 2240,
       "arg_count": 2,
       "param_count": 2,
-      "local_count": 8,
+      "local_count": 28,
       "param_sizes": [
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "strcat": {
       "ip": 529,
@@ -27833,72 +27713,383 @@
       "param_sizes": [
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Pointer": {
+          "pointee": {
+            "Char": {
+              "is_unsigned": false,
+              "is_const": false
+            }
+          },
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "__ctor__cide_vec_int__move": {
-      "ip": 2944,
+    "cide_vec_char__capacity": {
+      "ip": 2779,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_int__get": {
+      "ip": 2174,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 8,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__front": {
+      "ip": 2419,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Float": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_int__back": {
+      "ip": 2076,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_vec_char__move": {
+      "ip": 3169,
       "arg_count": 2,
       "param_count": 2,
       "local_count": 12,
       "param_sizes": [
         1,
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "__dtor__cide_vec_char": {
-      "ip": 2936,
+    "__dtor__cide_string": {
+      "ip": 1832,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "__ctor__cide_list_node__int__move": {
-      "ip": 3082,
-      "arg_count": 2,
-      "param_count": 2,
+    "cide_vec_char__pop_back": {
+      "ip": 2736,
+      "arg_count": 1,
+      "param_count": 1,
       "local_count": 12,
       "param_sizes": [
-        1,
         1
-      ]
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_string__capacity": {
-      "ip": 1625,
+    "cide_vec_int__size": {
+      "ip": 2035,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "cide_list_int__pop_back": {
-      "ip": 1018,
-      "arg_count": 1,
-      "param_count": 1,
-      "local_count": 24,
-      "param_sizes": [
-        1
-      ]
-    },
-    "cide_string__size": {
-      "ip": 1618,
+    "isprint": {
+      "ip": 205,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
-    "__ctor__cide_list_int": {
-      "ip": 826,
+    "cide_vec_int__clear": {
+      "ip": 2188,
       "arg_count": 1,
       "param_count": 1,
       "local_count": 8,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__clear": {
+      "ip": 2558,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "strcpy": {
+      "ip": 479,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 16,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Pointer": {
+          "pointee": {
+            "Char": {
+              "is_unsigned": false,
+              "is_const": false
+            }
+          },
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_int__front": {
+      "ip": 2051,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_char__size": {
+      "ip": 2772,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_string": {
+      "ip": 1384,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_char__pop_front": {
+      "ip": 2841,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 20,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_vec_float": {
+      "ip": 2207,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "isupper": {
+      "ip": 91,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__back": {
+      "ip": 2445,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Float": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_sort_int__int": {
+      "ip": 3215,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 8,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_list_int__pop_front": {
+      "ip": 1212,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 20,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "srand": {
+      "ip": 382,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_list_int__clear": {
+      "ip": 1321,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 16,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "__dtor__cide_vec_int": {
       "ip": 2199,
@@ -27907,7 +28098,284 @@
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__dtor__cide_vec_float": {
+      "ip": 2569,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "isdigit": {
+      "ip": 37,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__pop_back": {
+      "ip": 2366,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 12,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Float": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__size": {
+      "ip": 2403,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_list_node__int__move": {
+      "ip": 3090,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 12,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__get": {
+      "ip": 2544,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 8,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Float": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "rand": {
+      "ip": 389,
+      "arg_count": 0,
+      "param_count": 0,
+      "local_count": 0,
+      "param_sizes": [],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_list_int__pop_back": {
+      "ip": 1018,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 28,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_float__pop_front": {
+      "ip": 2474,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 20,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_list_int__push_back": {
+      "ip": 859,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 24,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_string__capacity": {
+      "ip": 1625,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_string__c_str": {
+      "ip": 1648,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Pointer": {
+          "pointee": {
+            "Char": {
+              "is_unsigned": false,
+              "is_const": false
+            }
+          },
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_char__clear": {
+      "ip": 2925,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 8,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_string__push_back": {
+      "ip": 1417,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 28,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "atoi": {
+      "ip": 283,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 12,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "__ctor__cide_vec_float__move": {
+      "ip": 2944,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 12,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_int__pop_back": {
+      "ip": 1999,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 12,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     },
     "cide_list_int__front": {
       "ip": 1172,
@@ -27916,102 +28384,237 @@
       "local_count": 4,
       "param_sizes": [
         1
-      ]
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_int__push_back": {
+      "ip": 1873,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 28,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_sort_int_swap__int": {
+      "ip": 3362,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 16,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "isspace": {
+      "ip": 155,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "iscntrl": {
+      "ip": 219,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_char__back": {
+      "ip": 2813,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Char": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "tolower": {
+      "ip": 105,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_list_int__push_front": {
+      "ip": 945,
+      "arg_count": 2,
+      "param_count": 2,
+      "local_count": 24,
+      "param_sizes": [
+        1,
+        1
+      ],
+      "return_type": {
+        "Void": {
+          "is_const": false
+        }
+      },
+      "is_variadic": false
+    },
+    "cide_vec_int__capacity": {
+      "ip": 2042,
+      "arg_count": 1,
+      "param_count": 1,
+      "local_count": 4,
+      "param_sizes": [
+        1
+      ],
+      "return_type": {
+        "Int": {
+          "is_unsigned": false,
+          "is_const": false
+        }
+      },
+      "is_variadic": false
     }
   },
   "func_index": {
-    "cide_vec_char__pop_back": 1070,
-    "__ctor__cide_list_int__move": 1083,
-    "__ctor__cide_vec_int__move": 1079,
-    "cide_vec_char__size": 1071,
-    "__ctor__cide_vec_int": 1046,
-    "cide_string__back": 1042,
-    "cide_vec_float__clear": 1066,
-    "cide_vec_char__pop_front": 1075,
-    "cide_sort_int_qsort__int": 1086,
-    "cide_list_int__back": 1029,
-    "cide_string__pop_back": 1036,
-    "cide_list_int__push_front": 1025,
-    "cide_vec_char__get": 1076,
-    "cide_string__front": 1041,
-    "isalpha": 1002,
-    "strncpy": 1020,
-    "strlen": 1016,
-    "cide_vec_char__back": 1074,
-    "cide_string__capacity": 1038,
-    "__ctor__cide_list_node__int__move": 1082,
-    "cide_string__size": 1037,
-    "__dtor__cide_vec_int": 1056,
-    "cide_vec_int__pop_back": 1048,
-    "cide_vec_char__clear": 1077,
-    "isprint": 1009,
-    "cide_string__pop_front": 1043,
-    "cide_vec_int__size": 1049,
-    "__cide_force_instantiate_cide_sort_int": 1000,
-    "cide_vec_char__front": 1073,
-    "cide_vec_int__back": 1052,
-    "cide_vec_int__push_back": 1047,
-    "__ctor__cide_vec_float__move": 1080,
-    "memmove": 1022,
-    "strcpy": 1018,
-    "cide_vec_int__get": 1054,
-    "cide_vec_float__back": 1063,
-    "memcpy": 1021,
-    "isspace": 1007,
-    "__dtor__cide_vec_char": 1078,
-    "iscntrl": 1010,
-    "cide_list_int__front": 1028,
-    "__dtor__cide_list_int": 1033,
-    "cide_vec_float__get": 1065,
-    "cide_list_int__clear": 1032,
-    "strcmp": 1017,
-    "tolower": 1005,
-    "isalnum": 1008,
-    "rand": 1015,
-    "cide_list_int__size": 1027,
-    "__ctor__cide_vec_char": 1068,
-    "cide_list_int__pop_front": 1030,
-    "__ctor__cide_vec_float": 1057,
-    "cide_vec_float__capacity": 1061,
-    "cide_vec_float__pop_front": 1064,
-    "atoi": 1013,
-    "__dtor__cide_vec_float": 1067,
-    "islower": 1003,
-    "isxdigit": 1011,
-    "cide_list_int__push_back": 1024,
-    "cide_string__clear": 1044,
-    "__ctor__cide_string__move": 1084,
-    "cide_list_int__pop_back": 1026,
-    "__ctor__cide_string": 1034,
-    "strcat": 1019,
-    "toupper": 1006,
-    "cide_string__c_str": 1040,
-    "cide_list_int__get": 1031,
-    "__dtor__cide_string": 1045,
-    "cide_vec_float__pop_back": 1059,
-    "cide_vec_char__push_back": 1069,
-    "__ctor__cide_list_int": 1023,
-    "isupper": 1004,
-    "cide_vec_int__capacity": 1050,
-    "__ctor__cide_vec_char__move": 1081,
-    "cide_sort_int__int": 1085,
-    "cide_vec_int__front": 1051,
-    "cide_vec_float__size": 1060,
-    "srand": 1014,
-    "cide_string__get": 1039,
-    "abs": 1012,
-    "isdigit": 1001,
-    "cide_vec_int__pop_front": 1053,
-    "cide_vec_int__clear": 1055,
-    "cide_vec_char__capacity": 1072,
     "cide_sort_int_swap__int": 1087,
-    "cide_vec_float__push_back": 1058,
+    "__dtor__cide_vec_float": 1067,
+    "cide_vec_float__pop_back": 1059,
+    "cide_vec_int__pop_front": 1053,
+    "cide_list_int__push_front": 1025,
+    "__ctor__cide_vec_char": 1068,
+    "__dtor__cide_vec_int": 1056,
+    "cide_string__size": 1037,
+    "cide_string__pop_back": 1036,
+    "__ctor__cide_list_node__int__move": 1082,
+    "cide_vec_float__clear": 1066,
+    "__ctor__cide_list_int__move": 1080,
+    "__ctor__cide_vec_int__move": 1081,
+    "isalpha": 1002,
+    "strlen": 1016,
+    "srand": 1014,
+    "cide_vec_float__get": 1065,
+    "__ctor__cide_vec_float": 1057,
+    "isprint": 1009,
+    "__ctor__cide_string": 1034,
+    "__ctor__cide_list_int": 1023,
+    "cide_vec_char__front": 1073,
+    "cide_list_int__pop_back": 1026,
+    "cide_list_int__front": 1028,
+    "cide_vec_char__back": 1074,
+    "cide_vec_float__capacity": 1061,
+    "isspace": 1007,
+    "cide_list_int__push_back": 1024,
+    "__dtor__cide_vec_char": 1078,
     "cide_string__push_back": 1035,
-    "cide_vec_float__front": 1062
+    "cide_vec_float__size": 1060,
+    "strcpy": 1018,
+    "cide_vec_char__pop_front": 1075,
+    "cide_vec_char__get": 1076,
+    "__ctor__cide_string__move": 1083,
+    "atoi": 1013,
+    "iscntrl": 1010,
+    "cide_list_int__back": 1029,
+    "cide_string__pop_front": 1043,
+    "cide_string__capacity": 1038,
+    "cide_vec_char__pop_back": 1070,
+    "cide_list_int__clear": 1032,
+    "__ctor__cide_vec_int": 1046,
+    "cide_vec_char__size": 1071,
+    "cide_sort_int_qsort__int": 1086,
+    "cide_vec_int__clear": 1055,
+    "cide_vec_int__size": 1049,
+    "cide_vec_float__front": 1062,
+    "cide_vec_char__clear": 1077,
+    "abs": 1012,
+    "cide_vec_int__push_back": 1047,
+    "__dtor__cide_string": 1045,
+    "cide_vec_float__back": 1063,
+    "cide_sort_int__int": 1085,
+    "__dtor__cide_list_int": 1033,
+    "cide_string__front": 1041,
+    "isxdigit": 1011,
+    "cide_list_int__get": 1031,
+    "tolower": 1005,
+    "cide_string__c_str": 1040,
+    "cide_vec_int__front": 1051,
+    "strncpy": 1020,
+    "cide_vec_int__capacity": 1050,
+    "rand": 1015,
+    "memcpy": 1021,
+    "cide_string__back": 1042,
+    "cide_string__clear": 1044,
+    "cide_vec_int__get": 1054,
+    "strcat": 1019,
+    "cide_vec_int__pop_back": 1048,
+    "isdigit": 1001,
+    "strcmp": 1017,
+    "islower": 1003,
+    "cide_vec_float__push_back": 1058,
+    "cide_list_int__size": 1027,
+    "isalnum": 1008,
+    "cide_string__get": 1039,
+    "cide_vec_float__pop_front": 1064,
+    "cide_list_int__pop_front": 1030,
+    "cide_vec_char__push_back": 1069,
+    "cide_vec_char__capacity": 1072,
+    "isupper": 1004,
+    "cide_vec_int__back": 1052,
+    "memmove": 1022,
+    "toupper": 1006,
+    "__ctor__cide_vec_float__move": 1079,
+    "__ctor__cide_vec_char__move": 1084,
+    "__cide_force_instantiate_cide_sort_int": 1000
   },
   "globals_init_32": [
     [
-      12288,
+      13312,
       1
     ]
   ],
@@ -28019,5 +28622,5 @@
   "string_data": [],
   "f64_constants": [],
   "i64_constants": [],
-  "globals_size": 12292
+  "globals_size": 13316
 }

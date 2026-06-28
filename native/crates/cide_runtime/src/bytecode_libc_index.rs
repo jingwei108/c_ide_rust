@@ -6,7 +6,7 @@
 
 pub const BYTECODE_LIBC_CODE_LEN: usize = 3387;
 pub const BYTECODE_LIBC_BASE_INDEX: i32 = 1000;
-pub const BYTECODE_LIBC_GLOBALS_RESERVED: u32 = 13312;
+pub const BYTECODE_LIBC_GLOBALS_RESERVED: u32 = 14336;
 pub const BYTECODE_LIBC_FUNC_COUNT: usize = 88;
 
 /// Bytecode Libc 中所有可用的函数名（供索引查询使用）。
@@ -92,12 +92,12 @@ pub const BYTECODE_LIBC_ALL_FUNCS: &[&str] = &[
     "cide_vec_char__get",
     "cide_vec_char__clear",
     "__dtor__cide_vec_char",
-    "__ctor__cide_vec_int__move",
     "__ctor__cide_vec_float__move",
-    "__ctor__cide_vec_char__move",
-    "__ctor__cide_list_node__int__move",
     "__ctor__cide_list_int__move",
+    "__ctor__cide_vec_int__move",
+    "__ctor__cide_list_node__int__move",
     "__ctor__cide_string__move",
+    "__ctor__cide_vec_char__move",
     "cide_sort_int__int",
     "cide_sort_int_qsort__int",
     "cide_sort_int_swap__int",
@@ -185,12 +185,12 @@ pub fn bytecode_libc_index(name: &str) -> Option<i32> {
         "cide_vec_char__get" => Some(1076),
         "cide_vec_char__clear" => Some(1077),
         "__dtor__cide_vec_char" => Some(1078),
-        "__ctor__cide_vec_int__move" => Some(1079),
-        "__ctor__cide_vec_float__move" => Some(1080),
-        "__ctor__cide_vec_char__move" => Some(1081),
+        "__ctor__cide_vec_float__move" => Some(1079),
+        "__ctor__cide_list_int__move" => Some(1080),
+        "__ctor__cide_vec_int__move" => Some(1081),
         "__ctor__cide_list_node__int__move" => Some(1082),
-        "__ctor__cide_list_int__move" => Some(1083),
-        "__ctor__cide_string__move" => Some(1084),
+        "__ctor__cide_string__move" => Some(1083),
+        "__ctor__cide_vec_char__move" => Some(1084),
         "cide_sort_int__int" => Some(1085),
         "cide_sort_int_qsort__int" => Some(1086),
         "cide_sort_int_swap__int" => Some(1087),
@@ -202,3 +202,4 @@ pub fn bytecode_libc_index(name: &str) -> Option<i32> {
 pub fn is_bytecode_libc(name: &str) -> bool {
     bytecode_libc_index(name).is_some()
 }
+

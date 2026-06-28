@@ -18,9 +18,11 @@ xcuserdata
 Flutter/App.framework
 Flutter/Flutter.framework
 Flutter/Flutter.podspec
-Flutter/AppFrameworkInfo.plist
-Flutter/Debug.xcconfig
-Flutter/Release.xcconfig
+# 注意：以下三个文件是 Xcode 项目引用的基础配置文件，CI 需要它们存在。
+# 虽然 Flutter 默认忽略，但本项目需要提交以保证 iOS CI 构建通过。
+!Flutter/AppFrameworkInfo.plist
+!Flutter/Debug.xcconfig
+!Flutter/Release.xcconfig
 Flutter/Generated.xcconfig
 Flutter/ephemeral/
 
