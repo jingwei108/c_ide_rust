@@ -8,6 +8,18 @@ impl TypeChecker {
     // =========================================================================
 
     pub(crate) fn check_struct_initializer(&mut self, struct_type: &Type, init: &mut Expr, loc: &SourceLoc) {
+        // 复合字面量 (struct S){...} 等价于其初始化列表
+        if let Expr::CompoundLiteral { target_type, init: inner, .. } = init {
+            if *target_type != *struct_type {
+                self.report_error(
+                    &format!("复合字面量类型 '{}' 与目标结构体类型 '{}' 不匹配", target_type, struct_type),
+                    loc,
+                    ErrorCode::E3006_ArrayInitTypeMismatch,
+                );
+                return;
+            }
+            return self.check_struct_initializer(struct_type, inner, loc);
+        }
         if !matches!(init, Expr::InitList { .. }) {
             let init_type = self.resolve_expr_type(init);
             if !self.check_assignable(struct_type, &init_type, loc) {
@@ -188,6 +200,28 @@ impl TypeChecker {
     }
 
     pub(crate) fn check_array_initializer(&mut self, arr_type: &mut Type, init: &mut Expr, loc: &SourceLoc) {
+        // 复合字面量 (T[]){...} 等价于其初始化列表
+        if let Expr::CompoundLiteral { target_type, init: inner, .. } = init {
+            if target_type.kind() != TypeKind::Array {
+                self.report_error(
+                    &format!("复合字面量类型 '{}' 不是数组类型", target_type),
+                    loc,
+                    ErrorCode::E3006_ArrayInitTypeMismatch,
+                );
+                return;
+            }
+            // 先递归检查内部初始化列表，让未指定大小的数组（如 int[]）推断出长度
+            self.check_array_initializer(target_type, inner, loc);
+            if *target_type != *arr_type {
+                self.report_error(
+                    &format!("复合字面量类型 '{}' 与目标数组类型 '{}' 不匹配", target_type, arr_type),
+                    loc,
+                    ErrorCode::E3006_ArrayInitTypeMismatch,
+                );
+                return;
+            }
+            return;
+        }
         let elem_type = arr_type.innermost_element_type();
 
         if !arr_type.dims().is_empty() && arr_type.dims().len() > 1 {
@@ -272,8 +306,11 @@ impl TypeChecker {
             let mut expected_size = arr_type.array_size();
             if expected_size <= 0 {
                 expected_size = elements.len() as i32;
-                if let Type::Array { array_size, .. } = arr_type {
+                if let Type::Array { array_size, dims, .. } = arr_type {
                     *array_size = expected_size;
+                    if !dims.is_empty() {
+                        dims[0] = expected_size;
+                    }
                 }
             }
             if elements.len() > expected_size as usize {

@@ -20,7 +20,8 @@ impl Parser {
             self.advance(); // consume '('
             if self.is_type_token() {
                 let t = self.parse_type_only();
-                if self.match_token(TokenType::RParen) {
+                // 若 ')' 后接 '{'，则是复合字面量，交给 parse_primary 处理
+                if self.match_token(TokenType::RParen) && !self.check(TokenType::LBrace) {
                     let operand = self.parse_unary();
                     let loc = SourceLoc {
                         line: self.previous().line,

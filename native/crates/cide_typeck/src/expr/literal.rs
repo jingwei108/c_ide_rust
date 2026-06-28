@@ -1,4 +1,6 @@
 use super::*;
+use cide_ast::TypeKind;
+use cide_shared::ErrorCode;
 
 impl TypeChecker {
     pub(crate) fn resolve_literal(&mut self, ty: &mut Type) -> Type {
@@ -38,5 +40,70 @@ impl TypeChecker {
         }
         *ty = Type::void();
         ty.clone()
+    }
+
+    pub(crate) fn resolve_compound_literal(&mut self, expr: &mut Expr) -> Type {
+        if let Expr::CompoundLiteral {
+            target_type,
+            init,
+            loc,
+            ty,
+        } = expr
+        {
+            match target_type.kind() {
+                TypeKind::Struct => {
+                    self.check_struct_initializer(target_type, init, loc);
+                }
+                TypeKind::Array => {
+                    self.check_array_initializer(target_type, init, loc);
+                }
+                TypeKind::Int
+                | TypeKind::Char
+                | TypeKind::Float
+                | TypeKind::Double
+                | TypeKind::LongLong
+                | TypeKind::Pointer => {
+                    if let Expr::InitList { elements, .. } = init.as_mut() {
+                        if elements.len() != 1 {
+                            self.report_error(
+                                "标量复合字面量初始化列表只能有一个元素",
+                                loc,
+                                ErrorCode::E3009_InvalidArrayInit,
+                            );
+                        } else {
+                            let e_type = self.resolve_expr_type(&mut elements[0].value);
+                            if !self.check_assignable(target_type, &e_type, loc) {
+                                self.report_error(
+                                    &format!(
+                                        "标量复合字面量类型不匹配：期望 '{}'，实际 '{}'",
+                                        target_type, e_type
+                                    ),
+                                    loc,
+                                    ErrorCode::E3006_ArrayInitTypeMismatch,
+                                );
+                            } else {
+                                insert_implicit_cast(&mut elements[0].value, target_type);
+                            }
+                        }
+                    } else {
+                        self.report_error(
+                            "标量复合字面量必须使用 { value } 形式",
+                            loc,
+                            ErrorCode::E3009_InvalidArrayInit,
+                        );
+                    }
+                }
+                _ => {
+                    self.report_error(
+                        &format!("复合字面量暂不支持类型 '{}'", target_type),
+                        loc,
+                        ErrorCode::E1006_UnsupportedFeature,
+                    );
+                }
+            }
+            *ty = target_type.clone();
+            return ty.clone();
+        }
+        Type::int()
     }
 }

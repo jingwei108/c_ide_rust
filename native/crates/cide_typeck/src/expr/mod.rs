@@ -182,6 +182,8 @@ impl TypeChecker {
             } => self.resolve_cast(inner, target_type, loc, ty),
             Expr::InitList { elements, ty, .. } => self.resolve_init_list(elements, ty),
             Expr::Offsetof { .. } => self.resolve_offsetof_unreachable(),
+            Expr::Generic { .. } => self.resolve_generic(expr),
+            Expr::CompoundLiteral { .. } => self.resolve_compound_literal(expr),
             Expr::This { loc, ty } => self.resolve_this(loc, ty),
             Expr::MemberCall { .. } => self.resolve_member_call(expr),
             Expr::New { .. } => self.resolve_new(expr),

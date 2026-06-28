@@ -94,6 +94,10 @@ pub(crate) fn gen_unary(gen: &mut BytecodeGen, expr: &mut Expr) {
                         // 取地址直接复用该地址即可，避免再包一层临时变量导致源地址错位。
                         gen.gen_expr(operand);
                     }
+                    Expr::CompoundLiteral { .. } => {
+                        // 复合字面量是 lvalue，gen_expr 已在栈顶留下临时对象地址
+                        gen.gen_expr(operand);
+                    }
                     _ => {
                         // Materialize a temporary for rvalues when taking their address.
                         // This enables `const T&` parameters to bind to literals / temporaries.

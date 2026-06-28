@@ -169,6 +169,19 @@ pub enum Expr {
         loc: SourceLoc,
         ty: Type,
     },
+    Generic {
+        control: Box<Expr>,
+        associations: Vec<(Type, Expr)>,
+        default: Option<Box<Expr>>,
+        loc: SourceLoc,
+        ty: Type,
+    },
+    CompoundLiteral {
+        target_type: Type,
+        init: Box<Expr>,
+        loc: SourceLoc,
+        ty: Type,
+    },
     // === C++ 新增 ===
     This {
         loc: SourceLoc,
@@ -243,6 +256,8 @@ macro_rules! expr_field {
             Expr::Cast { $field, .. } => $field,
             Expr::InitList { $field, .. } => $field,
             Expr::Offsetof { $field, .. } => $field,
+            Expr::Generic { $field, .. } => $field,
+            Expr::CompoundLiteral { $field, .. } => $field,
             // === C++ 新增 ===
             Expr::This { $field, .. } => $field,
             Expr::MemberCall { $field, .. } => $field,

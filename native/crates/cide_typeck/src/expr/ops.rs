@@ -313,4 +313,48 @@ impl TypeChecker {
         *ty = left_type.clone();
         ty.clone()
     }
+
+    pub(crate) fn resolve_generic(&mut self, expr: &mut Expr) -> Type {
+        if let Expr::Generic {
+            control,
+            associations,
+            default,
+            loc,
+            ty,
+        } = expr
+        {
+            let control_type = self.resolve_expr_type(control);
+            // 数组在大多数表达式中退化为指向首元素的指针，
+            // 使字符串字面量等能匹配 char* 关联。
+            let control_decayed = if let Type::Array { element, .. } = &control_type {
+                Type::pointer_to(*element.clone())
+            } else {
+                control_type.clone()
+            };
+
+            let mut selected: Option<&mut Expr> = None;
+            for (assoc_ty, assoc_expr) in associations.iter_mut() {
+                if *assoc_ty == control_decayed {
+                    selected = Some(assoc_expr);
+                    break;
+                }
+            }
+
+            let result_ty = if let Some(sel) = selected {
+                self.resolve_expr_type(sel)
+            } else if let Some(default_expr) = default.as_deref_mut() {
+                self.resolve_expr_type(default_expr)
+            } else {
+                self.report_error(
+                    "_Generic 控制表达式类型无匹配关联且无 default 分支",
+                    loc,
+                    ErrorCode::E3004_TypeMismatch,
+                );
+                Type::int()
+            };
+            *ty = result_ty.clone();
+            return result_ty;
+        }
+        Type::int()
+    }
 }

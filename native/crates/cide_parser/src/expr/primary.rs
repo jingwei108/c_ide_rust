@@ -134,6 +134,41 @@ impl Parser {
                 ty: Type::pointer_to(Type::void()),
             };
         }
+        if self.match_token(TokenType::Generic) {
+            let loc = SourceLoc {
+                line: self.previous().line,
+                column: self.previous().column,
+                file_id: 0,
+            };
+            self.consume(TokenType::LParen, "_Generic 后预期 '('");
+            let control = self.parse_assign();
+            self.consume(TokenType::Comma, "_Generic 参数之间预期 ','");
+            let mut associations = Vec::new();
+            let mut default = None;
+            while !self.check(TokenType::RParen) && !self.is_at_end() {
+                if self.match_token(TokenType::Default) {
+                    self.consume(TokenType::Colon, "default 后预期 ':'");
+                    let expr = self.parse_assign();
+                    default = Some(Box::new(expr));
+                } else {
+                    let assoc_type = self.parse_type_only();
+                    self.consume(TokenType::Colon, "类型关联后预期 ':'");
+                    let expr = self.parse_assign();
+                    associations.push((assoc_type, expr));
+                }
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                }
+            }
+            self.consume(TokenType::RParen, "_Generic 后预期 ')'");
+            return Expr::Generic {
+                control: Box::new(control),
+                associations,
+                default,
+                loc,
+                ty: Type::default(),
+            };
+        }
         if self.is_cpp_mode && self.match_token(TokenType::This) {
             let loc = SourceLoc {
                 line: self.previous().line,
@@ -179,6 +214,29 @@ impl Parser {
             return Expr::Identifier { name, loc, ty: Type::default() };
         }
         if self.match_token(TokenType::LParen) {
+            let lparen_loc = self.previous().clone();
+            let checkpoint = self.pos;
+            let typedef_snapshot = self.typedef_names.clone();
+            // 尝试解析复合字面量 (type-name) { initializer-list }
+            if self.is_type_token() {
+                let t = self.parse_type_only();
+                if self.match_token(TokenType::RParen) && self.check(TokenType::LBrace) {
+                    let init = self.parse_init_list();
+                    let loc = SourceLoc {
+                        line: lparen_loc.line,
+                        column: lparen_loc.column,
+                        file_id: 0,
+                    };
+                    return Expr::CompoundLiteral {
+                        target_type: t.clone(),
+                        init: Box::new(init),
+                        loc,
+                        ty: t,
+                    };
+                }
+            }
+            self.pos = checkpoint;
+            self.typedef_names = typedef_snapshot;
             let expr = self.parse_expression();
             self.consume(TokenType::RParen, "预期 ')'");
             return expr;

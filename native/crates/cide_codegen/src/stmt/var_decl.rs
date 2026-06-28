@@ -258,8 +258,14 @@ impl BytecodeGen {
     fn emit_local_init(&mut self, vty: &Type, init: &mut Expr, local_offset: i32, loc: &SourceLoc) {
         if vty.is_array() && matches!(init, Expr::InitList { .. }) {
             self.emit_local_array_init(vty, init, local_offset, loc);
+        } else if vty.is_array() && matches!(init, Expr::CompoundLiteral { .. }) {
+            if let Expr::CompoundLiteral { init: inner, .. } = init {
+                self.emit_local_array_init(vty, inner, local_offset, loc);
+            }
         } else if (vty.is_struct() || vty.is_class()) && matches!(init, Expr::InitList { .. }) {
             self.emit_local_struct_init(vty, init, local_offset, loc);
+        } else if (vty.is_struct() || vty.is_class()) && matches!(init, Expr::CompoundLiteral { .. }) {
+            self.gen_struct_copy_to_local(local_offset, init, loc);
         } else if vty.is_struct() || vty.is_class() {
             if !self.try_gen_cpp_class_init(vty, init, local_offset, loc) {
                 self.gen_struct_copy_to_local(local_offset, init, loc);
@@ -268,13 +274,31 @@ impl BytecodeGen {
             self.emit_local_string_array_init(vty, init, local_offset, loc);
         } else if vty.is_reference() || vty.is_rvalue_ref() {
             self.gen_cpp_reference_init(vty, init, local_offset, loc);
+        } else if let Expr::CompoundLiteral { target_type, .. } = init {
+            // 标量复合字面量：gen_expr 留下临时对象地址，加载值后存入变量槽位
+            let scalar_kind = target_type.kind();
+            self.gen_expr(init);
+            match scalar_kind {
+                TypeKind::Double => {
+                    self.emit(OpCode::LoadMemD, 0, loc);
+                    self.emit(OpCode::StoreLocalD, local_offset, loc);
+                }
+                TypeKind::LongLong => {
+                    self.emit(OpCode::LoadMemQ, 0, loc);
+                    self.emit(OpCode::StoreLocalQ, local_offset, loc);
+                }
+                _ => {
+                    self.emit(OpCode::LoadMem, 0, loc);
+                    self.emit(OpCode::StoreLocal, local_offset, loc);
+                }
+            }
         } else {
             self.gen_expr(init);
             self.emit_scalar_cast_store(vty, init, local_offset, loc);
         }
     }
 
-    fn emit_scalar_cast_store(&mut self, vty: &Type, init: &Expr, local_offset: i32, loc: &SourceLoc) {
+    pub(crate) fn emit_scalar_cast_store(&mut self, vty: &Type, init: &Expr, local_offset: i32, loc: &SourceLoc) {
         if vty.kind() == TypeKind::Float
             && init.ty().kind() != TypeKind::Float
             && init.ty().kind() != TypeKind::Double
@@ -305,7 +329,7 @@ impl BytecodeGen {
         }
     }
 
-    fn emit_local_string_array_init(&mut self, vty: &Type, init: &Expr, local_offset: i32, loc: &SourceLoc) {
+    pub(crate) fn emit_local_string_array_init(&mut self, vty: &Type, init: &Expr, local_offset: i32, loc: &SourceLoc) {
         if let Expr::StringLiteral { value, .. } = init {
             let base_temp = self.get_temp_slot(0);
             self.emit(OpCode::GetFrameBase, 0, loc);
@@ -324,7 +348,7 @@ impl BytecodeGen {
         }
     }
 
-    fn emit_local_array_init(&mut self, vty: &Type, init: &mut Expr, local_offset: i32, loc: &SourceLoc) {
+    pub(crate) fn emit_local_array_init(&mut self, vty: &Type, init: &mut Expr, local_offset: i32, loc: &SourceLoc) {
         if let Expr::InitList { ref mut elements, .. } = init {
             let base_temp = self.get_temp_slot(0);
             self.emit(OpCode::GetFrameBase, 0, loc);
@@ -473,7 +497,7 @@ impl BytecodeGen {
         }
     }
 
-    fn emit_local_struct_init(&mut self, vty: &Type, init: &mut Expr, local_offset: i32, loc: &SourceLoc) {
+    pub(crate) fn emit_local_struct_init(&mut self, vty: &Type, init: &mut Expr, local_offset: i32, loc: &SourceLoc) {
         if let Expr::InitList { ref mut elements, .. } = init {
             let base_temp = self.get_temp_slot(0);
             self.emit(OpCode::GetFrameBase, 0, loc);

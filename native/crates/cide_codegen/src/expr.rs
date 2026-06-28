@@ -6,6 +6,8 @@ mod assign;
 mod binary;
 mod call;
 mod cast;
+mod compound_literal;
+mod generic;
 mod literal;
 mod new_delete;
 mod struct_;
@@ -20,6 +22,7 @@ pub(crate) fn is_lvalue_expr(expr: &Expr) -> bool {
             | Expr::Member { .. }
             | Expr::Unary { op: UnaryOp::Deref, .. }
             | Expr::This { .. }
+            | Expr::CompoundLiteral { .. }
     )
 }
 
@@ -151,6 +154,8 @@ impl ExprGen for BytecodeGen {
                 self.report_error("初始化列表只能在变量声明中使用", &loc);
                 self.emit(OpCode::PushConst, 0, &loc);
             }
+            Expr::Generic { .. } => generic::gen_generic_expr(self, expr),
+            Expr::CompoundLiteral { .. } => compound_literal::gen_compound_literal_expr(self, expr),
             Expr::Offsetof { .. } => cast::gen_offsetof_expr(self, expr),
             // === C++ 新增 (Phase 33) ===
             Expr::This { .. } => new_delete::gen_this_expr(self, expr),
@@ -438,6 +443,10 @@ impl ExprGen for BytecodeGen {
             Expr::Move { expr: inner, .. } => {
                 // std::move(x) — address of the moved-from object
                 self.gen_addr(inner, loc);
+            }
+            Expr::CompoundLiteral { .. } => {
+                // 复合字面量 gen_expr 已在栈顶留下临时对象地址
+                self.gen_expr(expr);
             }
             _ => {
                 self.report_error("不支持的地址生成", loc);

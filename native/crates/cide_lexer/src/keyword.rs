@@ -46,6 +46,7 @@ pub fn keyword_type(text: &str) -> Option<TokenType> {
         "union" => Some(TokenType::Union),
         "sizeof" => Some(TokenType::Sizeof),
         "offsetof" => Some(TokenType::Offsetof),
+        "_Generic" => Some(TokenType::Generic),
         "switch" => Some(TokenType::Switch),
         "case" => Some(TokenType::Case),
         "default" => Some(TokenType::Default),
