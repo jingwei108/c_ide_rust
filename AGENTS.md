@@ -130,7 +130,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 将同一 C 源码同时交给 **Clang** 与 **Cide** 编译执行，对比 stdout 输出是否完全一致。Golden 只能来自 Clang，不能来自 Cide 自己。
 
-- **覆盖**：314 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 629 个用例，完全匹配 607、cide_better 16、known_issue 2；统计口径含 match + cide_better + known_issue）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
+- **覆盖**：316 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 631 个用例，完全匹配 609、cide_better 16、known_issue 2；统计口径含 match + cide_better + known_issue）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
 - **驱动**：`python native/tests/shadow_verification/shadow_verify.py`、`python scripts/shadow_verify_cpp.py`
 - **报告**：`native/tests/shadow_verification/reports/`
 
@@ -209,7 +209,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 **语句**：变量声明（含多变量、块作用域）、`if/else`、`while`、`do...while`、`for`（C99 风格变量声明）、`switch/case/default`、`break`、`continue`、`return`
 
-**表达式**：算术、比较、逻辑（短路求值）、位运算 `& | ^ ~ << >>`、赋值（含复合赋值；指针支持 `+=` / `-=` 整数，按 pointee 大小缩放，`void*` 按 1 字节扩展）、三目运算符 `?:`、数组索引、函数调用、`&`、`*`、结构体访问 `.` / `->`、`++` / `--`、`sizeof`
+**表达式**：算术、比较、逻辑（短路求值）、位运算 `& | ^ ~ << >>`、赋值（含复合赋值；指针支持 `+=` / `-=` 整数，按 pointee 大小缩放，`void*` 按 1 字节扩展）、三目运算符 `?:`、**`_Generic` 泛型选择（C11）**、数组索引、函数调用、`&`、`*`、结构体访问 `.` / `->`、`++` / `--`、`sizeof`
 
 **函数**：定义/调用/递归/前向声明、**函数按值返回结构体**（Hidden Return Pointer ABI）
 
@@ -257,6 +257,10 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 - ~~**`fclose` 后 VFS `FILE*` 仍被报告为内存泄漏**~~ — **已修复（2026-06-25）**。根因是 `host_fclose` 仅关闭 VFS 文件描述符，未释放 `host_fopen` 在 VM Heap 中为 `FILE*` 结构体分配的 4 字节内存。修复方案为在 `host_fclose` 中调用 `MemoryState::free_region(stream)` 释放该内存；stdout/stderr 等非堆分配 stream 找不到对应 region，安全忽略。新增 `baseline/fclose_leak.c` 回归用例。
 - **指针复合赋值 `+=` / `-=`** — **已支持（2026-06-28）**。`int* p; p += n;` 与 `p -= n;` 全链路支持，按 pointee 大小缩放；`void* p; p += n;` 按 GCC/Clang 扩展按 1 字节处理。函数指针算术、指针与指针的 `+=` / `-=`、以及其他复合赋值运算符（`*=`、`/=` 等）保持报错。新增 `baseline/pointer_add_assign*.c` 系列回归用例。
   - ⚠️ **与 Clang 的行为差异**：`void*` 算术属于 GCC/Clang 扩展，严格 C 标准未定义；教学中应引导学生优先使用具体类型指针。复合赋值表达式返回值在 Cide 中为右值指针，与 C 标准左值语义存在差异，但教学场景通常不依赖此差异。
+- **`_Generic` 泛型选择（C11）** — **已支持（2026-06-28）**。`_Generic(expr, type1: expr1, type2: expr2, default: expr3)` 全链路支持，编译期根据控制表达式类型匹配关联表达式并生成选中分支字节码。字符串字面量等数组类型会先执行数组到指针退化再匹配（如 `"hi"` 匹配 `char*`）。新增 `baseline/c11_generic.c` 回归用例，Shadow Verification 与 Clang 输出一致。
+  - ⚠️ **与 Clang 的行为差异**：Cide 当前按精确类型匹配（含数组退化）选择分支，未实现 C11 完整的类型兼容规则（如 `int` 与 `signed int` 的兼容、qualifier 忽略等）。教学场景通常使用明显不同的类型（`int` / `double` / `char*`）做分发，此差异可接受。
+- **复合字面量（C99/C11）** — **已支持（2026-06-28）**。`(struct S){1,2}`、`(int[]){10,20,30}`、`(int){5}` 全链路支持，可用于变量初始化、取地址、直接成员访问。新增 `baseline/compound_literal.c` 回归用例，Shadow Verification 与 Clang 输出一致（`1 5 20 7`）。
+  - ⚠️ **与 Clang 的行为差异**：复合字面量生命周期简化为当前块结束，教学场景不跨块/函数使用；`int[]` 等未指定大小数组的复合字面量通过初始化列表长度推断大小；复杂嵌套/多级 designated initializer 暂按教学子集处理。
 
 > 历史特性详情和 Bug 修复记录见 [`CHANGELOG.md`](CHANGELOG.md) 和 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。
 

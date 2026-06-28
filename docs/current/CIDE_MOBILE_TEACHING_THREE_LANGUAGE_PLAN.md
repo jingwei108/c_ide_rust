@@ -80,6 +80,8 @@ Cide 当前已支持的教学子集详见 `docs/current/C_SUBSET_SPEC.md` 与 `A
 
 **验收标准**：新增 baseline 用例通过 Shadow Verification，错误场景诊断准确。
 
+**状态**：✅ 已完成（2026-06-28）。新增 9 个 `baseline/pointer_add_assign*.c` 回归用例，Shadow Verification 全部匹配。
+
 **白箱影响**：指针移动可视化已在 `PointerSnapshot` 中支持，无需新增。
 
 #### P1：`_Generic` 泛型选择（中优先级，中等工作量）
@@ -104,6 +106,8 @@ C11 特性，信用它做输出类型分发：
 
 **验收标准**：`_Generic(1, int: 10, default: 20)` 返回 10；`_Generic("hi", char*: 1, default: 0)` 返回 1。
 
+**状态**：✅ 已完成（2026-06-28）。新增 `baseline/c11_generic.c`，Cide 与 Clang 输出一致。
+
 #### P2：复合字面量（中优先级，中高工作量）
 
 C99/C11 特性，信用它构造结构体：
@@ -122,13 +126,17 @@ C99/C11 特性，信用它构造结构体：
 
 **验收标准**：`struct S s = (struct S){1, 2}; printf("%d", s.x);` 输出 1。
 
+**状态**：✅ 已完成（2026-06-28）。新增 `baseline/compound_literal.c`，覆盖结构体、数组、标量复合字面量及取地址场景，Cide 与 Clang 输出一致。
+
 #### P3：`__attribute__((cleanup(...)))` 的替代方案（低优先级）
 
-信用 GCC 扩展 `cleanup` 实现 `持…后…` 资源管理。Cide 教学子集**不建议直接支持 GCC attribute**，因为：
+信用 GCC 扩展 `cleanup` 实现 `持…后…` 资源管理。Cide 教学子集**不直接支持 GCC attribute**，因为：
 
 - 不是 C 标准。
 - 与 Cide 现有 C++ RAII/scope exit 机制重复。
 - 增加 Parser 复杂度。
+
+**状态**：✅ 已决策（2026-06-28）。Cide 不新增 attribute 支持，信后端需关闭 `cleanup` 生成或改用显式释放/信自己的 RAII lowering。此限制已记录在 `AGENTS.md` 与 `C_SUBSET_SPEC.md`。
 
 **推荐方案**：
 
@@ -154,8 +162,8 @@ C99/C11 特性，信用它构造结构体：
 - `void*` 指针算术按 1 字节处理（GCC/Clang 扩展，非标准 C）。
 - 函数指针算术不支持。
 - `__attribute__` 不支持（信需关闭 cleanup 生成）。
-- `_Generic` 默认分支匹配规则与 C11 一致。
-- 复合字面量生命周期到块结束（与 C 标准一致）。
+- `_Generic` 默认分支匹配规则与 C11 一致；Cide 当前按精确类型匹配（含数组退化），未完整实现 C11 类型兼容规则。
+- 复合字面量生命周期到块结束（与 C 标准一致）；未指定大小的数组（如 `int[]`）由初始化列表长度推断大小。
 
 ---
 
@@ -385,11 +393,12 @@ CideEditor 需要支持三种语言的差异化但一致的体验：
 
 ### Phase 1：C/C++ 子集补齐（2~3 周）
 
-- [ ] P0：指针复合赋值 `+=` / `-=` 支持。
-- [ ] P1：`_Generic` 支持。
-- [ ] P2：复合字面量支持。
-- [ ] P3：新增对应 baseline 用例，Shadow Verification 通过。
-- [ ] P4：更新 `C_SUBSET_SPEC.md`、`AGENTS.md`、`CHANGELOG.md`。
+- [x] P0：指针复合赋值 `+=` / `-=` 支持（已完成）。
+- [x] P1：`_Generic` 支持（已完成）。
+- [x] P2：复合字面量支持（已完成）。
+- [x] P3：`__attribute__((cleanup(...)))` 决策为不直接支持，边界已记录（已完成）。
+- [x] P4：新增对应 baseline 用例，Shadow Verification 通过（已完成）。
+- [x] P5：更新 `C_SUBSET_SPEC.md`、`AGENTS.md`、`CHANGELOG.md`（已完成）。
 
 ### Phase 2：信运行时 Bytecode Libc 移植（3~4 周）
 

@@ -40,6 +40,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `cide_codegen`：在 `gen_assign` 中提取 `ptr_step` 并在 `AddAssign` / `SubAssign` 分支中生成 `PushConst step`、`Mul`、`Add`/`Sub` 序列，复用现有标量复合赋值的左值形态处理（局部/全局/静态/解引用/成员/数组索引）。
   - 新增 9 个 `baseline/pointer_add_assign*.c` 回归用例，覆盖普通数据指针、`char*`、`double*`、`struct S*`、多级指针 `int**`、负整数偏移、结构体成员指针、`void*` 扩展以及右侧带副作用表达式。
   - 诚实记录：`void*` 算术按 GCC/Clang 扩展以 1 字节处理，严格 C 标准未定义；复合赋值表达式返回值在 Cide 中为右值指针，与 C 标准左值语义存在差异。
+- **C11 `_Generic` 泛型选择支持**：为信语言输出的类型分发提供编译期类型选择能力
+  - `cide_lexer`：新增 `TokenType::Generic` 关键字 token，映射 `_Generic`。
+  - `cide_ast`：新增 `Expr::Generic` 节点，包含控制表达式、类型关联列表与可选 `default` 分支。
+  - `cide_parser`：在 `parse_primary` 中解析 `_Generic(assignment-expr, type-name: expr, ..., default: expr)`。
+  - `cide_typeck`：对控制表达式类型执行数组到指针退化后，按精确类型匹配选择关联表达式；无匹配且无 `default` 时报 `E3004_TypeMismatch`。
+  - `cide_codegen`：直接生成选中关联表达式（或 `default`）的字节码，未选中分支不产生任何指令。
+  - 新增 `baseline/c11_generic.c` 回归用例，Shadow Verification 与 Clang 输出一致（`10 1 2`）。
+  - 诚实记录：当前为精确类型匹配（含数组退化），未完整实现 C11 类型兼容规则（如 `int` 与 `signed int` 兼容、qualifier 忽略等），教学场景常用类型分发足够使用。
+- **C99/C11 复合字面量支持**：为信语言生成的结构体构造提供表达式级初始化能力
+  - `cide_ast`：新增 `Expr::CompoundLiteral` 节点，包含目标类型与初始化列表。
+  - `cide_parser`：在 `parse_primary` 与 `parse_unary` 的 cast 回退中识别 `(type-name) { initializer-list }`，避免与强制转换 `(Type)expr` 冲突。
+  - `cide_typeck`：对结构体/数组/标量复合字面量分别调用 `check_struct_initializer` / `check_array_initializer` / 标量赋值检查；数组未指定大小时由初始化列表长度推断并同步 `array_size` 与 `dims`。
+  - `cide_codegen`：新增 `expr/compound_literal.rs`，在栈帧上分配临时空间、调用现有局部变量初始化逻辑、在栈顶留下临时对象地址；复合字面量作为 lvalue 可用于取地址。
+  - `cide_codegen` 变量声明初始化：识别右侧 `CompoundLiteral`，数组/结构体场景直接展开为对应初始化列表，标量场景从临时地址加载值后存储。
+  - 新增 `baseline/compound_literal.c` 回归用例，Shadow Verification 与 Clang 输出一致（`1 5 20 7`）。
+  - 诚实记录：复合字面量生命周期简化为当前块结束；未完整实现 C11 所有类型兼容/qualifier 规则；复杂嵌套 designated initializer 按教学子集处理。
 
 ### Fixed (模板系统修复与测试框架)
 - **模板系统全面修复**：修复点击模板后无法退出、C++ 模板无法加载、覆盖率显示超过 100% 等问题
