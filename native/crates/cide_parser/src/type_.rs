@@ -115,6 +115,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 let name = format!("__anon_struct_{}", self.pos);
                 let decl = self.parse_struct_body(name.clone(), loc);
@@ -607,6 +608,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: self.current().line,
                     column: self.current().column,
+                    file_id: 0,
                 },
                 default: default_expr,
             });

@@ -498,8 +498,7 @@ impl ExprGen for BytecodeGen {
 
         // 如果右端是函数按值返回的类临时对象，在拷贝后调用其析构函数，
         // 避免临时对象内的资源泄漏。
-        let is_temporary_return = matches!(right, Expr::Call { .. } | Expr::CallPtr { .. })
-            && right.ty().is_class();
+        let is_temporary_return = matches!(right, Expr::Call { .. } | Expr::CallPtr { .. }) && right.ty().is_class();
         let dtor_name = if is_temporary_return {
             format!("__dtor__{}", right.ty().name())
         } else {

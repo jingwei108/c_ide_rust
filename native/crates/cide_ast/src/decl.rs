@@ -118,15 +118,8 @@ pub struct ClassDecl {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum TemplateParam {
-    Type {
-        name: String,
-        loc: SourceLoc,
-    },
-    NonType {
-        name: String,
-        ty: Type,
-        loc: SourceLoc,
-    },
+    Type { name: String, loc: SourceLoc },
+    NonType { name: String, ty: Type, loc: SourceLoc },
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]

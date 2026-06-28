@@ -6,7 +6,7 @@ int factorial(int n) {
 }
 
 int main() {
-    int result = factorial(5);
+    int result = factorial(/*__PARAM_n__*/ 5);
     printf("%d\n", result);
     return 0;
 }

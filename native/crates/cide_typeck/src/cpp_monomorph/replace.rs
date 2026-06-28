@@ -66,10 +66,8 @@ impl TypeChecker {
             Type::Class { name, .. } if type_map.contains_key(name) => type_map[name].clone(),
             Type::TemplateId { base, args, .. } => {
                 // 类模板体内出现同模板类实例化，如 unique_ptr<T>，需要把参数替换后生成 mangled 类名。
-                let new_args: Vec<TemplateArg> = args
-                    .iter()
-                    .map(|a| self.replace_template_arg(a, type_map, value_map))
-                    .collect();
+                let new_args: Vec<TemplateArg> =
+                    args.iter().map(|a| self.replace_template_arg(a, type_map, value_map)).collect();
                 let mangled = Self::mangle_template_name(base, &new_args);
                 Type::Class { name: mangled, is_const: false }
             }
@@ -129,7 +127,10 @@ impl TypeChecker {
                 is_variadic,
             } => Type::Function {
                 return_type: Box::new(self.replace_template_type(return_type, type_map, value_map)),
-                param_types: param_types.iter().map(|t| self.replace_template_type(t, type_map, value_map)).collect(),
+                param_types: param_types
+                    .iter()
+                    .map(|t| self.replace_template_type(t, type_map, value_map))
+                    .collect(),
                 is_const: *is_const,
                 is_variadic: *is_variadic,
             },

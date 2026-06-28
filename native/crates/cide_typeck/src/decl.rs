@@ -597,9 +597,7 @@ impl TypeChecker {
         match expr {
             Expr::Literal { value, .. } => Some(*value),
             Expr::Identifier { name, .. } => value_map.get(name).copied(),
-            Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
-                self.evaluate_constexpr(operand, value_map).map(|v| -v)
-            }
+            Expr::Unary { op: UnaryOp::Neg, operand, .. } => self.evaluate_constexpr(operand, value_map).map(|v| -v),
             Expr::Binary { op, left, right, .. } => {
                 let l = self.evaluate_constexpr(left, value_map)?;
                 let r = self.evaluate_constexpr(right, value_map)?;
@@ -607,14 +605,24 @@ impl TypeChecker {
                     BinaryOp::Add => Some(l + r),
                     BinaryOp::Sub => Some(l - r),
                     BinaryOp::Mul => Some(l * r),
-                    BinaryOp::Div => if r == 0 { None } else { Some(l / r) },
-                    BinaryOp::Mod => if r == 0 { None } else { Some(l % r) },
+                    BinaryOp::Div => {
+                        if r == 0 {
+                            None
+                        } else {
+                            Some(l / r)
+                        }
+                    }
+                    BinaryOp::Mod => {
+                        if r == 0 {
+                            None
+                        } else {
+                            Some(l % r)
+                        }
+                    }
                     _ => None,
                 }
             }
-            Expr::Sizeof { target_type, .. } => {
-                target_type.as_ref().map(|ty| self.compute_type_size(ty))
-            }
+            Expr::Sizeof { target_type, .. } => target_type.as_ref().map(|ty| self.compute_type_size(ty)),
             _ => None,
         }
     }

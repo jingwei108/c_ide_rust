@@ -6,6 +6,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.previous().line,
             column: self.previous().column,
+            file_id: 0,
         };
 
         if self.match_token(TokenType::Assign) {
@@ -131,6 +132,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Ternary {
                 cond: Box::new(cond),
@@ -150,6 +152,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             left = Expr::Binary {
                 op: BinaryOp::Or,
@@ -169,6 +172,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             left = Expr::Binary {
                 op: BinaryOp::And,
@@ -188,6 +192,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             left = Expr::Binary {
                 op: BinaryOp::BitOr,
@@ -207,6 +212,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             left = Expr::Binary {
                 op: BinaryOp::BitXor,
@@ -226,6 +232,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             left = Expr::Binary {
                 op: BinaryOp::BitAnd,
@@ -246,6 +253,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Eq,
@@ -259,6 +267,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Ne,
@@ -282,6 +291,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Lt,
@@ -295,6 +305,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Le,
@@ -308,6 +319,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Gt,
@@ -321,6 +333,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Ge,
@@ -344,6 +357,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Shl,
@@ -357,6 +371,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Shr,
@@ -380,6 +395,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Add,
@@ -393,6 +409,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Sub,
@@ -416,6 +433,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Mul,
@@ -429,6 +447,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Div,
@@ -442,6 +461,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 left = Expr::Binary {
                     op: BinaryOp::Mod,

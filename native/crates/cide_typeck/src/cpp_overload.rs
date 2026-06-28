@@ -308,7 +308,7 @@ impl TypeChecker {
 
             let body = Self::build_implicit_move_ctor_body(&class_name, &sym.fields);
             let func_decl = FuncDecl {
-                loc: SourceLoc { line: 0, column: 0 },
+                loc: SourceLoc { line: 0, column: 0, file_id: 0 },
                 return_type: Type::void(),
                 name: move_ctor_name.clone(),
                 params: vec![
@@ -321,7 +321,7 @@ impl TypeChecker {
                             }),
                             is_const: false,
                         },
-                        loc: SourceLoc { line: 0, column: 0 },
+                        loc: SourceLoc { line: 0, column: 0, file_id: 0 },
                         default: None,
                     },
                     Param {
@@ -332,7 +332,7 @@ impl TypeChecker {
                                 is_const: false,
                             }),
                         },
-                        loc: SourceLoc { line: 0, column: 0 },
+                        loc: SourceLoc { line: 0, column: 0, file_id: 0 },
                         default: None,
                     },
                 ],
@@ -375,7 +375,7 @@ impl TypeChecker {
     }
 
     fn build_implicit_move_ctor_body(class_name: &str, fields: &[(Type, String, AccessSpec)]) -> Stmt {
-        let loc = SourceLoc { line: 0, column: 0 };
+        let loc = SourceLoc { line: 0, column: 0, file_id: 0 };
         let this_ty = Type::Pointer {
             pointee: Box::new(Type::Class {
                 name: class_name.to_string(),

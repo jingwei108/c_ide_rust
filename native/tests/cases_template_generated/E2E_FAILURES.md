@@ -31,13 +31,6 @@
 - **分类**: 模板代码缺陷（队列溢出）
 - **是否 Cide 限制**: 否，Cide 的边界检查是教学安全特性，不是编译器缺陷
 
-### threadedBinaryTree_default
-
-- **现象**: Runtime error / 无限循环 — 线索化后中序遍历无法终止，Cide 触发 E6010 无限循环检测
-- **根因**: 模板代码的线索化逻辑存在缺陷，中序遍历 `InOrderTraverse_Thr` 在特定树结构下会进入死循环；Clang 下同样会无限循环并持续输出（已验证）。
-- **分类**: 模板代码缺陷（算法逻辑错误 / 死循环）
-- **是否 Cide 限制**: 否
-
 ---
 
 ## 历史已修复条目（已归档）
@@ -52,6 +45,7 @@
 | `bellmanFord_default` | 2026-06-15 | Parser 对 `int u, v, w;` 结构体后多字段声明已支持 |
 | `polynomialAdd_default` | 2026-06-15 | 指针参与逻辑运算 `&&` 已可通过其他方式绕过，当前测试通过 |
 | `redBlackTree_default` | 2026-06-15 | 同上 |
+| `threadedBinaryTree_default` | 2026-06-27 | 模板源码修复：线索化遍历引入标准头节点法，终止条件正确 |
 
 ---
 

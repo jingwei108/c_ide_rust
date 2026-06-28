@@ -17,6 +17,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             left = Expr::Binary {
                 op: BinaryOp::Comma,

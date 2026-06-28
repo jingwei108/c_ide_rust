@@ -265,7 +265,11 @@ class ExecutionControlPanel extends ConsumerWidget {
   Widget _buildCoverageText(BuildContext context, UnifiedState state, WidgetRef ref) {
     final source = ref.watch(ideProvider).source;
     final totalLines = source.isEmpty ? 0 : source.split('\n').length;
-    final executedLines = state.heatmap!.lineCounts.length;
+    // VM 已只记录用户主文件（file_id == 0）的源码行号，
+    // heatmap 不再包含 Bytecode Libc / 标准库的外部行号。
+    final executedLines = state.heatmap!.lineCounts
+        .where((entry) => entry.$1 > 0)
+        .length;
     final coverage = totalLines > 0 ? executedLines / totalLines : 0.0;
     final color = coverage >= 0.8
         ? Colors.green

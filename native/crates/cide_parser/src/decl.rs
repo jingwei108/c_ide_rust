@@ -39,6 +39,7 @@ impl Parser {
             SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
+                file_id: 0,
             },
         );
         self.consume(TokenType::Semicolon, "结构体声明后预期 ';'");
@@ -65,6 +66,7 @@ impl Parser {
             SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
+                file_id: 0,
             },
         );
         self.consume(TokenType::Semicolon, "联合体声明后预期 ';'");
@@ -81,6 +83,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.current().line,
             column: self.current().column,
+            file_id: 0,
         };
         if is_struct {
             self.consume(TokenType::Struct, "预期 'struct'");
@@ -193,10 +196,9 @@ impl Parser {
             }
 
             // 构造函数检查（无返回类型）。嵌套类可用短名定义构造。
-            let ctor_name_matches =
-                self.check(TokenType::Identifier)
-                    && (self.current().text == name || self.current().text == short_name)
-                    && self.peek(1).ty == TokenType::LParen;
+            let ctor_name_matches = self.check(TokenType::Identifier)
+                && (self.current().text == name || self.current().text == short_name)
+                && self.peek(1).ty == TokenType::LParen;
             if ctor_name_matches {
                 self.advance(); // class name
                 self.consume(TokenType::LParen, "预期 '('");
@@ -396,6 +398,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.current().line,
             column: self.current().column,
+            file_id: 0,
         };
         self.consume(TokenType::Template, "预期 'template'");
         self.consume(TokenType::Class, "预期 'class'");
@@ -421,6 +424,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.current().line,
             column: self.current().column,
+            file_id: 0,
         };
         self.consume(TokenType::Template, "预期 'template'");
         self.consume(TokenType::Lt, "预期 '<'");
@@ -431,10 +435,7 @@ impl Parser {
                 // 类型模板参数：typename T / class T
                 self.advance();
                 let param_name = self.consume(TokenType::Identifier, "预期模板参数名").text.clone();
-                params.push(TemplateParam::Type {
-                    name: param_name.clone(),
-                    loc,
-                });
+                params.push(TemplateParam::Type { name: param_name.clone(), loc });
                 // 将模板参数注册为类型名，使其在函数/类体中可被识别
                 // 使用 Class 类型作为占位符，以便 TypeChecker 在单态化时识别模板参数
                 self.typedef_names.insert(
@@ -519,6 +520,7 @@ impl Parser {
             SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         );
         let alias_tok = self.consume(TokenType::Identifier, "typedef 后预期标识符名称").clone();
@@ -549,6 +551,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
                 ty: Type::int(),
                 name: member_tok.text,
@@ -557,6 +560,7 @@ impl Parser {
                     loc: SourceLoc {
                         line: member_tok.line,
                         column: member_tok.column,
+                        file_id: 0,
                     },
                     ty: Type::int(),
                 }),
@@ -641,6 +645,7 @@ impl Parser {
             loc: SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
+                file_id: 0,
             },
             return_type: ret_type,
             name: func_name,
@@ -681,6 +686,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
                 ty: Type::int(),
                 name: member_tok.text,
@@ -689,6 +695,7 @@ impl Parser {
                     loc: SourceLoc {
                         line: member_tok.line,
                         column: member_tok.column,
+                        file_id: 0,
                     },
                     ty: Type::int(),
                 }),

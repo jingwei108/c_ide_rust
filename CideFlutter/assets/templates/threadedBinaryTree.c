@@ -39,12 +39,12 @@ void InThreading(struct BiThrNode* p) {
     }
 }
 
-void InOrderTraverse_Thr(struct BiThrNode* T) {
-    struct BiThrNode* p = T;
-    while (p) {
+void InOrderTraverse_Thr(struct BiThrNode* head) {
+    struct BiThrNode* p = head->lchild;
+    while (p != head) {
         while (p->LTag == Link) p = p->lchild;
         printf("%d ", p->data);
-        while (p->RTag == Thread && p->rchild != T) {
+        while (p->RTag == Thread && p->rchild != head) {
             p = p->rchild;
             printf("%d ", p->data);
         }
@@ -53,15 +53,30 @@ void InOrderTraverse_Thr(struct BiThrNode* T) {
 }
 
 int main() {
+    struct BiThrNode* head = createNode(0);
+    head->LTag = Link;
+    head->RTag = Thread;
+    head->rchild = head;
+
     struct BiThrNode* root = createNode(1);
     root->lchild = createNode(2);
     root->rchild = createNode(3);
     root->lchild->lchild = createNode(4);
     root->lchild->rchild = createNode(5);
+
+    head->lchild = root;
     InThreading(root);
-    pre->rchild = NULL;
+
+    // 收尾：把中序第一个节点的左线索和最后一个节点的右线索都连回头节点。
+    struct BiThrNode* first = root;
+    while (first->LTag == Link) first = first->lchild;
+    first->lchild = head;
+    first->LTag = Thread;
+
+    pre->rchild = head;
     pre->RTag = Thread;
-    InOrderTraverse_Thr(root);
+
+    InOrderTraverse_Thr(head);
     printf("\n");
     return 0;
 }

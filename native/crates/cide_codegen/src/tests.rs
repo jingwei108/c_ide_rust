@@ -87,7 +87,11 @@ fn test_flatten_init_list_designator_error() {
 
 #[test]
 fn test_stmt_loc_var_decl() {
-    let loc = SourceLoc { line: 10, column: 5 };
+    let loc = SourceLoc {
+        line: 10,
+        column: 5,
+        file_id: 0,
+    };
     let stmt = Stmt::VarDecl {
         var_type: Type::int(),
         name: "x".to_string(),
@@ -103,7 +107,11 @@ fn test_stmt_loc_var_decl() {
 
 #[test]
 fn test_stmt_loc_return() {
-    let loc = SourceLoc { line: 20, column: 1 };
+    let loc = SourceLoc {
+        line: 20,
+        column: 1,
+        file_id: 0,
+    };
     let stmt = Stmt::Return { value: None, loc };
     let got = stmt_loc(&stmt);
     assert_eq!(got.line, 20);

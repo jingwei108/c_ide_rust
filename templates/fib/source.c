@@ -6,7 +6,7 @@ int fibonacci(int n) {
 }
 
 int main() {
-    int result = fibonacci(7);
+    int result = fibonacci(/*__PARAM_n__*/ 7);
     printf("%d\n", result);
     return 0;
 }

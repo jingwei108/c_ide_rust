@@ -241,12 +241,7 @@ fn test_cide_e2e_baseline() {
 /// Known template failures documented in E2E_FAILURES.md.
 /// These are NOT silently ignored — they are monitored by
 /// `test_cide_e2e_template_known_failures` below.
-const KNOWN_TEMPLATE_FAILURES: &[&str] = &[
-    "bTree_default",
-    "infixEvaluation_default",
-    "spfa_default",
-    "threadedBinaryTree_default",
-];
+const KNOWN_TEMPLATE_FAILURES: &[&str] = &["bTree_default", "infixEvaluation_default", "spfa_default"];
 
 /// Known K&R failures documented in KR_FAILURES.md.
 /// Monitored by `test_cide_e2e_knr_known_failures` below.

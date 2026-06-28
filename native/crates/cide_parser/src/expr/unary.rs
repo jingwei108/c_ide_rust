@@ -25,6 +25,7 @@ impl Parser {
                     let loc = SourceLoc {
                         line: self.previous().line,
                         column: self.previous().column,
+                        file_id: 0,
                     };
                     return Expr::Cast {
                         expr: Box::new(operand),
@@ -42,6 +43,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::Neg,
@@ -55,6 +57,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::Not,
@@ -68,6 +71,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::BitNot,
@@ -81,6 +85,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::Addr,
@@ -94,6 +99,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::Deref,
@@ -107,6 +113,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::PreInc,
@@ -120,6 +127,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Unary {
                 op: UnaryOp::PreDec,
@@ -145,6 +153,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.previous().line,
             column: self.previous().column,
+            file_id: 0,
         };
         if self.match_token(TokenType::LParen) {
             let checkpoint = self.pos;
@@ -191,6 +200,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.previous().line,
             column: self.previous().column,
+            file_id: 0,
         };
         self.consume(TokenType::LParen, "offsetof 后预期 '('");
         let target_type = self.parse_base_type();

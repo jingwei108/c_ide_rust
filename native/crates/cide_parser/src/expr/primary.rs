@@ -16,6 +16,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: prev.line,
                 column: prev.column,
+                file_id: 0,
             };
             return Expr::Literal { value, loc, ty: Type::int() };
         }
@@ -33,6 +34,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: prev.line,
                 column: prev.column,
+                file_id: 0,
             };
             return Expr::Literal {
                 value,
@@ -54,6 +56,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: prev.line,
                 column: prev.column,
+                file_id: 0,
             };
             return Expr::LongLiteral {
                 value,
@@ -76,6 +79,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: prev.line,
                 column: prev.column,
+                file_id: 0,
             };
             return Expr::FloatLiteral { value, loc, ty: Type::float() };
         }
@@ -93,6 +97,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: prev.line,
                 column: prev.column,
+                file_id: 0,
             };
             return Expr::Literal { value, loc, ty: Type::char() };
         }
@@ -101,6 +106,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             let array_size = value.len() as i32 + 1; // including null terminator
             return Expr::StringLiteral {
@@ -120,6 +126,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::Literal {
                 value: 0,
@@ -131,6 +138,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             };
             return Expr::This { loc, ty: Type::default() };
         }
@@ -147,6 +155,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
+                file_id: 0,
             };
             return Expr::Literal {
                 value: 0,
@@ -165,6 +174,7 @@ impl Parser {
             let loc = SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
+                file_id: 0,
             };
             return Expr::Identifier { name, loc, ty: Type::default() };
         }
@@ -182,6 +192,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.current().line,
             column: self.current().column,
+            file_id: 0,
         };
         // 消费当前 token，防止外层 parse_statement 在相同位置无限循环。
         if !self.is_at_end() {

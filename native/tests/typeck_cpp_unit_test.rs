@@ -280,15 +280,15 @@ fn test_try_stmt_typecheck() {
     let try_stmt = Stmt::Try {
         body: Box::new(Stmt::Block {
             stmts: vec![],
-            loc: SourceLoc { line: 1, column: 1 },
+            loc: SourceLoc { line: 1, column: 1, file_id: 0 },
         }),
         catches: vec![],
-        loc: SourceLoc { line: 1, column: 1 },
+        loc: SourceLoc { line: 1, column: 1, file_id: 0 },
     };
     let checker = TypeChecker::default();
     let mut program = ProgramNode::default();
     program.funcs.push(FuncDecl {
-        loc: SourceLoc { line: 1, column: 1 },
+        loc: SourceLoc { line: 1, column: 1, file_id: 0 },
         return_type: Type::int(),
         name: "main".to_string(),
         params: vec![],

@@ -83,6 +83,7 @@ impl Parser {
             loc: SourceLoc {
                 line: name_tok.line,
                 column: name_tok.column,
+                file_id: 0,
             },
             return_type: Type::void(),
             name: format!("__ctor__{}", name_tok.text),
@@ -133,6 +134,7 @@ impl Parser {
             loc: SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
+                file_id: 0,
             },
             ty: ty.clone(),
             name,

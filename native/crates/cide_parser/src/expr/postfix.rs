@@ -5,6 +5,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.previous().line,
             column: self.previous().column,
+            file_id: 0,
         };
         let elem_type = self.parse_base_type();
         let mut final_type = elem_type.clone();
@@ -59,6 +60,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.previous().line,
             column: self.previous().column,
+            file_id: 0,
         };
         let mut is_array = false;
         if self.check(TokenType::LBracket) {
@@ -84,6 +86,7 @@ impl Parser {
         let loc = SourceLoc {
             line: self.current().line,
             column: self.current().column,
+            file_id: 0,
         };
         self.consume(TokenType::LBracket, "Lambda 预期 '['");
         let mut capture = Vec::new();
@@ -149,6 +152,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 expr = Expr::Index {
                     array: Box::new(expr),
@@ -163,6 +167,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 expr = Expr::CallPtr {
                     callee: Box::new(expr),
@@ -175,6 +180,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 // C++ 模式下检查是否是方法调用：obj.method(args)
                 if self.is_cpp_mode && self.check(TokenType::LParen) {
@@ -202,6 +208,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 expr = Expr::Unary {
                     op: UnaryOp::PostInc,
@@ -213,6 +220,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 expr = Expr::Unary {
                     op: UnaryOp::PostDec,
@@ -262,6 +270,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
             ty: Type::default(),
         }

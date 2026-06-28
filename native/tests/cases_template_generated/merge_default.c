@@ -1,15 +1,6 @@
 // @category: baseline
 #include <stdio.h>
 
-void mergeSort(int arr[], int left, int right) {
-    if (left < right) {
-        int mid = left + (right - left) / 2;
-        mergeSort(arr, left, mid);
-        mergeSort(arr, mid + 1, right);
-        merge(arr, left, mid, right);
-    }
-}
-
 void merge(int arr[], int left, int mid, int right) {
     int n1 = mid - left + 1;
     int n2 = right - mid;
@@ -23,6 +14,15 @@ void merge(int arr[], int left, int mid, int right) {
     }
     while (i < n1) arr[k++] = L[i++];
     while (j < n2) arr[k++] = R[j++];
+}
+
+void mergeSort(int arr[], int left, int right) {
+    if (left < right) {
+        int mid = left + (right - left) / 2;
+        mergeSort(arr, left, mid);
+        mergeSort(arr, mid + 1, right);
+        merge(arr, left, mid, right);
+    }
 }
 
 int main() {

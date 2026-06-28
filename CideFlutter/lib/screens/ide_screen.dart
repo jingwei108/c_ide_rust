@@ -225,10 +225,13 @@ class _IdeScreenState extends ConsumerState<IdeScreen>
                           children: [
                             // 顶部工具栏：键盘弹出时平滑收起
                             IdeToolbar(animation: _barsAnimation),
-                          ExecutionControlPanel(
-                            onRun: () => notifier.compile(),
-                            onScrollToLine: _scrollToLine,
-                          ),
+                          // 教程模式下隐藏执行控制面板，避免上一段运行的残留状态
+                          // （进度条、覆盖率等）与教程面板同时出现，造成"无法退出模板"的错觉。
+                          if (state.activeTutorial == null)
+                            ExecutionControlPanel(
+                              onRun: () => notifier.compile(),
+                              onScrollToLine: _scrollToLine,
+                            ),
                           IdeEditorArea(
                             editorKey: _editorKey,
                             onTap: _openKeyboard,

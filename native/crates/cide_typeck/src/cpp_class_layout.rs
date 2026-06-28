@@ -326,9 +326,7 @@ impl TypeChecker {
                     let param_defaults: Vec<Option<Expr>> = if *is_static {
                         params.iter().map(|p| p.default.clone()).collect()
                     } else {
-                        std::iter::once(None)
-                            .chain(params.iter().map(|p| p.default.clone()))
-                            .collect()
+                        std::iter::once(None).chain(params.iter().map(|p| p.default.clone())).collect()
                     };
                     self.funcs.insert(
                         mangled,
@@ -352,9 +350,8 @@ impl TypeChecker {
                         })
                         .chain(params.iter().map(|p| p.ty.clone()))
                         .collect();
-                        let param_defaults: Vec<Option<Expr>> = std::iter::once(None)
-                            .chain(params.iter().map(|p| p.default.clone()))
-                            .collect();
+                        let param_defaults: Vec<Option<Expr>> =
+                            std::iter::once(None).chain(params.iter().map(|p| p.default.clone())).collect();
                         self.funcs.insert(
                             mangled.clone(),
                             FuncSymbol {
@@ -385,20 +382,16 @@ impl TypeChecker {
                                     param_defaults: vec![None],
                                 },
                             );
-                            class_sym
-                                .methods
-                                .entry(default_ctor_name)
-                                .or_default()
-                                .push(MethodSig {
-                                    ret: Type::void(),
-                                    param_types: vec![],
-                                    param_defaults: vec![],
-                                    is_virtual: false,
-                                    is_static: false,
-                                    is_explicit: false,
-                                    is_const: false,
-                                    access: AccessSpec::Public,
-                                });
+                            class_sym.methods.entry(default_ctor_name).or_default().push(MethodSig {
+                                ret: Type::void(),
+                                param_types: vec![],
+                                param_defaults: vec![],
+                                is_virtual: false,
+                                is_static: false,
+                                is_explicit: false,
+                                is_const: false,
+                                access: AccessSpec::Public,
+                            });
                         }
                     }
                 }

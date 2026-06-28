@@ -39,6 +39,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.current().line,
                     column: self.current().column,
+                    file_id: 0,
                 };
                 self.advance();
                 Stmt::Block { stmts: Vec::new(), loc }
@@ -59,6 +60,7 @@ impl Parser {
                 let loc = SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 };
                 Stmt::Block { stmts: Vec::new(), loc }
             }
@@ -138,6 +140,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -172,6 +175,7 @@ impl Parser {
                     loc: SourceLoc {
                         line: loc.line,
                         column: loc.column,
+                        file_id: 0,
                     },
                     ty: Type::void(),
                 }),
@@ -214,6 +218,7 @@ impl Parser {
                         loc: SourceLoc {
                             line: loc.line,
                             column: loc.column,
+                            file_id: 0,
                         },
                         ty: Type::void(),
                     }),
@@ -244,6 +249,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -266,6 +272,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -282,6 +289,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -300,6 +308,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -311,6 +320,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -322,6 +332,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -336,6 +347,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -351,6 +363,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -412,6 +425,7 @@ impl Parser {
                     loc: SourceLoc {
                         line: loc.line,
                         column: loc.column,
+                        file_id: 0,
                     },
                 };
             }
@@ -453,6 +467,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: var_loc.line,
                     column: var_loc.column,
+                    file_id: 0,
                 },
             }))
         } else if !self.check(TokenType::Semicolon) {
@@ -467,6 +482,7 @@ impl Parser {
                     loc: SourceLoc {
                         line: es_loc.line,
                         column: es_loc.column,
+                        file_id: 0,
                     },
                 }
             } else {
@@ -478,12 +494,14 @@ impl Parser {
                             loc: SourceLoc {
                                 line: es_loc.line,
                                 column: es_loc.column,
+                                file_id: 0,
                             },
                         })
                         .collect(),
                     loc: SourceLoc {
                         line: es_loc.line,
                         column: es_loc.column,
+                        file_id: 0,
                     },
                 }
             };
@@ -518,6 +536,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -535,6 +554,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -547,6 +567,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -563,6 +584,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }
@@ -584,6 +606,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
             };
         };
@@ -606,6 +629,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
             }
         } else if stmts.len() == 1 {
@@ -616,6 +640,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
             }
         };
@@ -625,6 +650,7 @@ impl Parser {
             loc: SourceLoc {
                 line: loc.line,
                 column: loc.column,
+                file_id: 0,
             },
         }
     }

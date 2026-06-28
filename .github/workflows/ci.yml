@@ -51,6 +51,12 @@ jobs:
         run: cargo test --workspace --all-features
         working-directory: native
 
+      # 模板静态一致性：校验 templates/ 源文件与 Flutter assets 同步，
+      # 参数占位符与 meta.yaml 一致，C/C++ 扩展名正确。
+      - name: Template Consistency Check
+        run: python scripts/test_templates.py
+        shell: bash
+
       # cargo test 已覆盖全部单元/集成测试（含 Phase A/B/C/E/Dogfooding），
       # 无需再单独运行各防线测试套件。
       - name: Three Tier Consistency Check & Report

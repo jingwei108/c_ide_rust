@@ -36,6 +36,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `VarHistoryTab` 改为显示当前窗口内的变量历史，避免遍历全量帧
   - 新增 `native/tests/unified_engine_window_test.rs` 验证窗口化后的公共 API 行为
 
+### Fixed (模板系统修复与测试框架)
+- **模板系统全面修复**：修复点击模板后无法退出、C++ 模板无法加载、覆盖率显示超过 100% 等问题
+  - `TemplateLoader` 现在读取 `index.json` 的 `ext` 字段，正确加载 `.c` 与 `.cpp` 模板；源码缺失时抛出 `TemplateLoadException` 而不是静默跳过。
+  - `CodeTemplate` 新增 `ext` 字段；`completeTutorial` 根据模板扩展名将当前文件切换为 `main.c` 或 `main.cpp`，确保 Rust 后端按正确语言模式编译。
+  - `IdeState.copyWith` 新增 `clearActiveTutorial` 标志，修复 `activeTutorial: null` 无法清除教程状态的问题；教程模式下隐藏 `ExecutionControlPanel`，避免上一段运行的残留进度条/覆盖率造成“无法退出模板”的错觉。
+  - `ExecutionControlPanel._buildCoverageText` 前端过滤超出当前源码行号范围的 heatmap 条目，解决覆盖率显示超过 100%（如 633.3%）的问题。
+    - **诚实记录**：这只是前端绕过，热力图底层仍混有标准库/预编译字节码行号。完整修复需要给 `cide_shared::SourceLoc` 增加文件标识字段，并在 VM 执行层只记录用户主文件行号；~~当前因改动面大、回归风险高而未实施~~ **已实施**，详见 `docs/current/TEMPLATE_GUIDE.md`。
+- **彻底修复覆盖率超过 100% 的绕过问题**：从 VM 层区分用户源码与标准库/预编译字节码行号，移除前端过滤 workaround。
+  - 给 `cide_shared::SourceLoc` 增加 `file_id: i32` 字段（0 为用户主文件，非 0 为外部文件），并通过 `#[serde(default)]` 保持与旧 `bytecode_libc_data.json` 产物的兼容。
+  - `cide_vm::bytecode_libc_loader` 加载预编译产物后，将所有 libc 指令的 `loc.file_id` 置为 1。
+  - `cide_vm::core::executor` 记录 heatmap 时只统计 `file_id == 0` 的指令，从源头避免 Bytecode Libc 行号混入。
+  - Flutter 端 `ExecutionControlPanel._buildCoverageText` 移除按 `totalLines` 过滤的绕过逻辑；覆盖率百分比现在真实反映用户代码执行情况。
+  - 同步清理已知失败：`threadedBinaryTree_default` 已因模板源码修复（标准头节点法遍历）通过，从 `KNOWN_TEMPLATE_FAILURES` 与 `E2E_FAILURES.md` 中移除并归档。
+- **模板源码缺陷修复**
+  - `factorial` / `fib`：在函数调用处补充 `/*__PARAM_n__*/` 占位符，与 `meta.yaml` 参数声明一致。
+  - `merge`：调整函数顺序，避免 Clang 报 `merge` 隐式声明错误。
+  - `threadedBinaryTree`：改用标准头节点法遍历，修复原线索化遍历无限循环问题。
+- **模板测试防线**
+  - 新增 `scripts/test_templates.py`：校验模板目录结构、meta.yaml、占位符与参数一致性、Flutter assets 同步。
+  - 新增/扩展 Dart 测试：`template_loader_test.dart`、`ide_template_bar_test.dart`、`ide_notifier_test.dart` 中 `completeTutorial` 的文件扩展名切换测试。
+  - CI 在 Rust job 中加入 `python scripts/test_templates.py`。
+  - 新增 `docs/current/TEMPLATE_GUIDE.md` 记录模板规范、同步机制、测试防线与诚实修复记录。
+
 ### Changed (Workspace 模块化拆分)
 - **Rust 后端单 crate 拆分为多 crate workspace**：在 `native/Cargo.toml` 建立 `[workspace]`，将编译器/运行时各阶段下沉为独立 crate，降低编译缓存粒度与模块耦合
   - 新增 `crates/cide_shared`（`SourceLoc`、`ErrorCode` 等共享基础类型）

@@ -245,6 +245,7 @@ def sync():
             "key": meta.get("key", d.name),
             "name": meta.get("name", d.name),
             "category": meta.get("category", "其他"),
+            "ext": ext,
             "params": meta.get("params", {}),
             "tutorialAnchors": anchors,
             "tutorialSteps": tutorial_steps,

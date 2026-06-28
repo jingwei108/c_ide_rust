@@ -95,7 +95,7 @@ impl TypeChecker {
             }
             self.report_error(
                 &format!("变量 '{}' 已在此作用域中声明", name),
-                &SourceLoc { line: 0, column: 0 },
+                &SourceLoc { line: 0, column: 0, file_id: 0 },
                 ErrorCode::E3001_VarRedeclared,
             );
             return;

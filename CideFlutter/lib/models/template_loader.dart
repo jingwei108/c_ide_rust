@@ -1,14 +1,18 @@
 import 'dart:convert';
-import 'package:flutter/services.dart' show rootBundle;
+import 'package:flutter/services.dart';
 import 'code_template.dart';
 
 /// 从 assets/templates/ 运行时加载模板列表。
 ///
 /// 读取 assets/templates/index.json 获取元数据，
-/// 再按需加载每个模板的 .c 源码文件。
+/// 再按需加载每个模板的 .c / .cpp 源码文件。
 class TemplateLoader {
-  static Future<List<CodeTemplate>> load() async {
-    final indexJson = await rootBundle.loadString('assets/templates/index.json');
+  /// 加载模板列表。
+  ///
+  /// [bundle] 用于测试注入自定义 AssetBundle；生产环境使用 [rootBundle]。
+  static Future<List<CodeTemplate>> load({AssetBundle? bundle}) async {
+    final assetBundle = bundle ?? rootBundle;
+    final indexJson = await assetBundle.loadString('assets/templates/index.json');
     final index = jsonDecode(indexJson) as Map<String, dynamic>;
     final templates = <CodeTemplate>[];
 
@@ -17,13 +21,17 @@ class TemplateLoader {
       final key = meta['key'] as String? ?? '';
       if (key.isEmpty) continue;
 
-      // Load source code from .c asset
+      final ext = meta['ext'] as String? ?? 'c';
+
+      // Load source code from .c / .cpp asset
       String code;
       try {
-        code = await rootBundle.loadString('assets/templates/$key.c');
-      } catch (_) {
-        // Fallback: if .c file missing, skip this template
-        continue;
+        code = await assetBundle.loadString('assets/templates/$key.$ext');
+      } catch (e) {
+        // 模板源码加载失败是严重错误，不应静默跳过，否则学生点击模板无反应。
+        throw TemplateLoadException(
+          'Failed to load template source for "$key" (expected assets/templates/$key.$ext): $e',
+        );
       }
 
       // Parse params
@@ -76,6 +84,7 @@ class TemplateLoader {
         meta['name'] as String? ?? key,
         meta['category'] as String? ?? '其他',
         code,
+        ext: ext,
         params: params,
         tutorialSteps: tutorialSteps,
       ));
@@ -83,4 +92,12 @@ class TemplateLoader {
 
     return templates;
   }
+}
+
+/// 模板加载异常。
+class TemplateLoadException implements Exception {
+  final String message;
+  TemplateLoadException(this.message);
+  @override
+  String toString() => 'TemplateLoadException: $message';
 }

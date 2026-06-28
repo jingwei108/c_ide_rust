@@ -50,6 +50,10 @@ class CodeTemplate {
   final String displayName;
   final String category;
   final String code;
+
+  /// 源码语言扩展名：'c' 或 'cpp'。
+  /// 用于插入模板时设置正确的文件名，确保 Rust 后端按 C/C++ 模式编译。
+  final String ext;
   final List<TemplateParam> params;
   final List<TutorialStep> tutorialSteps;
 
@@ -58,20 +62,29 @@ class CodeTemplate {
     this.displayName,
     this.category,
     this.code, {
+    this.ext = 'c',
     this.params = const [],
     this.tutorialSteps = const [],
   });
 
+  /// 占位符语法：/*__PARAM_key__*/ defaultValue
+  ///
+  /// defaultValue 匹配规则：从占位符后开始，直到遇到空白、逗号、分号、
+  /// 右括号、右中括号或字符串结束。这样可以覆盖数组大小、函数参数、
+  /// 变量初始化等常见场景。
+  static final _placeholderRe = RegExp(r'/\*__PARAM_(\w+)__\*/\s*([^\s\[\]();,]+)');
+
   /// 用学生填入的参数替换代码中的占位符。
-  /// 占位符语法 (合法C注释): /*__PARAM_key__*/ defaultValue
   String buildCode(Map<String, String> values) {
-    var result = code;
-    final pattern = RegExp(r'/\*__PARAM_(\w+)__\*/\s*([^ \t\n\r\[\]();,]+)');
-    result = result.replaceAllMapped(pattern, (match) {
+    return code.replaceAllMapped(_placeholderRe, (match) {
       final paramKey = match.group(1)!;
       final paramDefault = match.group(2)!;
       return values[paramKey] ?? paramDefault;
     });
-    return result;
+  }
+
+  /// 返回该模板源码中声明的所有占位符参数名。
+  Set<String> get placeholderKeys {
+    return _placeholderRe.allMatches(code).map((m) => m.group(1)!).toSet();
   }
 }

@@ -2,11 +2,7 @@ use super::*;
 
 impl TypeChecker {
     /// 尝试实例化类模板。返回 (mangled_name, ClassDecl) 若成功。
-    pub(crate) fn try_monomorphize_class(
-        &mut self,
-        base: &str,
-        args: &[TemplateArg],
-    ) -> Option<(String, ClassDecl)> {
+    pub(crate) fn try_monomorphize_class(&mut self, base: &str, args: &[TemplateArg]) -> Option<(String, ClassDecl)> {
         // 内置容器 + 类类型实参：合成走普通类模板路径的实例化。
         let type_only_args: Vec<Type> = args
             .iter()
@@ -15,8 +11,7 @@ impl TypeChecker {
                 _ => None,
             })
             .collect();
-        if let Some(result) =
-            self.try_synthesize_builtin_container_class(base, &type_only_args, &SourceLoc::default())
+        if let Some(result) = self.try_synthesize_builtin_container_class(base, &type_only_args, &SourceLoc::default())
         {
             return Some(result);
         }

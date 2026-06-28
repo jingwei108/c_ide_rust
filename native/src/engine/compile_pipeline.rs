@@ -396,6 +396,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
                 SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
             )
         })
@@ -613,6 +614,7 @@ pub fn run_multi_file_pipeline(
                 SourceLoc {
                     line: loc.line,
                     column: loc.column,
+                    file_id: 0,
                 },
             )
         })

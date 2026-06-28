@@ -500,8 +500,8 @@ impl BytecodeGen {
                     self.emit(OpCode::PushArgc, 0, &SourceLoc::default());
                 }
             }
-            self.emit(OpCode::Call, main_idx, &SourceLoc { line: 0, column: 0 });
-            self.emit(OpCode::Ret, 0, &SourceLoc { line: 0, column: 0 });
+            self.emit(OpCode::Call, main_idx, &SourceLoc { line: 0, column: 0, file_id: 0 });
+            self.emit(OpCode::Ret, 0, &SourceLoc { line: 0, column: 0, file_id: 0 });
             self.code[0] = Instruction::new(OpCode::Jump, wrapper_ip as i32, SourceLoc::default());
         } else {
             self.errors.push("缺少 main 函数入口".to_string());
@@ -532,6 +532,7 @@ impl BytecodeGen {
         let vm_loc = SourceLoc {
             line: loc.line,
             column: loc.column,
+            file_id: 0,
         };
         self.code.push(Instruction::new(op, operand, vm_loc));
         if loc.line > 0 {
@@ -563,7 +564,7 @@ impl BytecodeGen {
         if let Some(frame) = self.local_scope_stack.pop() {
             // 逆序调用析构函数（C++ 销毁顺序与构造顺序相反）
             for cv in frame.class_vars.iter().rev() {
-                self.emit_class_dtor(&cv.class_name, cv.offset, &SourceLoc { line: 0, column: 0 });
+                self.emit_class_dtor(&cv.class_name, cv.offset, &SourceLoc { line: 0, column: 0, file_id: 0 });
             }
             for entry in frame.shadows {
                 if let Some(old) = entry.old_offset {

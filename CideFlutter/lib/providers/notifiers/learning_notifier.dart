@@ -136,6 +136,7 @@ mixin LearningNotifierMixin
     state = state.copyWith(
       activeTutorial: TutorialSession(
         templateKey: template.key,
+        templateExt: template.ext,
         generatedCode: generatedCode,
         stepIndex: 0,
         focusLines: focusLines,
@@ -188,21 +189,31 @@ mixin LearningNotifierMixin
     final newCompleted = Set<String>.from(progress.completedTutorials)
       ..add(tutorial.templateKey);
 
+    // 根据模板语言确定目标文件名，确保 Rust 后端按 C/C++ 模式编译。
+    final isCpp = tutorial.templateExt == 'cpp';
+    final targetFilename = isCpp ? 'main.cpp' : 'main.c';
+    final generatedCode = tutorial.generatedCode;
+
+    // 如果目标文件已存在且不是当前文件，直接切换过去并替换源码；
+    // 否则替换当前文件内容，同时把文件名改成目标扩展名。
+    final targetExists = state.files.any((f) => f.filename == targetFilename);
+    final newFiles = state.files.map((f) {
+      if (f.filename == state.currentFile && !targetExists) {
+        return CodeFile(filename: targetFilename, source: generatedCode);
+      }
+      if (f.filename == targetFilename) {
+        return f.copyWith(source: generatedCode);
+      }
+      return f;
+    }).toList();
+
     state = state.copyWith(
-      activeTutorial: null,
-      source: tutorial.generatedCode,
+      clearActiveTutorial: true,
+      source: generatedCode,
+      currentFile: targetFilename,
+      files: newFiles,
       learningProgress: progress.copyWith(completedTutorials: newCompleted),
     );
-
-    // 同步 source 到当前文件
-    final newFiles =
-        state.files.map((f) {
-          if (f.filename == state.currentFile) {
-            return f.copyWith(source: tutorial.generatedCode);
-          }
-          return f;
-        }).toList();
-    state = state.copyWith(files: newFiles);
 
     await _saveProgress();
 

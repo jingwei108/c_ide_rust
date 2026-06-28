@@ -4,6 +4,7 @@
       "key": "activitySelection",
       "name": "活动安排问题",
       "category": "基础",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -22,6 +23,7 @@
       "key": "array",
       "name": "数组遍历",
       "category": "基础",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -40,6 +42,7 @@
       "key": "avlTree",
       "name": "AVL 树插入",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -58,6 +61,7 @@
       "key": "bellmanFord",
       "name": "Bellman-Ford 最短路径",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -76,6 +80,7 @@
       "key": "bfs",
       "name": "BFS 广度优先",
       "category": "图算法",
+      "ext": "c",
       "params": {
         "n": {
           "label": "节点数",
@@ -100,6 +105,7 @@
       "key": "binary",
       "name": "二分查找",
       "category": "查找",
+      "ext": "c",
       "params": {
         "target": {
           "label": "查找目标",
@@ -124,6 +130,7 @@
       "key": "binarySearchTreeValidation",
       "name": "验证 BST",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -142,6 +149,7 @@
       "key": "bstDelete",
       "name": "BST 节点删除",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -160,6 +168,7 @@
       "key": "bstInsert",
       "name": "BST 插入",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -178,6 +187,7 @@
       "key": "bstSearch",
       "name": "BST 查找",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -196,6 +206,7 @@
       "key": "bTree",
       "name": "B 树插入与查找",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -214,6 +225,7 @@
       "key": "bubble",
       "name": "冒泡排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -238,6 +250,7 @@
       "key": "bucketSort",
       "name": "桶排序",
       "category": "排序",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -256,6 +269,7 @@
       "key": "circularLinkedList",
       "name": "循环链表",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -274,6 +288,7 @@
       "key": "circularQueue",
       "name": "循环队列",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -292,6 +307,7 @@
       "key": "computeNextVal",
       "name": "KMP nextval 优化",
       "category": "字符串",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -310,6 +326,7 @@
       "key": "countingSort",
       "name": "计数排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -334,6 +351,7 @@
       "key": "cpp_class_basic",
       "name": "C++ 类与对象",
       "category": "C++基础",
+      "ext": "cpp",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -358,6 +376,7 @@
       "key": "cpp_hello",
       "name": "C++ 入门",
       "category": "C++基础",
+      "ext": "cpp",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -376,6 +395,7 @@
       "key": "cpp_range_for",
       "name": "C++ 范围 for",
       "category": "C++基础",
+      "ext": "cpp",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -401,6 +421,7 @@
       "key": "cpp_unique_ptr",
       "name": "C++ 智能指针 unique_ptr",
       "category": "C++基础",
+      "ext": "cpp",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -426,6 +447,7 @@
       "key": "cpp_vector_int",
       "name": "C++ 动态数组 vector<int>",
       "category": "C++容器",
+      "ext": "cpp",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -454,9 +476,43 @@
       ]
     },
     {
+      "key": "cpp_vector_struct",
+      "name": "C++ 模板容器存储自定义结构体",
+      "category": "C++容器",
+      "ext": "cpp",
+      "params": {},
+      "tutorialAnchors": {},
+      "tutorialSteps": [
+        {
+          "title": "类模板",
+          "description": "使用 template<class T> 定义类模板，再用 vector<Point> 实例化出存储自定义结构体的容器。",
+          "focusLines": [],
+          "explanations": []
+        },
+        {
+          "title": "自定义类型元素",
+          "description": "Point 是一个普通结构体，模板类 vector<T> 可以像存储 int 一样存储 Point，按值拷贝元素。",
+          "focusLines": [],
+          "explanations": []
+        },
+        {
+          "title": "动态扩容与元素拷贝",
+          "description": "push_back 扩容时通过 new[]/delete[] 重新分配内存，并用逐元素赋值完成拷贝。",
+          "focusLines": [],
+          "explanations": []
+        }
+      ],
+      "knowledgeNodes": [
+        "CppTemplate",
+        "CppContainer",
+        "Struct"
+      ]
+    },
+    {
       "key": "criticalPath",
       "name": "关键路径",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -475,6 +531,7 @@
       "key": "deque",
       "name": "双端队列",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -493,6 +550,7 @@
       "key": "dfs",
       "name": "DFS 深度优先",
       "category": "图算法",
+      "ext": "c",
       "params": {
         "n": {
           "label": "节点数",
@@ -517,6 +575,7 @@
       "key": "dijkstra",
       "name": "Dijkstra 最短路径",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -535,6 +594,7 @@
       "key": "doublyLinkedList",
       "name": "双向链表",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -553,6 +613,7 @@
       "key": "dpCoinChange",
       "name": "硬币找零",
       "category": "动态规划",
+      "ext": "c",
       "params": {
         "amount": {
           "label": "目标金额",
@@ -577,6 +638,7 @@
       "key": "dpFib",
       "name": "DP 斐波那契",
       "category": "动态规划",
+      "ext": "c",
       "params": {
         "n": {
           "label": "求第 n 项",
@@ -601,6 +663,7 @@
       "key": "dpKnapsack",
       "name": "01 背包",
       "category": "动态规划",
+      "ext": "c",
       "params": {
         "capacity": {
           "label": "背包容量",
@@ -625,6 +688,7 @@
       "key": "dpLCS",
       "name": "最长公共子序列",
       "category": "动态规划",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -643,6 +707,7 @@
       "key": "dpLIS",
       "name": "最长递增子序列",
       "category": "动态规划",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -661,6 +726,7 @@
       "key": "externalSort",
       "name": "外部排序（置换-选择）",
       "category": "排序",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -679,6 +745,7 @@
       "key": "factorial",
       "name": "递归阶乘",
       "category": "递归",
+      "ext": "c",
       "params": {
         "n": {
           "label": "求 n 的阶乘",
@@ -703,6 +770,7 @@
       "key": "fib",
       "name": "斐波那契",
       "category": "递归",
+      "ext": "c",
       "params": {
         "n": {
           "label": "求第 n 项",
@@ -727,6 +795,7 @@
       "key": "fibonacciSearch",
       "name": "斐波那契查找",
       "category": "查找",
+      "ext": "c",
       "params": {
         "key": {
           "label": "查找目标",
@@ -751,6 +820,7 @@
       "key": "floyd",
       "name": "Floyd 最短路径",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -769,6 +839,7 @@
       "key": "gcd",
       "name": "辗转相除",
       "category": "基础",
+      "ext": "c",
       "params": {
         "a": {
           "label": "第一个数",
@@ -798,6 +869,7 @@
       "key": "hanoi",
       "name": "汉诺塔",
       "category": "递归",
+      "ext": "c",
       "params": {
         "n": {
           "label": "盘子数量",
@@ -822,6 +894,7 @@
       "key": "hashTable",
       "name": "哈希表",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -840,6 +913,7 @@
       "key": "heapSort",
       "name": "堆排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -864,6 +938,7 @@
       "key": "huffmanTree",
       "name": "哈夫曼树",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -882,6 +957,7 @@
       "key": "infixEvaluation",
       "name": "中缀表达式求值",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -900,6 +976,7 @@
       "key": "inorder",
       "name": "中序遍历",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -918,6 +995,7 @@
       "key": "insertion",
       "name": "插入排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -942,6 +1020,7 @@
       "key": "interpolationSearch",
       "name": "插值查找",
       "category": "查找",
+      "ext": "c",
       "params": {
         "key": {
           "label": "查找目标",
@@ -966,6 +1045,7 @@
       "key": "isPrime",
       "name": "判断素数",
       "category": "基础",
+      "ext": "c",
       "params": {
         "n": {
           "label": "待判断的数",
@@ -990,6 +1070,7 @@
       "key": "josephus",
       "name": "约瑟夫环",
       "category": "基础",
+      "ext": "c",
       "params": {
         "m": {
           "label": "报数上限",
@@ -1014,6 +1095,7 @@
       "key": "kruskalMST",
       "name": "Kruskal 最小生成树",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1032,6 +1114,7 @@
       "key": "levelOrder",
       "name": "层序遍历",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1050,6 +1133,7 @@
       "key": "linear",
       "name": "线性查找",
       "category": "查找",
+      "ext": "c",
       "params": {
         "target": {
           "label": "查找目标",
@@ -1074,6 +1158,7 @@
       "key": "linked",
       "name": "链表节点",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1092,6 +1177,7 @@
       "key": "linkedDelete",
       "name": "链表删除",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1110,6 +1196,7 @@
       "key": "linkedInsert",
       "name": "链表头插法",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1128,6 +1215,7 @@
       "key": "linkedListTail",
       "name": "链表尾插法",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1146,6 +1234,7 @@
       "key": "linkedQueue",
       "name": "链队列",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1164,6 +1253,7 @@
       "key": "linkedStack",
       "name": "链栈",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1182,6 +1272,7 @@
       "key": "linkedTraverse",
       "name": "链表遍历",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1200,6 +1291,7 @@
       "key": "matrixChain",
       "name": "矩阵连乘",
       "category": "动态规划",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1218,6 +1310,7 @@
       "key": "merge",
       "name": "归并排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -1242,6 +1335,7 @@
       "key": "mergeSortedLists",
       "name": "有序表合并",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1260,6 +1354,7 @@
       "key": "parenthesesMatch",
       "name": "括号匹配",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1278,6 +1373,7 @@
       "key": "pointer",
       "name": "指针交换",
       "category": "指针",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1296,6 +1392,7 @@
       "key": "polynomialAdd",
       "name": "多项式相加",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1314,6 +1411,7 @@
       "key": "postorder",
       "name": "后序遍历",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1332,6 +1430,7 @@
       "key": "primMST",
       "name": "Prim 最小生成树",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1350,6 +1449,7 @@
       "key": "queueArray",
       "name": "队列（数组）",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1368,6 +1468,7 @@
       "key": "quick",
       "name": "快速排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -1392,6 +1493,7 @@
       "key": "radixSort",
       "name": "基数排序",
       "category": "排序",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1410,6 +1512,7 @@
       "key": "redBlackTree",
       "name": "红黑树",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1428,6 +1531,7 @@
       "key": "selection",
       "name": "选择排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -1452,6 +1556,7 @@
       "key": "seqList",
       "name": "顺序表",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1470,6 +1575,7 @@
       "key": "shellSort",
       "name": "希尔排序",
       "category": "排序",
+      "ext": "c",
       "params": {
         "n": {
           "label": "数组长度",
@@ -1494,6 +1600,7 @@
       "key": "sieveOfEratosthenes",
       "name": "埃氏筛",
       "category": "基础",
+      "ext": "c",
       "params": {
         "n": {
           "label": "筛法上限",
@@ -1518,6 +1625,7 @@
       "key": "spfa",
       "name": "SPFA 最短路径",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1536,6 +1644,7 @@
       "key": "stackArray",
       "name": "栈（数组）",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1554,6 +1663,7 @@
       "key": "staticLinkedList",
       "name": "静态链表",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1572,6 +1682,7 @@
       "key": "stringBasicOps",
       "name": "串基本操作",
       "category": "字符串",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1590,6 +1701,7 @@
       "key": "stringMatchBF",
       "name": "朴素模式匹配",
       "category": "字符串",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1608,6 +1720,7 @@
       "key": "stringMatchKMP",
       "name": "KMP 模式匹配",
       "category": "字符串",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1626,6 +1739,7 @@
       "key": "stringReverse",
       "name": "字符串反转",
       "category": "字符串",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1644,6 +1758,7 @@
       "key": "threadedBinaryTree",
       "name": "线索二叉树",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1662,6 +1777,7 @@
       "key": "topologicalSort",
       "name": "拓扑排序",
       "category": "图算法",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1680,6 +1796,7 @@
       "key": "treeNode",
       "name": "二叉树节点",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1698,6 +1815,7 @@
       "key": "treePreorder",
       "name": "先序遍历",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1716,6 +1834,7 @@
       "key": "treeToForest",
       "name": "树与森林转换",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [
@@ -1734,6 +1853,7 @@
       "key": "unionFind",
       "name": "并查集",
       "category": "结构",
+      "ext": "c",
       "params": {},
       "tutorialAnchors": {},
       "tutorialSteps": [

@@ -4,6 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:cide/models/code_template.dart';
 import 'package:cide/models/learning_progress.dart';
 import 'package:cide/providers/ide_provider.dart';
+import 'package:cide/services/rust_api_service.dart';
+import 'package:cide/src/rust/unified/types.dart' as types;
+import 'package:mocktail/mocktail.dart';
+import '../mocks/rust_api_service_mock.dart';
 
 void main() {
   setUpAll(() {
@@ -400,6 +404,96 @@ void main() {
       notifier.prevTutorialStep();
 
       expect(container.read(ideProvider).activeTutorial!.stepIndex, 0);
+    });
+
+    test('completeTutorial switches filename for C++ templates', () async {
+      final mock = MockRustApiService();
+      when(() => mock.compileMulti(files: any(named: 'files')))
+          .thenAnswer((_) async => compileSuccess());
+      when(() => mock.compileAndRunMulti(files: any(named: 'files')))
+          .thenAnswer((_) async => unifiedRunSuccess());
+      when(() => mock.inferIntentFromSource(source: any(named: 'source')))
+          .thenAnswer((_) async => []);
+      when(() => mock.getAlgorithmMatches())
+          .thenAnswer((_) async => []);
+      when(() => mock.runAutoStepsStream(batchSize: any(named: 'batchSize')))
+          .thenAnswer((_) => Stream.fromIterable([emptyBatch(finished: true)]));
+      when(() => mock.getHeatmap()).thenAnswer((_) async => types.HeatmapData(
+            lineCounts: const [],
+            maxCount: BigInt.zero,
+          ));
+
+      final container = ProviderContainer(
+        overrides: [rustApiServiceProvider.overrideWithValue(mock)],
+      );
+      // 保持 notifier 存活，避免 await compile 期间被 dispose 导致状态回滚。
+      container.listen(ideProvider, (prev, next) {});
+
+      final notifier = container.read(ideProvider.notifier);
+      final cppTemplate = CodeTemplate(
+        'cpp_hello',
+        'C++ Hello',
+        'C++基础',
+        'int main() { return 0; }',
+        ext: 'cpp',
+        tutorialSteps: [
+          TutorialStep(title: 'Step 1', description: 'd', focusLines: [1]),
+        ],
+      );
+      notifier.startTutorial(cppTemplate, 'int main() { return 0; }');
+      await notifier.completeTutorial();
+      // 等待统一模式 stream 完成，避免 ProviderContainer 提前 dispose。
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final state = container.read(ideProvider);
+      expect(state.activeTutorial, isNull);
+      expect(state.currentFile, 'main.cpp');
+      expect(state.source, 'int main() { return 0; }');
+      expect(state.files.any((f) => f.filename == 'main.cpp'), isTrue);
+      container.dispose();
+    });
+
+    test('completeTutorial keeps main.c for C templates', () async {
+      final mock = MockRustApiService();
+      when(() => mock.compileMulti(files: any(named: 'files')))
+          .thenAnswer((_) async => compileSuccess());
+      when(() => mock.compileAndRunMulti(files: any(named: 'files')))
+          .thenAnswer((_) async => unifiedRunSuccess());
+      when(() => mock.inferIntentFromSource(source: any(named: 'source')))
+          .thenAnswer((_) async => []);
+      when(() => mock.getAlgorithmMatches())
+          .thenAnswer((_) async => []);
+      when(() => mock.runAutoStepsStream(batchSize: any(named: 'batchSize')))
+          .thenAnswer((_) => Stream.fromIterable([emptyBatch(finished: true)]));
+      when(() => mock.getHeatmap()).thenAnswer((_) async => types.HeatmapData(
+            lineCounts: const [],
+            maxCount: BigInt.zero,
+          ));
+
+      final container = ProviderContainer(
+        overrides: [rustApiServiceProvider.overrideWithValue(mock)],
+      );
+      // 保持 notifier 存活，避免 await compile 期间被 dispose 导致状态回滚。
+      container.listen(ideProvider, (prev, next) {});
+
+      final notifier = container.read(ideProvider.notifier);
+      final cTemplate = CodeTemplate(
+        'array',
+        'Array',
+        '基础',
+        'int main() { return 0; }',
+        tutorialSteps: [
+          TutorialStep(title: 'Step 1', description: 'd', focusLines: [1]),
+        ],
+      );
+      notifier.startTutorial(cTemplate, 'int main() { return 0; }');
+      await notifier.completeTutorial();
+      // 等待统一模式 stream 完成，避免 ProviderContainer 提前 dispose。
+      await Future.delayed(const Duration(milliseconds: 100));
+
+      final state = container.read(ideProvider);
+      expect(state.currentFile, 'main.c');
+      container.dispose();
     });
   });
 

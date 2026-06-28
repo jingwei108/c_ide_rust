@@ -21,6 +21,9 @@ class CodeFile {
 /// 当前激活的教程会话
 class TutorialSession {
   final String templateKey;
+
+  /// 模板源码语言扩展名：'c' 或 'cpp'。
+  final String templateExt;
   final String generatedCode;
   final int stepIndex;
   final List<int> focusLines;
@@ -28,6 +31,7 @@ class TutorialSession {
 
   const TutorialSession({
     required this.templateKey,
+    required this.templateExt,
     required this.generatedCode,
     required this.stepIndex,
     required this.focusLines,
@@ -36,6 +40,7 @@ class TutorialSession {
 
   TutorialSession copyWith({
     String? templateKey,
+    String? templateExt,
     String? generatedCode,
     int? stepIndex,
     List<int>? focusLines,
@@ -43,6 +48,7 @@ class TutorialSession {
   }) {
     return TutorialSession(
       templateKey: templateKey ?? this.templateKey,
+      templateExt: templateExt ?? this.templateExt,
       generatedCode: generatedCode ?? this.generatedCode,
       stepIndex: stepIndex ?? this.stepIndex,
       focusLines: focusLines ?? this.focusLines,
@@ -153,6 +159,7 @@ class IdeState {
     TutorialSession? activeTutorial,
     bool clearError = false,
     bool clearActiveFloatingPanel = false,
+    bool clearActiveTutorial = false,
   }) {
     return IdeState(
       files: files ?? this.files,
@@ -182,7 +189,7 @@ class IdeState {
       executionSpeed: executionSpeed ?? this.executionSpeed,
       showIntro: showIntro ?? this.showIntro,
       learningProgress: learningProgress ?? this.learningProgress,
-      activeTutorial: activeTutorial ?? this.activeTutorial,
+      activeTutorial: clearActiveTutorial ? null : (activeTutorial ?? this.activeTutorial),
     );
   }
 

@@ -484,6 +484,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: self.previous().line,
                     column: self.previous().column,
+                    file_id: 0,
                 },
                 ty: ty.clone(),
                 name,
@@ -509,6 +510,7 @@ impl Parser {
                     loc: SourceLoc {
                         line: self.previous().line,
                         column: self.previous().column,
+                        file_id: 0,
                     },
                     ty: extra_ty,
                     name: extra_name,
@@ -541,6 +543,7 @@ impl Parser {
                 loc: SourceLoc {
                     line: self.current().line,
                     column: self.current().column,
+                    file_id: 0,
                 },
                 ty: Type::int(),
             };
@@ -590,11 +593,7 @@ impl Parser {
                         return (i, TokenType::Gt);
                     }
                 }
-                TokenType::Comma if template_depth == 1
-                    && paren == 0
-                    && bracket == 0
-                    && brace == 0 =>
-                {
+                TokenType::Comma if template_depth == 1 && paren == 0 && bracket == 0 && brace == 0 => {
                     return (i, TokenType::Comma);
                 }
                 _ => {}

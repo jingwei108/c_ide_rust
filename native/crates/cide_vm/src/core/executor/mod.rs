@@ -278,8 +278,9 @@ impl CideVM {
         let ip_before = self.ip;
         self.ip += 1;
 
-        // 记录执行热力图
-        if inst.loc.line > 0 {
+        // 记录执行热力图：只统计用户主文件（file_id == 0）的源码行号，
+        // 避免 Bytecode Libc / 标准库的外部行号混入导致覆盖率超过 100%。
+        if inst.loc.line > 0 && inst.loc.file_id == 0 {
             session.runtime.heatmap.record(inst.loc.line);
         }
 
@@ -350,7 +351,7 @@ mod builtin_tests {
     use crate::opcode::OpCode;
 
     fn exec_single(vm: &mut CideVM, session: &mut VmContext<'_>, op: OpCode) {
-        vm.set_test_code(vec![Instruction::new(op, 0, SourceLoc { line: 1, column: 1 })]);
+        vm.set_test_code(vec![Instruction::new(op, 0, SourceLoc { line: 1, column: 1, file_id: 0 })]);
         let result = vm.step(session);
         assert!(
             !vm.has_error() || matches!(result, StepResult::Trap),
