@@ -746,8 +746,9 @@ I/O：printf、scanf、sprintf、snprintf、sscanf、fprintf、puts、getchar、
 宏/类型：NULL、EOF、INT_MAX、INT_MIN、bool、true、false、size_t、ptrdiff_t、
          EXIT_SUCCESS、EXIT_FAILURE
 
-不支持：bitfield、_Complex、_Generic、_Static_assert、_Alignas/_Alignof、
-       _Noreturn/_Thread_local/_Atomic、完整预处理器（仅 #define 常量宏 + 条件编译）
+不支持：bitfield、_Complex、_Static_assert、_Alignas/_Alignof、
+       _Noreturn/_Thread_local/_Atomic、`__attribute__((cleanup(...)))` 等 GCC 扩展属性、
+       完整预处理器（仅 #define 常量宏 + 条件编译）
 ```
 
 这个范围覆盖了 C 语言的核心教学价值（变量、控制流、函数、指针、内存、字符串、类型系统、标准库），
