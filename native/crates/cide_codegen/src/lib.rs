@@ -58,6 +58,14 @@ pub struct BytecodeGen {
     temp_slot1: i32,
     temp_slot2: i32,
     temp_slot3: i32,
+    /// 8 字节临时槽（double/long long 的读-改-写中间值）。
+    /// 普通槽位只有 4 字节空间，64 位位模式写入会踩踏相邻槽/局部变量。
+    temp_slot_64: i32,
+    /// T-P0-6：赋值目标地址槽的嵌套深度计数（gen_assign 入口递增）。
+    /// 嵌套赋值（a[0] += (b[0] = 5)）内外层此前复用 temp_slot0 互相覆盖。
+    assign_nest_depth: i32,
+    /// 按嵌套深度缓存分配的地址槽（下标 = 深度-1），同层顺序复用。
+    assign_addr_slots: Vec<i32>,
     globals_init_32: Vec<(u32, i32)>,
     globals_init_64: Vec<(u32, u64)>,
     next_global_offset: i32,
@@ -138,6 +146,9 @@ impl BytecodeGen {
             temp_slot1: -1,
             temp_slot2: -1,
             temp_slot3: -1,
+            temp_slot_64: -1,
+            assign_nest_depth: 0,
+            assign_addr_slots: Vec::new(),
             globals_init_32: Vec::new(),
             globals_init_64: Vec::new(),
             next_global_offset: BYTECODE_LIBC_GLOBALS_RESERVED as i32,
@@ -320,35 +331,16 @@ impl BytecodeGen {
                             let elem_size = self.elem_type_size(&g.ty);
                             let count = g.ty.total_elements();
                             if elem_size == 8 {
+                                // T-P0-2：8 字节元素按元素类型（double/long long）编码位模式，
+                                // 此前 long long 数组元素被写成 f64 位模式（ga[2]={1,2} 得 0 0）
+                                let elem_ty = base_element_type(&g.ty).clone();
                                 for i in 0..count as usize {
                                     let addr = offset as u32 + (i as u32) * elem_size as u32;
-                                    let val64 = if let Some(elem) = elements.get(i) {
-                                        match &elem.value {
-                                            Expr::FloatLiteral { value, ty, .. } => {
-                                                if ty.kind() == TypeKind::Double {
-                                                    value.to_bits()
-                                                } else {
-                                                    (*value).to_bits()
-                                                }
-                                            }
-                                            Expr::LongLiteral { value, .. } => (*value as f64).to_bits(),
-                                            Expr::Literal { value, .. } => (*value as f64).to_bits(),
-                                            Expr::Unary { op: UnaryOp::Neg, operand, .. } => {
-                                                if let Expr::FloatLiteral { value, .. } = operand.as_ref() {
-                                                    (-*value).to_bits()
-                                                } else if let Expr::LongLiteral { value, .. } = operand.as_ref() {
-                                                    (-(*value as f64)).to_bits()
-                                                } else if let Expr::Literal { value, .. } = operand.as_ref() {
-                                                    (-(*value as f64)).to_bits()
-                                                } else {
-                                                    0
-                                                }
-                                            }
-                                            _ => 0,
-                                        }
-                                    } else {
-                                        0
-                                    };
+                                    let val64 = elements
+                                        .get(i)
+                                        .and_then(|elem| crate::init::literal_init_bits(&elem.value, elem_ty.kind()))
+                                        .map(|(bits, _)| bits)
+                                        .unwrap_or(0);
                                     self.globals_init_64.push((addr, val64));
                                 }
                             } else {
@@ -367,18 +359,23 @@ impl BytecodeGen {
                             self.globals_init_32.push((offset as u32 + i as u32, byte));
                         }
                     }
-                    Expr::Literal { value, .. } => {
-                        self.globals_init_32.push((offset as u32, *value));
+                    Expr::Literal { .. } | Expr::LongLiteral { .. } | Expr::FloatLiteral { .. } => {
+                        // T-P0-1：全局标量初始化按目标类型编码位模式，
+                        // 此前 int 位模式被无条件写进 4 字节槽（double g = 1 得 0）
+                        // 三类字面量在 push_literal_init 中恒成功
+                        let _ = self.push_literal_init(offset as u32, init, &g.ty);
                     }
-                    Expr::LongLiteral { value, .. } => {
-                        self.globals_init_64.push((offset as u32, *value as u64));
-                    }
-                    Expr::FloatLiteral { value, .. } => {
-                        if g.ty.kind() == TypeKind::Double {
-                            self.globals_init_64.push((offset as u32, value.to_bits()));
-                        } else {
-                            self.globals_init_32.push((offset as u32, (*value as f32).to_bits() as i32));
-                        }
+                    Expr::Unary {
+                        op: cide_ast::UnaryOp::Neg,
+                        operand,
+                        ..
+                    } if matches!(
+                        operand.as_ref(),
+                        Expr::Literal { .. } | Expr::LongLiteral { .. } | Expr::FloatLiteral { .. }
+                    ) =>
+                    {
+                        // 负数字面量（如 double g = -2;）此前落入 _ 分支被静默丢弃
+                        let _ = self.push_literal_init(offset as u32, init, &g.ty);
                     }
                     Expr::Identifier { name, .. } => {
                         // 全局函数指针初始化：int (*fp)(int) = myFunc;
@@ -625,6 +622,31 @@ impl BytecodeGen {
             self.next_local_offset += 4;
         }
         *slot
+    }
+
+    /// 8 字节临时槽：double/long long 位模式读写必须独占 8 字节空间，
+    /// 复用 4 字节槽会踩踏相邻槽/局部变量（曾致 9 个 baseline 链表用例回归）。
+    fn get_temp_slot_64(&mut self) -> i32 {
+        if self.temp_slot_64 < 0 {
+            self.temp_slot_64 = self.next_local_offset;
+            // 保持后续 4 字节槽 8 字节对齐，避免非对齐 64 位访问
+            self.next_local_offset += 8;
+        }
+        self.temp_slot_64
+    }
+
+    /// T-P0-6：按当前赋值嵌套深度分配"赋值目标地址"槽。
+    /// gen_assign 入口递增 assign_nest_depth；右侧表达式（gen_right）中再出现
+    /// 赋值时会进入更深一层，拿到不同槽位，杜绝内外层地址互相覆盖
+    /// （`a[0] += (b[0] = 5)` 曾把 a 的地址写成 b 的地址）。同层顺序复用。
+    fn get_assign_addr_slot(&mut self) -> i32 {
+        let depth = self.assign_nest_depth.max(1) as usize;
+        while self.assign_addr_slots.len() < depth {
+            let slot = self.next_local_offset;
+            self.next_local_offset += 4;
+            self.assign_addr_slots.push(slot);
+        }
+        self.assign_addr_slots[depth - 1]
     }
 
     fn get_member_offset(&self, object_type: &Type, member_name: &str) -> i32 {

@@ -10,6 +10,11 @@ impl BytecodeGen {
         self.current_func = name.to_string();
         self.local_indices.clear();
         self.local_types.clear();
+        // T-P0-7：static 局部变量表按函数隔离。此前以裸变量名跨函数共享，
+        // 两个函数各有一个 `static int x` 时后者复用前者的地址与初始化，
+        // 读到前者的值。清空后同函数内同名 static 判重逻辑不受影响。
+        self.static_local_indices.clear();
+        self.static_local_types.clear();
         self.goto_patches.clear();
         self.label_ips.clear();
         self.local_scope_stack.clear();
@@ -59,6 +64,10 @@ impl BytecodeGen {
         self.temp_slot1 = -1;
         self.temp_slot2 = -1;
         self.temp_slot3 = -1;
+        // 与 temp_slot0~3 同理：按函数重新惰性分配，跨函数复用 offset
+        // 会在小帧函数越界踩踏（曾致链表/队列类 baseline 用例回归）
+        self.temp_slot_64 = -1;
+        self.assign_addr_slots.clear();
         if let Some(meta) = self.func_table.get_mut(name) {
             meta.param_sizes = param_sizes;
             meta.is_variadic = is_variadic;

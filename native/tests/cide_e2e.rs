@@ -241,7 +241,9 @@ fn test_cide_e2e_baseline() {
 /// Known template failures documented in E2E_FAILURES.md.
 /// These are NOT silently ignored — they are monitored by
 /// `test_cide_e2e_template_known_failures` below.
-const KNOWN_TEMPLATE_FAILURES: &[&str] = &["bTree_default", "infixEvaluation_default", "spfa_default"];
+// infixEvaluation_default 已修复 (2026-09-06 第三批 codegen 修复：自增/自减
+// 作为数组索引的代码生成缺陷，如 opStack[++opTop]；输出与 Clang golden 一致)
+const KNOWN_TEMPLATE_FAILURES: &[&str] = &["bTree_default", "spfa_default"];
 
 /// Known K&R failures documented in KR_FAILURES.md.
 /// Monitored by `test_cide_e2e_knr_known_failures` below.

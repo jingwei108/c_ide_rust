@@ -40,7 +40,14 @@
 
 门禁化后基线：631 例 = 610 match + 5 known_issue + 16 cide_better，exit 0；`cide_e2e` 10/10 全过；`ci_three_tier_check.py` 全过 exit 0。
 
-**下一批待推进**：第三批（codegen soundness 8 条：T-P0-1~8 + 顺带 T-P1-1 `&&`/`||` 规范化、T-P1-2 struct 拷贝宽度）→ 第四批（Flutter 编辑器与状态）。
+**✅ 第三批（codegen soundness）已全部完成**（2026-09-06 同日）：T-P0-1~8（含 F-P0-2/3）+ 顺带 T-P1-1，全部实测验证。固化 `baseline/codegen_soundness_regression.c`（Cide 与 Clang 输出逐行一致，baseline 314→317）。
+
+修复过程的关键发现（对后续开发有价值）：
+1. **T-P0-6 的地址槽/64 位中间值槽必须在 `enter_function` 重置**——`temp_slot0~3` 一直按函数重置（-1），新增槽若沿用编译器实例级缓存会跨函数复用 offset，在小帧函数越界踩踏（曾引入 9 个 baseline 链表/队列用例回归，开发中被 E2E 防线捕获后修复）。
+2. **`infixEvaluation_default` 真因是编译器缺陷而非模板缺陷**（自增/自减作数组索引），此前被误记为"模板栈下溢"；第三批修复后 E2E 转绿，防线 5 双向监控（KNOWN 常量 + 测试断言）首次实战拦截。
+3. float 在 VM 中两种表示并存：局部/全局槽按 f64 位（StoreLocalD），**内存元素按 4 字节 f32 位**（LoadMem/StoreMem + CastF2D/CastD2F 转换链）——自增路径已按此语义对齐。
+
+**下一批待推进**：第四批（Flutter 编辑器与状态：U-P0-1~5、U-P1 优先项、E-P1-1/2）+ 建议提前的 V-P1-6（栈缓冲区溢出检测）/ V-P1-12（无效 free 诊断）/ V-P1-13（scanf 字符流化）。
 
 ---
 

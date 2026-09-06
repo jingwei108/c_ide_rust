@@ -195,12 +195,16 @@ impl TypeChecker {
                 }
             }
             UnaryOp::PreInc | UnaryOp::PreDec | UnaryOp::PostInc | UnaryOp::PostDec => {
+                // T-P0-3/T-P1-3：允许 long long（is_int 不含 LongLong 曾系统性误拒）；
+                // char 数组元素/成员自增的元素类型是 Char，同样按整数放行
                 if !self.is_int(&operand_type)
+                    && operand_type.kind() != TypeKind::Char
                     && operand_type.kind() != TypeKind::Float
                     && operand_type.kind() != TypeKind::Double
+                    && operand_type.kind() != TypeKind::LongLong
                     && !operand_type.is_pointer()
                 {
-                    self.report_error("自增/自减要求 int 类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
+                    self.report_error("自增/自减要求数值类型或指针类型", loc, ErrorCode::E3022_IncDecTypeError);
                 }
                 if let Expr::Identifier { name, .. } = &*operand {
                     if let Some(sym) = self.lookup_var(name) {
@@ -213,11 +217,9 @@ impl TypeChecker {
                         }
                     }
                 }
-                if operand_type.is_pointer() {
-                    operand_type.clone()
-                } else {
-                    Type::int()
-                }
+                // C 语义：++/-- 的结果是左值，类型与操作数相同
+                // （此前非指针一律标 int，导致 ++doubleVar 作为 printf %f 实参被误报）
+                operand_type.clone()
             }
         };
         ty.clone()

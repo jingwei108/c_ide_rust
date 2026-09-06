@@ -2,6 +2,7 @@
 
 use crate::expr::ExprGen;
 use crate::flatten_init_list;
+use cide_ast::base_element_type;
 use cide_ast::{Designator, Expr, InitElement, SourceLoc, Type, TypeKind};
 use cide_runtime::opcode::OpCode;
 use cide_runtime::Symbol;
@@ -121,19 +122,21 @@ impl BytecodeGen {
                     self.globals_init_32.push((global_offset as u32 + i as u32, byte));
                 }
             }
-            Expr::Literal { value, .. } => {
-                self.globals_init_32.push((global_offset as u32, *value));
+            Expr::Literal { .. } | Expr::LongLiteral { .. } | Expr::FloatLiteral { .. } => {
+                // T-P0-1：static 局部标量初始化按目标类型编码位模式（与全局路径同构）
+                let _ = self.push_literal_init(global_offset as u32, init, vty);
             }
-            Expr::LongLiteral { value, .. } => {
-                self.globals_init_64.push((global_offset as u32, *value as u64));
-            }
-            Expr::FloatLiteral { value, .. } => {
-                if vty.kind() == TypeKind::Double {
-                    self.globals_init_64.push((global_offset as u32, value.to_bits()));
-                } else {
-                    self.globals_init_32
-                        .push((global_offset as u32, (*value as f32).to_bits() as i32));
-                }
+            Expr::Unary {
+                op: cide_ast::UnaryOp::Neg,
+                operand,
+                ..
+            } if matches!(
+                operand.as_ref(),
+                Expr::Literal { .. } | Expr::LongLiteral { .. } | Expr::FloatLiteral { .. }
+            ) =>
+            {
+                // 负数字面量（如 static double d = -2;）与全局路径同构处理
+                let _ = self.push_literal_init(global_offset as u32, init, vty);
             }
             Expr::Identifier { name: id_name, .. } => {
                 if let Some(&idx) = self.func_index.get(id_name) {
@@ -163,19 +166,17 @@ impl BytecodeGen {
         let elem_size = self.elem_type_size(vty);
         let count = vty.total_elements();
         if elem_size == 8 {
-            for (i, elem) in elements.iter().enumerate() {
+            // T-P0-2 同构修复：按元素类型编码 8 字节位模式
+            // （此前 int 字面量初始化 long long 数组元素被写成 32 位截断值）
+            let elem_ty = base_element_type(vty).clone();
+            for i in 0..count as usize {
                 let addr = global_offset as u32 + (i as u32) * elem_size as u32;
-                if let Expr::FloatLiteral { value, .. } = &elem.value {
-                    self.globals_init_64.push((addr, value.to_bits()));
-                } else if let Expr::LongLiteral { value, .. } = &elem.value {
-                    self.globals_init_64.push((addr, *value as u64));
-                } else {
-                    let val = flatten_init_list(std::slice::from_ref(elem), &mut self.errors)
-                        .first()
-                        .copied()
-                        .unwrap_or(0);
-                    self.globals_init_32.push((addr, val));
-                }
+                let val64 = elements
+                    .get(i)
+                    .and_then(|elem| crate::init::literal_init_bits(&elem.value, elem_ty.kind()))
+                    .map(|(bits, _)| bits)
+                    .unwrap_or(0);
+                self.globals_init_64.push((addr, val64));
             }
         } else {
             for (i, elem) in elements.iter().enumerate() {
@@ -554,7 +555,10 @@ impl BytecodeGen {
                 self.emit(OpCode::Add, 0, loc);
             }
             self.gen_expr(value);
-            if field_ty.kind() == TypeKind::Double {
+            // T-P0-4：char 字段按 1 字节写，避免 4 字节 StoreMem 破坏相邻字段
+            if field_ty.kind() == TypeKind::Char {
+                self.emit(OpCode::StoreMemByte, 0, loc);
+            } else if field_ty.kind() == TypeKind::Double {
                 self.emit(OpCode::StoreMemD, 0, loc);
             } else if field_ty.kind() == TypeKind::LongLong {
                 self.emit(OpCode::StoreMemQ, 0, loc);

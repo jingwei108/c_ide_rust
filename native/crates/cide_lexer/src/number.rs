@@ -114,30 +114,37 @@ impl Lexer {
 
         // Determine token type according to C standard rules
         if has_u && has_l {
-            // unsigned long / unsigned long long — map to unsigned int if fits
-            if val > u32::MAX as u64 {
-                self.errors.push(LexerError {
-                    message: format!("unsigned long long 常量 {} 超出支持范围", val),
-                    line: self.line,
-                    column: self.column,
-                    code: ErrorCode::E1006_UnsupportedFeature as i32,
-                });
-                return self.make_token(TokenType::UnsignedLiteral, "0");
+            // unsigned long / unsigned long long — 按值域升级：u32 内 → unsigned，
+            // i64 内 → long long（此前 >u32::MAX 直接报"不支持"，8000000000ULL 被误拒）
+            if val <= u32::MAX as u64 {
+                return self.make_token(TokenType::UnsignedLiteral, &val.to_string());
             }
-            return self.make_token(TokenType::UnsignedLiteral, &val.to_string());
+            if val <= i64::MAX as u64 {
+                return self.make_token(TokenType::LongLiteral, &val.to_string());
+            }
+            self.errors.push(LexerError {
+                message: format!("unsigned long long 常量 {} 超出支持范围", val),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1006_UnsupportedFeature as i32,
+            });
+            return self.make_token(TokenType::UnsignedLiteral, "0");
         }
 
         if has_u {
-            if val > u32::MAX as u64 {
-                self.errors.push(LexerError {
-                    message: format!("unsigned 常量 {} 超出 unsigned int 范围", val),
-                    line: self.line,
-                    column: self.column,
-                    code: ErrorCode::E1006_UnsupportedFeature as i32,
-                });
-                return self.make_token(TokenType::UnsignedLiteral, "0");
+            if val <= u32::MAX as u64 {
+                return self.make_token(TokenType::UnsignedLiteral, &val.to_string());
             }
-            return self.make_token(TokenType::UnsignedLiteral, &val.to_string());
+            if val <= i64::MAX as u64 {
+                return self.make_token(TokenType::LongLiteral, &val.to_string());
+            }
+            self.errors.push(LexerError {
+                message: format!("unsigned 常量 {} 超出范围", val),
+                line: self.line,
+                column: self.column,
+                code: ErrorCode::E1006_UnsupportedFeature as i32,
+            });
+            return self.make_token(TokenType::UnsignedLiteral, "0");
         }
 
         if has_l {

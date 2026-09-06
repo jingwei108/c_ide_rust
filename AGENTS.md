@@ -131,7 +131,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 将同一 C 源码同时交给 **Clang** 与 **Cide** 编译执行，对比 stdout 输出是否完全一致。Golden 只能来自 Clang，不能来自 Cide 自己。
 
 - **门禁**：自 2026-09-06 起为 CI 硬门禁——Clang 预检缺失时 fail fast（exit 2）；存在非预期差异（compile_gap / runtime_gap / output_gap）时 exit 1；match / known_issue / cide_better 视为通过。`KNOWN_FAILURE_CASES` 与 E2E 防线的 `KNOWN_TEMPLATE_FAILURES` 常量对齐（双向监控：任一防线转绿需同步移除）。
-- **覆盖**：316 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 631 个用例，完全匹配 610、cide_better 16、known_issue 5（2 个存量 "bug" 分类 + 3 个模板已知偏差，见 `E2E_FAILURES.md`）；统计口径含 match + cide_better + known_issue；2026-09-06 门禁化后实测）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
+- **覆盖**：317 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 632 个用例，完全匹配 612、cide_better 16、known_issue 4（2 个存量 "bug" 分类 + 2 个模板已知偏差，见 `E2E_FAILURES.md`）；统计口径含 match + cide_better + known_issue；2026-09-06 门禁化+第三批 codegen 修复后实测）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
 - **驱动**：`python native/tests/shadow_verification/shadow_verify.py`、`python scripts/shadow_verify_cpp.py`
 - **报告**：`native/tests/shadow_verification/reports/`
 
@@ -139,7 +139,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 收集真实教学/竞赛代码作为端到端回归用例，验证"真实世界代码能不能跑"。
 
-- **Baseline**：`native/tests/cases/baseline/`（314 个，全绿）
+- **Baseline**：`native/tests/cases/baseline/`（317 个，全绿；2026-09-06 新增 `codegen_soundness_regression.c` 固化第三批 soundness 修复）
 - **K&R**：《C程序设计语言》课后习题（69 个，69 绿，0 已知失败）
 - **Template Generated**：算法模板批量生成（82 个，78 绿，4 已知失败）
 - **LeetCode**：已全面实施阶段 4 + 阶段 5，当前 138 道题全部通过，详见 `native/tests/LEETCODE_FAILURES.md`

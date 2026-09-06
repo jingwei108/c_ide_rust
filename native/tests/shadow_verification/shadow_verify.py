@@ -41,9 +41,9 @@ CLANG_PATH = "clang"
 # 根因分析见 native/tests/E2E_FAILURES.md）。这些模板在 Cide VM 的边界检查下
 # 触发陷阱而 Clang 静默 UB，属于已记录的教学差异，门禁不视为回归。
 # ⚠️ 防线 5 双向监控约定：若这些用例在 E2E 防线转绿，需同步移除此处条目。
+#   - infixEvaluation_default 已于 2026-09-06 修复移除（自增/自减索引 codegen 缺陷）
 KNOWN_FAILURE_CASES = {
     "bTree_default",          # E2E_FAILURES.md：未插入元素时访问 NULL 指针区域
-    "infixEvaluation_default",  # E2E_FAILURES.md：负数栈越界（模板自身缺陷）
     "spfa_default",           # E2E_FAILURES.md：队列大小 MAXV(5) 不足导致越界
 }
 

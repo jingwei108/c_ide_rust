@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (codegen soundness：2026-09-06 代码审查报告第三批 P0 修复，8 条 P0 + 顺带 2 条 P1)
+- **T-P0-1/T-P0-2 全局初始化位模式**：新增 `literal_init_bits` 统一"字面量 → 目标类型位模式"编码（含负数字面量、`Cast{字面量}` 剥包），收敛全局标量、static 局部、数组的五处初始化路径。修复：`double g = 1` 得 0（int 位写进 double 槽）、`long long ga[2] = {1,2}` 得 `0 0`（i64 写成 f64 位模式）、`double g = -2` 静默丢失。
+- **T-P0-3 浮点/long long 自增自减**：`gen_mem_inc_dec` 与 Identifier 路径按类型分派 opcode（D/Q/Byte 系 + float 经 CastF2D/CastD2F 转换链）；typeck 同步放行 LongLong/Char 并把 ++/-- 结果类型改为与操作数一致（C 左值语义）。修复：`double d = 1.5; d++;` 无效、`long long q++` 被误拒。顺带修正 `(*p)++` 误用指针步长的原有错误。
+- **T-P0-4 struct char 成员赋值**：assign.rs Member 分支五组 match 与 `emit_field_init` 补 `StoreMemByte/LoadMemByte`。修复：`gq.c = 'B'` 4 字节写越界覆盖相邻全局（gnext 变 0）。
+- **T-P0-5 char 数组元素自增**：`cs[0]++` 改 1 字节 LoadMemByte/StoreMemByte 读改写。修复：`{255,5}` 自增后 `{0,6}` 进位污染。
+- **T-P0-6 嵌套赋值地址槽**：`gen_assign` 引入嵌套深度计数 + 按深度分配地址槽（同层复用），`enter_function` 重置（与 temp_slot0~3 同机制）。修复：`a[0] += (b[0] = 5)` 写错目标。
+- **T-P0-7 同名 static 跨函数共享**：`enter_function` 清空 `static_local_indices/types`。修复：两个函数各含 `static int x` 时后者读到前者的值。
+- **F-P0-2 unsigned long long**：`long long` 声明不再提前 return 丢失 unsigned/const；UnsignedLiteral 按 u64 值域分派（超 i32 转 LongLiteral 保真）；lexer 的 U/u 后缀按值域升级到 LongLiteral。修复：`unsigned long long a = 4000000000ULL` 输出 -294967296。
+- **F-P0-3 enum 初始化器常量折叠**：新增 `eval_enum_const`（负数/四则/位运算/比较），无法求值时报 E1006 而非静默取旧值。修复：`enum { NEG = -1, ZERO, BIG = 1+2 }` 输出 `0 1 2`（应 `-1 0 3`）。
+- **T-P1-1 逻辑运算规范化**：`&&`/`||` 短路结构末尾补 `PushConst 0 / Ne`，结果恒为 0/1（`5&&3` 得 3 → 1），短路语义与浮点操作数不受影响。
+- **64 位临时槽**：新增 `temp_slot_64`（8 字节，按函数重置）承载 double/long long 读-改-写中间值——4 字节槽被 64 位写踩踏曾引入 9 个 baseline 回归（链表/队列类），已在开发中捕获并修复。
+- **固化回归用例** `baseline/codegen_soundness_regression.c`（10 断言组，golden 由 Clang 生成，Cide 输出与 Clang 完全一致）；baseline 防线 314 → 317。
+- **顺带修复** `infixEvaluation_default` 模板（自增/自减作数组索引的 codegen 缺陷，曾误记为模板自身栈下溢）：E2E 转绿，`KNOWN_TEMPLATE_FAILURES`（3→2）、shadow `KNOWN_FAILURE_CASES`、E2E_FAILURES.md 三处同步更新——防线 5 双向监控首次实战生效。
+
 ### Fixed (CI 门禁：2026-09-06 代码审查报告第二批 P0 修复)
 - **E-P0-1 Shadow 门禁退出码**：`shadow_verify.py` 此前 `main()` 无任何非零退出路径，防线 1 在 CI 中恒绿。现与 C++ 版 `shadow_verify_cpp.py` 对齐：非预期差异（compile_gap / runtime_gap / output_gap）→ exit 1；match / known_issue / cide_better → 通过。
 - **E-P0-4 Clang 预检 fail fast**：新增 `verify_clang_available()`——Clang 缺失/异常时 exit 2 并给出明确指引（此前 runner 镜像变更导致 clang 不在 PATH 时，所有用例被吞异常归类 `cide_better`，报告反而"更好看"）；Clang 版本串写入 JSON 报告供审计。

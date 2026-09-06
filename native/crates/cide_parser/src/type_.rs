@@ -46,7 +46,9 @@ impl Parser {
                 // Check for 'long long'
                 if self.check(TokenType::Long) {
                     self.advance();
-                    return Type::long_long();
+                    // F-P0-2：合成 unsigned/const 修饰，此前提前 return 丢弃
+                    // （unsigned long long 退化为有符号 long long）
+                    return Type::LongLong { is_unsigned, is_const };
                 }
                 continue;
             }
@@ -91,7 +93,8 @@ impl Parser {
             if self.check(TokenType::Long) {
                 self.advance();
             }
-            Type::long_long()
+            // F-P0-2：与限定符循环内的 long long 分支一致合成修饰
+            Type::LongLong { is_unsigned, is_const }
         } else if self.match_token(TokenType::Char) {
             if is_unsigned {
                 Type::Char {

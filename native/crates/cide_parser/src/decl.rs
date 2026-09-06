@@ -543,8 +543,18 @@ impl Parser {
             let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
             if self.match_token(TokenType::Assign) {
                 let val_expr = self.parse_assign();
-                if let Expr::Literal { value, .. } = val_expr {
-                    next_value = value;
+                // F-P0-3：此前仅匹配裸 Literal，`NEG = -1`（Unary）、`BIG = 1+2`
+                // （Binary）静默保持旧值（输出 0 1 2 而非 -1 0 3）
+                match eval_enum_const(&val_expr) {
+                    Some(v) => next_value = v as i32,
+                    None => {
+                        self.errors.push(ParseError {
+                            message: "enum 初始化器必须是编译期整数常量（支持负数与四则/位运算）".to_string(),
+                            line: member_tok.line,
+                            column: member_tok.column,
+                            code: ErrorCode::E1006_UnsupportedFeature as i32,
+                        });
+                    }
                 }
             }
             program.globals.push(GlobalDecl {
@@ -678,8 +688,18 @@ impl Parser {
             let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
             if self.match_token(TokenType::Assign) {
                 let val_expr = self.parse_assign();
-                if let Expr::Literal { value, .. } = val_expr {
-                    next_value = value;
+                // F-P0-3：此前仅匹配裸 Literal，`NEG = -1`（Unary）、`BIG = 1+2`
+                // （Binary）静默保持旧值（输出 0 1 2 而非 -1 0 3）
+                match eval_enum_const(&val_expr) {
+                    Some(v) => next_value = v as i32,
+                    None => {
+                        self.errors.push(ParseError {
+                            message: "enum 初始化器必须是编译期整数常量（支持负数与四则/位运算）".to_string(),
+                            line: member_tok.line,
+                            column: member_tok.column,
+                            code: ErrorCode::E1006_UnsupportedFeature as i32,
+                        });
+                    }
                 }
             }
             program.globals.push(GlobalDecl {
@@ -713,5 +733,47 @@ impl Parser {
         if !enum_name.is_empty() {
             self.typedef_names.insert(enum_name, Type::int());
         }
+    }
+}
+
+/// F-P0-3：enum 初始化器的编译期常量求值。
+/// 支持整数字面量、一元负号/按位取反/逻辑非、四则与位运算、比较的常量折叠。
+fn eval_enum_const(expr: &Expr) -> Option<i64> {
+    match expr {
+        Expr::Literal { value, .. } => Some(*value as i64),
+        Expr::LongLiteral { value, .. } => Some(*value),
+        Expr::Unary { op, operand, .. } => {
+            let v = eval_enum_const(operand)?;
+            match op {
+                UnaryOp::Neg => Some(-v),
+                UnaryOp::BitNot => Some(!v),
+                UnaryOp::Not => Some((v == 0) as i64),
+                _ => None,
+            }
+        }
+        Expr::Binary { op, left, right, .. } => {
+            let a = eval_enum_const(left)?;
+            let b = eval_enum_const(right)?;
+            match op {
+                BinaryOp::Add => a.checked_add(b),
+                BinaryOp::Sub => a.checked_sub(b),
+                BinaryOp::Mul => a.checked_mul(b),
+                BinaryOp::Div => a.checked_div(b),
+                BinaryOp::Mod => a.checked_rem(b),
+                BinaryOp::Shl => Some(a << b),
+                BinaryOp::Shr => Some(a >> b),
+                BinaryOp::BitAnd => Some(a & b),
+                BinaryOp::BitOr => Some(a | b),
+                BinaryOp::BitXor => Some(a ^ b),
+                BinaryOp::Eq => Some((a == b) as i64),
+                BinaryOp::Ne => Some((a != b) as i64),
+                BinaryOp::Lt => Some((a < b) as i64),
+                BinaryOp::Le => Some((a <= b) as i64),
+                BinaryOp::Gt => Some((a > b) as i64),
+                BinaryOp::Ge => Some((a >= b) as i64),
+                _ => None,
+            }
+        }
+        _ => None,
     }
 }

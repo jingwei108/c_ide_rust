@@ -72,6 +72,10 @@ pub(crate) fn gen_binary(
         }
         let end_ip = gen.current_ip();
         gen.patch_jump(end_jump, end_ip);
+        // T-P1-1：C 标准要求 && / || 的结果规范化为 0/1，
+        // 此前短路结构把操作数原始值留作结果（5&&3 得 3、0||7 得 7）
+        gen.emit(OpCode::PushConst, 0, loc);
+        gen.emit(OpCode::Ne, 0, loc);
         return;
     }
 

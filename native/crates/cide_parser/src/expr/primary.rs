@@ -35,7 +35,9 @@ impl Parser {
         }
         if self.match_token(TokenType::UnsignedLiteral) {
             let prev = self.previous().clone();
-            let value: i32 = prev.text.parse::<u32>().unwrap_or_else(|_| {
+            // F-P0-2：此前 parse::<u32>() as i32 把 4000000000 截断为负数；
+            // 现按值域分派：i32 内 → Literal，否则 → LongLiteral 保真
+            let uv: u64 = prev.text.parse::<u64>().unwrap_or_else(|_| {
                 self.errors.push(ParseError {
                     message: format!("unsigned 常量 '{}' 超出范围", prev.text),
                     line: prev.line,
@@ -43,16 +45,26 @@ impl Parser {
                     code: ErrorCode::E1006_UnsupportedFeature as i32,
                 });
                 0
-            }) as i32;
+            });
             let loc = SourceLoc {
                 line: prev.line,
                 column: prev.column,
                 file_id: 0,
             };
-            return Expr::Literal {
-                value,
+            if uv <= i32::MAX as u64 {
+                return Expr::Literal {
+                    value: uv as i32,
+                    loc,
+                    ty: Type::unsigned_int(),
+                };
+            }
+            return Expr::LongLiteral {
+                value: uv as i64,
                 loc,
-                ty: Type::unsigned_int(),
+                ty: Type::LongLong {
+                    is_unsigned: true,
+                    is_const: false,
+                },
             };
         }
         if self.match_token(TokenType::LongLiteral) {

@@ -12,7 +12,7 @@
 
 | 类别 | 总数 | 通过 | 已知偏差 | 记录时间 |
 |------|------|------|----------|----------|
-| Template Generated | 82 | 78 | 4 | 2026-06-15 |
+| Template Generated | 82 | 79 | 3 | 2026-09-06 |
 
 ---
 
@@ -31,16 +31,12 @@
 - **学生影响评级**: P2
 - **建议**: 向学生强调 `malloc` 后必须初始化指针字段；该用例保留作为安全检测教学示例
 
-### infixEvaluation_default
+### ~~infixEvaluation_default~~（已修复 2026-09-06）
 
 - **来源**: 算法模板批量生成（中缀表达式求值）
-- **现象**: Runtime error — 数组越界：访问了 `valStack[-1]`
-- **根因**: 中缀表达式求值模板在栈空时访问 `valStack[top--]`，导致下标为 -1。Cide VM 启用数组边界检查，因此触发陷阱；Clang 不检查数组边界，可能因未定义行为继续执行并输出 `11`。
-- **分类**: 模板代码缺陷（栈下溢）
-- **是否 Cide 限制**: 否
-- **涉及语法特性**: 数组、栈操作
-- **学生影响评级**: P2
-- **建议**: 补充栈空检查，避免下溢
+- **原记录**: Runtime error — 数组越界：访问了 `valStack[-1]`，曾归因为模板栈下溢缺陷。
+- **实际根因**: Cide 编译器 bug —— 自增/自减作为数组索引（`opStack[++opTop]` / `valStack[valTop--]`）的代码生成缺陷，2026-09-06 第三批 codegen soundness 修复（T-P0-3/T-P0-5 类型化自增路径）后输出与 Clang golden 一致（`11`）。
+- **状态**: 已从 KNOWN_TEMPLATE_FAILURES 与 shadow KNOWN_FAILURE_CASES 同步移除。
 
 ### spfa_default
 
