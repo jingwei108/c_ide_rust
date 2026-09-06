@@ -103,13 +103,18 @@ def _run_cargo_test_uncached(test_file: str) -> subprocess.CompletedProcess:
 
 
 def parse_test_output(output: str) -> dict:
-    """从 cargo test 输出中提取统计信息。"""
+    """从 cargo test 输出中提取统计信息。
+
+    E-P0-2：新增 "found" 标志。cargo 编译失败/依赖拉取失败时输出中没有任何
+    "test result:" 行，此前返回全 0 统计 → failed==0 → 被误判 PASS。
+    """
     stats = {
         "run": 0,
         "passed": 0,
         "failed": 0,
         "ignored": 0,
         "failed_names": [],
+        "found": False,
     }
 
     # 匹配 "test result: ok. 38 passed; 0 failed; 0 ignored"
@@ -118,6 +123,7 @@ def parse_test_output(output: str) -> dict:
         output,
     )
     if result_line:
+        stats["found"] = True
         stats["passed"] = int(result_line.group(2))
         stats["failed"] = int(result_line.group(3))
         stats["ignored"] = int(result_line.group(4))
@@ -189,36 +195,46 @@ def extract_md_status(md_path: Path) -> dict:
     return {"missing": False, "entries": entries}
 
 
-def check_consistency(result: TierResult) -> list:
-    """检查测试结果与 *_FAILURES.md 的一致性，返回问题列表。"""
-    issues = []
+def check_consistency(result: TierResult) -> tuple:
+    """检查测试结果与 *_FAILURES.md 的一致性。
+
+    E-P0-3：返回 (hard_issues, soft_issues)。
+    - hard（计入 CI 退出码）：确定性不一致 ——
+      1) 文档声明 KNOWN_FAILURE 但测试现在全部通过（文档过期，须更新）；
+      2) 失败记录文件本身缺失。
+      这实现 AGENTS.md 防线 5 声明的「KNOWN_FAILURE 现在通过 → 报错」方向。
+    - soft（仅 [WARN] 提示，不阻塞）：测试有失败时的"请确保已记录"提醒 ——
+      文档为自由文本，无法精确匹配失败用例名，硬失败会产生持续误报；
+      精确双向对账由 cide_e2e.rs 的 KNOWN_* 常量机制闭环承担。
+    """
+    hard, soft = [], []
     for failures_md in result.failures_md:
         md_path = TESTS_DIR / failures_md
         md_info = extract_md_status(md_path)
 
         if md_info["missing"]:
-            issues.append(f"缺少失败记录文件: {failures_md}")
+            hard.append(f"缺少失败记录文件: {failures_md}")
             continue
 
         # 检查 KNOWN_FAILURE 是否仍然失败
-        # 简化处理：如果整个测试文件通过了，但文档中仍有未标记为 FIXED 的 KNOWN 条目，提醒更新
-        # 注意：KNOWN_DIVERGENCE（设计决策导致的偏差）不视为需要修复的故障，测试通过是正常的
+        # KNOWN_DIVERGENCE（设计决策导致的偏差）不视为需要修复的故障，测试通过是正常的
         if result.passed:
             known_entries = [e for e in md_info["entries"] if e["status"] == "KNOWN"]
             if known_entries:
                 titles = ", ".join(e["title"][:40] for e in known_entries)
-                issues.append(
+                hard.append(
                     f"Tests all passed, but {failures_md} still has {len(known_entries)} un-fixed KNOWN entries: {titles}"
+                    f"（KNOWN_FAILURE 已通过，请更新文档标记为已修复）"
                 )
         else:
             # 测试有失败，检查是否都已在文档中记录
-            # 由于文档是自由文本，这里只能做粗略提醒
+            # 由于文档是自由文本，这里只能做粗略提醒（soft）
             fixed_count = len([e for e in md_info["entries"] if e["status"] == "FIXED"])
-            issues.append(
+            soft.append(
                 f"Tests have failures. Ensure all are recorded in {failures_md} (currently {fixed_count} FIXED records)"
             )
 
-    return issues
+    return hard, soft
 
 
 # ─── 报告生成 ─────────────────────────────────────────────────────────────────
@@ -300,6 +316,7 @@ def main() -> int:
 
     results = []
     consistency_issues = {}
+    any_hard_issue = False
 
     print("=" * 60)
     print("Three Tier Verification Start")
@@ -310,7 +327,17 @@ def main() -> int:
         proc = run_cargo_test(test_file)
         stats = parse_test_output(proc.stdout + proc.stderr)
 
-        passed = stats["failed"] == 0
+        # E-P0-2：cargo 本身失败（编译错误/依赖拉取失败，returncode != 0）或
+        # 输出中解析不到 "test result:" 行时，不得误判 PASS。
+        if not stats["found"]:
+            print(f"   [ERROR] 未能从 cargo test 输出解析到 'test result:' 行 —— cargo 可能编译失败")
+            print(f"   [ERROR] returncode={proc.returncode}")
+            tail = ((proc.stderr or "") + "\n" + (proc.stdout or ""))[-600:]
+            if tail.strip():
+                print("   [ERROR] 输出尾部:")
+                for line in tail.strip().splitlines()[-12:]:
+                    print(f"      {line}")
+        passed = proc.returncode == 0 and stats["found"] and stats["failed"] == 0
         result = TierResult(
             phase=phase,
             test_file=test_file,
@@ -328,12 +355,15 @@ def main() -> int:
         status = "[PASS]" if passed else "[FAIL]"
         print(f"   {status} — {stats['passed']} passed, {stats['failed']} failed")
 
-        # 一致性检查
-        issues = check_consistency(result)
-        consistency_issues[phase] = issues
-        if issues:
-            for issue in issues:
-                print(f"   [WARN] {issue}")
+        # 一致性检查（E-P0-3：hard 计入退出码，soft 仅提示）
+        hard_issues, soft_issues = check_consistency(result)
+        consistency_issues[phase] = hard_issues + soft_issues
+        if hard_issues:
+            any_hard_issue = True
+            for issue in hard_issues:
+                print(f"   [ERROR] {issue}")
+        for issue in soft_issues:
+            print(f"   [WARN] {issue}")
 
     # 生成报告
     report_md = generate_report(results, consistency_issues)
@@ -341,13 +371,16 @@ def main() -> int:
     report_path.write_text(report_md, encoding="utf-8")
     print(f"\n[REPORT] Generated: {report_path}")
 
-    # 最终判定
+    # 最终判定（E-P0-3：一致性 hard 问题与测试失败同等阻塞 CI）
     all_passed = all(r.passed for r in results)
-    if all_passed:
+    if all_passed and not any_hard_issue:
         print("\n[SUCCESS] All three tier tests passed!")
         return 0
     else:
-        print("\n[FAILED] Some three tier tests failed. See report and *_FAILURES.md.")
+        if not all_passed:
+            print("\n[FAILED] Some three tier tests failed. See report and *_FAILURES.md.")
+        if any_hard_issue:
+            print("[FAILED] 一致性检查存在 hard 问题（文档与测试结果矛盾），见上方 [ERROR]。")
         return 1
 
 

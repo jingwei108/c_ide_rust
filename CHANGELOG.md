@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (CI 门禁：2026-09-06 代码审查报告第二批 P0 修复)
+- **E-P0-1 Shadow 门禁退出码**：`shadow_verify.py` 此前 `main()` 无任何非零退出路径，防线 1 在 CI 中恒绿。现与 C++ 版 `shadow_verify_cpp.py` 对齐：非预期差异（compile_gap / runtime_gap / output_gap）→ exit 1；match / known_issue / cide_better → 通过。
+- **E-P0-4 Clang 预检 fail fast**：新增 `verify_clang_available()`——Clang 缺失/异常时 exit 2 并给出明确指引（此前 runner 镜像变更导致 clang 不在 PATH 时，所有用例被吞异常归类 `cide_better`，报告反而"更好看"）；Clang 版本串写入 JSON 报告供审计。
+- **门禁化后暴露并处置 4 例存量差异**（此前被恒绿掩盖，非新回归）：
+  - `kr_5_8`（output_gap）：根因是用例自身缺陷——使用 `atof` 却未 `#include <stdlib.h>`，Clang 22 下属非法隐式函数声明，被 `-Wno-implicit-function-declaration` 压制后产生 UB 输出（`0 3.14 42 -1 2.71`，排序错误）；Cide 输出与正确编译的 Clang 完全一致。修复：用例补 `#include <stdlib.h>`，shadow 转为 match。
+  - `bTree_default` / `infixEvaluation_default` / `spfa_default`（runtime_gap）：E2E 防线 `KNOWN_TEMPLATE_FAILURES` 已记录的模板已知偏差（VM 边界检查比 Clang 严格暴露模板自身越界/空指针缺陷，根因见 `E2E_FAILURES.md`）。shadow 新增 `KNOWN_FAILURE_CASES` 与该常量对齐，归类 known_issue；防线间双向监控：任一防线转绿需同步移除。
+- **E-P0-2 三层对账读取 cargo 退出码**：`ci_three_tier_check.py` 此前只正则解析 `test result:` 行——cargo 编译失败/依赖拉取失败时输出无该行，返回全 0 统计被误判 PASS。现要求 `proc.returncode == 0` 且成功解析到 `test result:` 行，否则 FAIL 并打印输出尾部。
+- **E-P0-3 一致性问题分级计入退出码**：`check_consistency` 拆分 hard/soft——hard（文档声明 `KNOWN_FAILURE` 但测试已全过、失败记录文件缺失）计入 CI 退出码，实现防线 5 声明的「KNOWN_FAILURE 现在通过 → 报错」方向；soft（测试失败时的记录提醒）保持 WARN 不阻塞，因文档为自由文本无法精确匹配用例名（精确对账由 `cide_e2e.rs` 的 `KNOWN_*` 常量闭环承担）。
+
 ### Fixed (崩溃止血：2026-09-06 代码审查报告第一批 P0 修复)
 - **F-P0-1 递归深度防护**：深嵌套/粘贴输入不再击穿编译器栈（SIGSEGV 无法被 catch_unwind 捕获，曾导致 IDE 直接崩溃）
   - `cide_lexer`：`next_token` 的注释/预处理跳过分支由递归改为 `loop` 重派发（2 万行 `//c` 注释曾栈溢出）。

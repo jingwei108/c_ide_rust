@@ -130,7 +130,8 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 将同一 C 源码同时交给 **Clang** 与 **Cide** 编译执行，对比 stdout 输出是否完全一致。Golden 只能来自 Clang，不能来自 Cide 自己。
 
-- **覆盖**：316 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 631 个用例，完全匹配 609、cide_better 16、known_issue 2；统计口径含 match + cide_better + known_issue）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
+- **门禁**：自 2026-09-06 起为 CI 硬门禁——Clang 预检缺失时 fail fast（exit 2）；存在非预期差异（compile_gap / runtime_gap / output_gap）时 exit 1；match / known_issue / cide_better 视为通过。`KNOWN_FAILURE_CASES` 与 E2E 防线的 `KNOWN_TEMPLATE_FAILURES` 常量对齐（双向监控：任一防线转绿需同步移除）。
+- **覆盖**：316 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 631 个用例，完全匹配 610、cide_better 16、known_issue 5（2 个存量 "bug" 分类 + 3 个模板已知偏差，见 `E2E_FAILURES.md`）；统计口径含 match + cide_better + known_issue；2026-09-06 门禁化后实测）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
 - **驱动**：`python native/tests/shadow_verification/shadow_verify.py`、`python scripts/shadow_verify_cpp.py`
 - **报告**：`native/tests/shadow_verification/reports/`
 
@@ -173,10 +174,12 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 ### 防线 5：CI 集成与一致性监控
 
-`.github/workflows/ci.yml` 在每次 Push/PR 时自动运行以上全部防线，并执行 `scripts/ci_three_tier_check.py` 进行一致性检查：
+`.github/workflows/ci.yml` 在每次 Push/PR 时自动运行以上全部防线，并执行 `scripts/ci_three_tier_check.py` 进行一致性检查（2026-09-06 起"带牙齿"）：
 
-- 若 `*_FAILURES.md` 中标记为 `KNOWN_FAILURE` 的测试现在通过了 → **报错提示更新文档**
-- 若测试失败了但文档中没有对应记录 → **报错提示添加记录**
+- 若 `*_FAILURES.md` 中标记为 `KNOWN_FAILURE` 的测试现在全部通过 → **CI 失败（hard）**，提示更新文档标记为已修复
+- 若失败记录文件本身缺失 → **CI 失败（hard）**
+- 若测试失败了但文档中没有对应记录 → **[WARN] 提示添加记录（soft，不阻塞）**——文档为自由文本无法精确匹配失败用例名，硬失败会产生持续误报；精确双向对账由 `cide_e2e.rs` 的 `KNOWN_*` 常量机制闭环承担
+- cargo 编译失败或输出中无 `test result:` 行 → **CI 失败**（此前被误判 PASS）
 - 生成 `reports/three_tier_report.md` 作为 CI artifact 上传
 
 ---

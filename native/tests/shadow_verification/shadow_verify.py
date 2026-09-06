@@ -37,6 +37,16 @@ NATIVE_DIR = PROJECT_ROOT / "native"
 DLL_PATH = NATIVE_DIR / "target/release/cide_native.dll"
 CLANG_PATH = "clang"
 
+# 已知失败用例（与 E2E 防线 cide_e2e.rs 的 KNOWN_TEMPLATE_FAILURES 常量对齐，
+# 根因分析见 native/tests/E2E_FAILURES.md）。这些模板在 Cide VM 的边界检查下
+# 触发陷阱而 Clang 静默 UB，属于已记录的教学差异，门禁不视为回归。
+# ⚠️ 防线 5 双向监控约定：若这些用例在 E2E 防线转绿，需同步移除此处条目。
+KNOWN_FAILURE_CASES = {
+    "bTree_default",          # E2E_FAILURES.md：未插入元素时访问 NULL 指针区域
+    "infixEvaluation_default",  # E2E_FAILURES.md：负数栈越界（模板自身缺陷）
+    "spfa_default",           # E2E_FAILURES.md：队列大小 MAXV(5) 不足导致越界
+}
+
 
 @dataclass
 class RunResult:
@@ -282,10 +292,11 @@ def analyze_diff(case: ShadowCase, clang_res: RunResult, cide_res: RunResult) ->
         if not clang_res.run_success and not cide_res.run_success:
             diff_type = "match"  # 都失败
         elif clang_res.run_success and not cide_res.run_success:
-            diff_type = "runtime_gap"
+            # 已记录的模板运行失败（E2E_FAILURES.md 有根因）不算回归
+            diff_type = "known_issue" if case.name in KNOWN_FAILURE_CASES else "runtime_gap"
         elif clang_res.stdout.strip() != cide_res.stdout.strip():
             # 已知问题（预期行为差异）不统计为 output_gap
-            if "bug" in case.category:
+            if "bug" in case.category or case.name in KNOWN_FAILURE_CASES:
                 diff_type = "known_issue"
             else:
                 diff_type = "output_gap"
@@ -801,6 +812,33 @@ def parse_args():
     return parser.parse_args()
 
 
+def verify_clang_available() -> str:
+    """E-P0-4：Clang 预检。
+
+    此前 CLANG_PATH 无预检：runner 镜像变更导致 clang 不在 PATH 时，所有
+    用例的 run_with_clang 抛异常 → compile_success=False → 被 analyze_diff
+    尾分支静默归类为 cide_better，防线 1 退化为"全量通过"且报告反而更好看。
+
+    现在缺失时 fail fast（exit 2，区别于测试失败的 exit 1），
+    并返回版本串写入报告供审计。
+    """
+    try:
+        proc = subprocess.run(
+            [CLANG_PATH, "--version"], capture_output=True, text=True, timeout=30
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        print(f"错误: 无法执行 Clang ({CLANG_PATH}): {e}")
+        print("防线 1 依赖 Clang 生成 Golden，Clang 缺失时结果不可信。")
+        print("请安装 LLVM/Clang 并确认其在 PATH 中（CI 侧请检查 runner 镜像变更）。")
+        sys.exit(2)
+    if proc.returncode != 0:
+        print(f"错误: `{CLANG_PATH} --version` 返回非零退出码: {proc.returncode}")
+        sys.exit(2)
+    version = proc.stdout.strip().splitlines()[0] if proc.stdout.strip() else "unknown"
+    print(f"Clang 预检通过: {version}")
+    return version
+
+
 def prepare_test_files() -> None:
     """为每个用例重置 VFS 文件系统状态，确保 Clang 与 Cide 看到相同的预设文件。"""
     # Cide 在 setup_vm / inject_preset_files 中注入以下内容：
@@ -818,6 +856,9 @@ def main():
     print("=" * 60)
     print("Cide 影子验证框架")
     print("=" * 60)
+
+    # E-P0-4：Clang 预检，缺失 fail fast（防止全量用例被静默归类 cide_better）
+    clang_version = verify_clang_available()
 
     if not DLL_PATH.exists():
         print(f"错误: 找不到 Cide DLL: {DLL_PATH}")
@@ -868,6 +909,7 @@ def main():
         json_path = SCRIPT_DIR / "reports" / f"shadow_data_{time.strftime('%Y%m%d_%H%M%S')}.json"
     json_data = {
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
+        "clang_version": clang_version,
         "summary": {
             "total": len(diffs),
             "match": len([d for d in diffs if d.diff_type == "match"]),
@@ -930,6 +972,35 @@ def main():
     kr_leetcode_path.write_text(json.dumps(kr_leetcode_report, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"K&R + LeetCode 专项报告已保存: {kr_leetcode_path}")
 
+    # E-P0-1：门禁退出码（与 C++ 版 shadow_verify_cpp.py 的 expected/unexpected
+    # 逻辑对齐）。此前 main() 无任何非零退出路径，防线 1 在 CI 中只是"出报告
+    # 的观测工具"，任何回归恒绿。
+    #
+    # 判定规则：
+    #   - 非预期差异（compile_gap / runtime_gap / output_gap）→ exit 1
+    #     （Clang 能跑而 Cide 不能，或输出不一致 = 回归）
+    #   - match / known_issue（category 含 "bug" 的已记录问题）/ cide_better
+    #     （Cide 教学扩展比 Clang 宽松）→ 不视为失败，与 AGENTS.md 统计口径一致
+    unexpected_gaps = [
+        d for d in diffs
+        if d.diff_type in ("compile_gap", "runtime_gap", "output_gap")
+    ]
+    print("\n" + "=" * 60)
+    print("Shadow 门禁汇总")
+    print("=" * 60)
+    print(f"总用例: {len(diffs)}")
+    for dt in ("match", "known_issue", "cide_better", "compile_gap", "runtime_gap", "output_gap"):
+        n = len([d for d in diffs if d.diff_type == dt])
+        if n:
+            print(f"  {dt}: {n}")
+    if unexpected_gaps:
+        print(f"\n非预期差异 {len(unexpected_gaps)} 例（需要调查，CI 将失败）：")
+        for d in unexpected_gaps:
+            print(f"  - {d.case_name}: {d.diff_type} (category={d.expected_category})")
+        return 1
+    print("\n无非预期差异，门禁通过。")
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

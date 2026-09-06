@@ -25,6 +25,23 @@
 
 **下一批待推进**：第二批（CI 门禁 4 条：E-P0-1~P0-4）→ 第三批（codegen soundness 8 条 + 顺带 T-P1-1/P1-2）→ 第四批（Flutter 编辑器与状态）。
 
+**✅ 第二批（CI 门禁）已全部完成**（2026-09-06 同日）：
+
+| # | 项 | 修复方式 | 验证 |
+|---|---|---|---|
+| 7 | E-P0-1 shadow_verify.py 退出码 | 与 C++ 版对齐：非预期差异 exit 1 | 全量 631 例实测 |
+| 8 | E-P0-2 三层对账读 cargo 退出码 | `returncode==0` + `test result:` 行存在才 PASS | 单元验证 3 场景 + 全量跑通 exit 0 |
+| 9 | E-P0-3 一致性 hard/soft 分级 | KNOWN 过期/文件缺失 → hard 计入退出码；失败提醒保持 soft（自由文本无法精确匹配，精确对账由 cide_e2e.rs KNOWN_* 常量承担） | 单元验证 3 路径 |
+| 10 | E-P0-4 clang 预检 fail fast | `verify_clang_available()` exit 2 + 版本写入 JSON | 模拟缺失场景 exit 2 |
+
+**门禁化立即暴露 4 例存量差异**（此前恒绿掩盖，均非新回归，已处置）：
+- `kr_5_8`：用例自身缺陷（`atof` 未 `#include <stdlib.h>`，Clang 22 非法隐式声明被 `-Wno` 压制后 UB 输出错序）；Cide 输出与正确编译的 Clang 一致 → 修用例后转 match。
+- `bTree_default` / `infixEvaluation_default` / `spfa_default`：E2E 防线 `KNOWN_TEMPLATE_FAILURES` 已记录的模板偏差 → shadow `KNOWN_FAILURE_CASES` 对齐为 known_issue（防线间双向监控）。
+
+门禁化后基线：631 例 = 610 match + 5 known_issue + 16 cide_better，exit 0；`cide_e2e` 10/10 全过；`ci_three_tier_check.py` 全过 exit 0。
+
+**下一批待推进**：第三批（codegen soundness 8 条：T-P0-1~8 + 顺带 T-P1-1 `&&`/`||` 规范化、T-P1-2 struct 拷贝宽度）→ 第四批（Flutter 编辑器与状态）。
+
 ---
 
 ## 1. 执行摘要
