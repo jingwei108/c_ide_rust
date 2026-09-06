@@ -86,243 +86,249 @@ impl Lexer {
     }
 
     fn next_token(&mut self) -> Token {
-        // 条件编译跳过模式：跳过所有不活跃的代码块
-        while self.is_skipping() {
-            match self.skip_inactive_line() {
-                None => return self.make_token(TokenType::Eof, ""),
-                Some(false) => break,
-                Some(true) => continue,
-            }
-        }
-
-        self.skip_whitespace();
-
-        if self.pos >= self.chars.len() {
-            return self.make_token(TokenType::Eof, "");
-        }
-
-        let c = self.peek(0);
-
-        if c.is_ascii_alphabetic() || c == '_' {
-            return self.identifier_or_keyword();
-        }
-
-        if c.is_ascii_digit() {
-            return self.number();
-        }
-
-        if c == '"' {
-            return self.string_literal();
-        }
-
-        if c == '\'' {
-            return self.char_literal();
-        }
-
-        if c == '/' && self.peek(1) == '/' {
-            self.skip_comment();
-            return self.next_token();
-        }
-
-        if c == '/' && self.peek(1) == '*' {
-            self.skip_block_comment();
-            return self.next_token();
-        }
-
-        if c == '#' {
-            self.skip_preprocessor_directive();
-            return self.next_token();
-        }
-
-        match c {
-            '+' => {
-                if self.match_char('+') {
-                    return self.make_token(TokenType::Increment, "++");
+        // 跳过类输入（条件编译块、空白、注释、预处理指令）统一用 loop 重派发，禁止递归：
+        // 递归实现下连续数万行 `//` 注释会逐层递归导致栈溢出（SIGSEGV，无法被
+        // catch_unwind 捕获，IDE 直接崩溃）。
+        loop {
+            // 条件编译跳过模式：跳过所有不活跃的代码块
+            while self.is_skipping() {
+                match self.skip_inactive_line() {
+                    None => return self.make_token(TokenType::Eof, ""),
+                    Some(false) => break,
+                    Some(true) => continue,
                 }
-                if self.match_char('=') {
-                    return self.make_token(TokenType::PlusAssign, "+=");
-                }
-                self.advance();
-                self.make_token(TokenType::Plus, "+")
             }
-            '-' => {
-                if self.match_char('>') {
-                    if self.peek(0) == '*' {
-                        self.advance();
-                        return self.make_token(TokenType::ArrowStar, "->*");
+
+            self.skip_whitespace();
+
+            if self.pos >= self.chars.len() {
+                return self.make_token(TokenType::Eof, "");
+            }
+
+            let c = self.peek(0);
+
+            if c.is_ascii_alphabetic() || c == '_' {
+                return self.identifier_or_keyword();
+            }
+
+            if c.is_ascii_digit() {
+                return self.number();
+            }
+
+            if c == '"' {
+                return self.string_literal();
+            }
+
+            if c == '\'' {
+                return self.char_literal();
+            }
+
+            if c == '/' && self.peek(1) == '/' {
+                self.skip_comment();
+                continue;
+            }
+
+            if c == '/' && self.peek(1) == '*' {
+                self.skip_block_comment();
+                continue;
+            }
+
+            if c == '#' {
+                self.skip_preprocessor_directive();
+                continue;
+            }
+
+            // match 各臂产出 Token；loop 内尾表达式不会自动成为函数返回值，需显式 return。
+            return match c {
+                '+' => {
+                    if self.match_char('+') {
+                        return self.make_token(TokenType::Increment, "++");
                     }
-                    return self.make_token(TokenType::Arrow, "->");
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::PlusAssign, "+=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Plus, "+")
                 }
-                if self.match_char('-') {
-                    return self.make_token(TokenType::Decrement, "--");
+                '-' => {
+                    if self.match_char('>') {
+                        if self.peek(0) == '*' {
+                            self.advance();
+                            return self.make_token(TokenType::ArrowStar, "->*");
+                        }
+                        return self.make_token(TokenType::Arrow, "->");
+                    }
+                    if self.match_char('-') {
+                        return self.make_token(TokenType::Decrement, "--");
+                    }
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::MinusAssign, "-=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Minus, "-")
                 }
-                if self.match_char('=') {
-                    return self.make_token(TokenType::MinusAssign, "-=");
+                '*' => {
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::StarAssign, "*=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Star, "*")
                 }
-                self.advance();
-                self.make_token(TokenType::Minus, "-")
-            }
-            '*' => {
-                if self.match_char('=') {
-                    return self.make_token(TokenType::StarAssign, "*=");
+                '/' => {
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::SlashAssign, "/=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Slash, "/")
                 }
-                self.advance();
-                self.make_token(TokenType::Star, "*")
-            }
-            '/' => {
-                if self.match_char('=') {
-                    return self.make_token(TokenType::SlashAssign, "/=");
+                '%' => {
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::PercentAssign, "%=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Percent, "%")
                 }
-                self.advance();
-                self.make_token(TokenType::Slash, "/")
-            }
-            '%' => {
-                if self.match_char('=') {
-                    return self.make_token(TokenType::PercentAssign, "%=");
+                '=' => {
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::Eq, "==");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Assign, "=")
                 }
-                self.advance();
-                self.make_token(TokenType::Percent, "%")
-            }
-            '=' => {
-                if self.match_char('=') {
-                    return self.make_token(TokenType::Eq, "==");
+                '!' => {
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::Ne, "!=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Not, "!")
                 }
-                self.advance();
-                self.make_token(TokenType::Assign, "=")
-            }
-            '!' => {
-                if self.match_char('=') {
-                    return self.make_token(TokenType::Ne, "!=");
-                }
-                self.advance();
-                self.make_token(TokenType::Not, "!")
-            }
 
-            '&' => {
-                if self.match_char('&') {
-                    return self.make_token(TokenType::AndAnd, "&&");
-                }
-                if self.match_char('=') {
-                    return self.make_token(TokenType::AndAssign, "&=");
-                }
-                self.advance();
-                self.make_token(TokenType::Ampersand, "&")
-            }
-            '|' => {
-                if self.match_char('|') {
-                    return self.make_token(TokenType::OrOr, "||");
-                }
-                if self.match_char('=') {
-                    return self.make_token(TokenType::OrAssign, "|=");
-                }
-                self.advance();
-                self.make_token(TokenType::BitOr, "|")
-            }
-            '^' => {
-                if self.match_char('=') {
-                    return self.make_token(TokenType::XorAssign, "^=");
-                }
-                self.advance();
-                self.make_token(TokenType::BitXor, "^")
-            }
-            '~' => {
-                self.advance();
-                self.make_token(TokenType::BitNot, "~")
-            }
-            '<' => {
-                if self.match_char('<') {
-                    if self.peek(0) == '=' {
-                        self.advance();
-                        return self.make_token(TokenType::ShlAssign, "<<=");
+                '&' => {
+                    if self.match_char('&') {
+                        return self.make_token(TokenType::AndAnd, "&&");
                     }
-                    return self.make_token(TokenType::Shl, "<<");
-                }
-                if self.match_char('=') {
-                    return self.make_token(TokenType::Le, "<=");
-                }
-                self.advance();
-                self.make_token(TokenType::Lt, "<")
-            }
-            '>' => {
-                if self.match_char('>') {
-                    if self.peek(0) == '=' {
-                        self.advance();
-                        return self.make_token(TokenType::ShrAssign, ">>=");
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::AndAssign, "&=");
                     }
-                    return self.make_token(TokenType::Shr, ">>");
-                }
-                if self.match_char('=') {
-                    return self.make_token(TokenType::Ge, ">=");
-                }
-                self.advance();
-                self.make_token(TokenType::Gt, ">")
-            }
-            ';' => {
-                self.advance();
-                self.make_token(TokenType::Semicolon, ";")
-            }
-            ',' => {
-                self.advance();
-                self.make_token(TokenType::Comma, ",")
-            }
-            '(' => {
-                self.advance();
-                self.make_token(TokenType::LParen, "(")
-            }
-            ')' => {
-                self.advance();
-                self.make_token(TokenType::RParen, ")")
-            }
-            '{' => {
-                self.advance();
-                self.make_token(TokenType::LBrace, "{")
-            }
-            '}' => {
-                self.advance();
-                self.make_token(TokenType::RBrace, "}")
-            }
-            '[' => {
-                self.advance();
-                self.make_token(TokenType::LBracket, "[")
-            }
-            ']' => {
-                self.advance();
-                self.make_token(TokenType::RBracket, "]")
-            }
-            '.' => {
-                if self.match_char('*') {
-                    return self.make_token(TokenType::DotStar, ".*");
-                }
-                if self.peek(1) == '.' && self.peek(2) == '.' {
                     self.advance();
-                    self.advance();
-                    self.advance();
-                    return self.make_token(TokenType::Ellipsis, "...");
+                    self.make_token(TokenType::Ampersand, "&")
                 }
-                self.advance();
-                self.make_token(TokenType::Dot, ".")
-            }
-            ':' => {
-                if self.match_char(':') {
-                    return self.make_token(TokenType::ColonColon, "::");
+                '|' => {
+                    if self.match_char('|') {
+                        return self.make_token(TokenType::OrOr, "||");
+                    }
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::OrAssign, "|=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::BitOr, "|")
                 }
-                self.advance();
-                self.make_token(TokenType::Colon, ":")
-            }
-            '?' => {
-                self.advance();
-                self.make_token(TokenType::Question, "?")
-            }
-            _ => {
-                self.advance();
-                self.errors.push(LexerError {
-                    message: format!("无法识别的字符: '{}'", c),
-                    line: self.line,
-                    column: self.column,
-                    code: ErrorCode::E1001_UnknownChar as i32,
-                });
-                self.make_token(TokenType::Unknown, &c.to_string())
-            }
+                '^' => {
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::XorAssign, "^=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::BitXor, "^")
+                }
+                '~' => {
+                    self.advance();
+                    self.make_token(TokenType::BitNot, "~")
+                }
+                '<' => {
+                    if self.match_char('<') {
+                        if self.peek(0) == '=' {
+                            self.advance();
+                            return self.make_token(TokenType::ShlAssign, "<<=");
+                        }
+                        return self.make_token(TokenType::Shl, "<<");
+                    }
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::Le, "<=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Lt, "<")
+                }
+                '>' => {
+                    if self.match_char('>') {
+                        if self.peek(0) == '=' {
+                            self.advance();
+                            return self.make_token(TokenType::ShrAssign, ">>=");
+                        }
+                        return self.make_token(TokenType::Shr, ">>");
+                    }
+                    if self.match_char('=') {
+                        return self.make_token(TokenType::Ge, ">=");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Gt, ">")
+                }
+                ';' => {
+                    self.advance();
+                    self.make_token(TokenType::Semicolon, ";")
+                }
+                ',' => {
+                    self.advance();
+                    self.make_token(TokenType::Comma, ",")
+                }
+                '(' => {
+                    self.advance();
+                    self.make_token(TokenType::LParen, "(")
+                }
+                ')' => {
+                    self.advance();
+                    self.make_token(TokenType::RParen, ")")
+                }
+                '{' => {
+                    self.advance();
+                    self.make_token(TokenType::LBrace, "{")
+                }
+                '}' => {
+                    self.advance();
+                    self.make_token(TokenType::RBrace, "}")
+                }
+                '[' => {
+                    self.advance();
+                    self.make_token(TokenType::LBracket, "[")
+                }
+                ']' => {
+                    self.advance();
+                    self.make_token(TokenType::RBracket, "]")
+                }
+                '.' => {
+                    if self.match_char('*') {
+                        return self.make_token(TokenType::DotStar, ".*");
+                    }
+                    if self.peek(1) == '.' && self.peek(2) == '.' {
+                        self.advance();
+                        self.advance();
+                        self.advance();
+                        return self.make_token(TokenType::Ellipsis, "...");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Dot, ".")
+                }
+                ':' => {
+                    if self.match_char(':') {
+                        return self.make_token(TokenType::ColonColon, "::");
+                    }
+                    self.advance();
+                    self.make_token(TokenType::Colon, ":")
+                }
+                '?' => {
+                    self.advance();
+                    self.make_token(TokenType::Question, "?")
+                }
+                _ => {
+                    self.advance();
+                    self.errors.push(LexerError {
+                        message: format!("无法识别的字符: '{}'", c),
+                        line: self.line,
+                        column: self.column,
+                        code: ErrorCode::E1001_UnknownChar as i32,
+                    });
+                    self.make_token(TokenType::Unknown, &c.to_string())
+                }
+            };
         }
     }
 

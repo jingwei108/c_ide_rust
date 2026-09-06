@@ -2,6 +2,19 @@ use super::*;
 
 impl Parser {
     pub(crate) fn parse_primary(&mut self) -> Expr {
+        // F-P0-1 深度防护：括号/复合字面量互递归（5 万层 `((((` 曾直接栈溢出）
+        if !self.enter_depth("表达式") {
+            return Expr::Literal {
+                value: 0,
+                loc: SourceLoc::default(),
+                ty: Type::int(),
+            };
+        }
+        let expr = self.parse_primary_inner();
+        self.leave_depth();
+        expr
+    }
+    fn parse_primary_inner(&mut self) -> Expr {
         if self.match_token(TokenType::Number) {
             let prev = self.previous().clone();
             let value: i32 = prev.text.parse().unwrap_or_else(|_| {

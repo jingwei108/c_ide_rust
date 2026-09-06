@@ -2,12 +2,7 @@ use super::*;
 
 pub(crate) fn gen_compound_literal_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
-    if let Expr::CompoundLiteral {
-        target_type,
-        init,
-        ..
-    } = expr
-    {
+    if let Expr::CompoundLiteral { target_type, init, .. } = expr {
         let sz = gen.type_size(target_type);
         let aligned_sz = (sz + 3) & !3;
         let local_offset = gen.next_local_offset;
@@ -36,10 +31,7 @@ pub(crate) fn gen_compound_literal_expr(gen: &mut BytecodeGen, expr: &mut Expr) 
                 }
             }
             _ => {
-                gen.report_error(
-                    &format!("复合字面量暂不支持类型 '{}'", target_type),
-                    &loc,
-                );
+                gen.report_error(&format!("复合字面量暂不支持类型 '{}'", target_type), &loc);
             }
         }
 

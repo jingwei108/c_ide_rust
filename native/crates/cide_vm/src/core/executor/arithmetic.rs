@@ -76,6 +76,9 @@ impl CideVM {
                 if b == 0 {
                     let msg = self.format_div_zero_error(a, b);
                     self.trap(&msg, loc);
+                } else if a == i32::MIN && b == -1 {
+                    // Rust 的 % 在 MIN % -1 时溢出 panic，必须先拦截
+                    self.trap("整数取模溢出。INT_MIN % -1 的结果未定义，超出了 int 能表示的范围。", loc);
                 } else {
                     self.push((a % b) as u64);
                 }

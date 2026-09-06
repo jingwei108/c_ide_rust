@@ -268,6 +268,10 @@ fn tpl_div(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Vm
         vm.trap("除零错误：整数除法的除数不能为 0。", loc);
         return Some(StepResult::Trap);
     }
+    if a == i32::MIN && b == -1 {
+        vm.trap("整数除法溢出。INT_MIN / -1 的结果超出了 int 能表示的范围。", loc);
+        return Some(StepResult::Trap);
+    }
     vm.push((a / b) as u64);
     None
 }
@@ -279,12 +283,20 @@ fn tpl_mod(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut Vm
         vm.trap("取模错误：取模运算的除数不能为 0。", loc);
         return Some(StepResult::Trap);
     }
+    if a == i32::MIN && b == -1 {
+        vm.trap("整数取模溢出。INT_MIN % -1 的结果未定义，超出了 int 能表示的范围。", loc);
+        return Some(StepResult::Trap);
+    }
     vm.push((a % b) as u64);
     None
 }
 
-fn tpl_neg(vm: &mut CideVM, _a: i32, _b: i32, _loc: &SourceLoc, _session: &mut VmContext<'_>) -> Option<StepResult> {
+fn tpl_neg(vm: &mut CideVM, _a: i32, _b: i32, loc: &SourceLoc, _session: &mut VmContext<'_>) -> Option<StepResult> {
     let a = vm.pop() as i32;
+    if a == i32::MIN {
+        vm.trap("整数取反溢出。-INT_MIN 的结果超出了 int 能表示的范围。", loc);
+        return Some(StepResult::Trap);
+    }
     vm.push((-a) as u64);
     None
 }

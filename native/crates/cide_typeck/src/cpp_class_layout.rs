@@ -22,7 +22,7 @@ impl TypeChecker {
         // Second pass: compute has_resource for all registered classes (including builtins)
         let class_names: Vec<String> = self.classes.keys().cloned().collect();
         for name in class_names {
-            let has_resource = self.compute_class_has_resource(&name);
+            let has_resource = self.compute_class_has_resource(&name, &mut HashSet::new());
             if let Some(sym) = self.classes.get_mut(&name) {
                 sym.has_resource = has_resource;
             }
@@ -48,32 +48,38 @@ impl TypeChecker {
 
     /// Check whether a type contains resources (pointers, references, or class fields
     /// that themselves contain resources).
-    fn type_contains_resource(&self, ty: &Type) -> bool {
+    fn type_contains_resource(&self, ty: &Type, visiting: &mut HashSet<String>) -> bool {
         match ty {
             Type::Pointer { .. } | Type::Reference { .. } | Type::RValueRef { .. } => true,
-            Type::Class { name, .. } => self.compute_class_has_resource(name),
-            Type::Array { element, .. } => self.type_contains_resource(element),
+            Type::Class { name, .. } => self.compute_class_has_resource(name, visiting),
+            Type::Array { element, .. } => self.type_contains_resource(element, visiting),
             _ => false,
         }
     }
 
     /// Compute whether a class (by name) contains resource fields.
-    fn compute_class_has_resource(&self, name: &str) -> bool {
+    fn compute_class_has_resource(&self, name: &str, visiting: &mut HashSet<String>) -> bool {
+        // T-P0-8：循环继承（A:B 且 B:A）与自含类字段曾在此无限递归栈溢出，
+        // visiting 记录当前展开路径，环出现时按"无资源"处理防崩。
+        if !visiting.insert(name.to_string()) {
+            return false;
+        }
         let sym = match self.classes.get(name) {
             Some(s) => s,
             None => return false,
         };
         // Check base class
         if let Some(ref base_name) = sym.base {
-            if self.compute_class_has_resource(base_name) {
+            if self.compute_class_has_resource(base_name, visiting) {
                 return true;
             }
         }
         for (ty, _, _) in &sym.fields {
-            if self.type_contains_resource(ty) {
+            if self.type_contains_resource(ty, visiting) {
                 return true;
             }
         }
+        visiting.remove(name);
         false
     }
 
@@ -274,7 +280,7 @@ impl TypeChecker {
         let total_field_size: i32 = fields.iter().map(|(ty, _, _)| self.compute_type_size(ty)).sum();
         // Compute has_resource immediately so implicit move ctor generation works
         // for class template instantiations created during Pass 3.
-        let has_resource = self.compute_class_has_resource(name);
+        let has_resource = self.compute_class_has_resource(name, &mut HashSet::new());
         let class_sym = match self.classes.get_mut(name) {
             Some(sym) => sym,
             None => {

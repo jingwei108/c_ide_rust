@@ -43,13 +43,7 @@ impl TypeChecker {
     }
 
     pub(crate) fn resolve_compound_literal(&mut self, expr: &mut Expr) -> Type {
-        if let Expr::CompoundLiteral {
-            target_type,
-            init,
-            loc,
-            ty,
-        } = expr
-        {
+        if let Expr::CompoundLiteral { target_type, init, loc, ty } = expr {
             match target_type.kind() {
                 TypeKind::Struct => {
                     self.check_struct_initializer(target_type, init, loc);
@@ -74,10 +68,7 @@ impl TypeChecker {
                             let e_type = self.resolve_expr_type(&mut elements[0].value);
                             if !self.check_assignable(target_type, &e_type, loc) {
                                 self.report_error(
-                                    &format!(
-                                        "标量复合字面量类型不匹配：期望 '{}'，实际 '{}'",
-                                        target_type, e_type
-                                    ),
+                                    &format!("标量复合字面量类型不匹配：期望 '{}'，实际 '{}'", target_type, e_type),
                                     loc,
                                     ErrorCode::E3006_ArrayInitTypeMismatch,
                                 );

@@ -271,11 +271,25 @@ impl Parser {
             RValueRef,
         }
         let mut prefixes = Vec::new();
+        // F-P0-1：DeclaratorGuard 此前不限 ptr_count，10 万个 `*` 会构造出
+        // 同深度的嵌套 DeclaratorNode，后续递归遍历（typeck/codegen）栈溢出。
+        const MAX_DECLARATOR_PTR: i32 = 32;
         while self.match_token(TokenType::Star) {
-            prefixes.push(Prefix::Pointer);
             if !is_abstract {
                 guard.ptr_count += 1;
+                if guard.ptr_count > MAX_DECLARATOR_PTR {
+                    self.errors.push(ParseError {
+                        message: format!("声明符指针层级过深（超过 {} 层）", MAX_DECLARATOR_PTR),
+                        line: self.current().line,
+                        column: self.current().column,
+                        code: ErrorCode::E1007_ComplexDeclarator as i32,
+                    });
+                    // 吞掉剩余连续 `*`，避免它们污染后续解析
+                    while self.match_token(TokenType::Star) {}
+                    break;
+                }
             }
+            prefixes.push(Prefix::Pointer);
             // 跳过指针限定符（const/volatile/restrict），教学 VM 中无特殊语义
             while self.match_token(TokenType::Const)
                 || self.match_token(TokenType::Volatile)
@@ -284,17 +298,37 @@ impl Parser {
         }
         if self.is_cpp_mode {
             while self.match_token(TokenType::Ampersand) {
+                if !is_abstract {
+                    guard.ptr_count += 1;
+                    if guard.ptr_count > MAX_DECLARATOR_PTR {
+                        self.errors.push(ParseError {
+                            message: format!("声明符引用层级过深（超过 {} 层）", MAX_DECLARATOR_PTR),
+                            line: self.current().line,
+                            column: self.current().column,
+                            code: ErrorCode::E1007_ComplexDeclarator as i32,
+                        });
+                        while self.match_token(TokenType::Ampersand) {}
+                        break;
+                    }
+                }
                 let is_const = self.match_token(TokenType::Const);
                 prefixes.push(Prefix::Reference(is_const));
-                if !is_abstract {
-                    guard.ptr_count += 1;
-                }
             }
             while self.match_token(TokenType::AndAnd) {
-                prefixes.push(Prefix::RValueRef);
                 if !is_abstract {
                     guard.ptr_count += 1;
+                    if guard.ptr_count > MAX_DECLARATOR_PTR {
+                        self.errors.push(ParseError {
+                            message: format!("声明符引用层级过深（超过 {} 层）", MAX_DECLARATOR_PTR),
+                            line: self.current().line,
+                            column: self.current().column,
+                            code: ErrorCode::E1007_ComplexDeclarator as i32,
+                        });
+                        while self.match_token(TokenType::AndAnd) {}
+                        break;
+                    }
                 }
+                prefixes.push(Prefix::RValueRef);
             }
         }
 

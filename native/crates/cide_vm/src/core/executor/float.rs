@@ -203,6 +203,8 @@ impl CideVM {
                 let a = self.pop() as i64;
                 if b == 0 {
                     self.trap("long long 除以零", loc);
+                } else if a == i64::MIN && b == -1 {
+                    self.trap("long long 除法溢出。LLONG_MIN / -1 的结果超出了 long long 能表示的范围。", loc);
                 } else {
                     self.push((a / b) as u64);
                 }
@@ -212,13 +214,22 @@ impl CideVM {
                 let a = self.pop() as i64;
                 if b == 0 {
                     self.trap("long long 取模除以零", loc);
+                } else if a == i64::MIN && b == -1 {
+                    self.trap(
+                        "long long 取模溢出。LLONG_MIN % -1 的结果未定义，超出了 long long 能表示的范围。",
+                        loc,
+                    );
                 } else {
                     self.push((a % b) as u64);
                 }
             }
             OpCode::NegQ => {
                 let a = self.pop() as i64;
-                self.push((-a) as u64);
+                if a == i64::MIN {
+                    self.trap("long long 取反溢出。-LLONG_MIN 的结果超出了 long long 能表示的范围。", loc);
+                } else {
+                    self.push((-a) as u64);
+                }
             }
             OpCode::CastI2Q => {
                 let a = self.pop() as i32;

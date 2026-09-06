@@ -226,22 +226,35 @@ pub fn apply_fix(source: String, diag: Diagnostic) -> Option<String> {
     }
 }
 
+/// 将诊断列号安全转换为目标行的字节偏移。
+///
+/// 坐标来源混杂：lexer/错误目录按字节计列，部分诊断与前端按字符计列。
+/// 含中文（UTF-8 多字节）的行上，按错误语义切片会落在字符中间导致 panic。
+/// 策略：优先按字节边界解释（与生成侧一致）；落点不是字符边界时退回按
+/// 字符索引解释；最终 clamp 到行内，保证任何输入都不会在切片时 panic。
+fn safe_byte_col(line: &str, col: usize) -> usize {
+    if col <= line.len() && line.is_char_boundary(col) {
+        return col;
+    }
+    match line.char_indices().nth(col) {
+        Some((idx, _)) => idx,
+        None => line.len(),
+    }
+}
+
 fn apply_replace(source: &str, diag: &Diagnostic) -> Option<String> {
     let mut lines: Vec<String> = source.lines().map(|s| s.to_string()).collect();
     let start_line = diag.replace_start_line as usize;
-    let start_col = diag.replace_start_column as usize;
     let end_line = diag.replace_end_line as usize;
-    let end_col = diag.replace_end_column as usize;
 
     if start_line == 0 || end_line == 0 || start_line > lines.len() || end_line > lines.len() {
         return None;
     }
     let start_idx = start_line - 1;
     let end_idx = end_line - 1;
-    if start_col > lines[start_idx].len()
-        || end_col > lines[end_idx].len()
-        || start_col > end_col && start_idx == end_idx
-    {
+    let start_col = safe_byte_col(&lines[start_idx], diag.replace_start_column as usize);
+    let end_col = safe_byte_col(&lines[end_idx], diag.replace_end_column as usize);
+    if start_col > end_col && start_idx == end_idx {
         return None;
     }
 
@@ -259,12 +272,12 @@ fn apply_replace(source: &str, diag: &Diagnostic) -> Option<String> {
 fn apply_insert(source: &str, diag: &Diagnostic) -> Option<String> {
     let mut lines: Vec<String> = source.lines().map(|s| s.to_string()).collect();
     let start_line = diag.replace_start_line as usize;
-    let start_col = diag.replace_start_column as usize;
 
-    if start_line == 0 || start_line > lines.len() || start_col > lines[start_line - 1].len() {
+    if start_line == 0 || start_line > lines.len() {
         return None;
     }
 
+    let start_col = safe_byte_col(&lines[start_line - 1], diag.replace_start_column as usize);
     lines[start_line - 1].insert_str(start_col, &diag.replacement_text);
     Some(lines.join("\n"))
 }
@@ -272,19 +285,16 @@ fn apply_insert(source: &str, diag: &Diagnostic) -> Option<String> {
 fn apply_delete(source: &str, diag: &Diagnostic) -> Option<String> {
     let mut lines: Vec<String> = source.lines().map(|s| s.to_string()).collect();
     let start_line = diag.replace_start_line as usize;
-    let start_col = diag.replace_start_column as usize;
     let end_line = diag.replace_end_line as usize;
-    let end_col = diag.replace_end_column as usize;
 
     if start_line == 0 || end_line == 0 || start_line > lines.len() || end_line > lines.len() {
         return None;
     }
     let start_idx = start_line - 1;
     let end_idx = end_line - 1;
-    if start_col > lines[start_idx].len()
-        || end_col > lines[end_idx].len()
-        || start_col > end_col && start_idx == end_idx
-    {
+    let start_col = safe_byte_col(&lines[start_idx], diag.replace_start_column as usize);
+    let end_col = safe_byte_col(&lines[end_idx], diag.replace_end_column as usize);
+    if start_col > end_col && start_idx == end_idx {
         return None;
     }
 

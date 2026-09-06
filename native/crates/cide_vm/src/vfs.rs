@@ -224,7 +224,12 @@ impl VirtualFileSystem {
             Some(m) => m,
             None => return 0,
         };
-        let to_read = size * nmemb;
+        // 溢出防护：size * nmemb 可能 wrap（如 2^32 * 2^32 = 0）导致海量分配；
+        // 读取总量也不应超过 VM 线性内存大小。
+        let to_read = match size.checked_mul(nmemb) {
+            Some(t) if t <= vm.get_memory_size() as usize => t,
+            _ => return 0,
+        };
         if to_read == 0 {
             return 0;
         }
@@ -297,7 +302,11 @@ impl VirtualFileSystem {
         if desc.mode == VfsMode::Read {
             return 0;
         }
-        let to_write = size * nmemb;
+        // 溢出防护同 fread：size * nmemb 可能 wrap；写入总量不应超过 VM 线性内存大小。
+        let to_write = match size.checked_mul(nmemb) {
+            Some(t) if t <= vm.get_memory_size() as usize => t,
+            _ => return 0,
+        };
         let meta = match self.files.get_mut(&desc.file_name) {
             Some(m) => m,
             None => return 0,

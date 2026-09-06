@@ -169,7 +169,13 @@ pub fn host_qsort(vm: &mut CideVM, session: &mut VmContext<'_>) {
     }
 
     let mem_size = vm.get_memory_slice().len();
-    if base as usize + nmemb * size > mem_size {
+    // usize 乘法/加法溢出防护：恶意 nmemb/size（如 2^32 * 2^32 wrap 为 0）会绕过
+    // 边界检查并触发海量分配（OOM abort，debug 构建直接 panic）。
+    if nmemb
+        .checked_mul(size)
+        .and_then(|t| (base as usize).checked_add(t))
+        .is_none_or(|t| t > mem_size)
+    {
         return;
     }
 
@@ -250,7 +256,12 @@ pub fn host_bsearch(vm: &mut CideVM, session: &mut VmContext<'_>) {
     }
 
     let mem_size = vm.get_memory_slice().len();
-    if base as usize + nmemb * size > mem_size {
+    // 溢出防护同 host_qsort：checked_mul/checked_add，恶意参数按"未找到"处理。
+    if nmemb
+        .checked_mul(size)
+        .and_then(|t| (base as usize).checked_add(t))
+        .is_none_or(|t| t > mem_size)
+    {
         vm.push(0);
         return;
     }

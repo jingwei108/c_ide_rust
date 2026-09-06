@@ -93,6 +93,7 @@ pub enum ErrorCode {
     E3065_ConstViolation = 3065,
     E3070_BufferOverflow = 3070,
     E3071_UndefinedLabel = 3071,
+    E3072_StructSelfContain = 3072,
     // C++ 扩展错误码预留 (Phase 1)
     E4001_ExceptionNotSupported = 4001,
     E4002_OperatorOverloadNotSupported = 4002,

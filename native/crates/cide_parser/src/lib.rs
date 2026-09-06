@@ -65,7 +65,16 @@ pub struct Parser {
     next_lambda_id: u64,
     /// C++ 嵌套类解析上下文：当前外层类名栈，如 ["Outer"] -> ["Outer", "Inner"]。
     current_class: Vec<String>,
+    /// 递归下降深度计数（语句/表达式共享），见 MAX_PARSE_DEPTH。
+    recursion_depth: i32,
 }
+
+/// 递归深度上限：防护粘贴/恶意输入（6 万层 `{{{{`、5 万层 `((((`）导致的
+/// 栈溢出（SIGSEGV，无法被 catch_unwind 捕获，IDE 直接崩溃）。
+/// 实测每层括号嵌套消耗 ~3KB 栈（完整二元/一元/后缀优先级链 + 大体积 Expr 帧），
+/// 300 层即溢出 1MB 线程栈，因此上限必须远低于溢出阈值；合法教学代码的
+/// 语句/表达式嵌套远达不到 64 层。
+pub(crate) const MAX_PARSE_DEPTH: i32 = 64;
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
@@ -91,7 +100,32 @@ impl Parser {
             is_cpp_mode,
             next_lambda_id: 0,
             current_class: Vec::new(),
+            recursion_depth: 0,
         }
+    }
+
+    /// 进入一层递归下降（语句/表达式共用一个计数器）。
+    /// 超限时记录错误并跳到文件尾——过深嵌套的输入已无恢复价值，
+    /// 跳到 EOF 可让所有外层解析循环自然收敛结束。
+    /// 返回 false 表示调用方应立即返回中性的占位节点。
+    pub(crate) fn enter_depth(&mut self, what: &str) -> bool {
+        if self.recursion_depth >= MAX_PARSE_DEPTH {
+            self.errors.push(ParseError {
+                message: format!("{}嵌套过深（超过 {} 层），已停止解析", what, MAX_PARSE_DEPTH),
+                line: self.current().line,
+                column: self.current().column,
+                code: ErrorCode::E1006_UnsupportedFeature as i32,
+            });
+            self.pos = self.tokens.len().saturating_sub(1);
+            false
+        } else {
+            self.recursion_depth += 1;
+            true
+        }
+    }
+
+    pub(crate) fn leave_depth(&mut self) {
+        self.recursion_depth -= 1;
     }
 
     pub fn parse(mut self) -> (Option<ProgramNode>, Vec<ParseError>) {

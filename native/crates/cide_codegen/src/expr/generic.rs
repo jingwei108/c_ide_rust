@@ -3,10 +3,7 @@ use super::*;
 pub(crate) fn gen_generic_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
     if let Expr::Generic {
-        control,
-        associations,
-        default,
-        ..
+        control, associations, default, ..
     } = expr
     {
         let control_type = control.ty().clone();

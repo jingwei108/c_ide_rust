@@ -606,12 +606,25 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
     let mut engine = lock_or_reset(&engine_arc_l546);
 
     let mut vm = session.vm.take().unwrap_or_default();
-    let result = match engine.run_batch(&mut vm, &mut session, batch_size) {
-        Ok(r) => r,
+    // 与 execute_run（B47）同款保护：panic 不得穿越 FFI 边界（UB），
+    // 且 panic 后必须把 VM 还回 session，避免状态永久丢失。
+    let mut run_batch = || engine.run_batch(&mut vm, &mut session, batch_size);
+    #[cfg(not(target_arch = "wasm32"))]
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut run_batch));
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = caught.unwrap_or_else(|_| Err("运行时发生内部错误（panic）".to_string()));
+    #[cfg(target_arch = "wasm32")]
+    let result = run_batch();
+
+    match result {
+        Ok(r) => {
+            session.vm = Some(vm);
+            r
+        }
         Err(e) => {
             let line = vm.get_current_line();
             session.vm = Some(vm);
-            return AutoStepResult {
+            AutoStepResult {
                 payloads: Vec::new(),
                 finished: false,
                 trapped: true,
@@ -620,12 +633,9 @@ pub fn run_auto_steps(batch_size: i32) -> AutoStepResult {
                 current_line: line,
                 trap_message: Some(e),
                 cache_start_step: engine.frame_cache_start_step(),
-            };
+            }
         }
-    };
-
-    session.vm = Some(vm);
-    result
+    }
 }
 
 /// Seek 到指定步。
@@ -636,7 +646,19 @@ pub fn seek_to_step(target: i32) -> SeekResult {
     let mut engine = lock_or_reset(&engine_arc_l573);
 
     let mut vm = session.vm.take().unwrap_or_default();
-    let result = engine.seek_to(target, &mut vm, &mut session);
+    // 与 execute_run（B47）同款保护：防止 panic 穿越 FFI 边界导致 Flutter 进程 abort。
+    let mut do_seek = || engine.seek_to(target, &mut vm, &mut session);
+    #[cfg(not(target_arch = "wasm32"))]
+    let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut do_seek)) {
+        Ok(r) => r,
+        Err(_) => SeekResult {
+            success: false,
+            payload: None,
+            error: Some("运行时发生内部错误（panic）".to_string()),
+        },
+    };
+    #[cfg(target_arch = "wasm32")]
+    let result = do_seek();
 
     session.vm = Some(vm);
     result
@@ -652,29 +674,37 @@ pub fn step_next_unified() -> Option<StepPayload> {
     let mut vm = session.vm.take().unwrap_or_default();
     let step = vm.get_executed_steps();
 
-    let payload = match vm.step(&mut session.as_vm_context()) {
-        crate::vm::core::StepResult::Ok
-        | crate::vm::core::StepResult::Paused
-        | crate::vm::core::StepResult::WaitingInput
-        | crate::vm::core::StepResult::Finished
-        | crate::vm::core::StepResult::Trap => {
-            let p = crate::unified::collector::StepCollector::collect(&mut vm, &session, step);
-            if let Some(idx) = engine.frame_cache_index(step) {
-                // 目标步在当前窗口内：替换
-                engine.frame_cache[idx] = p.clone();
-            } else if step == engine.max_collected_step() + 1 {
-                // 目标步是窗口下一帧：追加并可能触发截断
-                engine.frame_cache.push(p.clone());
-                engine.trim_frame_cache();
-            } else {
-                // 其他情况（如窗口外的旧步）：重置窗口为仅包含当前步。
-                engine.frame_cache_start_step = step;
-                engine.frame_cache.clear();
-                engine.frame_cache.push(p.clone());
+    // 与 execute_run（B47）同款保护：防止 panic 穿越 FFI 边界导致 Flutter 进程 abort。
+    let mut do_step = || {
+        let payload = match vm.step(&mut session.as_vm_context()) {
+            crate::vm::core::StepResult::Ok
+            | crate::vm::core::StepResult::Paused
+            | crate::vm::core::StepResult::WaitingInput
+            | crate::vm::core::StepResult::Finished
+            | crate::vm::core::StepResult::Trap => {
+                let p = crate::unified::collector::StepCollector::collect(&mut vm, &session, step);
+                if let Some(idx) = engine.frame_cache_index(step) {
+                    // 目标步在当前窗口内：替换
+                    engine.frame_cache[idx] = p.clone();
+                } else if step == engine.max_collected_step() + 1 {
+                    // 目标步是窗口下一帧：追加并可能触发截断
+                    engine.frame_cache.push(p.clone());
+                    engine.trim_frame_cache();
+                } else {
+                    // 其他情况（如窗口外的旧步）：重置窗口为仅包含当前步。
+                    engine.frame_cache_start_step = step;
+                    engine.frame_cache.clear();
+                    engine.frame_cache.push(p.clone());
+                }
+                Some(p)
             }
-            Some(p)
-        }
+        };
+        payload
     };
+    #[cfg(not(target_arch = "wasm32"))]
+    let payload = std::panic::catch_unwind(std::panic::AssertUnwindSafe(&mut do_step)).unwrap_or(None);
+    #[cfg(target_arch = "wasm32")]
+    let payload = do_step();
 
     session.vm = Some(vm);
     payload

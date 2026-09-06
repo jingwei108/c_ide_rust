@@ -34,6 +34,18 @@ impl Parser {
         self.consume(TokenType::Semicolon, "_Static_assert 预期 ';'");
     }
     pub(crate) fn parse_statement(&mut self) -> Stmt {
+        // F-P0-1 深度防护：块/控制流语句互递归（6 万层 `{{{{` 曾直接栈溢出）
+        if !self.enter_depth("语句") {
+            return Stmt::Block {
+                stmts: Vec::new(),
+                loc: SourceLoc::default(),
+            };
+        }
+        let stmt = self.parse_statement_inner();
+        self.leave_depth();
+        stmt
+    }
+    fn parse_statement_inner(&mut self) -> Stmt {
         match self.current().ty {
             TokenType::Semicolon => {
                 let loc = SourceLoc {

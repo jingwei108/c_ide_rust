@@ -126,6 +126,39 @@ impl TypeChecker {
             self.unions.insert(u.name.clone(), sym);
         }
 
+        // T-P0-8：struct/union 值成员循环包含检测（学生写链表节点漏 `*` 的经典
+        // 错误，曾导致 compute_type_size 无限递归栈溢出、IDE 直接崩溃）。
+        for s in &program.structs {
+            if let Some(sym) = self.structs.get(&s.name) {
+                let mut path = vec![s.name.clone()];
+                if let Some(cycle) = sym.fields.iter().find_map(|(t, _)| self.value_member_cycle(t, &mut path)) {
+                    self.report_error(
+                        &format!(
+                            "结构体 '{}' 的值成员存在循环包含（经 '{}' 回到自身）：结构体不能按值包含自己，链表/树节点请改用指针成员，如 `struct {}* next;`",
+                            s.name, cycle, s.name
+                        ),
+                        &s.loc,
+                        ErrorCode::E3072_StructSelfContain,
+                    );
+                }
+            }
+        }
+        for u in &program.unions {
+            if let Some(sym) = self.unions.get(&u.name) {
+                let mut path = vec![u.name.clone()];
+                if let Some(cycle) = sym.fields.iter().find_map(|(t, _)| self.value_member_cycle(t, &mut path)) {
+                    self.report_error(
+                        &format!(
+                            "联合体 '{}' 的值成员存在循环包含（经 '{}' 回到自身），请改用指针成员",
+                            u.name, cycle
+                        ),
+                        &u.loc,
+                        ErrorCode::E3072_StructSelfContain,
+                    );
+                }
+            }
+        }
+
         // Pass 1.5: Register classes and compute layouts
         self.register_class_layouts(program);
 
@@ -368,6 +401,32 @@ impl TypeChecker {
         }
 
         (self.errors, self.warnings, self.hints)
+    }
+
+    /// T-P0-8：沿"值语义 struct/union 成员"（含数组包裹）展开，检测循环包含。
+    /// 返回路径中首先撞到的已存在节点名；指针/引用/函数成员不构成环。
+    fn value_member_cycle(&self, ty: &Type, path: &mut Vec<String>) -> Option<String> {
+        let mut ty_ref = ty;
+        loop {
+            match ty_ref {
+                Type::Array { element, .. } => ty_ref = element,
+                Type::Struct { name, .. } | Type::Union { name, .. } => {
+                    if path.iter().any(|p| p == name) {
+                        return Some(name.clone());
+                    }
+                    let fields: Option<&Vec<(Type, String)>> = self
+                        .structs
+                        .get(name)
+                        .map(|s| &s.fields)
+                        .or_else(|| self.unions.get(name).map(|s| &s.fields));
+                    path.push(name.clone());
+                    let hit = fields.and_then(|fs| fs.iter().find_map(|(t, _)| self.value_member_cycle(t, path)));
+                    path.pop();
+                    return hit;
+                }
+                _ => return None,
+            }
+        }
     }
 
     pub(crate) fn report_error(&mut self, msg: &str, loc: &SourceLoc, code: ErrorCode) {

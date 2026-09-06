@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (崩溃止血：2026-09-06 代码审查报告第一批 P0 修复)
+- **F-P0-1 递归深度防护**：深嵌套/粘贴输入不再击穿编译器栈（SIGSEGV 无法被 catch_unwind 捕获，曾导致 IDE 直接崩溃）
+  - `cide_lexer`：`next_token` 的注释/预处理跳过分支由递归改为 `loop` 重派发（2 万行 `//c` 注释曾栈溢出）。
+  - `cide_parser`：新增共享递归深度计数器（`MAX_PARSE_DEPTH = 64`），`parse_statement` / `parse_primary` 入口防护，超限报 `E1006` 并跳到文件尾（6 万层 `{{{{`、5 万层 `((((` 曾栈溢出）。上限取 64 的依据：实测每层括号嵌套消耗 ~3KB 栈（完整优先级链 + 大体积 Expr 帧），300 层即溢出 1MB 线程栈；40 层合法嵌套实测不受影响。
+  - `cide_parser`：`DeclaratorGuard.ptr_count` 新增上限 32（`*` / `&` / `&&` 声明符），超限报 `E1007` 并吞掉剩余修饰符（10 万个 `*` 曾在后续 AST 遍历栈溢出）。
+- **T-P0-8 自含 struct 环检测**：`struct S { struct S inner; };`（学生写链表节点漏 `*` 的经典错误）曾导致 `compute_type_size` 无限递归栈溢出
+  - `cide_typeck` Pass 1 新增值成员循环包含检测（含数组包裹、struct/union 互相包含），报新增错误码 `E3072_StructSelfContain` 并给出"请改用指针成员"教学提示；指针成员不构成环，合法链表不受影响。
+  - `cide_ast` / `native/src/compiler/ast.rs` 的 `compute_type_size` 引入 `visiting` 路径集合，环出现时返回 0 防崩（双处同步）。
+  - `cide_typeck` 的 `type_contains_resource` / `compute_class_has_resource` 引入 visiting 集合，循环继承（A:B 且 B:A）不再无限递归。
+- **V-P0-1/2 算术溢出防护**：`INT_MIN % -1`、`LLONG_MIN / -1`、`LLONG_MIN % -1`、`-LLONG_MIN` 在 release 下曾直接 panic（Rust 溢出检查不受构建模式影响）
+  - 解释器 `OpCode::Mod` / `DivQ` / `ModQ` / `NegQ` 与 JIT 模板 `tpl_div` / `tpl_mod` / `tpl_neg` 统一补齐 `MIN / -1` 与 `MIN` 取反防护，转为教学 trap 诊断（与 `Div`、`Neg` 既有防护对齐）。
+- **V-P0-3 统一模式 FFI panic 防护**：`run_auto_steps` / `seek_to_step` / `step_next_unified` 三入口补 `catch_unwind`（照抄 `execute_run` 的 B47 模式），panic 不再穿越 FRB 边界（FFI panic 为 UB，曾导致 Flutter 进程 abort），且 panic 后 VM 归还 session 避免状态丢失。
+- **V-P0-5 乘法溢出防护**：`host_qsort` / `host_bsearch` / VFS `fread` / `fwrite` 的 `nmemb * size` 改 `checked_mul` 并校验总量不超 VM 线性内存（`qsort(base, 2^32, 2^32, cmp)` 乘积曾 wrap 为 0 绕过边界检查，随后 `(0..2^32).collect()` 分配 ~32GB OOM abort）。
+- **E-P1-6 apply_fix 中文行 panic**：诊断修复坐标在字节/字符语义混用下，含中文（UTF-8 多字节）的行按字节切片曾 panic（前端"一键修复"崩溃）。新增 `safe_byte_col`：优先按字节边界解释，非字符边界时回退按字符索引解释，任何输入不再 panic。
+- **新增回归测试防线** `native/tests/crash_regression_tests.rs`（12 个用例）：上述全部复现场景固化为断言，含 3 个反向回归（40 层合法嵌套、合法链表指针不误伤）。
+
 ### Added
 - **C++ 扩展 Stage A/B/C**：默认参数、嵌套类实例化、类模板非类型模板参数（NTTP）
   - 默认参数：支持函数/方法参数 `int f(int a = 0)`，调用时可省略尾部实参；TypeChecker 在普通函数调用、方法调用、无限定方法调用中统一填充默认值；修复隐式移动构造被误选为 0 参默认构造的回归。
