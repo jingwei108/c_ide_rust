@@ -115,8 +115,15 @@ impl BytecodeGen {
         let next_func_idx = if is_library_mode {
             0
         } else {
-            // 预注册 Bytecode Libc 函数到固定索引段
+            // 预注册 Bytecode Libc 函数到固定索引段。
+            // V-P1-6 例外：strcpy/strcat 分发回 Host 路径——Host 实现带
+            // E3070 栈缓冲区容量检测（教学 IDE 的核心安全检测），Bytecode
+            // Libc 版逐字节 StoreMem 无法在拷贝边界做整体容量校验。
+            // libc 索引表与预编译产物保持不变，仅用户侧调用分发回 Host。
             for &name in BYTECODE_LIBC_ALL_FUNCS.iter() {
+                if matches!(name, "strcpy" | "strcat") {
+                    continue;
+                }
                 if let Some(idx) = bytecode_libc_index(name) {
                     func_index.insert(name.to_string(), idx);
                 }
@@ -461,6 +468,7 @@ impl BytecodeGen {
                     param_sizes: param_sizes.clone(),
                     return_type: f.return_type.clone(),
                     is_variadic: f.is_variadic,
+                    local_buffers: Vec::new(),
                 },
             );
         }

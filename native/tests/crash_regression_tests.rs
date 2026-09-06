@@ -15,14 +15,31 @@ use std::ffi::{c_char, CString};
 
 /// 与 cide_e2e.rs 相同的 C API 驱动方式（独立复制以避免跨测试文件依赖）。
 fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
+    compile_and_run_with_filename(source, None, "main.c")
+}
+
+/// 带标准输入的运行（scanf/getchar 流式语义测试用）。
+fn compile_and_run_with_input(source: &str, input: &str) -> Result<(i32, Vec<String>), String> {
+    compile_and_run_with_filename(source, Some(input), "main.c")
+}
+
+fn compile_and_run_with_filename(
+    source: &str,
+    input: Option<&str>,
+    filename: &str,
+) -> Result<(i32, Vec<String>), String> {
     unsafe {
         let session = cide_native::capi::cide_session_create();
         if session.is_null() {
             return Err("Failed to create session".to_string());
         }
 
-        let fname = CString::new("main.c").map_err(|e| e.to_string())?;
+        let fname = CString::new(filename).map_err(|e| e.to_string())?;
         let src = CString::new(source).map_err(|e| e.to_string())?;
+        if let Some(input_str) = input {
+            let normalized = input_str.replace("\r\n", "\n");
+            (*session).runtime.input_lines = normalized.split_inclusive('\n').map(|l| l.to_string()).collect();
+        }
         cide_native::capi::cide_compile_unit(session, fname.as_ptr() as *const c_char, src.as_ptr() as *const c_char);
         let compile_ret = cide_native::capi::cide_compile_all(session);
         if compile_ret != 0 {
@@ -79,6 +96,91 @@ fn test_int_min_mod_minus_one_traps_not_panics() {
     match result {
         Err(msg) => assert!(msg.contains("取模溢出"), "应报告取模溢出教学诊断，实际: {}", msg),
         Ok(_) => panic!("INT_MIN % -1 应产生运行错误而非成功"),
+    }
+}
+
+// ===================== V-P1-6：栈缓冲区溢出检测 =====================
+
+#[test]
+fn test_stack_buffer_overflow_strcpy_traps() {
+    // 修复前：容量检查只覆盖堆 region，栈上 `char buf[4]` 被 strcpy 静默
+    // 覆写相邻局部变量（教学 IDE 最需捕获的经典错误）。
+    let src = "#include <string.h>\nint main(){ char buf[4]; strcpy(buf, \"hello world\"); return 0; }\n";
+    match compile_and_run(src) {
+        Err(msg) => assert!(
+            msg.contains("E3070") && msg.contains("buf"),
+            "strcpy 栈溢出应报告 E3070 并指出缓冲区名，实际: {}",
+            msg
+        ),
+        Ok(_) => panic!("strcpy 写 11 字节进 char[4] 应触发 Buffer Overflow"),
+    }
+}
+
+#[test]
+fn test_stack_buffer_overflow_strcat_traps() {
+    let src = "#include <string.h>\nint main(){ char buf[8] = \"abc\"; strcat(buf, \"1234567890\"); return 0; }\n";
+    match compile_and_run(src) {
+        Err(msg) => assert!(msg.contains("E3070"), "strcat 栈溢出应报告 E3070，实际: {}", msg),
+        Ok(_) => panic!("strcat 溢出应触发 Buffer Overflow"),
+    }
+}
+
+#[test]
+fn test_legal_strcpy_strcat_unaffected() {
+    // 反向回归：合法长度不得误伤
+    let src = "#include <stdio.h>\n#include <string.h>\nint main(){ char buf[16]; strcpy(buf, \"hi\"); strcat(buf, \"!\"); printf(\"%s\\n\", buf); return 0; }\n";
+    let result = compile_and_run(src);
+    assert!(result.is_ok(), "合法 strcpy/strcat 不应误伤: {:?}", result.err());
+}
+
+// ===================== V-P1-12：无效 free 诊断 =====================
+
+#[test]
+fn test_free_interior_pointer_diagnosed() {
+    // 修复前：free(p+1) 静默"成功"——学生以为释放成功且泄漏报告不出现该块
+    let src = "#include <stdlib.h>\nint main(){ int* p = (int*)malloc(16); free(p + 1); return 0; }\n";
+    match compile_and_run(src) {
+        Err(msg) => assert!(
+            msg.contains("无效 free") || msg.contains("E3027"),
+            "free 块内部地址应给教学诊断，实际: {}",
+            msg
+        ),
+        Ok(_) => panic!("free(p+1) 应触发无效 free 诊断"),
+    }
+}
+
+#[test]
+fn test_free_stack_address_diagnosed() {
+    let src = "#include <stdlib.h>\nint main(){ int x = 5; free(&x); return 0; }\n";
+    match compile_and_run(src) {
+        Err(msg) => assert!(msg.contains("无效 free"), "free 栈地址应给教学诊断，实际: {}", msg),
+        Ok(_) => panic!("free(&stack_var) 应触发无效 free 诊断"),
+    }
+}
+
+#[test]
+fn test_delete_nullptr_is_noop() {
+    // V-P1-12 顺带暴露的存量缺陷：delete[] nullptr 未判空，ptr-4 wrap 为
+    // 0xFFFFFFFC 后 free 触发误报。C++ 标准要求 delete nullptr 是 no-op。
+    let src = "struct V { int* data; V() : data(0) {} ~V(){ delete[] data; } };\nint main(){ V v; return 0; }\n";
+    let result = compile_and_run_with_filename(src, None, "main.cpp");
+    assert!(result.is_ok(), "delete[] nullptr 应为安全 no-op: {:?}", result.err());
+}
+
+// ===================== V-P1-13：scanf 字符流语义 =====================
+
+#[test]
+fn test_scanf_streaming_within_line() {
+    // 修复前：scanf 每次调用整行消费，"1 2\n3 4" 下第二次 scanf("%d") 读到 3
+    let src = "#include <stdio.h>\nint main(){ int a, b; scanf(\"%d\", &a); scanf(\"%d\", &b); printf(\"%d %d\\n\", a, b); return 0; }\n";
+    let result = compile_and_run_with_input(src, "1 2\n3 4\n");
+    match result {
+        Ok((_, outputs)) => assert!(
+            outputs.iter().any(|l| l.contains("1 2")),
+            "两次 scanf 应从同一行读出 1 和 2，实际: {:?}",
+            outputs
+        ),
+        Err(e) => panic!("scanf 流式用例应正常运行: {}", e),
     }
 }
 

@@ -78,6 +78,9 @@ class EditorPanelV2State extends ConsumerState<EditorPanelV2> {
 
   @override
   void dispose() {
+    // U-P1-9：长按 Timer 未取消会在组件销毁后用 defunct context
+    // 弹出上下文菜单导致崩溃
+    _cancelLongPress();
     _hideContextMenu();
     _hideAutocomplete();
     _hideFindReplace();

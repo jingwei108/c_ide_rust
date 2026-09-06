@@ -72,6 +72,7 @@ pub fn host_free(vm: &mut CideVM, session: &mut VmContext<'_>) {
         vm.trap(&msg, &SourceLoc::default());
         return;
     }
+    let mut freed_ok = false;
     for r in &mut session.memory.regions {
         if r.addr == addr && !r.is_freed {
             r.is_freed = true;
@@ -89,8 +90,48 @@ pub fn host_free(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 size: aligned_size as i32,
             });
             session.memory.merge_free_list();
+            freed_ok = true;
             break;
         }
+    }
+    // V-P1-12：free 非分配起始地址的诊断。此前静默忽略，学生以为释放成功
+    // 而泄漏报告又看不到该块，双重误导。
+    if !freed_ok {
+        trap_invalid_free(vm, session, addr);
+    }
+}
+
+/// V-P1-12：对 free 无效地址给出分场景教学诊断并 trap。
+pub(crate) fn trap_invalid_free(vm: &mut CideVM, session: &VmContext<'_>, addr: u32) {
+    if let Some(r) = session
+        .memory
+        .regions
+        .iter()
+        .find(|r| !r.is_freed && addr > r.addr && addr < r.addr + r.size as u32)
+    {
+        vm.trap(
+            &format!(
+                "🚫 无效 free (E3027)：free 的地址 0x{:X} 是第 {} 行 malloc 块（起始 0x{:X}，{} 字节）的内部地址，不是起始地址。\n\n💡 原因：free 只能释放 malloc/calloc/realloc 返回的原始指针。\n✅ 解决方法：保存分配返回的原始指针用于 free；需要偏移访问时使用单独的指针变量，不要 free 偏移后的指针。",
+                addr, r.alloc_line, r.addr, r.size
+            ),
+            &SourceLoc::default(),
+        );
+    } else if let Some(log) = vm.freed_logs.iter().find(|log| addr > log.addr && addr < log.addr + log.size) {
+        vm.trap(
+            &format!(
+                "🔁 无效 free (E3061)：地址 0x{:X} 位于第 {} 行已释放块（起始 0x{:X}）的内部。free 只能释放 malloc 返回的原始指针。",
+                addr, log.freed_line, log.addr
+            ),
+            &SourceLoc::default(),
+        );
+    } else {
+        vm.trap(
+            &format!(
+                "🚫 无效 free (E3027)：free 的地址 0x{:X} 不指向任何 malloc/calloc/realloc 分配的内存块起始地址（可能是栈地址、全局变量地址或未初始化指针的垃圾值）。\n\n💡 原因：只有 malloc 系列函数返回的指针才能被 free。\n✅ 解决方法：检查该指针是否来自 malloc 分配，且未经过指针算术运算。",
+                addr
+            ),
+            &SourceLoc::default(),
+        );
     }
 }
 
@@ -101,6 +142,7 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut VmContext<'_>) {
     if new_size <= 0 {
         if ptr != 0 {
             // Equivalent to free
+            let mut freed_ok = false;
             for r in &mut session.memory.regions {
                 if r.addr == ptr && !r.is_freed {
                     r.is_freed = true;
@@ -118,8 +160,13 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut VmContext<'_>) {
                         size: aligned_size as i32,
                     });
                     session.memory.merge_free_list();
+                    freed_ok = true;
                     break;
                 }
+            }
+            // V-P1-12：realloc(p, 0) 等价 free，同样诊断无效地址
+            if !freed_ok {
+                trap_invalid_free(vm, session, ptr);
             }
         }
         vm.push(0);

@@ -1,5 +1,17 @@
 use cide_ast::Type;
 
+/// 局部缓冲区描述（V-P1-6 栈缓冲区溢出检测用）：
+/// 编译期登记的栈上数组（如 `char buf[4]`），offset 相对帧 locals_base。
+#[derive(Debug, Clone, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct LocalBuffer {
+    /// 相对 locals_base 的字节偏移。
+    pub offset: i32,
+    /// 缓冲区总字节数。
+    pub size: i32,
+    /// 变量名（教学诊断用）。
+    pub name: String,
+}
+
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct FuncMeta {
     pub ip: usize,
@@ -15,4 +27,9 @@ pub struct FuncMeta {
     /// 是否为变参函数。
     #[serde(default)]
     pub is_variadic: bool,
+    /// 栈上局部数组缓冲区表（V-P1-6）：strcpy/strcat/scanf("%s") 等宿主函数
+    /// 据此对栈缓冲区做容量校验（此前只查堆 region，栈上 `char buf[4]`
+    /// 被静默覆写）。
+    #[serde(default)]
+    pub local_buffers: Vec<LocalBuffer>,
 }

@@ -198,6 +198,13 @@ impl BytecodeGen {
 
         self.gen_expr(inner);
 
+        // C++ 语义：delete/delete[] nullptr 是 no-op（空容器析构高频场景）。
+        // 此前未判空：delete[] 的 ptr-4 会 wrap 为 0xFFFFFFFC 再 free，
+        // 触发无效 free 诊断。JumpIfZero pop 判断值，null 路径短路到尾部。
+        self.emit(OpCode::Dup, 0, loc);
+        let null_jump = self.current_ip();
+        self.emit(OpCode::JumpIfZero, 0, loc);
+
         // 判断元素类型是否为 class（支持直接 Class 或 Pointer to Class）
         let inner_ty = inner.ty().clone();
         let (is_class, class_name, elem_type) = if let Type::Class { name, .. } = &inner_ty {
@@ -292,6 +299,15 @@ impl BytecodeGen {
         } else {
             self.emit(OpCode::CallHost, cide_runtime::host_func_id::FREE as i32, loc);
         }
+
+        // null 短路汇合点：正常路径（free 已消费指针）跳过 Pop；
+        // null 路径栈上残留一份 0，Pop 丢弃后与正常路径汇合。
+        let skip_pop = self.current_ip();
+        self.emit(OpCode::Jump, 0, loc);
+        let null_target = self.current_ip();
+        self.emit(OpCode::Pop, 0, loc);
+        self.patch_jump(skip_pop, self.current_ip());
+        self.patch_jump(null_jump, null_target);
     }
 
     pub(crate) fn gen_move(&mut self, expr: &mut Expr, _loc: &SourceLoc) {

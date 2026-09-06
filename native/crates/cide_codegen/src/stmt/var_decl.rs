@@ -37,6 +37,17 @@ impl BytecodeGen {
         let local_offset = self.next_local_offset;
         self.next_local_offset += aligned_sz;
         self.record_scope_var(n);
+        // V-P1-6：登记栈上数组缓冲区，供 strcpy/strcat/scanf("%s") 做容量校验
+        // （参数区数组已退化为指针，不登记；VLA 运行时分配，不登记）
+        if vty.is_array() && !vty.is_vla() && local_offset >= self.current_func_arg_bytes {
+            if let Some(meta) = self.func_table.get_mut(&self.current_func) {
+                meta.local_buffers.push(cide_runtime::LocalBuffer {
+                    offset: local_offset,
+                    size: sz,
+                    name: n.to_string(),
+                });
+            }
+        }
         self.local_indices.insert(n.to_string(), local_offset);
         self.local_types.insert(n.to_string(), vty.clone());
         self.sym_index.insert(n.to_string(), self.symbols.len() as i32);

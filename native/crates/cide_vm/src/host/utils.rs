@@ -1,4 +1,5 @@
 use super::CideVM;
+use cide_shared::SourceLoc;
 
 pub(crate) fn read_cbytes(vm: &CideVM, addr: u32) -> Vec<u8> {
     let mem = vm.get_memory_slice();
@@ -420,4 +421,35 @@ pub(crate) fn set_errno(vm: &mut CideVM, val: i32) {
             return;
         }
     }
+}
+
+/// V-P1-6：栈缓冲区容量校验。dest 若落在某个活跃栈帧的局部数组缓冲区内，
+/// 校验 available >= needed；不足则给出 E3070 教学 trap 并返回 true。
+/// 此前 strcpy/strcat/scanf("%s") 只查堆 region，栈上 `char buf[4]` 被
+/// 静默覆写相邻局部变量（教学 IDE 最需要捕获的经典错误）。
+pub(crate) fn check_stack_buffer_capacity(vm: &mut CideVM, dest: u32, needed: usize, op_name: &str) -> bool {
+    for frame in vm.call_stack.iter().rev() {
+        for buf in &frame.local_buffers {
+            let buf_addr = frame.locals_base as u64 + buf.offset as u64;
+            let dest64 = dest as u64;
+            if dest64 >= buf_addr && dest64 < buf_addr + buf.size as u64 {
+                let available = (buf_addr + buf.size as u64 - dest64) as usize;
+                if needed > available {
+                    vm.trap(
+                        &format!(
+                            "💥 Buffer Overflow (E3070)：{} 写入栈上缓冲区 '{}' 溢出。需要写入 {} 字节，但该缓冲区从当前写入位置起仅剩 {} 字节（总大小 {} 字节）。
+
+💡 原因：{} 不检查目标缓冲区大小，栈上数组越界会破坏相邻局部变量。
+✅ 解决方法：增大数组大小，或改用带长度限制的版本（如 strncpy/fgets）。",
+                            op_name, buf.name, needed, available, buf.size, op_name
+                        ),
+                        &SourceLoc::default(),
+                    );
+                    return true;
+                }
+                return false; // 命中缓冲区且容量足够
+            }
+        }
+    }
+    false
 }

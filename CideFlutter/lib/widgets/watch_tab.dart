@@ -9,7 +9,11 @@ import '../providers/unified_provider.dart';
 /// 监视表达式列表仍存储在 [ideProvider] 的 [IdeState] 中；
 /// 变量值统一从 [unifiedProvider] 当前 step 的 frameCache 读取，
 /// 保证与统一模式/单步调试的变量视图一致。
-class WatchTab extends ConsumerWidget {
+/// U-P0-1 修复：此前在无状态 Widget 的 build 中创建 TextEditingController，
+/// 每次 rebuild 泄漏一个 ChangeNotifier（Flutter 3.13+ 需显式 dispose），
+/// 且 TextField 挂上新实例导致用户输入被打断。现迁移为 StatefulWidget，
+/// controller 与 State 生命周期绑定。
+class WatchTab extends ConsumerStatefulWidget {
   final List<String> watchExpressions;
   final bool isDark;
 
@@ -20,8 +24,23 @@ class WatchTab extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final controller = TextEditingController();
+  ConsumerState<WatchTab> createState() => _WatchTabState();
+}
+
+class _WatchTabState extends ConsumerState<WatchTab> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    final watchExpressions = widget.watchExpressions;
+    final isDark = widget.isDark;
     final unifiedState = ref.watch(unifiedProvider);
     final cacheIdx = unifiedState.currentStep - unifiedState.frameCacheStartStep;
     final vars =

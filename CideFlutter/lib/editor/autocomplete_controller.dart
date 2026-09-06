@@ -33,11 +33,21 @@ class AutocompleteController extends ChangeNotifier {
   bool _fetchingSemantic = false;
 
   Timer? _debounceTimer;
+  bool _disposed = false;
 
   final List<AutocompleteCandidate> _allWords;
 
   AutocompleteController({List<AutocompleteCandidate>? words})
       : _allWords = words ?? _defaultWords;
+
+  /// U-P1-10：防抖 Timer 无取消，组件销毁后回调里 notifyListeners 抛断言。
+  @override
+  void dispose() {
+    _disposed = true;
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+    super.dispose();
+  }
 
   String get prefix => _prefix;
   List<AutocompleteCandidate> get candidates => List.unmodifiable(_candidates);
@@ -100,7 +110,7 @@ class AutocompleteController extends ChangeNotifier {
     String prefix,
   ) async {
     _fetchingSemantic = true;
-    notifyListeners();
+    _safeNotify();
 
     try {
       final results = await rust.getCompletionCandidates(
@@ -136,7 +146,7 @@ class AutocompleteController extends ChangeNotifier {
       _candidates = [...semantic, ...staticFallback];
       _selectedIndex = 0;
       _visible = _candidates.isNotEmpty;
-      notifyListeners();
+      _safeNotify();
     } catch (e) {
       // 语义补全失败时静默回退到静态列表
       if (_candidates.isEmpty) {
@@ -144,6 +154,13 @@ class AutocompleteController extends ChangeNotifier {
       }
     } finally {
       _fetchingSemantic = false;
+      _safeNotify();
+    }
+  }
+
+  /// dispose 后静默跳过通知（异步竞态保护）。
+  void _safeNotify() {
+    if (!_disposed) {
       notifyListeners();
     }
   }

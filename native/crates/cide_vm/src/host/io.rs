@@ -31,9 +31,34 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
     for _ in 0..spec_types.len() {
         ptrs.push(vm.pop() as u32);
     }
-    // 读取输入行
-    if session.runtime.input_index >= session.runtime.input_lines.len() {
-        // 输入不足：将已 pop 的参数重新 push 回栈，等待前端提供输入
+    // V-P1-13：scanf 改为与 getchar 一致的字符流游标语义。
+    // 此前每次调用整行消费（input_index += 1）：输入 "1 2\n3 4" 时第二次
+    // scanf("%d") 读到 3（C 流式语义应读同行剩余的 2），%c 也读不到行尾。
+    // 现从 (input_index, input_char_offset) 起拼接虚拟字节流（行间补 '\n'
+    // 分隔，行本身可能不带换行），解析后按实际消费量经映射表推进游标。
+    let mut stream: Vec<u8> = Vec::new();
+    // stream[i] 的原始位置：(行号, 行内偏移)；off 为 -1 表示行间补位 '\n'
+    let mut mapping: Vec<(usize, i32)> = Vec::new();
+    {
+        let lines = &session.runtime.input_lines;
+        let start_idx = session.runtime.input_index;
+        let start_off = session.runtime.input_char_offset;
+        for (i, line) in lines.iter().enumerate().skip(start_idx) {
+            let from = if i == start_idx { start_off.min(line.len()) } else { 0 };
+            for (off, &b) in line.as_bytes()[from..].iter().enumerate() {
+                mapping.push((i, (from + off) as i32));
+                stream.push(b);
+            }
+            // 行不含换行符时补一个逻辑 '\n' 作为行分隔（C 的 stdin 是连续流）；
+            // 消费补位后游标直达下一行首
+            if !line.ends_with('\n') {
+                mapping.push((i + 1, -1));
+                stream.push(b'\n');
+            }
+        }
+    }
+    // 首个转换符前流已无可用内容：等待输入（保持旧交互语义）
+    if !stream.iter().any(|c| !c.is_ascii_whitespace()) {
         for &p in ptrs.iter().rev() {
             vm.push(p as u64);
         }
@@ -41,9 +66,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
         session.runtime.waiting_input = true;
         return;
     }
-    let line = session.runtime.input_lines[session.runtime.input_index].clone();
-    session.runtime.input_index += 1;
-    let chars: Vec<char> = line.chars().collect();
+    let chars: Vec<u8> = stream;
     let mut pos = 0usize;
     // 依次解析并写入各指针地址
     for (i, (spec, len_mod)) in spec_types.iter().enumerate() {
@@ -51,20 +74,20 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
         match spec {
             'd' => {
                 // 跳过前导空白
-                while pos < chars.len() && chars[pos].is_whitespace() {
+                while pos < chars.len() && chars[pos].is_ascii_whitespace() {
                     pos += 1;
                 }
                 if pos >= chars.len() {
                     break;
                 }
                 let start = pos;
-                if chars[pos] == '+' || chars[pos] == '-' {
+                if chars[pos] == b'+' || chars[pos] == b'-' {
                     pos += 1;
                 }
                 while pos < chars.len() && chars[pos].is_ascii_digit() {
                     pos += 1;
                 }
-                let token: String = chars[start..pos].iter().collect();
+                let token: String = chars[start..pos].iter().map(|&b| b as char).collect();
                 if *len_mod >= 2 {
                     // %lld → long long (8 bytes)
                     let value: i64 = token.parse().unwrap_or(0);
@@ -75,20 +98,20 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 }
             }
             'u' => {
-                while pos < chars.len() && chars[pos].is_whitespace() {
+                while pos < chars.len() && chars[pos].is_ascii_whitespace() {
                     pos += 1;
                 }
                 if pos >= chars.len() {
                     break;
                 }
                 let start = pos;
-                if chars[pos] == '+' {
+                if chars[pos] == b'+' {
                     pos += 1;
                 }
                 while pos < chars.len() && chars[pos].is_ascii_digit() {
                     pos += 1;
                 }
-                let token: String = chars[start..pos].iter().collect();
+                let token: String = chars[start..pos].iter().map(|&b| b as char).collect();
                 if *len_mod >= 2 {
                     let value: u64 = token.parse().unwrap_or(0);
                     vm.store_i64(ptr, value, &SourceLoc::default());
@@ -98,7 +121,8 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 }
             }
             'f' => {
-                let (token, new_pos) = read_float_token(&chars, pos);
+                let chars_view: Vec<char> = chars.iter().map(|&b| b as char).collect();
+                let (token, new_pos) = read_float_token(&chars_view, pos);
                 pos = new_pos;
                 if token.is_empty() {
                     break;
@@ -114,7 +138,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 }
             }
             'c' => {
-                // 标准 C: %c 不跳过空白
+                // 标准 C: %c 不跳过空白（流式化后行尾字符也可被读到）
                 if pos >= chars.len() {
                     break;
                 }
@@ -124,17 +148,21 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
             }
             's' => {
                 // 跳过前导空白
-                while pos < chars.len() && chars[pos].is_whitespace() {
+                while pos < chars.len() && chars[pos].is_ascii_whitespace() {
                     pos += 1;
                 }
                 if pos >= chars.len() {
                     break;
                 }
                 let start = pos;
-                while pos < chars.len() && !chars[pos].is_whitespace() {
+                while pos < chars.len() && !chars[pos].is_ascii_whitespace() {
                     pos += 1;
                 }
-                let token: String = chars[start..pos].iter().collect();
+                let token: String = chars[start..pos].iter().map(|&b| b as char).collect();
+                // V-P1-6：栈上缓冲区容量校验（token + '\0'）
+                if check_stack_buffer_capacity(vm, ptr, token.len() + 1, "scanf(\"%s\")") {
+                    return;
+                }
                 // 写入目标缓冲区并追加 '\0'
                 for (j, ch) in token.chars().enumerate() {
                     vm.store_i8(ptr + j as u32, ch as i32, &SourceLoc::default());
@@ -142,6 +170,20 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 vm.store_i8(ptr + token.len() as u32, 0, &SourceLoc::default());
             }
             _ => {}
+        }
+    }
+    // V-P1-13：按实际消费量经映射表推进游标（未消费部分留给后续输入函数）
+    if pos > 0 {
+        if let Some(&(idx, off)) = mapping.get(pos - 1) {
+            if off < 0 {
+                // 行间补位 '\n' 被消费：游标直达下一行首
+                session.runtime.input_index = idx;
+                session.runtime.input_char_offset = 0;
+            } else {
+                let line_len = session.runtime.input_lines.get(idx).map(|l| l.len()).unwrap_or(0);
+                session.runtime.input_index = idx;
+                session.runtime.input_char_offset = ((off + 1) as usize).min(line_len);
+            }
         }
     }
 }

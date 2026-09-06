@@ -102,6 +102,7 @@ impl CideVM {
             func_name,
             original_stack_top,
             caller_line: self.current_line,
+            local_buffers: meta.local_buffers,
         });
         self.rebuild_local_sym_map();
         self.ip = meta.ip;

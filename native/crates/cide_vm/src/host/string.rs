@@ -107,6 +107,11 @@ pub fn host_strcpy(vm: &mut CideVM, session: &mut VmContext<'_>) {
         }
     }
 
+    // V-P1-6：栈上缓冲区容量校验（此前只查堆 region，栈上 char buf[N] 被静默覆写）
+    if check_stack_buffer_capacity(vm, dest, src_len + 1, "strcpy") {
+        return;
+    }
+
     let max_copy = mem_size - dest as usize;
     let copy_len = src_len.min(max_copy.saturating_sub(1));
     for (i, &b) in src_bytes.iter().enumerate().take(copy_len) {
@@ -202,6 +207,11 @@ pub fn host_strcat(vm: &mut CideVM, session: &mut VmContext<'_>) {
             }
             break;
         }
+    }
+
+    // V-P1-6：栈上缓冲区容量校验（end 为 dest 起已有内容末尾）
+    if check_stack_buffer_capacity(vm, dest, dest_len + src_len + 1, "strcat") {
+        return;
     }
 
     let max_copy = mem_size.saturating_sub(end).saturating_sub(1);

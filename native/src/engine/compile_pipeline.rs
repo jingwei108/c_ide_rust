@@ -226,6 +226,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                     param_sizes: meta.param_sizes.clone(),
                     return_type: meta.return_type.clone(),
                     is_variadic: meta.is_variadic,
+                    local_buffers: Vec::new(),
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -245,6 +246,8 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
                     param_sizes: meta.param_sizes.clone(),
                     return_type: meta.return_type.clone(),
                     is_variadic: meta.is_variadic,
+                    // V-P1-6：透传 codegen 登记的栈缓冲区表
+                    local_buffers: meta.local_buffers.clone(),
                 },
             );
             vm.register_function_name(idx as u32, name.clone());
@@ -414,6 +417,8 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
                 param_sizes: meta.param_sizes,
                 return_type: meta.return_type,
                 is_variadic: meta.is_variadic,
+                // V-P1-6：透传 codegen 登记的栈缓冲区表
+                local_buffers: meta.local_buffers,
             },
         );
     }
@@ -632,6 +637,8 @@ pub fn run_multi_file_pipeline(
                 param_sizes: meta.param_sizes,
                 return_type: meta.return_type,
                 is_variadic: meta.is_variadic,
+                // V-P1-6：透传 codegen 登记的栈缓冲区表
+                local_buffers: meta.local_buffers,
             },
         );
     }

@@ -44,6 +44,8 @@ pub struct CallFrame {
     pub func_name: String,
     pub original_stack_top: u32,
     pub caller_line: i32,
+    /// 栈上局部数组缓冲区表（V-P1-6），随函数 meta 克隆进帧。
+    pub local_buffers: Vec<cide_runtime::LocalBuffer>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -411,6 +413,7 @@ impl CideVM {
             func_name,
             original_stack_top,
             caller_line: self.current_line,
+            local_buffers: meta.local_buffers,
         });
         self.rebuild_local_sym_map();
         self.ip = meta.ip;

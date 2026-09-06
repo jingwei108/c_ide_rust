@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (教学安全检测强化：2026-09-06 审查报告"提前插入"项 V-P1-6/12/13 + 第四批 Flutter 首批)
+- **V-P1-6 栈缓冲区溢出检测（E3070）**：此前 `strcpy/strcat/scanf("%s")` 的容量检查只覆盖堆 region，栈上 `char buf[4]` 被静默覆写相邻局部变量——这是教学 IDE 最需要捕获的经典错误。现由编译期登记栈缓冲区表（`FuncMeta.local_buffers`，局部数组声明时填充，经 compile_pipeline 透传至 VM，随 Call 帧克隆），宿主函数经 `check_stack_buffer_capacity` 校验并给出含变量名/容量的教学 trap。strcpy/strcat 的用户侧分发从 Bytecode Libc 路径切回 Host（libc 索引表与预编译产物不变，仅调用分发；Bytecode 版逐字节 StoreMem 无法做整体容量校验）。
+- **V-P1-12 无效 free 分场景诊断**：`free(p+4)`（块内部）、`free(&栈变量)`（完全无效）此前静默"成功"——学生以为释放成功且泄漏报告不出现该块，双重误导。现按三种场景（活跃块内部/已释放块内部/无效地址）给出 E3027/E3061 教学 trap；`realloc(p, 0)` 的 free 分支同构处理。
+- **V-P1-13 scanf 字符流语义**：此前每次调用整行消费（`input_index += 1`），输入 `"1 2\n3 4"` 下第二次 `scanf("%d")` 读到 3（C 流式语义应读同行剩余的 2）。现从 `(input_index, input_char_offset)` 起拼接虚拟字节流（行间补逻辑 `\n`），解析后经映射表按实际消费量推进游标——与 getchar 共享同一游标，未消费字符留给后续输入函数；`%c` 也能读到行尾字符。
+- **delete/delete[] nullptr 判空（V-P1-12 暴露的存量缺陷）**：`cide_vec` 空容器析构 `delete[] data`（data 为 0）时 `ptr-4` wrap 为 `0xFFFFFFFC` 后 free——旧行为被 free 静默忽略掩盖。现 codegen 生成 null 短路（C++ 标准要求 no-op）。
+- **第四批 Flutter 首批（U-P0-1 / U-P1-9 / U-P1-10）**：
+  - `WatchTab` 迁移为 `ConsumerStatefulWidget`：TextEditingController 不再在 build 中创建（每次 rebuild 泄漏一个 ChangeNotifier 且打断输入）。
+  - `EditorPanelV2.dispose` 补 `_cancelLongPress()`：长按 Timer 未取消会在组件销毁后用 defunct context 弹出菜单崩溃。
+  - `AutocompleteController` 补 `dispose`（取消防抖 Timer）与 `_safeNotify`（异步 gap 后守卫），销毁后不再抛断言。
+- **回归测试**：`crash_regression_tests.rs` 扩展 7 个用例（12→19），覆盖三个安全检测的正反场景与 scanf 流式语义（helper 同步支持 stdin 输入与 C++ 文件名）。
+
 ### Fixed (codegen soundness：2026-09-06 代码审查报告第三批 P0 修复，8 条 P0 + 顺带 2 条 P1)
 - **T-P0-1/T-P0-2 全局初始化位模式**：新增 `literal_init_bits` 统一"字面量 → 目标类型位模式"编码（含负数字面量、`Cast{字面量}` 剥包），收敛全局标量、static 局部、数组的五处初始化路径。修复：`double g = 1` 得 0（int 位写进 double 槽）、`long long ga[2] = {1,2}` 得 `0 0`（i64 写成 f64 位模式）、`double g = -2` 静默丢失。
 - **T-P0-3 浮点/long long 自增自减**：`gen_mem_inc_dec` 与 Identifier 路径按类型分派 opcode（D/Q/Byte 系 + float 经 CastF2D/CastD2F 转换链）；typeck 同步放行 LongLong/Char 并把 ++/-- 结果类型改为与操作数一致（C 左值语义）。修复：`double d = 1.5; d++;` 无效、`long long q++` 被误拒。顺带修正 `(*p)++` 误用指针步长的原有错误。

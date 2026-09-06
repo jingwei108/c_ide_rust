@@ -49,6 +49,21 @@
 
 **下一批待推进**：第四批（Flutter 编辑器与状态：U-P0-1~5、U-P1 优先项、E-P1-1/2）+ 建议提前的 V-P1-6（栈缓冲区溢出检测）/ V-P1-12（无效 free 诊断）/ V-P1-13（scanf 字符流化）。
 
+**✅ "提前插入"项（V-P1-6/12/13）+ 第四批 Flutter 首批已完成**（2026-09-06 同日）：
+
+| # | 项 | 修复方式 | 验证 |
+|---|---|---|---|
+| V-P1-6 | 栈缓冲区溢出检测 | `FuncMeta.local_buffers` 编译期登记 → VM Call 帧携带 → `check_stack_buffer_capacity` 校验；strcpy/strcat 用户侧分发回 Host | 实测 strcpy/strcat/scanf %s 三场景 E3070 含变量名；合法路径不误伤 |
+| V-P1-12 | 无效 free 诊断 | 三场景（活跃块内部/已释放块内部/无效地址）教学 trap；realloc(p,0) 同构 | 实测 free(p+1)/free(&x) 分场景诊断 |
+| V-P1-13 | scanf 字符流化 | 虚拟字节流 + 映射表游标（与 getchar 共享），行间补逻辑 \n | 实测 "1 2\n3 4" 两次 %d 读出 1 2 |
+| — | delete[] nullptr 判空 | V-P1-12 暴露的存量缺陷（cide_vec 空容器析构 ptr-4 wrap） | C++ E2E 2 个失败用例转绿 |
+| U-P0-1 | WatchTab controller 泄漏 | 迁移 ConsumerStatefulWidget | dart analyze 全绿 |
+| U-P1-9/10 | Timer 生命周期 | dispose 补 _cancelLongPress / AutocompleteController 补 dispose+safeNotify | dart analyze 全绿 |
+
+实现要点：strcpy/strcat 的栈检测需 Host 路径——Bytecode Libc 版逐字节 StoreMem 无法做整体容量校验，用户侧分发切回 Host（libc 索引表与预编译产物不变）；`local_buffers` 经 codegen → session.compile → VM register_function 三级透传（最初遗漏后两级导致检测不触发，已修复）。
+
+**第四批剩余待推进**：U-P0-2~5（编辑器渲染管线重构：TextPainter 缓存/gutter/shouldRepaint）、U-P1-1/3/4（IdeState 拆分/防重入/copyWith）、E-P1-1/2（run_auto_steps_stream 防重入/Session 上限）。
+
 ---
 
 ## 1. 执行摘要
