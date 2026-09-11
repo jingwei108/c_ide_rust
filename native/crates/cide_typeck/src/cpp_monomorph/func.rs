@@ -39,11 +39,8 @@ impl TypeChecker {
         for tp in &template.params {
             match tp {
                 TemplateParam::Type { name, .. } => {
-                    if let Some(t) = type_map.get(name) {
-                        type_args.push(TemplateArg::Type(t.clone()));
-                    } else {
-                        return None; // Could not infer all params
-                    }
+                    let t = type_map.get(name)?; // Could not infer all params
+                    type_args.push(TemplateArg::Type(t.clone()));
                 }
                 TemplateParam::NonType { .. } => {
                     return None; // Explicit instantiation required for NTTP

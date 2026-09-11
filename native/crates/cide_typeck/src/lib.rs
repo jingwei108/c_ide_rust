@@ -342,7 +342,7 @@ impl TypeChecker {
 
         // Drain class template instantiations discovered during Pass 3
         // so Pass 3.5 can check their methods.
-        let pending_classes: Vec<_> = self.pending_class_instantiations.drain(..).collect();
+        let pending_classes: Vec<_> = std::mem::take(&mut self.pending_class_instantiations);
         for (_name, c) in pending_classes {
             program.classes.push(c);
         }
@@ -358,7 +358,7 @@ impl TypeChecker {
         // further template calls (e.g. sort__int calls sort_rec__int), so we loop
         // until no new instantiations are generated.
         while !self.pending_instantiations.is_empty() {
-            let pending: Vec<_> = self.pending_instantiations.drain(..).collect();
+            let pending: Vec<_> = std::mem::take(&mut self.pending_instantiations);
             for (_, mut f) in pending {
                 if f.body.is_some() {
                     self.visit_func_decl(&mut f);
@@ -370,7 +370,7 @@ impl TypeChecker {
         self.exit_scope();
 
         // Pass 4: Lift lambdas to ClassDecl + FuncDecl
-        let lambdas: Vec<_> = self.pending_lambdas.drain(..).collect();
+        let lambdas: Vec<_> = std::mem::take(&mut self.pending_lambdas);
         for info in lambdas {
             let lambda_name = format!("__lambda_{}", info.id);
             let call_name = format!("{}__call", lambda_name);

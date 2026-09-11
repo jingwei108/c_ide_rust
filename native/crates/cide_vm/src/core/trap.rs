@@ -71,11 +71,8 @@ impl CideVM {
                 }
                 let mut vaddr = sym.addr;
                 if sym.is_local {
-                    if let Some(frame) = self.call_stack.last() {
-                        vaddr = frame.locals_base + sym.addr;
-                    } else {
-                        return None;
-                    }
+                    let frame = self.call_stack.last()?;
+                    vaddr = frame.locals_base + sym.addr;
                 }
                 if vaddr + 4 <= MEM_SIZE && vaddr >= NULL_TRAP_SIZE {
                     let val = i32::from_le_bytes([
