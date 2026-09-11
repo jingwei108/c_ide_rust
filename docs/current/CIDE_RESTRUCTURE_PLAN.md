@@ -36,22 +36,35 @@
 做完 C99 又追 C23；③ `__STDC_VERSION__` 固定 `202311L`，诊断文案按 C23 条款引用，
 `C_SUBSET_SPEC.md` / `SUPPORTED_LIBC.md` 口径全面换锚。
 
-**实测盘点（2026-09-11，cide_cli 探针）**：
+**实测盘点（2026-09-11，两轮探针：cide_cli 13 项 + 复核 27 项，PASS 8 / FAIL 19）**：
 
 | C23 特性 | 现状 | 批次 |
 |---|---|---|
-| `bool/true/false`、`auto` 推断 | ✅ 已支持 | — |
-| `0b1010` 二进制字面量 / `1'000'000` 分隔符 | ❌ lexer 级 | E1 |
-| `enum E : int` 底层类型 / 标签后置 / `u8'a'` | ❌ parser 级 | E1 |
-| `nullptr` / `typeof` | ❌ C 侧（C++ 路径已实现） | **E3 移植** |
-| `static_assert(x)` 单参 | ❌ 连宏都未定义 | E3 |
+| `bool/true/false`、`auto` 推断、**`typeof`（C 侧已可用，复核实测确认）** | ✅ 已支持 | — |
+| `#warning`、`= {}` 空初始化器、省略参数名的函数定义 | ✅ 已支持（首轮盘点遗漏，复核补记） | — |
+| `0b1010` 二进制字面量 / `'` 分隔符 / `u8"a"` 字符串 / `alignof` / `typeof_unqual` | ❌ lexer/typeck 级 | E1 |
+| `enum E : int` 底层类型 | ❌ parser 级 | E1 |
+| `nullptr` | ❌ C 侧（C++ 路径已实现） | **E3 移植** |
+| `static_assert` **单参与双参均缺**（双参是 C11 标准写法、教学更常用） | ❌ | E3 |
 | `constexpr` 对象 | ❌ 类型系统级 | E3 |
 | `[[属性]]` / `unreachable()` | ❌ | E3 |
+| `__has_include` | ❌（E1011，预处理器不解） | **E2**（模块化内核下天然支持） |
 | K&R 定义、隐式 int | 本就不支持 | C23 已移除，天然对齐 |
 
 **明确不做（撞 VM 槽位/布局边界）**：`_BitInt(N)`、`_Decimal32/64/128`、
-bitfield、`long double`/`_Complex`、setjmp/longjmp——全部进"明确不支持 + 替代话术"
-（如 long double → 清晰诊断建议改 double，替代现状含糊的 E2005）。
+bitfield、`long double`/`_Complex`、setjmp/longjmp、**`alignas`（布局控制撞简化对齐
+模型）**、**标签后置**（无教学价值）、**`char8_t`**（独立类型徒增困惑）——全部进
+"明确不支持 + 替代话术"（如 long double → 清晰诊断建议改 double）。
+
+**`__STDC_VERSION__` 口径（v3 定案）**：版本宏**尚未实现**（实测 E3023，首轮文档
+误写成现状）。E2 实现预定义宏，值报 **202311L（名义锚点）**——不报保守值：bitfield
+等是 C89/C99 特性，版本值再低也挡不住老代码走进不支持分支；报高值反而让 C23 新特性
+代码走对路径。病根"把版本当能力探测"用三层配套解决：
+1. `cide_get_capabilities_json()`（capi/serve 出口）：机器可读真实能力清单（与已规划
+   的错误码机器可读导出同源）——教学消费方真正需要的通道；
+2. `__CIDE_SUBSET__` 预定义宏：条件编译的引擎专属探测；
+3. `C_SUBSET_SPEC.md` 顶部声明："版本宏为名义锚点，实际为 C23 教学子集，不支持
+   清单见 §X"。
 
 **C23 预处理特性**（`#elifdef` / `#elifndef` / `__VA_OPT__` / `#embed`）归入 §3 模块化
 预处理器的范围。
@@ -88,8 +101,19 @@ bitfield、`long double`/`_Complex`、setjmp/longjmp——全部进"明确不支
 **白箱教学层**（黑箱给不了的增值）：展开链可视化（复用时间旅行 step 语义）、宏参数
 副作用检测（`SQ(a++)` 双重副作用警告）、`#if` 分支选择原因记录、`#define` 遮蔽诊断。
 
-**工时**：~1.5k 行（忠实复刻需 3~5k；省掉 hygiene 与红蓝标记，代价是两条 C 特例
-规则各 ~50 行）。架构落点：`cide_lexer/preprocessor/` 子模块化（resolver / macro_table /
+**行为契约（v3 定案）**：
+- **保留既有扩展**：参数化宏调用后跟分号自动包装 `do{...}while(0)`（AGENTS.md 已记录
+  的已知差异，`SWAP(int,x,y);` 在 if/else 中正确解析依赖它）。废弃会 break 教材写法
+  与存量 Shadow 用例；且它是宏调用**收尾的 parser 容错**，不属展开器语义，与模块化
+  内核不冲突——E2 时迁至新 expander 后处理阶段，spec 已知差异记录保持。
+- **`#embed` 降级为延期**：教学价值低（导入资产）而成本不低（VFS 资产路径 + 字节数组
+  codegen）。移出 E2 必做，进 ROADMAP 观察项（SharpTutor 有嵌入测试数据诉求再做）。
+- 预定义宏族（`__STDC_VERSION__=202311L` 名义锚点、`__CIDE_SUBSET__`、`__has_include`）
+  随 E2 落地，口径见 §2。
+
+**工时（v3 校准，采纳复核分解）**：cond 求值器 300–400 + token 操作 200 +
+MacroTable/展开器/保险丝 400 + ModuleGraph 400 + 教学层 300 ≈ **1.6–1.7k，含测试
+~2.5k**。架构落点：`cide_lexer/preprocessor/` 子模块化（resolver / macro_table /
 expander / cond / splice）。
 
 ## 4. 批次计划（每批独立提交、独立过全防线）
@@ -99,11 +123,11 @@ expander / cond / splice）。
 | 批次 | 内容 | 验收线 |
 |------|------|--------|
 | **R1 内存边界** | ① 堆起点动态化：`heap_offset = max(HEAP_START, align4(global_end))`——栈碰撞检查已确认用动态 `heap_offset`（`control.rs:69`）自动跟随；② 判据单源化：`literal.rs`（`MEM_SIZE/16`）与 `state.rs`（`HEAP_START`）两套魔数统一到 `GLOBAL_REGION_LIMIT`；③ argv 编址修复：`global_count` 恒 0，argv 与 codegen 全局数据重叠编址（预存 bug）——改自全局区上界向下分配；④ 影响面 6 逻辑点 + `heap_base` 统计字段；⑤ `global_end > HEAP_START` 编译 warning 提示堆可用空间 | 三方挤压用例（大全局 + malloc 失败明确 trap + 深递归栈溢出明确 trap）；大全局 + malloc 不损坏；lc_22/lc_977 回归；Shadow 0 非预期差异 |
-| **E1 C23 lexer 级 + B 档快赢** | `0b` 二进制 / `'` 分隔符 / `u8'a'` / `enum : T` / 标签后置（C23）；字符串拼接 `"ab" "cd"`（C89）、`long long` 位运算（E3048 半成品缺陷）、ULLONG_MAX（u64 坑）/ `<float.h>` / `va_copy` / `__func__` | 每特性 ≤3 个 E2E 用例（Clang golden）；Shadow 0 非预期差异 |
+| **E1 C23 lexer/typeck 级 + B 档快赢** | `0b` 二进制 / `'` 分隔符 / `u8"a"` 字符串（按 `char[]` 处理，差异记录）/ `alignof` / `typeof_unqual` / `enum : T`（C23）；字符串拼接 `"ab" "cd"`（C89）、`long long` 位运算（E3048 半成品缺陷）、ULLONG_MAX（u64 坑）/ `<float.h>` / `va_copy` / `__func__` | 每特性 ≤3 个 E2E 用例（Clang golden）；Shadow 0 非预期差异 |
 | **R2 会话收口** | cide_cli 四个子命令迁 `Session` + `session_api`（serve 同款）；flutter_bridge 零消费后整删 | CLI 行为不变（冒烟对照）；G6 闭环；全局 static 清零 |
-| **E2 模块化预处理器** | §3 全部设计：ModuleGraph + MacroTable + cond 求值 + splice + 白箱教学层 | 宏/守卫/条件编译全套 E2E；include 环检测诊断；放弃清单记入 spec |
+| **E2 模块化预处理器** | §3 全部设计：ModuleGraph + MacroTable + cond 求值 + splice + 白箱教学层 + 预定义宏族（`__STDC_VERSION__` / `__CIDE_SUBSET__` / `__has_include`）+ `cide_get_capabilities_json()` 出口 | 宏/守卫/条件编译全套 E2E；include 环检测诊断；放弃清单记入 spec |
 | **R3 语义单源审计** | E-P1-5 模式扫全库枚举残留「多真相」点；教学标注单源化 | 审计清单归档；标注矛盾类缺陷结构性消除 |
-| **E3 C23 语义级** | `nullptr`/`typeof` 从 C++ 路径移植、`static_assert` 单参、`constexpr` 对象、`[[属性]]`（解析+忽略+记录）、`unreachable()` | 移植项复用既有 C++ 守护用例形态；Clang golden |
+| **E3 C23 语义级** | `nullptr` 从 C++ 路径移植、`static_assert` **单参+双参**、`constexpr` 对象、`[[属性]]`（解析+忽略+记录）、`unreachable()`（typeof 已实测可用，无需移植） | 移植项复用既有 C++ 守护用例形态；Clang golden |
 | **R4 债务与防线** | decl.rs 拆分；unwrap×3 收敛；engineering_health 进 CI（G11）；**G1** 生成器恢复；**G10+G12 数字自动对账**（须覆盖"文档声明数 vs 代码常量数"方向）；**G13** 补入 CPP_SUBSET_SPEC；**G2** wasm 冒烟进 CI | CI 新增检查全绿；<800 行规约恢复 |
 
 **B 档不做/延期清单**：`0x1.8p3` 十六进制浮点、`int a[static 10]`（明确不支持）；
@@ -140,3 +164,10 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
 - union 支持已实测确认（销项"未确认"）
 - 本文档 v2 吸收：外部评审三点（三方挤压用例 / 判据分裂 / G12/G13 遗漏）、
   C23 锚定实测盘点、模块化预处理器选型定案
+- **v3 吸收复核（27 项探针，PASS 8 / FAIL 19）**：typeof C 侧实测可用（E3 移植项
+  销项）；标签后置系尾随逗号误测（裁决不做）；补记已支持 3 项（`#warning`/`= {}`/
+  省略参数名）；6 项未盘点特性裁决（alignof/u8字符串/typeof_unqual 做，alignas/
+  标签后置/char8_t 不做）；`__STDC_VERSION__` 口径定案（202311L 名义锚点 +
+  capabilities JSON + `__CIDE_SUBSET__` + spec 声明三层配套）；static_assert 双参
+  纳入 E3；`do{}while(0)` 包装扩展定案保留；`#embed` 降级延期；E2 工时校准 ~2.5k
+  含测试
