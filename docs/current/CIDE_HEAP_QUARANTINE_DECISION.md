@@ -1,56 +1,68 @@
-# 设计决议：堆内存改为 Bump 分配 + 永久隔离（Permanent Quarantine）
+# 设计决议：堆内存改为 Bump 分配 + 有界隔离（Bounded Quarantine）
 
-> 决议日期：2026-09-11
-> 状态：**已拍板**（回应"伪 GC"PR：拒绝真 GC 方向，采纳其动机、替换其手段）
+> 决议日期：2026-09-11（同日修订：v2，采纳 churn/leak 区分修正）
+> 状态：**已拍板**
 > 归属：主计划 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) 的引擎层决策，Phase 1 内可实施（与切割无依赖）
+>
+> **v2 修订说明**：v1 为"永久隔离"（free 后地址永不复用），评审指出其误伤合法 churn 程序（`while(记录) { p=malloc(100); 用; free(p); }` 在真实 C 可无限跑，永久隔离下约 1 万轮撞 1MB 墙）。v2 改为 **ASAN 原版的有界隔离**：隔离区超预算时驱逐最老块复用——churn 与 leak 由此正确分离。
 
 ---
 
 ## 1. 决策
 
-Cide 堆从"free_list + 合并复用"分配器改为 **bump 分配 + 永久隔离**：`malloc` 顶指针 O(1) 推进、地址永不复用；`free` 保留全部检测语义（记录/判定/诊断）但**不归还空间**；进程（VM 实例）结束随 1MB 线性内存整体回收。
+Cide 堆采用 **bump 分配 + 有界隔离**：
 
-业界先例：ASAN 的 quarantine（隔离区）机制——free 的块延迟复用以保 UAF 检测窗口。本方案是**永久隔离**的教学加强版，不是对 C 语义的妥协。
+- `malloc`：顶指针 O(1) 推进；**隔离区超预算时先驱逐**（FIFO 最老已释放块归还复用，first-fit）；
+- `free`：块进入 FIFO 隔离区（标记 + 数据保留），**不立即归还**；
+- 隔离预算：**堆上限的 1/4 = 256KB**（可调，写进会话配置）；
+- 进程（VM 实例）结束随 1MB 线性内存整体回收。
 
-## 2. 动机
+业界先例：**ASAN quarantine 原版机制**（有界隔离区 + FIFO 驱逐复用）。隔离窗口保证 UAF/Double-Free 检测覆盖，驱逐复用保证合法 churn 不误伤。
 
-| 维度 | 收益 |
-|---|---|
-| UAF | freed 块内容永久保留，`free(p)` 后访问 `*p` **永远可检出**（无地址复用关闭检测窗口的漏报） |
-| Double-Free | 地址唯一性使 freed_logs 不被新分配污染，检测确定性最强 |
-| 泄漏 | regions 表即泄漏清单（免 free_list 扣除维护），报告从推导变直读 |
-| 确定性 | 内存状态单调只增：时间旅行快照（CoW，V-P1-9）脏页更少；判分重放不受 free/malloc 交错历史影响 |
-| 性能/复杂度 | host_free 的 free_list 维护与 `merge_free_list` 全部删除；malloc 变 O(1)（收敛 V-P1-11 一半问题） |
-| 兜底 | 无限分配撞三道墙，每道都是教学 trap：VM 1MB 上限 → `set_max_steps` 步数保险丝 → V-P1-12 无效 free 诊断 |
+## 2. 动机（churn / leak 正确分离）
+
+| 场景 | 行为 | 定性 |
+|---|---|---|
+| **churn**（正确分配-释放循环） | 隔离区稳态在预算内，最老块驱逐复用，**无限可跑** | 合法程序，不误伤 |
+| **leak**（只分配不释放） | leak 块不进隔离区（未被 free），bump 持续推进 → 撞 1MB 墙 | 教学信号（泄漏报告 + 耗尽诊断） |
+| **UAF** | 检测窗口 = 最近 256KB 的 free 历史；学生 UAF 几乎总紧跟 free 之后，覆盖率极高 | 教学检测 |
+| **Double-Free** | 隔离窗口内地址不复用，双 free 必检出 | 教学检测 |
+| 时间旅行 / 判分 | 隔离窗口内内存单调；驱逐后变化仍在快照机制覆盖内 | CoW 与确定性受益 |
+| 性能 | free_list 维护频率 = 驱逐频率（churn 稳态下低频），malloc 主路径仍 O(1) | 收敛 V-P1-11 一半问题 |
 
 ## 3. 语义变更
 
 | 操作 | 旧 | 新 |
 |---|---|---|
-| `malloc` | free_list 查找 + 合并 | 顶指针推进；地址永不复用 |
-| `free` | 标记 + 归还 free_list | **标记 + 不归还**；freed_logs / 泄漏判定 / E3027·E3061 诊断全部保留 |
+| `malloc` | free_list 查找 + 合并 | 顶指针推进；隔离区超预算 → FIFO 驱逐最老块归还 first-fit |
+| `free` | 标记 + 立即归还 free_list | **标记 + 进 FIFO 隔离区**；freed_logs / 泄漏判定 / E3027·E3061 诊断全部保留 |
 | `realloc` | 原地扩展或搬移 | 恒为新块拷贝（与 glibc 常见路径一致） |
-| 内存可视化 | 分配块/空闲块（含外部碎片图） | **已分配/已释放（隔离）双色**——UAF 教学画面反而更清晰 |
+| 内存可视化 | 分配块/空闲块（含外部碎片图） | **已分配/隔离中（最近释放）/ 可复用**三色——churn 与 leak 在图上一目了然 |
+
+**教学语义红利**：churn 循环超过隔离预算后，`free` 后再 `malloc` 真实得到复用地址——"free 的作用"演示真机可做（v1 永久隔离下需要单独 demo workaround，v2 不再需要）。
 
 ## 4. 已知差异与代价（诚实记录）
 
-1. **"free 后再 malloc 得到同地址"的教学演示不再成立**——写入 `C_SUBSET_SPEC.md` 已知差异："Cide 堆采用永久隔离策略以强化 UAF 检测，free 后地址不复用（同 ASAN quarantine）"。此差异是检测器的指纹，非缺陷；
-2. **外部碎片教学话题消失**——Phase 14 的碎片可视化 UI 资产弃用或改造为泄漏堆叠图，记录于 CHANGELOG；
-3. **防线 3 语义对齐**——host_contract_tests（3a）、differential_stress（3c）、fuzz E 的 free 语义断言按新语义重写（这是把"分配器复用行为"从契约中除名的正规流程，非粉饰）。
+1. **隔离窗口外的 UAF 可能漏检**：`free(p)` 与错误使用之间若隔离区已整体轮换（其间 churn 超过 256KB），`*p` 的访问落在已复用块上，仅表现为"读到别人的值"而非 UAF 诊断。与永久隔离的真实取舍，与 ASAN 行为一致，写入 `C_SUBSET_SPEC.md` 已知差异："Cide 堆采用有界隔离（256KB）以强化 UAF 检测，隔离窗口内地址不复用（同 ASAN quarantine）"；
+2. **外部碎片教学话题弱化**——碎片仅在驱逐复用路径出现（first-fit 切分），Phase 14 碎片可视化 UI 改造为三色堆图，记录于 CHANGELOG；
+3. **防线 3 语义对齐**——host_contract_tests（3a）、differential_stress（3c）、fuzz E 的 free 语义断言按新语义重写（把"分配器复用行为"从契约中除名的正规流程，非粉饰）。
 
-## 5. 边界推导（regions 单调增长）
+## 5. 边界推导
 
-最坏场景 `malloc(1)` 循环：每条 `MemoryRegionData` 约几十字节 host 内存，纯记录表可达堆本身数倍。但每次 malloc 至少消耗数个 VM 步，默认 `max_steps = 100_000` 先触发——**步数保险丝天然封顶 region 数量**（约数万条 ≈ 数 MB host 内存）。契约化：`set_max_steps` 同时封顶 region 表大小，写入 API 文档。
+- **churn 稳态**：隔离区字节恒 ≤ 256KB（驱逐维持），bump 不推进——无限循环不撞墙；
+- **leak 路径**：leak 块不进隔离区，bump 单调推进 → 1MB 耗尽 → 教学 trap（"你的程序分配超过内存上限"）；步数保险丝（`set_max_steps`）先触发时 region 表同步封顶（每 malloc 至少数个 VM 步，默认 100k 步 ≈ 数万条 region 记录，数 MB host 内存）；
+- **混合场景**（leak + churn 并存）：churn 部分稳态复用，leak 部分推进——墙留给真正的泄漏。
 
 ## 6. 验收清单
 
-- [ ] host_malloc/host_free/host_realloc 按新语义实现，free_list/merge 代码移除；
-- [ ] UAF / Double-Free / 泄漏报告 / 无效 free 诊断在新模型下全部回归通过（`crash_regression_tests.rs` 补永久隔离专项用例：free 后读、free 后地址不复用断言）；
-- [ ] 防线 3a/3c/fuzz E 断言重写并全绿；
+- [ ] host_malloc / host_free / host_realloc 按新语义实现（隔离区 + FIFO 驱逐 + first-fit 归还），merge_free_list 移除或降级为驱逐路径内部实现；
+- [ ] **churn 无限循环用例**：超隔离预算的 `malloc(100)/free` 循环 10 万次不撞墙、地址在驱逐后复用（防 v1 误伤回归）；
+- [ ] UAF / Double-Free / 泄漏报告 / 无效 free 诊断在隔离窗口语义下全部回归（`crash_regression_tests.rs` 补专项：free 后立即读必检出、隔离窗口内双 free 必检出、窗口外漏检案例标注为已知差异）；
+- [ ] 防线 3a / 3c / fuzz E 断言重写并全绿；
 - [ ] `C_SUBSET_SPEC.md` 已知差异补录（§4-1）；CHANGELOG 记录碎片可视化资产处置；
-- [ ] 无限分配三道墙用例（1MB 耗尽 / max_steps / region 表封顶推导验证）；
-- [ ] Shadow 门禁全绿（含 K&R/LeetCode 内存密集用例——预期地址值类断言为零，无判分风险）。
+- [ ] 三道墙用例（1MB 耗尽 / max_steps / region 表封顶推导验证）；
+- [ ] Shadow 门禁全绿（含 K&R/LeetCode 内存密集用例）。
 
 ## 7. 对"伪 GC"PR 的处置
 
-**拒绝真 GC 方向**：GC 自动回收会掩盖学生最需要学的错误——本项目核心教学资产就是 free 语义的教学（泄漏报告、UAF/Double-Free 知识卡片），GC 等于把考点删了。采纳其动机（内存管理简化），以本决议的 bump + 永久隔离替换其手段：不帮学生收拾，但把每一次没收拾的后果变成可见的教学信号。
+**拒绝真 GC 方向**：GC 自动回收会掩盖学生最需要学的错误——本项目核心教学资产就是 free 语义的教学（泄漏报告、UAF/Double-Free 知识卡片），GC 等于把考点删了。采纳其动机（内存管理简化），以 bump + 有界隔离替换其手段：不帮学生收拾，但把每一次没收拾的后果变成可见的教学信号——同时不惩罚正确收拾的学生。
