@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, master]
   workflow_dispatch:
+  schedule:
+    # 夜间全量重算（北京时间 02:00）：Clang Golden 缓存强制失效重算，防版本漂移
+    # （见 shadow_verify.py 文件头「提速设施」与 docs/current 工作记录）
+    - cron: '0 18 * * *'
 
 jobs:
   rust:
@@ -74,9 +78,33 @@ jobs:
         run: cargo clippy --workspace --all-targets --all-features -- -D warnings
         working-directory: native
 
-      - name: Shadow Verification
-        run: python native/tests/shadow_verification/shadow_verify.py --report native/tests/shadow_verification/reports/shadow_report.md --json native/tests/shadow_verification/reports/shadow_data.json
+      # Clang Golden 缓存（方案 A）：结果是确定性的（同一源码 + 同一 clang 版本
+      # ⇒ 同一结果），跨 CI 运行复用可把 Shadow 从分钟级降到秒级。
+      # key 含 clang 版本 —— 版本一变缓存自动失效，这就是"防版本漂移"的第一道闸；
+      # 第二道闸是夜间 schedule 的 --refresh-clang 全量重算。
+      - name: Clang version (for cache key)
+        id: clangver
         shell: bash
+        run: echo "value=$(clang --version | head -n1 | tr -d ' ' | cut -c1-48)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Clang golden results
+        uses: actions/cache@v4
+        with:
+          path: native/tests/shadow_verification/.clang_cache
+          key: clang-golden-${{ runner.os }}-${{ steps.clangver.outputs.value }}-${{ hashFiles('native/tests/shadow_verification/shadow_verify.py') }}
+          restore-keys: |
+            clang-golden-${{ runner.os }}-${{ steps.clangver.outputs.value }}-
+
+      - name: Shadow Verification
+        shell: bash
+        run: |
+          EXTRA=""
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # 夜间全量重算：忽略缓存、重算并覆盖写回，防止 Golden 随 clang 漂移
+            EXTRA="--refresh-clang"
+            echo "夜间模式：Clang Golden 全量重算（$EXTRA）"
+          fi
+          python native/tests/shadow_verification/shadow_verify.py $EXTRA --report native/tests/shadow_verification/reports/shadow_report.md --json native/tests/shadow_verification/reports/shadow_data.json
 
       - name: Upload Shadow Report
         uses: actions/upload-artifact@v4
@@ -97,6 +125,12 @@ jobs:
         with:
           name: cpp-shadow-verification-report
           path: native/tests/shadow_verification/reports/cpp_shadow_report.json
+
+      # 出口 3 防线：serve JSON-lines 协议契约（id 关联 / 错误帧同构 / session.reset
+      # / 与 capi 共用的入口语义）。依赖上一步 Debug 构建的 cide_cli。
+      - name: cide_cli serve smoke (Exit 3 protocol contract)
+        run: python scripts/serve_smoke.py
+        shell: bash
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.16

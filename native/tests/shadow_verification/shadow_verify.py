@@ -16,19 +16,19 @@ Cide 影子验证框架
 """
 
 import argparse
-import os
-import sys
+import ctypes
+import hashlib
 import io
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-
 import json
+import multiprocessing
+import os
+import shutil
 import subprocess
-import tempfile
+import sys
 import time
 from pathlib import Path
 from dataclasses import dataclass, asdict
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 
 # 路径配置
 SCRIPT_DIR = Path(__file__).parent.resolve()
@@ -36,6 +36,39 @@ PROJECT_ROOT = SCRIPT_DIR.parent.parent.parent
 NATIVE_DIR = PROJECT_ROOT / "native"
 DLL_PATH = NATIVE_DIR / "target/release/cide_native.dll"
 CLANG_PATH = "clang"
+
+# E-P1-5：输出通道的结构化读取（驱动侧唯一入口，禁止再自行正则清洗）。
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+from cide_output import ensure_abi, read_engine_notes, read_program_stdout  # noqa: E402
+
+# ─── 提速设施（2026-09-11）─────────────────────────────────────────────────────
+#
+# 背景：全量 632 用例串行跑一次要数分钟，其中 Clang 侧的"编译 + 运行"占大头，
+# 而 Clang 结果是**确定性 Golden**（同一源码 + 同一 clang 版本 → 同一结果），
+# 每次重跑都在重复计算。
+#
+# 方案 A：Clang 结果缓存（key = 源码 + stdin + clang 版本 + 参数 + 预设文件），
+#         `--refresh-clang` 强制重建；CI 夜间 schedule 全量重算防版本漂移。
+# 方案 B：multiprocessing.Pool 并行（`--jobs N`），worker init 准备各自的
+#         运行目录与 VFS 预设文件，结果按用例序重排后出报告（确定性不变）。
+#
+# ⚠️ 不使用 tempfile.TemporaryDirectory / mkdtemp：其内部以 `os.mkdir(p, 0o700)`
+# 建目录，在受限环境下会生成**不可写**的目录（实测 WinError 5）。统一走
+# `os.makedirs`（默认 mode）+ 自管生命周期。
+CLANG_CACHE_DIR = SCRIPT_DIR / ".clang_cache"
+RUN_ROOT = SCRIPT_DIR / ".shadow_tmp"
+# 缓存 schema 版本：key 组成变化时 +1，等价于全量失效（防止旧缓存被误用）
+CLANG_CACHE_SCHEMA = 1
+CLANG_COMPILE_TIMEOUT = 30
+CLANG_RUN_TIMEOUT = 5
+
+# VFS 预设文件（Cide 在 setup_vm / inject_preset_files 中注入同样内容，
+# 此处写物理文件让 Clang 侧看到一致的 stdin 文件环境）。
+PRESET_FILES: Dict[str, bytes] = {
+    "test.txt": b"hello\nworld\n",
+    "numbers.txt": b"1 2 3 4 5\n",
+}
 
 # 已知失败用例（与 E2E 防线 cide_e2e.rs 的 KNOWN_TEMPLATE_FAILURES 常量对齐，
 # 根因分析见 native/tests/E2E_FAILURES.md）。这些模板在 Cide VM 的边界检查下
@@ -59,6 +92,8 @@ class RunResult:
     stderr: str
     exit_code: int
     duration_ms: float
+    # 该结果来自 Clang 结果缓存（未真实执行 Clang）；仅用于报告标注
+    cached: bool = False
 
 
 @dataclass
@@ -68,6 +103,10 @@ class ShadowCase:
     category: str  # 预期分类，如 "double", "function_pointer", "file_io"
     src_dir: str = "builtin"  # 用例来源目录，如 "baseline", "knr", "leetcode", "template"
     path: Optional[Path] = None  # 源文件路径（文件加载的用例），供 #include 解析使用
+    #: 标准输入（同名 `.in` 文件内容，空串 = 无输入）。2026-09-11 起支持注入：
+    #: 此前 Shadow 一律以批量模式运行且不喂 stdin，需要输入的教学用例（scanf 族）
+    #: 只能改用 sscanf 规避 —— 防线 1 因此缺了"真实标准输入"这一块覆盖。
+    stdin: str = ""
 
 
 @dataclass
@@ -80,114 +119,165 @@ class ShadowDiff:
     src_dir: str = "builtin"
 
 
-def run_with_clang(source: str, path: Optional[Path] = None) -> RunResult:
-    """用 Clang 编译并运行 C 代码"""
+def clang_cmd_signature() -> List[str]:
+    """Clang 编译命令的稳定签名（缓存 key 用，不含随机/临时路径）。"""
+    sig = [CLANG_PATH, "<src>", "-o", "<exe>", "-Wno-implicit-function-declaration"]
+    if sys.platform != "win32":
+        sig.append("-lm")
+    return sig
+
+
+def run_with_clang(
+    source: str,
+    path: Optional[Path] = None,
+    work_dir: Optional[Path] = None,
+    stdin_text: str = "",
+) -> RunResult:
+    """用 Clang 编译并运行 C 代码。
+
+    `work_dir` 为本用例所属 worker 的隔离运行目录（方案 B）：
+    - 编译产物（.c / 可执行文件）落在其中，不再使用系统临时目录
+      （`tempfile` 在受限环境下会创建不可写目录，见文件头说明）；
+    - 运行 cwd 设为该目录，用例 fopen 写出的文件与预设 test.txt /
+      numbers.txt 都在其中，并行 worker 之间互不干扰。
+    """
     start = time.time()
+    work_dir = Path(work_dir) if work_dir else (RUN_ROOT / "run_main")
+    work_dir.mkdir(parents=True, exist_ok=True)
 
-    with tempfile.TemporaryDirectory() as tmpdir:
-        exe_file = Path(tmpdir) / ("test.exe" if sys.platform == "win32" else "test")
+    exe_file = work_dir / ("test.exe" if sys.platform == "win32" else "test")
 
-        # 若提供了原始文件路径且存在，直接在原目录编译（c_file 指向原文件），
-        # 保证 #include "..." 可解析；exe 仍输出到临时目录，避免污染用例目录。
-        # 文件用例通常自带 #include <stdio.h>，无需再补充头文件。
-        if path and path.exists():
-            c_file = path
-        else:
-            clang_source = make_clang_header(source) + source
-            c_file = Path(tmpdir) / "test.c"
-            c_file.write_text(clang_source, encoding="utf-8")
+    # 若提供了原始文件路径且存在，直接在原目录编译（c_file 指向原文件），
+    # 保证 #include "..." 可解析；exe 仍输出到隔离运行目录，避免污染用例目录。
+    # 文件用例通常自带 #include <stdio.h>，无需再补充头文件。
+    if path and path.exists():
+        c_file = path
+    else:
+        clang_source = make_clang_header(source) + source
+        c_file = work_dir / "test.c"
+        c_file.write_text(clang_source, encoding="utf-8")
 
-        # 编译（Windows MSVC 环境下不需要 -lm，Linux/Android 需要）
-        compile_cmd = [CLANG_PATH, str(c_file), "-o", str(exe_file), "-Wno-implicit-function-declaration"]
-        if sys.platform != "win32":
-            compile_cmd.append("-lm")
-        try:
-            compile_proc = subprocess.run(
-                compile_cmd, capture_output=True, text=True, timeout=30
-            )
-        except Exception as e:
-            return RunResult(
-                compiler="clang",
-                compile_success=False,
-                compile_error=str(e),
-                run_success=False,
-                run_error="",
-                stdout="",
-                stderr="",
-                exit_code=-1,
-                duration_ms=(time.time() - start) * 1000,
-            )
+    # 编译（Windows MSVC 环境下不需要 -lm，Linux/Android 需要）
+    compile_cmd = [CLANG_PATH, str(c_file), "-o", str(exe_file), "-Wno-implicit-function-declaration"]
+    if sys.platform != "win32":
+        compile_cmd.append("-lm")
+    try:
+        compile_proc = subprocess.run(
+            compile_cmd, capture_output=True, text=True, timeout=CLANG_COMPILE_TIMEOUT
+        )
+    except Exception as e:
+        return RunResult(
+            compiler="clang",
+            compile_success=False,
+            compile_error=str(e),
+            run_success=False,
+            run_error="",
+            stdout="",
+            stderr="",
+            exit_code=-1,
+            duration_ms=(time.time() - start) * 1000,
+        )
 
-        if compile_proc.returncode != 0:
-            return RunResult(
-                compiler="clang",
-                compile_success=False,
-                compile_error=compile_proc.stderr,
-                run_success=False,
-                run_error="",
-                stdout="",
-                stderr=compile_proc.stderr,
-                exit_code=compile_proc.returncode,
-                duration_ms=(time.time() - start) * 1000,
-            )
+    if compile_proc.returncode != 0:
+        return RunResult(
+            compiler="clang",
+            compile_success=False,
+            compile_error=compile_proc.stderr,
+            run_success=False,
+            run_error="",
+            stdout="",
+            stderr=compile_proc.stderr,
+            exit_code=compile_proc.returncode,
+            duration_ms=(time.time() - start) * 1000,
+        )
 
-        # 运行
-        try:
-            run_proc = subprocess.run(
-                [str(exe_file)], capture_output=True, text=True, timeout=5
-            )
-            return RunResult(
-                compiler="clang",
-                compile_success=True,
-                compile_error="",
-                run_success=run_proc.returncode == 0,
-                run_error=run_proc.stderr if run_proc.returncode != 0 else "",
-                stdout=run_proc.stdout,
-                stderr=run_proc.stderr,
-                exit_code=run_proc.returncode,
-                duration_ms=(time.time() - start) * 1000,
-            )
-        except Exception as e:
-            return RunResult(
-                compiler="clang",
-                compile_success=True,
-                compile_error="",
-                run_success=False,
-                run_error=str(e),
-                stdout="",
-                stderr="",
-                exit_code=-1,
-                duration_ms=(time.time() - start) * 1000,
-            )
+    # 运行（cwd = 隔离运行目录）
+    try:
+        run_proc = subprocess.run(
+            [str(exe_file)],
+            capture_output=True,
+            text=True,
+            timeout=CLANG_RUN_TIMEOUT,
+            cwd=str(work_dir),
+            input=stdin_text,
+        )
+        return RunResult(
+            compiler="clang",
+            compile_success=True,
+            compile_error="",
+            run_success=run_proc.returncode == 0,
+            run_error=run_proc.stderr if run_proc.returncode != 0 else "",
+            stdout=run_proc.stdout,
+            stderr=run_proc.stderr,
+            exit_code=run_proc.returncode,
+            duration_ms=(time.time() - start) * 1000,
+        )
+    except Exception as e:
+        return RunResult(
+            compiler="clang",
+            compile_success=True,
+            compile_error="",
+            run_success=False,
+            run_error=str(e),
+            stdout="",
+            stderr="",
+            exit_code=-1,
+            duration_ms=(time.time() - start) * 1000,
+        )
 
 
-def run_with_cide(source: str, filename: Optional[str] = None) -> RunResult:
+_DLL = None
+
+
+def _load_dll():
+    """进程内复用同一个 CDLL 实例。
+
+    原先每个用例都执行一次 `ctypes.CDLL(...)` 并重设全部函数签名 —— 632 个
+    用例 × 2 侧都在热路径上。DLL 路径在进程生命周期内不变，缓存即可；
+    每个会话仍由 `cide_session_create` 独立创建，互不影响。
+    """
+    global _DLL
+    if _DLL is None:
+        dll = ctypes.CDLL(str(DLL_PATH))
+
+        # C API 函数签名
+        dll.cide_session_create.restype = ctypes.c_void_p
+        dll.cide_session_destroy.argtypes = [ctypes.c_void_p]
+        dll.cide_compile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        dll.cide_compile.restype = ctypes.c_int
+        dll.cide_compile_unit.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
+        dll.cide_compile_unit.restype = ctypes.c_int
+        dll.cide_compile_all.argtypes = [ctypes.c_void_p]
+        dll.cide_compile_all.restype = ctypes.c_int
+        dll.cide_run.argtypes = [ctypes.c_void_p]
+        dll.cide_run.restype = ctypes.c_int
+        dll.cide_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        dll.cide_set_input_mode.restype = None
+        dll.cide_set_input.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        dll.cide_set_input.restype = None
+        dll.cide_get_compile_errors.restype = ctypes.c_char_p
+        dll.cide_get_compile_errors.argtypes = [ctypes.c_void_p]
+        dll.cide_get_runtime_error.restype = ctypes.c_char_p
+        dll.cide_get_runtime_error.argtypes = [ctypes.c_void_p]
+        dll.cide_get_output_length.restype = ctypes.c_int
+        dll.cide_get_output_length.argtypes = [ctypes.c_void_p]
+        dll.cide_get_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        # E-P1-5：结构化输出通道（纯程序 stdout / 引擎附注）。
+        dll.cide_get_program_output_length.restype = ctypes.c_int
+        dll.cide_get_program_output_length.argtypes = [ctypes.c_void_p]
+        dll.cide_get_program_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        dll.cide_get_engine_notes_length.restype = ctypes.c_int
+        dll.cide_get_engine_notes_length.argtypes = [ctypes.c_void_p]
+        dll.cide_get_engine_notes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+        ensure_abi(dll)
+        _DLL = dll
+    return _DLL
+
+
+def run_with_cide(source: str, filename: Optional[str] = None, stdin_text: str = "") -> RunResult:
     """通过 C API 调用 Cide 编译并运行"""
-    import ctypes
-
     start = time.time()
-    dll = ctypes.CDLL(str(DLL_PATH))
-
-    # C API 函数签名
-    dll.cide_session_create.restype = ctypes.c_void_p
-    dll.cide_session_destroy.argtypes = [ctypes.c_void_p]
-    dll.cide_compile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
-    dll.cide_compile.restype = ctypes.c_int
-    dll.cide_compile_unit.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_char_p]
-    dll.cide_compile_unit.restype = ctypes.c_int
-    dll.cide_compile_all.argtypes = [ctypes.c_void_p]
-    dll.cide_compile_all.restype = ctypes.c_int
-    dll.cide_run.argtypes = [ctypes.c_void_p]
-    dll.cide_run.restype = ctypes.c_int
-    dll.cide_set_input_mode.argtypes = [ctypes.c_void_p, ctypes.c_int]
-    dll.cide_set_input_mode.restype = None
-    dll.cide_get_compile_errors.restype = ctypes.c_char_p
-    dll.cide_get_compile_errors.argtypes = [ctypes.c_void_p]
-    dll.cide_get_runtime_error.restype = ctypes.c_char_p
-    dll.cide_get_runtime_error.argtypes = [ctypes.c_void_p]
-    dll.cide_get_output_length.restype = ctypes.c_int
-    dll.cide_get_output_length.argtypes = [ctypes.c_void_p]
-    dll.cide_get_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    dll = _load_dll()
 
     session = dll.cide_session_create()
     if not session:
@@ -218,20 +308,15 @@ def run_with_cide(source: str, filename: Optional[str] = None) -> RunResult:
             )
 
         dll.cide_set_input_mode(session, 1)
+        if stdin_text:
+            # 与 Clang 侧喂同一份字节，保证两侧可比
+            dll.cide_set_input(session, stdin_text.encode("utf-8"))
         run_ret = dll.cide_run(session)
 
-        out_len = dll.cide_get_output_length(session)
-        stdout_str = ""
-        if out_len > 0:
-            buf = ctypes.create_string_buffer(out_len + 1)
-            dll.cide_get_output(session, buf, out_len + 1)
-            stdout_str = buf.value.decode("utf-8", errors="replace")
-            # 清理 Cide 的额外输出后缀（如 "程序运行完成，返回值：0"）
-            import re
-            stdout_str = re.sub(r'程序运行完成，返回值：-?\d+\n?', '', stdout_str)
-            # 清理内存泄漏检测报告
-            stdout_str = re.sub(r'===== 内存泄漏检测报告 =====.*?={30,}', '', stdout_str, flags=re.DOTALL)
-            stdout_str = stdout_str.strip()
+        # E-P1-5：直接读纯程序 stdout 通道（引擎附注走 note 通道）。
+        # 此前这里用两条正则做全局替换，会把"学生自己 printf 出来的同类文本"整段删掉，
+        # 导出假阳性 output_gap。清洗规则已废除——口径由引擎的通道标记保证。
+        stdout_str = read_program_stdout(dll, session)
 
         err_ptr = dll.cide_get_runtime_error(session)
         runtime_err = err_ptr.decode("utf-8", errors="replace") if err_ptr else ""
@@ -244,6 +329,445 @@ def run_with_cide(source: str, filename: Optional[str] = None) -> RunResult:
         )
     finally:
         dll.cide_session_destroy(session)
+
+
+# ─── Clang 结果缓存（方案 A）──────────────────────────────────────────────────
+
+def _case_origin(case: "ShadowCase") -> str:
+    """用例来源标识：仓库内相对路径（跨 checkout 稳定，缓存可跨机器共享）。"""
+    if not case.path:
+        return "<inline>"
+    try:
+        return case.path.resolve().relative_to(NATIVE_DIR).as_posix()
+    except ValueError:
+        return case.path.name
+
+
+def clang_cache_material(case: "ShadowCase", clang_version: str) -> Dict:
+    """缓存 key 的组成材料（单独抽出，便于诊断与回归测试）。"""
+    if case.path and case.path.exists():
+        source_text = case.path.read_text(encoding="utf-8")
+    else:
+        source_text = make_clang_header(case.source) + case.source
+
+    include_files: Dict[str, str] = {}
+    if case.path and case.path.parent.exists():
+        for header in sorted(case.path.parent.glob("*.h")):
+            include_files[header.name] = hashlib.sha256(header.read_bytes()).hexdigest()
+
+    return {
+        "schema": CLANG_CACHE_SCHEMA,
+        "platform": sys.platform,
+        "clang_version": clang_version,
+        "compile_cmd": clang_cmd_signature(),
+        "compile_timeout": CLANG_COMPILE_TIMEOUT,
+        "run_timeout": CLANG_RUN_TIMEOUT,
+        "origin": _case_origin(case),
+        "source": source_text,
+        "stdin": case.stdin,  # 同名 `.in` 内容（2026-09-11 起注入；空串 = 无输入）
+        "preset_files": {
+            name: hashlib.sha256(data).hexdigest() for name, data in sorted(PRESET_FILES.items())
+        },
+        "include_files": include_files,
+    }
+
+
+def clang_cache_key(case: "ShadowCase", clang_version: str) -> str:
+    """Clang 结果缓存 key = 源码 + stdin + clang 版本 + 参数 + 预设文件。
+
+    任何一项变化都会让旧缓存自然失效（clang 升级 / flags 改动 / 用例改动 /
+    预设文件改动）；`--refresh-clang` 则无条件重算并覆盖，供 CI 夜间全量重算
+    防版本漂移使用。
+    """
+    blob = json.dumps(
+        clang_cache_material(case, clang_version), ensure_ascii=False, sort_keys=True
+    ).encode("utf-8")
+    return hashlib.sha256(blob).hexdigest()
+
+
+def clang_cache_load(key: str) -> Optional[RunResult]:
+    """读缓存；缺失/损坏/schema 不符一律视为未命中（宁重算，不用不可信 Golden）。"""
+    path = CLANG_CACHE_DIR / f"{key}.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if data.get("schema") != CLANG_CACHE_SCHEMA:
+            return None
+        r = data["result"]
+        return RunResult(
+            compiler=r["compiler"],
+            compile_success=r["compile_success"],
+            compile_error=r["compile_error"],
+            run_success=r["run_success"],
+            run_error=r["run_error"],
+            stdout=r["stdout"],
+            stderr=r["stderr"],
+            exit_code=r["exit_code"],
+            duration_ms=0.0,
+            cached=True,
+        )
+    except Exception:
+        return None
+
+
+def clang_cache_store(key: str, result: RunResult) -> None:
+    """原子落盘：先写临时文件再 `os.replace`，避免并行 worker 读到半截 JSON。"""
+    CLANG_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": CLANG_CACHE_SCHEMA,
+        "key": key,
+        "created": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "result": {
+            "compiler": result.compiler,
+            "compile_success": result.compile_success,
+            "compile_error": result.compile_error,
+            "run_success": result.run_success,
+            "run_error": result.run_error,
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "exit_code": result.exit_code,
+        },
+    }
+    tmp = CLANG_CACHE_DIR / f".{key}.{os.getpid()}.tmp"
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, CLANG_CACHE_DIR / f"{key}.json")
+
+
+# ─── 并行执行（方案 B）────────────────────────────────────────────────────────
+
+# worker 进程内状态（spawn 下每个子进程各自 import 本模块，互不共享）
+_WORKER_STATE: Dict[str, object] = {}
+
+
+def _worker_run_dir(run_root: Path) -> Path:
+    """本进程的隔离运行目录（按 pid 唯一，供并行 worker 各用一份）。"""
+    return run_root / f"run_{os.getpid()}"
+
+
+def prepare_test_files(run_dir: Optional[Path] = None) -> None:
+    """为用户用例准备 VFS 预设文件（worker init 调用一次，而非每用例）。
+
+    历史版本在每个用例前把 test.txt / numbers.txt 写进进程 cwd；现在写进
+    worker 私有运行目录并作为 Clang 运行 cwd —— 语义等价，且并行 worker
+    之间不再互相覆盖。
+    """
+    target = Path(run_dir) if run_dir else _worker_run_dir(RUN_ROOT)
+    target.mkdir(parents=True, exist_ok=True)
+    for name, data in PRESET_FILES.items():
+        (target / name).write_bytes(data)
+
+
+def worker_init(run_root: str, refresh_clang: bool, clang_version: str) -> None:
+    """Pool worker 初始化：建隔离运行目录、写预设文件、预热 DLL。
+
+    必须是模块级函数（Windows spawn 要求 initializer 可 pickle）。
+    """
+    run_dir = _worker_run_dir(Path(run_root))
+    shutil.rmtree(run_dir, ignore_errors=True)
+    prepare_test_files(run_dir)
+    _WORKER_STATE.clear()
+    _WORKER_STATE.update(
+        run_dir=run_dir,
+        refresh_clang=refresh_clang,
+        clang_version=clang_version,
+    )
+    if DLL_PATH.exists():
+        _load_dll()  # 预热：把 LoadLibrary 开销移出用例计时热区
+
+
+def _normalize_run_dir(result: RunResult, run_dir: Path) -> None:
+    """把结果文本中的 worker 私有路径归一化，保证缓存与报告跨 worker 确定性。"""
+    marker = str(run_dir)
+    for field in ("compile_error", "run_error", "stdout", "stderr"):
+        value = getattr(result, field)
+        if value and marker in value:
+            setattr(result, field, value.replace(marker, "<rundir>"))
+
+
+def run_case_task(item: Tuple[int, "ShadowCase"]) -> Tuple[int, "ShadowCase", RunResult, RunResult]:
+    """单用例执行（worker 侧）：Clang（走缓存）+ Cide。
+
+    返回 `(索引, 用例, Clang 结果, Cide 结果)`；索引用于主进程按用例序重排。
+    """
+    index, case = item
+    run_dir = _WORKER_STATE.get("run_dir") or _worker_run_dir(RUN_ROOT)
+    refresh_clang = bool(_WORKER_STATE.get("refresh_clang"))
+    clang_version = str(_WORKER_STATE.get("clang_version") or "")
+
+    key = clang_cache_key(case, clang_version)
+    clang_res = None if refresh_clang else clang_cache_load(key)
+    if clang_res is None:
+        clang_res = run_with_clang(case.source, path=case.path, work_dir=run_dir, stdin_text=case.stdin)
+        _normalize_run_dir(clang_res, run_dir)
+        clang_cache_store(key, clang_res)
+
+    cide_filename = str(case.path) if case.path else None
+    cide_res = run_with_cide(case.source, filename=cide_filename, stdin_text=case.stdin)
+    return index, case, clang_res, cide_res
+
+
+def _execute_cases_pool(
+    items: List[Tuple[int, "ShadowCase"]],
+    jobs: int,
+    refresh_clang: bool,
+    clang_version: str,
+) -> List[Tuple[int, "ShadowCase", RunResult, RunResult]]:
+    """标准路径：`multiprocessing.Pool` + `imap_unordered`（任务级负载均衡）。"""
+    total = len(items)
+    results: List[Tuple[int, "ShadowCase", RunResult, RunResult]] = []
+    ctx = multiprocessing.get_context("spawn")
+    with ctx.Pool(
+        processes=jobs,
+        initializer=worker_init,
+        initargs=(str(RUN_ROOT), refresh_clang, clang_version),
+    ) as pool:
+        for result in pool.imap_unordered(run_case_task, items, chunksize=1):
+            results.append(result)
+            _, case, clang_res, cide_res = result
+            tag = " (clang 缓存)" if clang_res.cached else ""
+            print(
+                f"  [{len(results)}/{total}] {case.name}: "
+                f"clang={'OK' if clang_res.compile_success else 'FAIL'}{tag}, "
+                f"cide={'OK' if cide_res.compile_success else 'FAIL'}",
+                flush=True,
+            )
+    results.sort(key=lambda r: r[0])
+    return results
+
+
+def _multiprocessing_pool_usable() -> bool:
+    """探测 `multiprocessing.Pool` 是否可用。
+
+    受限环境禁止创建**命名管道**（Windows 上 WinError 5），而 Pool 的
+    SimpleQueue 正是基于命名管道；`subprocess` 用的匿名管道/文件重定向不受
+    影响。探测成本极低（建一个空队列），失败即回退分片路径。
+    """
+    try:
+        ctx = multiprocessing.get_context("spawn")
+        queue = ctx.SimpleQueue()
+        queue.close()
+        return True
+    except Exception as e:  # noqa: BLE001
+        print(f"提示: multiprocessing.Pool 不可用（{e}），改用分片 subprocess 并行。")
+        return False
+
+
+def _run_result_to_json(
+    index: int, case: "ShadowCase", clang_res: RunResult, cide_res: RunResult
+) -> Dict:
+    return {
+        "index": index,
+        "case_name": case.name,
+        "clang": asdict(clang_res),
+        "cide": asdict(cide_res),
+    }
+
+
+def _json_to_run_result(data: Dict) -> RunResult:
+    return RunResult(
+        compiler=data["compiler"],
+        compile_success=data["compile_success"],
+        compile_error=data["compile_error"],
+        run_success=data["run_success"],
+        run_error=data["run_error"],
+        stdout=data["stdout"],
+        stderr=data["stderr"],
+        exit_code=data["exit_code"],
+        duration_ms=data.get("duration_ms", 0.0),
+        cached=data.get("cached", False),
+    )
+
+
+def run_shard_worker(payload_path: Path) -> int:
+    """分片 worker 入口（`--shard-worker <payload.json>`）：跑完本片并写结果文件。
+
+    用例按 **name** 匹配（索引仅用于回传排序），避免子进程与主进程的用例
+    加载顺序若存在差异时发生错配。
+    """
+    payload = json.loads(payload_path.read_text(encoding="utf-8"))
+    # 必须初始化：建隔离运行目录 + 写 VFS 预设文件 + 记录 clang 版本/refresh 标志
+    # （漏掉会同时导致缓存 key 漂移与文件 IO 用例缺预设文件）
+    worker_init(payload["run_root"], payload["refresh_clang"], payload["clang_version"])
+    cases = FILE_CASES if FILE_CASES else SHADOW_CASES
+    by_name = {case.name: case for case in cases}
+    output: List[Dict] = []
+    for entry in payload["entries"]:
+        case = by_name.get(entry["name"])
+        if case is None:
+            raise SystemExit(f"分片子进程找不到用例: {entry['name']}")
+        _i, _c, clang_res, cide_res = run_case_task((entry["index"], case))
+        output.append(_run_result_to_json(entry["index"], case, clang_res, cide_res))
+    out_path = Path(payload["out"])
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(output, ensure_ascii=False), encoding="utf-8")
+    return 0
+
+
+def _execute_cases_shards(
+    cases: List["ShadowCase"], jobs: int, refresh_clang: bool, clang_version: str
+) -> List[Tuple[int, "ShadowCase", RunResult, RunResult]]:
+    """回退路径：round-robin 分片交给 N 个 subprocess（不依赖命名管道）。
+
+    与 Pool 路径的差异仅在调度方式（静态分片 vs 任务窃取），用例判定、
+    缓存、报告与门禁结论完全一致。
+    """
+    total = len(cases)
+    shard_indices = [list(range(s, total, jobs)) for s in range(jobs)]
+    RUN_ROOT.mkdir(parents=True, exist_ok=True)
+
+    procs = []
+    for s, indices in enumerate(shard_indices):
+        if not indices:
+            continue
+        payload_path = RUN_ROOT / f"shard_{s}.payload.json"
+        out_path = RUN_ROOT / f"shard_{s}.out.json"
+        log_path = RUN_ROOT / f"shard_{s}.log"
+        payload_path.write_text(
+            json.dumps(
+                {
+                    # 传 name 而非只传索引：子进程按 name 取用例，索引只用于回传排序
+                    "entries": [{"index": i, "name": cases[i].name} for i in indices],
+                    "refresh_clang": refresh_clang,
+                    "clang_version": clang_version,
+                    "run_root": str(RUN_ROOT),
+                    "out": str(out_path),
+                },
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        log = open(log_path, "w", encoding="utf-8")
+        proc = subprocess.Popen(
+            [sys.executable, str(SCRIPT_DIR / "shadow_verify.py"), "--shard-worker", str(payload_path)],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            cwd=str(PROJECT_ROOT),
+        )
+        procs.append((s, proc, log, log_path, out_path))
+
+    collected: List[Dict] = []
+    for s, proc, log, log_path, out_path in procs:
+        code = proc.wait()
+        log.close()
+        if code != 0 or not out_path.exists():
+            print(f"错误: 分片 {s} 子进程失败（退出码 {code}），日志尾部：")
+            try:
+                print(log_path.read_text(encoding="utf-8", errors="replace")[-2000:])
+            except OSError:
+                pass
+            sys.exit(1)
+        data = json.loads(out_path.read_text(encoding="utf-8"))
+        collected.extend(data)
+        print(f"  [分片 {s}] 完成 {len(data)}/{len(shard_indices[s])} 个用例", flush=True)
+
+    results = []
+    for entry in collected:
+        index = entry["index"]
+        case = cases[index]
+        # 防御性对账：索引与用例名必须一致，防止任何加载顺序差异导致结果错配
+        if entry.get("case_name") != case.name:
+            print(
+                f"错误: 分片结果错配（index={index}: 期望 {case.name}，"
+                f"实际 {entry.get('case_name')}）"
+            )
+            sys.exit(1)
+        results.append(
+            (index, case, _json_to_run_result(entry["clang"]), _json_to_run_result(entry["cide"]))
+        )
+    results.sort(key=lambda r: r[0])
+    return results
+
+
+def execute_cases(
+    cases: List["ShadowCase"], jobs: int, refresh_clang: bool, clang_version: str
+) -> List[Tuple[int, "ShadowCase", RunResult, RunResult]]:
+    """执行全部用例，返回**按用例序**重排后的结果（并行下同样确定性）。
+
+    - `jobs <= 1`：本进程串行（行为与历史版本一致，便于调试）；
+    - `jobs > 1`：优先 `multiprocessing.Pool`（任务级负载均衡），命名管道被禁
+      的环境自动回退到分片 subprocess；两条路径都按用例索引重排，报告与门禁
+      结论与串行完全一致。
+    """
+    items = list(enumerate(cases))
+
+    if jobs <= 1:
+        worker_init(str(RUN_ROOT), refresh_clang, clang_version)
+        return [run_case_task(item) for item in items]
+
+    if _multiprocessing_pool_usable():
+        return _execute_cases_pool(items, jobs, refresh_clang, clang_version)
+    return _execute_cases_shards(cases, jobs, refresh_clang, clang_version)
+
+
+# ─── release DLL 陈旧检测 ─────────────────────────────────────────────────────
+
+def _source_files_for_freshness():
+    """引擎源码清单：`native/src/**` + `native/crates/**` + 两处 Cargo.toml。"""
+    yield NATIVE_DIR / "Cargo.toml"
+    build_rs = NATIVE_DIR / "build.rs"
+    if build_rs.exists():
+        yield build_rs
+    for base in (NATIVE_DIR / "src", NATIVE_DIR / "crates"):
+        if not base.exists():
+            continue
+        for pattern in ("*.rs", "Cargo.toml"):
+            for path in sorted(base.rglob(pattern)):
+                if "target" in path.parts:
+                    continue
+                yield path
+
+
+def dll_staleness() -> Optional[Tuple[float, Path]]:
+    """检测 release DLL 是否比引擎源码旧；陈旧则返回 (最新源码 mtime, 文件)。
+
+    背景（2026-09-11 实际发生）：Shadow 用 `target/release` DLL，而日常开发
+    跑的是 debug 构建 —— 改完引擎直接跑 Shadow，跑的其实是改动前的旧引擎，
+    门禁结论与实际源码不符却看不出来。
+    """
+    if not DLL_PATH.exists():
+        return None
+    dll_mtime = DLL_PATH.stat().st_mtime
+    newest_mtime = 0.0
+    newest_path: Optional[Path] = None
+    for path in _source_files_for_freshness():
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if mtime > newest_mtime:
+            newest_mtime, newest_path = mtime, path
+    # 容差 2s：避免文件系统时间戳粒度造成的假阳性
+    if newest_path is not None and newest_mtime > dll_mtime + 2.0:
+        return newest_mtime, newest_path
+    return None
+
+
+def warn_stale_dll(info: Tuple[float, Path]) -> None:
+    source_mtime, source_path = info
+    stamp = "%Y-%m-%d %H:%M:%S"
+    print("\n" + "!" * 66)
+    print("⚠️  release DLL 比引擎源码旧 —— 本次 Shadow 跑的是**旧引擎**：")
+    print(
+        "    DLL 构建时间 : "
+        f"{time.strftime(stamp, time.localtime(DLL_PATH.stat().st_mtime))}"
+    )
+    print(
+        "    最新源码修改 : "
+        f"{time.strftime(stamp, time.localtime(source_mtime))}  "
+        f"{source_path.relative_to(PROJECT_ROOT)}"
+    )
+    print("    结论不代表当前源码。加 --rebuild 自动重建，或手动执行：")
+    print("      cd native && cargo build --release")
+    print("!" * 66 + "\n")
+
+
+def rebuild_release_dll() -> None:
+    print("\n[--rebuild] release DLL 陈旧，重建引擎：cargo build --release")
+    proc = subprocess.run(["cargo", "build", "--release"], cwd=str(NATIVE_DIR))
+    if proc.returncode != 0:
+        print("错误: cargo build --release 失败，终止（结论不可信，不产出报告）。")
+        sys.exit(1)
 
 
 def classify_compile_error(error_msg: str, expected_category: str = "unknown") -> str:
@@ -317,7 +841,7 @@ def analyze_diff(case: ShadowCase, clang_res: RunResult, cide_res: RunResult) ->
     )
 
 
-def generate_report(diffs: List[ShadowDiff], output_path: Path):
+def generate_report(diffs: List[ShadowDiff], output_path: Path, config: Optional[Dict] = None):
     """生成分类统计报告"""
     # 统计各类差异
     compile_gaps = [d for d in diffs if d.diff_type == "compile_gap"]
@@ -355,6 +879,15 @@ def generate_report(diffs: List[ShadowDiff], output_path: Path):
         f"编译缺口: {len(compile_gaps)} ({len(compile_gaps)*100//len(diffs)}%)",
         f"运行时缺口: {len(runtime_gaps)}",
         f"输出差异: {len(output_gaps)}",
+    ]
+    if config:
+        cache = config.get("clang_cache", {})
+        report_lines.append(
+            f"执行配置: jobs={config.get('jobs')}, 耗时={config.get('elapsed_sec')}s, "
+            f"Clang 缓存命中={cache.get('hits')}/{cache.get('hits', 0) + cache.get('misses', 0)}"
+            f"{'（--refresh-clang 全量重算）' if cache.get('refresh') else ''}"
+        )
+    report_lines += [
         "\n## 按来源目录统计\n",
         "| 来源 | 总数 | 匹配 | 编译缺口 | 运行时缺口 | 输出差异 |",
         "|------|------|------|----------|------------|----------|",
@@ -433,7 +966,9 @@ def load_case_files() -> List[ShadowCase]:
         root_path = NATIVE_DIR / root
         if not root_path.exists():
             continue
-        for path in root_path.glob("*.c"):
+        # sorted：glob 依赖底层 scandir 顺序，跨进程/跨平台不保证一致 ——
+        # 并行 worker 若各自得到不同顺序，按索引取用例就会错配（2026-09-11 实测踩到）
+        for path in sorted(root_path.glob("*.c")):
             source = path.read_text(encoding="utf-8")
             # 提取 @category 注释
             cat_match = re.search(r'@category:\s*(\S+)', source)
@@ -447,12 +982,15 @@ def load_case_files() -> List[ShadowCase]:
                     continue
                 clean_lines.append(line)
             clean_source = "\n".join(clean_lines)
+            in_path = path.with_suffix(".in")
+            stdin_text = in_path.read_text(encoding="utf-8") if in_path.exists() else ""
             cases.append(ShadowCase(
                 name=path.stem,
                 source=clean_source,
                 category=category,
                 src_dir=src_dir,
                 path=path,
+                stdin=stdin_text,
             ))
     return cases
 
@@ -809,6 +1347,34 @@ def parse_args():
         default=None,
         help="指定 JSON 数据输出路径；默认生成带时间戳的文件",
     )
+    parser.add_argument(
+        "--jobs",
+        type=int,
+        default=0,
+        help="并行 worker 进程数；0=自动（min(CPU 核数, 8)），1=串行（默认 0）",
+    )
+    parser.add_argument(
+        "--refresh-clang",
+        action="store_true",
+        help="忽略 Clang 结果缓存并全量重算（同时覆盖写回；CI 夜间防版本漂移用）",
+    )
+    parser.add_argument(
+        "--rebuild",
+        action="store_true",
+        help="检测到 release DLL 比引擎源码旧时，先执行 cargo build --release",
+    )
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=0,
+        help="仅执行前 N 个用例（本地调试提速用；正式门禁/CI 请勿使用，且不更新 latest 报告）",
+    )
+    parser.add_argument(
+        "--shard-worker",
+        type=Path,
+        default=None,
+        help=argparse.SUPPRESS,  # 内部入口：分片 subprocess 回退路径（--jobs）调用
+    )
     return parser.parse_args()
 
 
@@ -839,19 +1405,30 @@ def verify_clang_available() -> str:
     return version
 
 
-def prepare_test_files() -> None:
-    """为每个用例重置 VFS 文件系统状态，确保 Clang 与 Cide 看到相同的预设文件。"""
-    # Cide 在 setup_vm / inject_preset_files 中注入以下内容：
-    #   test.txt -> b"hello\nworld\n"
-    #   numbers.txt -> b"1 2 3 4 5\n"
-    # 为了让 Clang 的 stdin/stdout 文件 I/O 行为与 Cide VFS 一致，
-    # 每次 Shadow 用例运行前都在当前工作目录写入相同的物理文件。
-    Path("test.txt").write_bytes(b"hello\nworld\n")
-    Path("numbers.txt").write_bytes(b"1 2 3 4 5\n")
+def _configure_stdio() -> None:
+    """把 stdout/stderr 切到 UTF-8（Windows 控制台默认 GBK 会炸中文）。
+
+    只在主进程调用：spawn 出的 worker 会重新 import 本模块，重复包装
+    `sys.stdout.buffer` 会在旧 wrapper 被 GC 时关闭底层缓冲。
+    """
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+
+
+def resolve_jobs(jobs: int) -> int:
+    """`--jobs 0`（默认）= 自动：min(CPU 核数, 8)；显式 >0 则照用。"""
+    if jobs and jobs > 0:
+        return jobs
+    return max(1, min(os.cpu_count() or 1, 8))
 
 
 def main():
+    _configure_stdio()
     args = parse_args()
+
+    # 分片 worker 入口：只跑本片用例并写结果文件，不产出报告
+    if args.shard_worker:
+        return run_shard_worker(args.shard_worker)
 
     print("=" * 60)
     print("Cide 影子验证框架")
@@ -865,18 +1442,42 @@ def main():
         print("请先运行: cd native && cargo build --release")
         sys.exit(1)
 
-    diffs: List[ShadowDiff] = []
+    # release DLL 陈旧检测：Shadow 用 release DLL，而日常构建多为 debug ——
+    # 改完引擎不重建就会拿旧引擎跑门禁（2026-09-11 实际踩过）。
+    stale = dll_staleness()
+    if stale and args.rebuild:
+        rebuild_release_dll()
+        stale = dll_staleness()
+    if stale:
+        warn_stale_dll(stale)
+
+    jobs = resolve_jobs(args.jobs)
+    print(
+        f"配置: jobs={jobs}（{'串行' if jobs <= 1 else '并行'}），"
+        f"Clang 缓存={'强制重算（--refresh-clang）' if args.refresh_clang else '启用'}"
+    )
 
     CASES = FILE_CASES if FILE_CASES else SHADOW_CASES
-    for i, case in enumerate(CASES, 1):
+    debug_limit = bool(args.limit and args.limit > 0)
+    if debug_limit:
+        CASES = CASES[: args.limit]
+        print(f"⚠️  --limit {args.limit}：仅执行前 {len(CASES)} 个用例（调试模式，非完整门禁，不更新 latest）")
+    started = time.time()
+    results = execute_cases(CASES, jobs, args.refresh_clang, clang_version)
+    elapsed = time.time() - started
+
+    diffs: List[ShadowDiff] = []
+    cache_hits = 0
+    for i, (_index, case, clang_res, cide_res) in enumerate(results, 1):
+        if clang_res.cached:
+            cache_hits += 1
         print(f"\n[{i}/{len(CASES)}] {case.name} ({case.category})")
 
-        prepare_test_files()
-        clang_res = run_with_clang(case.source, path=case.path)
-        print(f"  Clang: compile={'OK' if clang_res.compile_success else 'FAIL'}, run={'OK' if clang_res.run_success else 'FAIL'}")
-
-        cide_filename = str(case.path) if case.path else None
-        cide_res = run_with_cide(case.source, filename=cide_filename)
+        cache_tag = " (clang 缓存)" if clang_res.cached else ""
+        print(
+            f"  Clang: compile={'OK' if clang_res.compile_success else 'FAIL'}, "
+            f"run={'OK' if clang_res.run_success else 'FAIL'}{cache_tag}"
+        )
         print(f"  Cide:  compile={'OK' if cide_res.compile_success else 'FAIL'}, run={'OK' if cide_res.run_success else 'FAIL'}")
 
         diff = analyze_diff(case, clang_res, cide_res)
@@ -890,17 +1491,35 @@ def main():
         else:
             print(f"  => {diff.diff_type}")
 
+    run_config = {
+        "jobs": jobs,
+        "elapsed_sec": round(elapsed, 1),
+        "clang_cache": {
+            "refresh": bool(args.refresh_clang),
+            "hits": cache_hits,
+            "misses": len(results) - cache_hits,
+        },
+    }
+    print(
+        f"\n执行完成: {len(results)} 用例，耗时 {elapsed:.1f}s，"
+        f"Clang 缓存命中 {cache_hits}/{len(results)}"
+    )
+    # 清理 worker 运行目录（失败不致命：残留目录会在下次 worker init 重建）
+    shutil.rmtree(RUN_ROOT, ignore_errors=True)
+
     # 生成报告
     if args.report:
         report_path = args.report
     else:
         report_path = SCRIPT_DIR / "reports" / f"shadow_report_{time.strftime('%Y%m%d_%H%M%S')}.md"
     report_path.parent.mkdir(parents=True, exist_ok=True)
-    generate_report(diffs, report_path)
+    generate_report(diffs, report_path, run_config)
 
     # 同步更新 latest 文件，便于健康度看板等工具读取
-    latest_report_path = SCRIPT_DIR / "reports" / "shadow_report_latest.md"
-    generate_report(diffs, latest_report_path)
+    # （--limit 调试运行是残缺样本，不覆盖 latest，避免污染看板）
+    if not debug_limit:
+        latest_report_path = SCRIPT_DIR / "reports" / "shadow_report_latest.md"
+        generate_report(diffs, latest_report_path, run_config)
 
     # 同时输出 JSON
     if args.json:
@@ -910,6 +1529,7 @@ def main():
     json_data = {
         "timestamp": time.strftime('%Y-%m-%d %H:%M:%S'),
         "clang_version": clang_version,
+        "config": run_config,
         "summary": {
             "total": len(diffs),
             "match": len([d for d in diffs if d.diff_type == "match"]),
@@ -938,8 +1558,9 @@ def main():
     print(f"\nJSON 数据已保存: {json_path}")
 
     # 同步更新 latest JSON
-    latest_json_path = SCRIPT_DIR / "reports" / "shadow_data_latest.json"
-    latest_json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    if not debug_limit:
+        latest_json_path = SCRIPT_DIR / "reports" / "shadow_data_latest.json"
+        latest_json_path.write_text(json.dumps(json_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
     # 生成 K&R + LeetCode 专项报告
     kr_leetcode_diffs = [d for d in diffs if d.src_dir in ("knr", "leetcode")]
@@ -969,8 +1590,12 @@ def main():
                 "cide_stdout": d.cide_result.stdout.strip()[:200],
             })
     kr_leetcode_path = SCRIPT_DIR / "reports" / "kr_leetcode_report.json"
-    kr_leetcode_path.write_text(json.dumps(kr_leetcode_report, ensure_ascii=False, indent=2), encoding="utf-8")
-    print(f"K&R + LeetCode 专项报告已保存: {kr_leetcode_path}")
+    if debug_limit:
+        # --limit 样本残缺，不覆盖 CI artifact 使用的专项报告
+        print("（--limit 调试运行：跳过 kr_leetcode_report.json 更新）")
+    else:
+        kr_leetcode_path.write_text(json.dumps(kr_leetcode_report, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"K&R + LeetCode 专项报告已保存: {kr_leetcode_path}")
 
     # E-P0-1：门禁退出码（与 C++ 版 shadow_verify_cpp.py 的 expected/unexpected
     # 逻辑对齐）。此前 main() 无任何非零退出路径，防线 1 在 CI 中只是"出报告

@@ -30,6 +30,12 @@ CIDE_CLI = NATIVE_DIR / "target/release/cide_cli.exe"
 DLL_PATH = NATIVE_DIR / "target/release/cide_native.dll"
 CLANG_PATH = "clang++"
 
+# E-P1-5：输出通道的结构化读取（与 C 版 shadow 驱动共用同一份入口，禁止再自行清洗）。
+_SHADOW_HELPERS = NATIVE_DIR / "tests" / "shadow_verification"
+if str(_SHADOW_HELPERS) not in sys.path:
+    sys.path.insert(0, str(_SHADOW_HELPERS))
+from cide_output import ensure_abi, read_program_stdout  # noqa: E402
+
 
 @dataclass
 class RunResult:
@@ -361,9 +367,34 @@ int main() {
 ]
 
 
+class _WorkDir:
+    """自管生命周期的 Clang 工作目录（替代 `tempfile.TemporaryDirectory`）。
+
+    受限（沙箱）环境下 `tempfile.TemporaryDirectory` 的 `mkdtemp` 会生成不可写目录，
+    清理阶段抛 `PermissionError: [WinError 5]`（实测 2026-09-11）——Python 版 C shadow
+    驱动（`shadow_verify.py`）此前已因同一问题改为自管目录，此处对齐。
+    """
+
+    def __init__(self, root: Path):
+        self.root = root
+
+    def __enter__(self) -> str:
+        self.root.mkdir(parents=True, exist_ok=True)
+        # 清掉上一次运行的产物，避免读到陈旧可执行文件
+        for stale in self.root.glob("test*"):
+            try:
+                stale.unlink()
+            except OSError:
+                pass
+        return str(self.root)
+
+    def __exit__(self, *_exc) -> bool:
+        return False
+
+
 def run_with_clang(source: str) -> RunResult:
     start = time.time()
-    with tempfile.TemporaryDirectory() as tmpdir:
+    with _WorkDir(PROJECT_ROOT / ".shadow_cpp_tmp") as tmpdir:
         cpp_file = Path(tmpdir) / "test.cpp"
         exe_file = Path(tmpdir) / "test.exe" if sys.platform == "win32" else Path(tmpdir) / "test"
         cpp_file.write_text(source, encoding="utf-8")
@@ -431,6 +462,14 @@ def run_with_cide(source: str) -> RunResult:
     dll.cide_get_output_length.restype = ctypes.c_int
     dll.cide_get_output_length.argtypes = [ctypes.c_void_p]
     dll.cide_get_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    # E-P1-5：结构化输出通道（纯程序 stdout / 引擎附注）。
+    dll.cide_get_program_output_length.restype = ctypes.c_int
+    dll.cide_get_program_output_length.argtypes = [ctypes.c_void_p]
+    dll.cide_get_program_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    dll.cide_get_engine_notes_length.restype = ctypes.c_int
+    dll.cide_get_engine_notes_length.argtypes = [ctypes.c_void_p]
+    dll.cide_get_engine_notes.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    ensure_abi(dll)
 
     session = dll.cide_session_create()
     if not session:
@@ -454,18 +493,9 @@ def run_with_cide(source: str) -> RunResult:
 
         run_ret = dll.cide_run(session)
 
-        out_len = dll.cide_get_output_length(session)
-        stdout_str = ""
-        if out_len > 0:
-            buf = ctypes.create_string_buffer(out_len + 1)
-            dll.cide_get_output(session, buf, out_len + 1)
-            stdout_str = buf.value.decode("utf-8", errors="replace")
-            # 清理 Cide 的额外输出后缀（如 "程序运行完成，返回值：0"）
-            import re
-            stdout_str = re.sub(r'程序运行完成，返回值：-?\d+\n?', '', stdout_str)
-            # 清理内存泄漏检测报告
-            stdout_str = re.sub(r'===== 内存泄漏检测报告 =====.*?={30,}', '', stdout_str, flags=re.DOTALL)
-            stdout_str = stdout_str.strip()
+        # E-P1-5：直接读纯程序 stdout 通道（引擎附注走 note 通道）。此前的两条正则
+        # 全局替换已废除——它会把程序自己打印的同类文本整段删掉（假阳性 output_gap）。
+        stdout_str = read_program_stdout(dll, session)
 
         err_ptr = dll.cide_get_runtime_error(session)
         runtime_err = err_ptr.decode("utf-8", errors="replace") if err_ptr else ""

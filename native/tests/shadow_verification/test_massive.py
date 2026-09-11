@@ -7,9 +7,9 @@ DLL.cide_compile.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 DLL.cide_compile.restype = ctypes.c_int
 DLL.cide_run.argtypes = [ctypes.c_void_p]
 DLL.cide_run.restype = ctypes.c_int
-DLL.cide_get_output_length.argtypes = [ctypes.c_void_p]
-DLL.cide_get_output_length.restype = ctypes.c_int
-DLL.cide_get_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+DLL.cide_get_program_output_length.argtypes = [ctypes.c_void_p]
+DLL.cide_get_program_output_length.restype = ctypes.c_int
+DLL.cide_get_program_output.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
 
 results = []
 
@@ -21,10 +21,11 @@ def test(name, src):
         DLL.cide_session_destroy(s)
         return
     DLL.cide_run(s)
-    n = DLL.cide_get_output_length(s)
+    # E-P1-5：纯程序 stdout 通道，不再做文本清洗。
+    n = DLL.cide_get_program_output_length(s)
     buf = ctypes.create_string_buffer(n+1)
-    DLL.cide_get_output(s, buf, n+1)
-    out = buf.value.decode("utf-8", "replace").strip().replace("程序运行完成，返回值：0", "").strip()
+    DLL.cide_get_program_output(s, buf, n+1)
+    out = buf.value.decode("utf-8", "replace").strip()
     results.append((name, "OK", out))
     DLL.cide_session_destroy(s)
 
