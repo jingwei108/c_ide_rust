@@ -331,21 +331,6 @@ impl From<HeapStats> for cide_runtime::HeapStatsData {
 }
 
 #[derive(Debug, Clone)]
-pub struct CompileResult {
-    pub success: bool,
-    pub diagnostics: Vec<Diagnostic>,
-    pub algorithm_matches: Vec<AlgorithmMatch>,
-}
-
-#[derive(Debug, Clone)]
-pub struct RunResult {
-    pub success: bool,
-    pub output: String,
-    pub waiting_input: bool,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone)]
 pub struct StepResult {
     pub status: StepStatus,
     pub current_line: i32,

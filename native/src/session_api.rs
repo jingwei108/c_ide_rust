@@ -172,6 +172,130 @@ pub fn step_next(session: &mut Session) -> Result<Value, String> {
     }
 }
 
+/// 普通 VM 单步（非统一模式；cide_cli step 子命令同款语义）。
+///
+/// 首次调用（`running == false`）先初始化步进环境并推进到第一个 step 事件；
+/// 之后每次调用推进一条指令。R2：自 flutter_bridge 收口而来——原实现挂在全局
+/// 单例上，语义本体在此（语言中立层），出口（CLI/capi）只做薄包装。
+pub fn vm_step(session: &mut Session) -> crate::session::StepResult {
+    use crate::session::StepStatus;
+    use crate::vm::core::StepResult as VmStep;
+
+    if !session.compile.compiled {
+        return crate::session::StepResult {
+            status: StepStatus::Trap,
+            current_line: 0,
+            output: String::new(),
+            waiting_input: false,
+        };
+    }
+
+    let mut vm = session.vm.take().unwrap_or_default();
+    let result = if !session.runtime.running {
+        reset_runtime_for_step(session);
+        setup_vm(&mut vm, session);
+        inject_preset_files(&mut vm, session);
+        vm.pause();
+        session.runtime.waiting_input = false;
+        loop {
+            match vm.step(&mut session.as_vm_context()) {
+                VmStep::Ok => {
+                    // 首次运行：遇到第一个 StepEvent 后暂停，避免无断点时持续执行到 max_steps
+                    if vm.was_step_event_hit() {
+                        session.runtime.current_line = vm.get_current_line();
+                        break crate::session::StepResult {
+                            status: StepStatus::Paused,
+                            current_line: session.runtime.current_line,
+                            output: session.runtime.output(),
+                            waiting_input: false,
+                        };
+                    }
+                }
+                VmStep::Paused => {
+                    session.runtime.current_line = vm.get_current_line();
+                    break crate::session::StepResult {
+                        status: StepStatus::Paused,
+                        current_line: session.runtime.current_line,
+                        output: session.runtime.output(),
+                        waiting_input: false,
+                    };
+                }
+                VmStep::WaitingInput => {
+                    session.runtime.current_line = vm.get_current_line();
+                    break crate::session::StepResult {
+                        status: StepStatus::WaitingInput,
+                        current_line: session.runtime.current_line,
+                        output: session.runtime.output(),
+                        waiting_input: true,
+                    };
+                }
+                VmStep::Finished => {
+                    session.runtime.running = false;
+                    session.runtime.current_line = vm.get_current_line();
+                    break crate::session::StepResult {
+                        status: StepStatus::Finished,
+                        current_line: session.runtime.current_line,
+                        output: session.runtime.output(),
+                        waiting_input: false,
+                    };
+                }
+                VmStep::Trap => {
+                    session.runtime.error = vm.get_error().to_string();
+                    session.runtime.running = false;
+                    session.runtime.current_line = vm.get_current_line();
+                    break crate::session::StepResult {
+                        status: StepStatus::Trap,
+                        current_line: session.runtime.current_line,
+                        output: session.runtime.output(),
+                        waiting_input: false,
+                    };
+                }
+            }
+        }
+    } else {
+        match vm.step(&mut session.as_vm_context()) {
+            VmStep::Ok | VmStep::Paused => {
+                session.runtime.current_line = vm.get_current_line();
+                step_out(session, StepStatus::Paused, false)
+            }
+            VmStep::WaitingInput => {
+                session.runtime.current_line = vm.get_current_line();
+                step_out(session, StepStatus::WaitingInput, true)
+            }
+            VmStep::Finished => {
+                session.runtime.running = false;
+                session.runtime.current_line = vm.get_current_line();
+                step_out(session, StepStatus::Finished, false)
+            }
+            VmStep::Trap => {
+                session.runtime.error = vm.get_error().to_string();
+                session.runtime.running = false;
+                session.runtime.current_line = vm.get_current_line();
+                step_out(session, StepStatus::Trap, false)
+            }
+        }
+    };
+    session.vm = Some(vm);
+    result
+}
+
+fn step_out(session: &Session, status: crate::session::StepStatus, waiting: bool) -> crate::session::StepResult {
+    crate::session::StepResult {
+        status,
+        current_line: session.runtime.current_line,
+        output: session.runtime.output(),
+        waiting_input: waiting,
+    }
+}
+
+/// 当前栈帧局部变量快照（cide_cli step 的 `p` 命令；教学变量面板同源）。
+pub fn variables(session: &Session) -> Vec<cide_runtime::VariableSnapshotData> {
+    match session.vm.as_ref() {
+        Some(vm) => vm.get_variable_snapshot(),
+        None => Vec::new(),
+    }
+}
+
 /// 取 `[start, end)` 步区间的 StepPayload（裁剪到当前 frameCache 窗口内）。
 pub fn payloads(session: &Session, start: i32, end: i32) -> Result<Value, String> {
     let Some(engine) = session.unified.as_ref() else {

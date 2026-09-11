@@ -46,8 +46,7 @@ native/src/compiler/    剩余本地模块：algorithm_detector、cfg、data_flo
 native/src/unified/     统一模式 / 时间旅行引擎 (Rust)
 native/src/engine/      编译管线与工具 (Rust)
 native/src/capi/        C API（出口 1，公共 API，ABI 版本化）(Rust)
-native/src/session_api/ 会话语义中立层（capi 与 serve 共用，出口只做薄包装）(Rust)
-native/src/flutter_bridge.rs 历史会话包装层（cide_cli 当前消费；名称待后续重构收敛）(Rust)
+native/src/session_api.rs 会话语义中立层（capi / serve / cide_cli 共用，出口只做薄包装）(Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议、知识图谱、教学推理 (Rust)
 templates/              算法模板源（source.c + meta.yaml；前端资产源，暂保留待社区前端认领）
 docs/current/           当前有效文档：规范 / 设计 / 活跃计划 / 测试防线

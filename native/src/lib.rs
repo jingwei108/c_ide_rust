@@ -16,7 +16,6 @@ pub mod capi;
 pub mod compiler;
 pub mod diagnostics;
 pub mod engine;
-pub mod flutter_bridge;
 pub mod session;
 pub mod session_api;
 pub mod shared;

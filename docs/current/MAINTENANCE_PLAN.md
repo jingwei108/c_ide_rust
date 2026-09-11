@@ -53,7 +53,7 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 | D09 | 前端 CustomPainter 缺少缓存 | `CideFlutter/lib/editor/editor_painter.dart` 等（前端资产，已迁出） | ✅ 已随前端切割消解（2026-09-11） | 性能热点 | P2 |
 | D10 | C++ 扩展模块耦合度高 | Parser/TypeChecker/CodeGen | ✅ 已完成：typeck/cpp/、codegen/cpp/、parser/cpp/ 边界已建立（详见 §六 D10） | 回归风险高 | P3 |
 | D11 | 失败记录文件稀释 | `FUZZ_FAILURES.md` 等 | ⏸️ 保留不动（按用户决策，暂不归档） | 活跃问题难定位 | P2 |
-| D12 | Mutex poison 静默恢复 | `native/src/flutter_bridge.rs`（**历史会话包装层，被 `cide_cli` 消费，名称待后续重构收敛**；无 FRB 依赖，故仍保留） | ✅ 已完成（详见 §六 D12） | 可能掩盖 panic 根因 | P3 |
+| D12 | Mutex poison 静默恢复 | ~~`native/src/flutter_bridge.rs`~~（历史会话包装层，重构批次 R2 已整删；问题域**结构性消除**——现行出口 capi/serve/cide_cli 均为 `&mut Session` 独占访问，进程内无共享 Mutex，`lock_or_reset`/`POISON_COUNT` 随之退役） | ✅ 已完成（详见 §六 D12） | 可能掩盖 panic 根因 | P3 |
 | D13 | `docs/archive/` 噪音 | `docs/archive/` | ⏸️ 保留不动（按用户决策，暂不清理） | 文档噪音 | P4 |
 | D14 | 生产代码 `unwrap/expect` 回升（任务 C 的「0 处」验收标准已不成立） | `native/crates/cide_typeck/src/decl.rs`（3 处：L44 / L65 `init.take().unwrap()`、L648 `default.clone().unwrap()`） | ⚠️ 3 处（2026-09-11 复核；曾于 2026-06-25 收敛至 0，后续批次修复期间回升） | 运行时 panic 风险回升 | P2 |
 | D15 | 工程健康度脚本仍带前端时代口径、且未纳入 CI | `scripts/engineering_health.py`（`frb_generated.*` 忽略名单、`#[cfg(test)]` 豁免注释中的 FRB 表述、「Rust/Dart」趋势文案仍在；`reports/engineering_health.md` 仅手工生成，无门禁） | ⚠️ 新记（2026-09-11 前端切割核查发现） | 统计口径漂移无人拦截 | P3 |
@@ -425,7 +425,7 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 | D09 | CustomPainter 缺少缓存 | 三 | ✅ 已随前端切割消解（2026-09-11） | 前端维护者 | 历史成果「Array/Tree/LinkedList Visualizer 缓存 parsed numbers 与 TextPainter；shouldRepaint 精确化；RepaintBoundary 隔离」随前端迁出，本仓已无 `*_visualizer.dart` |
 | D10 | C++ 扩展模块耦合度高 | 四 | ✅ 已完成 | C++ 扩展维护者 | 已建立 typeck/cpp/、codegen/cpp/、parser/cpp/ 边界；class 构造/引用/RAII、RangeFor、template、类外方法/静态字段均已下沉 |
 | D11 | 失败记录文件稀释 | 一 | ⏸️ 保留不动 | 测试维护者 | 按用户决策，暂不归档 |
-| D12 | Mutex poison 静默恢复 | 五 | ✅ 已完成 | 桥接维护者 | 增加 #[track_caller]、全局 POISON_COUNT 计数、调用位置日志；**对象仍在本仓** —— `native/src/flutter_bridge.rs` 为历史会话包装层（被 `cide_cli` 消费），名称待后续重构收敛 |
+| D12 | Mutex poison 静默恢复 | 五 | ✅ 已完成 | 桥接维护者 | 增加 #[track_caller]、全局 POISON_COUNT 计数、调用位置日志；**对象已随重构批次 R2（2026-09-11）整删** —— 全局会话单例结构性消除，cide_cli 改直用本地 `Session` + `session_api`，POISON_COUNT 随之退役 |
 | D13 | `docs/archive/` 噪音 | 五 | ⏸️ 保留不动 | 文档维护者 | 按用户决策，暂不清理 |
 | D14 | 生产代码 `unwrap/expect` 回升 | 三 | ⚠️ 待收敛（3 处） | Rust 维护者 | 2026-09-11 复核：仅 `native/crates/cide_typeck/src/decl.rs` 的 L44 / L65 / L648；任务 C 的「0 处」验收标准已不成立，需重新收敛并补 `SAFETY` 注释 |
 | D15 | 工程健康度脚本前端残留 + 无门禁 | 五 | ⚠️ 新记（2026-09-11） | 构建维护者 | `scripts/engineering_health.py` 的 `frb_generated.*` 忽略名单与「Rust/Dart」文案待清理；`reports/engineering_health.md` 手工生成、未进 CI |

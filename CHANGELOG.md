@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (重构批次 R2：会话收口——flutter_bridge 整删，出口单轨化)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R2 批次：
+
+- **cide_cli 全部子命令迁 `Session` + `session_api`**：compile/run/step 三条路径
+  改为本地 `Session` 直驱（unified/export/serve 原已如此）；serve 与 CLI 现共用
+  同一套语言中立入口，三出口薄包装纪律闭环。
+- **`flutter_bridge.rs` 整删（-836 行）**：全局会话单例（`SESSIONS` u64 map +
+  `CURRENT_SESSION_ID`/`UNIFIED_ENGINES` static + `POISON_COUNT`）全部退役——
+  MAINTENANCE_PLAN D12 的问题域（全局 Mutex poison）**结构性消除**：现行出口
+  （capi/serve/CLI）均为 `&mut Session` 独占访问，进程内无共享锁。
+  ROADMAP G6 销项；孤儿类型 `CompileResult`/`RunResult` 随消费者一并移除。
+- **`session_api` 新增两个语言中立入口**（自 flutter_bridge 语义收口，出口复用）：
+  `vm_step`（普通 VM 单步；首调初始化步进环境推进到首个 step 事件的语义原样保留）
+  与 `variables`（栈帧局部变量快照）。
+- **`benches/vm_benchmark.rs` 改造**：基准对象不变（编译管线 + 统一模式环境
+  初始化），从全局单例改为本地 Session。
+- **CLI 行为不变（冒烟对照验证）**：compile（退出码契约：失败非零）/run（输出、
+  trap、stdin `-i`、argv `--` 传参、等待输入提示）/step（p/o/r 命令、首步事件
+  暂停语义）/unified/export/serve 全部逐项对照通过。
+- **回归与验证**：`cargo test --workspace --all-features` 856/0；clippy 零警告；
+  C Shadow 648 用例 0 非预期差异；serve 冒烟通过。
+
 ### Added (重构批次 E1：C23 lexer/typeck 级 + B 档快赢)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 E1 批次。

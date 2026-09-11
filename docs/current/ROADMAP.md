@@ -98,7 +98,7 @@ capi 第三批（`run_auto_steps` / `seek_to_step` / `get_vis_events` / `get_hea
 | G3 | wasm 下统一模式无 `catch_unwind`（panic → abort） | 与原生出口行为有差异 | 已记录，评估中 |
 | G4 | `time()` / `clock()` 使用真实墙钟，破坏重放确定性 | 时间旅行回放可能不一致 | Phase 3 伪时钟 |
 | G5 | `fprintf` 到自定义 `FILE*` 不落盘（写入被当作 stdout） | 与 Clang 不一致 | 已记录；教学场景请用 `fputs`/`fwrite`/`fputc` |
-| G6 | `native/src/flutter_bridge.rs` 命名与定位残留 | 历史包装层，命名易误解 | 待重构收敛（与语言中立层合并或改名） |
+| G6 | ~~`native/src/flutter_bridge.rs` 命名与定位残留~~ | 历史包装层，命名易误解 | ✅ 已收敛（重构批次 R2，2026-09-11）：`flutter_bridge.rs` 整删，cide_cli 全部子命令直用本地 `Session` + `session_api`，全局会话单例（u64 map + static）清零 |
 | G7 | StepPayload schema v0.1 尚未完成对端回放校验 | 协议冻结未闭环 | Phase 1 收尾项 |
 | G8 | 通用解释器路径仍有性能优化空间（时间旅行每步全量快照） | 10 万步级程序 seek 延迟 | Phase 3 CoW |
 | G9 | **算法属性验证能力在后端从未落地**：`validate_algorithm()` / `ValidationResult` 在 `native/` 全目录零命中（原 `native/src/engine/algorithm_validator.rs` 不存在），原载体 `CideFlutter/lib/models/algorithm_validation.dart` 已随前端迁出；`LearningProgress` 进度追踪同理（后端仅有 `learning_path.rs` 的 `LearningPath`）。**澄清**：`AlgorithmMatch`（算法检测结果结构体）在 `native/src/session.rs` 确实存在，缺的是"运行时验证"环节本身 | 零侵入可视化的"运行时验证"维度缺后端支撑 | 待评估重建（2026-09-11 翻新时由文档核对发现，详见 [`ALGORITHM_DATASTRUCTURE_DESIGN.md`](ALGORITHM_DATASTRUCTURE_DESIGN.md) §7） |

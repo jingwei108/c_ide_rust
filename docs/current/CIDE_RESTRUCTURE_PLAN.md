@@ -202,6 +202,15 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   12 个 baseline 用例 Clang golden 全 match、探针 13/13、cargo test 856/0、
   clippy 零警告、C Shadow 648（636+12）0 非预期、C++ Shadow 0 非预期、serve
   冒烟通过。下一批：R2（会话收口）。
+- **E1 已提交（`5525475`）**
+- **R2 已完成（2026-09-11，未提交待确认）**：cide_cli compile/run/step 迁本地
+  `Session` 直驱（unified/export/serve 原已如此）；`flutter_bridge.rs` 整删
+  （-836 行，全局会话单例/`POISON_COUNT` 退役，MAINTENANCE_PLAN D12 问题域
+  结构性消除，ROADMAP G6 销项）；`session_api` 新增 `vm_step`/`variables`
+  语言中立入口（flutter_bridge 语义收口）；孤儿类型 `CompileResult`/`RunResult`
+  移除；bench 改造。CLI 六子命令行为冒烟对照全过（含退出码契约、trap/stdin/
+  argv/等待输入、step 首步事件语义）；cargo test 856/0、clippy 零警告、
+  C Shadow 648 用例 0 非预期、serve 冒烟过。下一批：E2（模块化预处理器）。
 - **C# 教学子集前端立项（2026-09-11，v3 定稿）**：SharpTutor 诉求锚定，计划落
   `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
   含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定

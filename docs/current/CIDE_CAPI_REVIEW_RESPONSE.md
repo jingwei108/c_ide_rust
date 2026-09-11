@@ -5,7 +5,7 @@
 > 评审结论：**整体接受，一处分歧（wasm 排序，修订为并行）**。本文档逐条回应其 §1~§9，并直接回答其全部六个开放问题（含三项实证核验）。
 > 修订同步：本文档结论已同步修订主计划（§3.2/§5.3/§6），以主计划 + 本文档为准。
 > 最后核对日期：2026-09-11
-> 修订说明（2026-09-11）：去前端化澄清——`flutter_bridge` 全局会话表由语言中立层 `session_api` 取代，`flutter_bridge.rs` 作为历史会话包装层保留待重命名收敛；回放输入表述改为"原生前端 frameCache 消费序列（已切割的历史资产）"。原回应日期与逐条结论保持原样。
+> 修订说明（2026-09-11）：去前端化澄清——`flutter_bridge` 全局会话表由语言中立层 `session_api` 取代；**重构批次 R2（2026-09-11）后 `flutter_bridge.rs` 已整删**，cide_cli 与 serve 直用 `Session` + `session_api`；回放输入表述改为"原生前端 frameCache 消费序列（已切割的历史资产）"。原回应日期与逐条结论保持原样。
 
 ---
 
@@ -27,7 +27,7 @@
 
 | 项 | 决定 | 说明 |
 |---|---|---|
-| 指针句柄统一（`Session*`） | ✅ 确认 | `flutter_bridge` 的**全局 `session_id` 表已由语言中立层 `session_api` 取代**（审查 E-P1-2 的问题源随之消解并随前端切割退役）；`flutter_bridge.rs` 作为**历史会话包装层保留**（`cide_cli` 当前消费），**待重命名收敛** |
+| 指针句柄统一（`Session*`） | ✅ 确认 | `flutter_bridge` 的**全局 `session_id` 表已由语言中立层 `session_api` 取代**（审查 E-P1-2 的问题源随之消解并随前端切割退役）；`flutter_bridge.rs` 已随重构批次 R2 **整删**（cide_cli 改直用本地 `Session` + `session_api`） |
 | `cide_abi_version` / `cide_engine_version` / `cide_last_error` | ✅ 全部采纳 | engine_version 用 build script 注入 git hash，成本近零 |
 | 诊断 `end_line/end_column` | ✅ schema 先带字段，默认"起点+1"退化值 | 完整跨度需动三处错误结构体（LexerError/ParseError/TypeError）+ 报错点分批补（lexer token 有 span，可行但非低成本）。精确跨度按诊断类别分批：类型不匹配表达式、未声明标识符等高价值跨度优先 |
 | warning/hint 进 JSON | ✅ | severity 枚举（error/warning/hint）文档化 |
@@ -109,7 +109,7 @@
 | 2 | deterministic 能否提前 / 最小形态？ | **能**：time 固定 + rand 固定种子进 Phase 1（约半天）；完整 step 派生时钟留 Phase 3（服务于时间旅行重放确定性，与判分确定性分层） |
 | 3 | frameCache 驱逐与越窗行为？ | 窗口 2000 帧、驱逐最早 20%、越窗 seek = 检查点恢复 + 正向重放（懒重算）；检查点间隔随 schema 文档化 |
 | 4 | region 是否已含分配点行号？ | **是**：`alloc_line` + `alloc_by` 已在 `MemoryRegionData`，零成本直通 |
-| 5 | 统一到指针句柄？ | **确认**：`Session*`；`flutter_bridge` 的全局 `session_id` 表已由语言中立层 `session_api` 取代，`flutter_bridge.rs` 作为历史会话包装层保留待重命名收敛 |
+| 5 | 统一到指针句柄？ | **确认**：`Session*`；`flutter_bridge` 的全局 `session_id` 表已由语言中立层 `session_api` 取代，`flutter_bridge.rs` 已随重构批次 R2 整删 |
 | 6 | schema 定稿会议时间？ | 同意参与且接受提前——**Phase 1 内 v0.1 定稿**，请带三组回放场景；上游提供原生前端 frameCache 消费序列（**已切割的历史资产**）与 StepStreamBatch 现有消费序列作为另一方回放输入 |
 
 ---

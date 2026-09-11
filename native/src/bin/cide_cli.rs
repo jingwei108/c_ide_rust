@@ -10,8 +10,7 @@ use std::env;
 use std::fs;
 use std::io::{self, BufRead, Read, Write};
 
-use cide_native::flutter_bridge;
-use cide_native::session::{CodeFile, CompileUnit, InputMode, Session};
+use cide_native::session::{CompileUnit, InputMode, Session};
 use cide_native::session_api;
 
 fn print_usage() {
@@ -65,21 +64,25 @@ fn read_input_file(path: &str) -> Vec<String> {
     cide_native::session::RuntimeState::split_stdin(&text)
 }
 
-fn compile_file(path: &str, source: &str) -> bool {
-    flutter_bridge::reset_session();
+/// 编译单个源文件到会话（R2：本地 Session 直驱，无全局单例）。
+/// 输出格式与 flutter_bridge 时代逐字节一致。
+fn compile_file(session: &mut Session, path: &str, source: &str) -> bool {
     let filename = if path == "-" {
         "main.c".to_string()
     } else {
         path.to_string()
     };
-    let result = flutter_bridge::compile_multi(vec![CodeFile {
+    session.compile.compile_units = vec![CompileUnit {
         filename,
         source: source.to_string(),
-    }]);
+    }];
+    let units = session.compile.compile_units.clone();
+    let ok = cide_native::engine::compile_pipeline::run_multi_file_pipeline(session, units, false).is_ok();
 
-    if !result.diagnostics.is_empty() {
+    let diagnostics = &session.compile.diagnostics;
+    if !diagnostics.is_empty() {
         println!("=== 诊断信息 ===");
-        for d in &result.diagnostics {
+        for d in diagnostics {
             let severity = match d.severity {
                 0 => "错误",
                 1 => "警告",
@@ -93,14 +96,14 @@ fn compile_file(path: &str, source: &str) -> bool {
         }
     }
 
-    if !result.success {
+    if !ok {
         eprintln!("\n编译失败。");
         false
     } else {
         println!("\n编译成功。");
-        if !result.algorithm_matches.is_empty() {
+        if !session.compile.algorithm_matches.is_empty() {
             println!("检测到算法:");
-            for m in &result.algorithm_matches {
+            for m in &session.compile.algorithm_matches {
                 println!("  • {} (置信度: {}%)", m.display_name, m.confidence);
             }
         }
@@ -114,48 +117,62 @@ fn compile_file(path: &str, source: &str) -> bool {
 /// 退出 0 —— CI 脚本 / headless 消费方（SharpTutor）据此判断"编译通过"，是静默失败。
 fn cmd_compile(path: &str) {
     let source = read_source(path);
-    if !compile_file(path, &source) {
+    let mut session = Session::default();
+    if !compile_file(&mut session, path, &source) {
         std::process::exit(1);
     }
 }
 
 fn cmd_run(path: &str, input_lines: Vec<String>, argv: Vec<String>) {
     let source = read_source(path);
-    if !compile_file(path, &source) {
+    let mut session = Session::default();
+    if !compile_file(&mut session, path, &source) {
         std::process::exit(1);
     }
 
-    // 注入输入
+    // 注入输入（保留换行口径已在 read_input_file 中保证；waiting_input 复位与
+    // 旧 provide_input_line 一致）
     for line in input_lines {
-        flutter_bridge::provide_input_line(line);
+        session.runtime.input_lines.push(line);
     }
+    session.runtime.waiting_input = false;
 
-    flutter_bridge::set_argv(argv);
+    session.runtime.argc = argv.len() as i32;
+    session.runtime.argv = argv;
 
-    let result = flutter_bridge::run_code();
+    use cide_native::engine::session_ops::execute_run;
+    let result = if !session.compile.compiled {
+        Err("程序尚未编译。请先编译代码。".to_string())
+    } else {
+        execute_run(&mut session)
+    };
     println!("\n=== 运行输出 ===");
-    println!("{}", result.output);
-    if !result.success {
-        if let Some(err) = result.error {
-            eprintln!("运行错误: {}", err);
+    println!("{}", session.runtime.output());
+    match result {
+        Ok((_, waiting)) => {
+            if waiting {
+                println!("[程序等待输入，但输入已耗尽]");
+            }
         }
-        std::process::exit(1);
-    }
-    if result.waiting_input {
-        println!("[程序等待输入，但输入已耗尽]");
+        Err(e) => {
+            eprintln!("运行错误: {}", e);
+            std::process::exit(1);
+        }
     }
 }
 
 fn cmd_step(path: &str, input_lines: Vec<String>) {
     let source = read_source(path);
-    if !compile_file(path, &source) {
+    let mut session = Session::default();
+    if !compile_file(&mut session, path, &source) {
         std::process::exit(1);
     }
 
     // 注入输入
-    for line in &input_lines {
-        flutter_bridge::provide_input_line(line.clone());
+    for line in input_lines {
+        session.runtime.input_lines.push(line);
     }
+    session.runtime.waiting_input = false;
 
     println!("=== 交互式单步调试 ===");
     println!("命令: [Enter]=下一步, p=打印变量, o=打印输出, q=退出, r=运行到结束");
@@ -163,7 +180,7 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
 
     let mut step_count = 0;
     loop {
-        let line = flutter_bridge::get_current_line();
+        let line = session.runtime.current_line;
         let source_line = source.lines().nth((line.saturating_sub(1)) as usize).unwrap_or("").trim();
 
         print!("步 {:4} | 行 {:3}: {}  > ", step_count, line, source_line);
@@ -183,7 +200,7 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
                 break;
             }
             "p" | "print" => {
-                let vars = flutter_bridge::get_variables();
+                let vars = session_api::variables(&session);
                 if vars.is_empty() {
                     println!("  (无局部变量)");
                 } else {
@@ -194,7 +211,7 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
                 continue;
             }
             "o" | "output" => {
-                let out = flutter_bridge::get_output();
+                let out = session.runtime.output();
                 if out.is_empty() {
                     println!("  (无输出)");
                 } else {
@@ -203,13 +220,12 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
                 continue;
             }
             "r" | "run" => {
-                let result = flutter_bridge::run_code();
+                use cide_native::engine::session_ops::execute_run;
+                let result = execute_run(&mut session);
                 println!("\n=== 最终输出 ===");
-                println!("{}", result.output);
-                if !result.success {
-                    if let Some(err) = result.error {
-                        eprintln!("运行错误: {}", err);
-                    }
+                println!("{}", session.runtime.output());
+                if let Err(err) = result {
+                    eprintln!("运行错误: {}", err);
                 }
                 break;
             }
@@ -222,7 +238,7 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
             }
         }
 
-        let result = flutter_bridge::step_next();
+        let result = session_api::vm_step(&mut session);
         step_count += 1;
 
         use cide_native::session::StepStatus;
@@ -234,13 +250,13 @@ fn cmd_step(path: &str, input_lines: Vec<String>) {
             StepStatus::Finished => {
                 println!("\n程序执行完毕。");
                 println!("\n=== 最终输出 ===");
-                println!("{}", flutter_bridge::get_output());
+                println!("{}", session.runtime.output());
                 break;
             }
             StepStatus::Trap => {
                 eprintln!("\n运行错误 (trap)。");
                 println!("\n=== 当前输出 ===");
-                println!("{}", flutter_bridge::get_output());
+                println!("{}", session.runtime.output());
                 break;
             }
         }

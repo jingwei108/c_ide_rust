@@ -83,7 +83,7 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 
 **架构纪律**（写进 AGENTS.md 编码约定）：
 
-1. 新能力一律先落"语言中立 Rust 层"（从 flutter_bridge 下沉），三个出口只做薄包装；
+1. 新能力一律先落"语言中立 Rust 层"（`session_api` / `engine::session_ops`；原 flutter_bridge 已随重构批次 R2 整删），三个出口只做薄包装；
 2. 复杂返回结构（StepPayload、内存区域、事件流）过边界统一走 JSON 字符串序列化，不搞扁平结构体数组（性能换稳定性与版本容忍度；ctypes 消费已证明字符串边界够用）；
 3. capi 是公共 API，承诺即契约——补全同时引入 `cide_abi_version()`。
 
