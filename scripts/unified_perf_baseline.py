@@ -52,6 +52,8 @@ def build_cli() -> None:
         ["cargo", "build", "--release", "--bin", "cide_cli"],
         cwd=NATIVE_DIR,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
     )

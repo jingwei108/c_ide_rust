@@ -162,8 +162,16 @@ def run_with_clang(
     if sys.platform != "win32":
         compile_cmd.append("-lm")
     try:
+        # encoding 必须显式：Windows CI 的默认编码是 cp1252（单字节、严格），
+        # 用例输出含 UTF-8 中文（如 engine_note_lookalike 打印"程序运行完成"）时
+        # 读线程抛 UnicodeDecodeError，流变 None，analyze_diff 随之崩溃（实测 47061c9）。
         compile_proc = subprocess.run(
-            compile_cmd, capture_output=True, text=True, timeout=CLANG_COMPILE_TIMEOUT
+            compile_cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=CLANG_COMPILE_TIMEOUT,
         )
     except Exception as e:
         return RunResult(
@@ -197,6 +205,8 @@ def run_with_clang(
             [str(exe_file)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=CLANG_RUN_TIMEOUT,
             cwd=str(work_dir),
             input=stdin_text,
@@ -818,7 +828,7 @@ def analyze_diff(case: ShadowCase, clang_res: RunResult, cide_res: RunResult) ->
         elif clang_res.run_success and not cide_res.run_success:
             # 已记录的模板运行失败（E2E_FAILURES.md 有根因）不算回归
             diff_type = "known_issue" if case.name in KNOWN_FAILURE_CASES else "runtime_gap"
-        elif clang_res.stdout.strip() != cide_res.stdout.strip():
+        elif (clang_res.stdout or "").strip() != (cide_res.stdout or "").strip():
             # 已知问题（预期行为差异）不统计为 output_gap
             if "bug" in case.category or case.name in KNOWN_FAILURE_CASES:
                 diff_type = "known_issue"
@@ -1390,7 +1400,12 @@ def verify_clang_available() -> str:
     """
     try:
         proc = subprocess.run(
-            [CLANG_PATH, "--version"], capture_output=True, text=True, timeout=30
+            [CLANG_PATH, "--version"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
         )
     except (OSError, subprocess.TimeoutExpired) as e:
         print(f"错误: 无法执行 Clang ({CLANG_PATH}): {e}")

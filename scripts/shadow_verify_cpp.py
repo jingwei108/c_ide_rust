@@ -404,7 +404,7 @@ def run_with_clang(source: str) -> RunResult:
             compile_cmd.append("-lm")
         try:
             compile_proc = subprocess.run(
-                compile_cmd, capture_output=True, text=True, encoding="utf-8", timeout=30
+                compile_cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30
             )
         except Exception as e:
             return RunResult(
@@ -422,7 +422,7 @@ def run_with_clang(source: str) -> RunResult:
 
         try:
             run_proc = subprocess.run(
-                [str(exe_file)], capture_output=True, text=True, encoding="utf-8", timeout=5
+                [str(exe_file)], capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=5
             )
             return RunResult(
                 compiler="clang++", compile_success=True, compile_error="",
