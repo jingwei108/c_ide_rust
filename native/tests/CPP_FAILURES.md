@@ -11,7 +11,7 @@
 - `typeck_cpp_unit_test.rs`: 28/28 通过
 - `bytecode_gen_cpp_unit_test.rs`: 38/38 通过
 - `cpp_dogfooding_test.rs`: 全部通过（含 Stage 5 基础设施自验证 + Stage 6 `vector<int>` / `list<int>` / `string` Dogfooding）
-- **C++ E2E 回归：`native/tests/cases/cpp/` 74 个用例全部通过，`KNOWN_CPP_FAILURES` 为空**
+- **C++ E2E 回归：`native/tests/cases/cpp/` 78 个用例全部通过，`KNOWN_CPP_FAILURES` 为空**（G10 对账：2026-09-12 复核，原记 74 为陈旧口径）
 - **C++ 扩展合计: 175/175 通过**（99 单元测试 + 2 个 E2E 监控测试 + 74 个 E2E 实际用例；Dogfooding 测试另行统计）
 
 ### M6 E2E 回归覆盖

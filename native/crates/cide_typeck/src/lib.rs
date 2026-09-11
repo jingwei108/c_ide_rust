@@ -499,6 +499,7 @@ mod cpp_container;
 mod cpp_monomorph;
 mod cpp_overload;
 mod decl;
+pub(crate) mod decl_types;
 mod expr;
 
 #[cfg(test)]

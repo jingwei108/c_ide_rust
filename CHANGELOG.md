@@ -27,6 +27,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   match"形态与 unreachable 死代码形态）+ 5 个管线单测；`cargo test --workspace
   --all-features` **875/0**；clippy 零警告；C Shadow **660 用例 0 非预期差异**。
 
+### Changed (重构批次 R4：债务与防线收口——G1/G2/G10/G11/G12/G13 + D14/D16)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R4 批次，
+重构计划全批次（R1→E1→R2→E2→R3→E3→R4）至此交付：
+
+- **D14 unwrap 收敛**：`cide_typeck/src/decl.rs` 3 处 `unwrap()` 消除
+  （`take().unwrap()` ×2 → let-else（外层 if-let 守卫语义不变）；默认参数
+  `clone().unwrap()` → 跳过 None）。生产代码 unwrap 回到 0。
+- **D16 decl.rs 拆分**：typeof/auto 类型解析家族（`type_has_auto` /
+  `type_has_typeof` / `strip_top_level_qualifiers` / `resolve_typeof_in_type` /
+  `replace_auto_in_type`）移入新模块 `decl_types.rs`（104 行），decl.rs 非空行
+  905 → 792，回到 <800 规约。
+- **G1 生成器恢复**：`scripts/sync_templates.py` 自前端切割前提交恢复，并去除
+  Flutter assets/Index 输出步骤（前端已切割）——模板 → 用例链路重新可用。
+- **G2 wasm 冒烟进 CI**：新增 `scripts/wasm_smoke/wasm_smoke.js`（ABI 导出 +
+  `__heap_base` 传参 + capi 全链路 + 纯 stdout 通道断言；wasm-bindgen 占位导入
+  以 Proxy 桩通过——冒烟路径不触达回调）；ci.yml 新增 wasm32 构建 + 冒烟步骤。
+- **G11 engineering_health 进 CI**：ci.yml 新增看板生成 + artifact 上传（阈值
+  门禁待基线固化后启用）；FRB 时代注释口径更新。
+- **G10 C++ E2E 计数对账**：`CPP_FAILURES.md` 74 → 78（与 `cases/cpp/` 实际
+  用例数一致）。
+- **G12 模板失败口径统一**：实测 `infixEvaluation_default` 已通过（陈旧失败
+  条目标注修复）；AGENTS.md 模板口径 82/78 绿/4 失败 → **82 个，80 绿，
+  2 已知失败**（`bTree_default`/`spfa_default`，与 `KNOWN_TEMPLATE_FAILURES` /
+  `KNOWN_FAILURE_CASES` 常量一致）。
+- **G13 C++ 活约束入 spec**：`CPP_SUBSET_SPEC.md` 补记"同一模板类不可跨文件
+  重复定义"与"`T()` 值初始化不支持"。
+- **回归与验证**：`cargo test --workspace --all-features` 875/0；clippy 零警告；
+  C Shadow 660 用例 0 非预期差异；serve 冒烟过；wasm 冒烟本地全通。
+
 ### Changed (重构批次 R3：语义单源审计)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R3 批次。

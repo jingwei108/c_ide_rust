@@ -13,7 +13,7 @@ on:
 
 # 前端切割（2026-09-11）：CideFlutter / FRB / flutter-android-ios jobs 已随前端
 # 迁出（标签 before-frontend-split 保留完整历史）。本仓库现为纯后端仓，
-# CI 只验证 Rust 引擎 + 三出口防线。wasm 出口冒烟见主计划 Phase 2a。
+# CI 验证 Rust 引擎 + 三出口防线 + wasm 出口冒烟（G2）。
 jobs:
   rust:
     name: Rust Build & Test
@@ -115,6 +115,28 @@ jobs:
       - name: cide_cli serve smoke (Exit 3 protocol contract)
         run: python scripts/serve_smoke.py
         shell: bash
+
+      # G2（R4）：出口 2 守护——wasm32 构建 + Node 冒烟（ABI 导出 + capi 全链路，
+      # 纯 stdout 通道断言；wasm-bindgen 占位导入以 Proxy 桩通过）
+      - name: wasm32 build & smoke (Exit 2 guard)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --target wasm32-unknown-unknown --release
+          node scripts/wasm_smoke/wasm_smoke.js
+        shell: bash
+
+      # G11（R4）：工程健康度看板（生产 unwrap 计数/超长文件/失败记录口径），
+      # 报告上传 artifact；阈值门禁待阈值基线固化后启用
+      - name: Engineering health report
+        run: python scripts/engineering_health.py
+        shell: bash
+
+      - name: Upload engineering health report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: engineering-health
+          path: reports/engineering_health.md
 
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.16

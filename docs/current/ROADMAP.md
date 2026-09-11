@@ -93,8 +93,8 @@ capi 第三批（`run_auto_steps` / `seek_to_step` / `get_vis_events` / `get_hea
 
 | # | 缺口 | 影响 | 处置 |
 |:---|:---|:---|:---|
-| G1 | **模板 → 用例生成器缺失**：`scripts/sync_templates.py` 随前端切割移除，`native/tests/cases_template_generated/` 83 个用例目前是静态留存（仅被 `cide_e2e.rs`、`shadow_verify.py`、`extract_shadow_cases.py` 读取） | 改 `templates/` 后无法再生成用例，链路断裂 | 待认领：随 wasm 出口或社区前端一并恢复生成器（此前未被 AGENTS.md 记录，本次如实补记） |
-| G2 | wasm 冒烟脚本未固化（临时目录） | wasm 出口缺 CI 守护 | Phase 2a：`scripts/wasm_smoke/` |
+| G1 | ~~模板 → 用例生成器缺失~~ | 链路断裂 | ✅ 已恢复（重构批次 R4，2026-09-12）：`scripts/sync_templates.py` 自历史提交恢复并去除 Flutter 输出口径 |
+| G2 | ~~wasm 冒烟脚本未固化~~ | wasm 出口缺 CI 守护 | ✅ 已固化（重构批次 R4，2026-09-12）：`scripts/wasm_smoke/wasm_smoke.js` + ci.yml wasm32 构建/冒烟步骤 |
 | G3 | wasm 下统一模式无 `catch_unwind`（panic → abort） | 与原生出口行为有差异 | 已记录，评估中 |
 | G4 | `time()` / `clock()` 使用真实墙钟，破坏重放确定性 | 时间旅行回放可能不一致 | Phase 3 伪时钟 |
 | G5 | `fprintf` 到自定义 `FILE*` 不落盘（写入被当作 stdout） | 与 Clang 不一致 | 已记录；教学场景请用 `fputs`/`fwrite`/`fputc` |
@@ -102,10 +102,10 @@ capi 第三批（`run_auto_steps` / `seek_to_step` / `get_vis_events` / `get_hea
 | G7 | StepPayload schema v0.1 尚未完成对端回放校验 | 协议冻结未闭环 | Phase 1 收尾项 |
 | G8 | 通用解释器路径仍有性能优化空间（时间旅行每步全量快照） | 10 万步级程序 seek 延迟 | Phase 3 CoW |
 | G9 | **算法属性验证能力在后端从未落地**：`validate_algorithm()` / `ValidationResult` 在 `native/` 全目录零命中（原 `native/src/engine/algorithm_validator.rs` 不存在），原载体 `CideFlutter/lib/models/algorithm_validation.dart` 已随前端迁出；`LearningProgress` 进度追踪同理（后端仅有 `learning_path.rs` 的 `LearningPath`）。**澄清**：`AlgorithmMatch`（算法检测结果结构体）在 `native/src/session.rs` 确实存在，缺的是"运行时验证"环节本身 | 零侵入可视化的"运行时验证"维度缺后端支撑 | 待评估重建（2026-09-11 翻新时由文档核对发现，详见 [`ALGORITHM_DATASTRUCTURE_DESIGN.md`](ALGORITHM_DATASTRUCTURE_DESIGN.md) §7） |
-| G10 | **C++ E2E 用例口径不一致**：`native/tests/CPP_FAILURES.md` 记 74 个，而 `native/tests/cases/cpp/` 实际 78 个 `.cpp`（`cide_e2e.rs::load_cpp_cases` 全量加载） | 文档数字与实际断言不一致 | 待对账（2026-09-11 翻新时发现，已记入 [`MAINTENANCE_PLAN.md`](MAINTENANCE_PLAN.md) 任务 D） |
-| G11 | **工程债务回升**：生产代码 `unwrap/expect` 3 处（`crates/cide_typeck/src/decl.rs`，即 D14）、`scripts/engineering_health.py` 仍带前端时代口径且未进 CI（D15）、`decl.rs` 871 非空行超标（D16） | 与"生产代码 0 unwrap"的历史验收标准不符 | 见 [`MAINTENANCE_PLAN.md`](MAINTENANCE_PLAN.md) §二 债务清单（D14~D16） |
-| G12 | **模板失败计数存在三套口径**：`AGENTS.md` 记"82 个，78 绿，**4 已知失败**"；`native/tests/cases_template_generated/E2E_FAILURES.md` 列 3 条（含 `infixEvaluation_default`）；`cide_e2e.rs::KNOWN_TEMPLATE_FAILURES` 与 `shadow_verify.py::KNOWN_FAILURE_CASES` **只列 2 条** —— `infixEvaluation_default` 未进入任一常量 | CI 双向对账存在盲点（该用例失败不会被门禁拦下） | 待防线负责人统一口径（2026-09-11 文档翻新时发现，见 [`TEMPLATE_GUIDE.md`](TEMPLATE_GUIDE.md)） |
-| G13 | **两条 C++ 活约束未记入 `CPP_SUBSET_SPEC.md`**：同一模板类不可跨文件重复定义、`T()` 值初始化不支持（实测该规范中检索不到） | 学生可见的语言/工具链边界缺少权威记录 | 待转交该规范负责人（见 [`STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md`](STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md) §2.1/§2.2） |
+| G10 | ~~C++ E2E 用例口径不一致~~ | 文档数字与实际断言不一致 | ✅ 已对账（重构批次 R4，2026-09-12）：CPP_FAILURES.md 更新为 78 |
+| G11 | ~~工程债务回升~~（D14 unwrap×3 / D15 health 未进 CI / D16 decl.rs 超标） | 与"生产代码 0 unwrap"的历史验收标准不符 | ✅ 已收口（重构批次 R4，2026-09-12）：unwrap 归零、engineering_health 进 CI、decl.rs 792 行 + decl_types.rs 拆分 |
+| G12 | ~~模板失败计数存在三套口径~~ | CI 双向对账存在盲点 | ✅ 已统一（重构批次 R4，2026-09-12）：实测 `infixEvaluation_default` 已通过并从失败口径移除；AGENTS 口径更正为 82/80 绿/2 已知失败，与常量一致 |
+| G13 | ~~两条 C++ 活约束未记入 `CPP_SUBSET_SPEC.md`~~ | 学生可见边界缺权威记录 | ✅ 已补记（重构批次 R4，2026-09-12）：CPP_SUBSET_SPEC.md 新增"模板活约束"小节 |
 
 > 其它已知语言子集差异见 [`C_SUBSET_SPEC.md`](C_SUBSET_SPEC.md) / [`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)，
 > 测试差异见 `native/tests/*_FAILURES.md`。

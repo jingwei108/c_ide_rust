@@ -251,5 +251,19 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   unreachable 严格死代码——可到达处调用会使 clang 链接失败，故用例限定死代码）+
   5 管线单测；cargo test 875/0；clippy 零警告；C Shadow 660（656+4）0 非预期。
   下一批：R4（债务与防线）。  `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
-  含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
+- **E3 已提交（`00a5c8c`，含探针文件清理 `fbaa3ac`）**
+- **R4 已完成（2026-09-12，未提交待确认）——重构计划全批次（R1→E1→R2→E2→
+  R3→E3→R4）交付完毕**：
+  D14 unwrap×3 归零（let-else 化，语义不变）；D16 decl.rs 905→792 非空行
+  （typeof/auto 家族移入 decl_types.rs）；G1 `sync_templates.py` 恢复（去
+  Flutter 口径）；G2 wasm 冒烟固化（`scripts/wasm_smoke/wasm_smoke.js`：
+  `__heap_base` 传参 + capi 全链路 + 纯 stdout 断言 + bindgen Proxy 桩）并进
+  CI；G11 engineering_health 进 CI（看板 + artifact）；G10 CPP_FAILURES
+  74→78 对账；G12 `infixEvaluation_default` 确认已修复、口径统一为 82/80 绿/
+  2 已知失败；G13 两条 C++ 活约束补入 CPP_SUBSET_SPEC。验收线：cargo test
+  875/0、clippy 零警告、C Shadow 660 用例 0 非预期、serve 冒烟过、wasm 冒烟
+  本地全通。
+- **全批次交付声明**：R1/R2/R3/R4 + E1/E2/E3 七批次全部完成（各批次独立
+  提交、独立过全防线；行为变化均已如实记录 CHANGELOG/spec）。按 §7 时序，
+  `CSHARP_EXTENSION_PLAN.md` 的 CS0~CS6 具备启动条件（锚定客户对齐后排期）。  含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
   C/C++" → C/C++ 主轴 + C# 教学子集）待定位主计划同步声明。

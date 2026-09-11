@@ -109,9 +109,9 @@ def count_production_unwrap_expect() -> tuple[int, Counter]:
     """统计生产代码中的 unwrap/expect 数量。
 
     排除：
-    - FRB 生成文件（frb_generated.rs）
     - `#[cfg(test)]` 模块
     - `#[test]` 标注的测试函数
+    （R2 后：FRB 生成文件已随前端切割移除，保留排除逻辑无副作用）
     """
     pattern = re.compile(r"\b(unwrap\(\)|expect\()")
     per_file = Counter()
@@ -309,7 +309,7 @@ def generate_report() -> str:
     unwrap_total, unwrap_per_file = count_pattern_in_files(
         NATIVE_CODE_DIRS, "rs", r"\b(unwrap\(\)|expect\()"
     )
-    # 生产代码 unwrap/expect：排除测试代码与 FRB 生成文件
+    # 生产代码 unwrap/expect：排除测试代码（FRB 生成文件已移除，注释保留历史口径）
     prod_unwrap_total, prod_unwrap_per_file = count_production_unwrap_expect()
 
     active_failures, failures_per_file = count_active_failure_entries()
