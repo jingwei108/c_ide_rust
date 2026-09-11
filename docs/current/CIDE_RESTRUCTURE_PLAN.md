@@ -162,7 +162,7 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
 - R1 设计完成、首次实现已回滚（并入 C23/E 系列讨论后统一开工）
 - clippy 1.98 新 lint ×5 已修（`0790a8e`）
 - union 支持已实测确认（销项"未确认"）
-- 本文档 v2 吸收：外部评审三点（三方挤压用例 / 判据分裂 / G12/G13 遗漏）、
+- 本文档 v2 吸收：外部评审三点（三方挤压用例 / 判据分裂 / G12/G13 遗留）、
   C23 锚定实测盘点、模块化预处理器选型定案
 - **v3 吸收复核（27 项探针，PASS 8 / FAIL 19）**：typeof C 侧实测可用（E3 移植项
   销项）；标签后置系尾随逗号误测（裁决不做）；补记已支持 3 项（`#warning`/`= {}`/
@@ -171,3 +171,18 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   capabilities JSON + `__CIDE_SUBSET__` + spec 声明三层配套）；static_assert 双参
   纳入 E3；`do{}while(0)` 包装扩展定案保留；`#embed` 降级延期；E2 工时校准 ~2.5k
   含测试
+- **R1 已完成（2026-09-11，未提交待确认）**：手术清单 ①~⑤ 全部落地——
+  ① 动态堆起点 `heap_base = max(HEAP_START, align4(global_data_end))`（`reset_runtime`
+  经 `cide_runtime::compute_heap_base` 单源落位，快照携带 `heap_base`）；
+  ② `GLOBAL_REGION_LIMIT` 单源取代 `MEM_SIZE/16` 与 `setup_argv` 的 `HEAP_START`
+  双魔数，全局区 7 个 bump 站点收敛至 codegen `bump_global_offset` 唯一入口，
+  `cide_vm/core/state.rs` 与 `cide_runtime` 的同值双写常量改为再导出；
+  ③ argv 自 `GLOBAL_REGION_LIMIT` 向下分配（`global_count` 恒 0 的重叠编址修复）；
+  ④ `MemoryState.heap_base` 字段贯通统计（`build_heap_stats`/`fragmentation_rate`
+  签名带 `heap_base`，`flutter_bridge` 内联复算改走单源，serve `memory_regions`
+  新增 `heap_base`）；⑤ 全局数据越过 `HEAP_START` 的编译 warning（单/多文件管线均接）。
+  验收线全绿：`r1_memory_boundary_test.rs` 7 项（三方挤压 + 大全局 malloc 不损坏 +
+  超上限 fail loud + warning + argv 隔离 + 布局函数单元测试）；cargo test 852/0；
+  clippy 零警告；C Shadow 636 / C++ Shadow 100 均 0 非预期差异（lc_22/lc_977 回归通过）。
+  行为变化如实入 CHANGELOG：全局数据 >60 KB（旧可静默放行）现编译失败。
+  下一批：E1（C23 lexer/typeck 级 + B 档快赢）。

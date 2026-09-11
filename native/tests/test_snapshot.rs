@@ -435,6 +435,7 @@ fn test_smart_checkpoint_triggers() {
                 quarantine: std::collections::VecDeque::new(),
                 quarantine_bytes: 0,
                 quarantine_budget: cide_runtime::memory_state::DEFAULT_QUARANTINE_BUDGET,
+                heap_base: cide_runtime::HEAP_START,
                 heap_offset: 0,
                 alloc_counter: 0,
             },

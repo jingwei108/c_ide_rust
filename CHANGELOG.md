@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (重构批次 R1：内存边界收口——动态堆起点 + 全局区判据单源)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R1 批次
+（手术清单五项全部落地，基线锚点标签 `pre-restructure`，全程防线在线）：
+
+- **堆起点动态化（R1 ①）**：`heap_base = max(HEAP_START, align4(global_data_end))`——堆区不再写死
+  从 `HEAP_START`（20 KB）开始，而是越过本程序的全局数据末端（codegen 导出
+  `CompileOutput.global_data_end`，含 Bytecode Libc 预留段）。栈碰撞检查（`control.rs` 读动态
+  `heap_offset`）自动跟随；时间旅行快照新增 `heap_base` 字段随检查点往返。
+  "大全局 + malloc" 的静默压坏在结构上不再可能（见下文 Fixed 的已知限制销项）。
+- **判据单源化（R1 ②）**：`gen_string_literal` 的 `MEM_SIZE / 16` 魔数与 VM `setup_argv` 的
+  `HEAP_START` 判据统一为 `cide_runtime::GLOBAL_REGION_LIMIT`（`0x10000` = 64 KB，取值不变、
+  不收紧存量行为）；全局区全部 7 个 bump 站点（全局变量 / extern 占位 / vtable / 字符串字面量 /
+  全局初始化字符串 / 静态局部变量 / 静态数组字符串元素）收敛到 codegen `bump_global_offset`
+  单一入口，越过上限编译期报错。**行为变化（诚实记录）**：旧引擎"全局数据 > 60 KB 且无字符串、
+  无 malloc"可静默放行（本就处于损坏风险区），现编译失败（fail loud）；`cide_vm/core/state.rs`
+  与 `cide_runtime` 的同值双写常量改为 `pub use` 再导出（真相单源）。
+- **argv 编址修复（R1 ③）**：`setup_argv` 旧实现以 `global_count`（恒 0）编址，argv 指针数组
+  落在 `GLOBAL_START`，与全局数据重叠（预存 bug）；现改自 `GLOBAL_REGION_LIMIT` 向下分配
+  （占用由 `argv_region_footprint` 统一计算），与全局数据冲突时明确 trap。带 argv 的程序
+  堆起点相应上移至 64 KB（argv 程序为教学少数场景，堆损失可接受，已在代码注释说明）。
+- **heap_base 统计字段（R1 ④）**：`MemoryState` 新增 `heap_base`；`build_heap_stats` /
+  `fragmentation_rate` 改以动态 `heap_base` 为基准；`flutter_bridge::get_heap_stats` 的内联复算
+  改走 `build_heap_stats` 单源；serve `memory_regions` 视图新增 `heap_base` 字段（additive）。
+- **大全局编译 warning（R1 ⑤）**：全局数据越过 `HEAP_START` 时产生 severity=1 诊断，提示
+  堆起点将上移与剩余堆空间（信息性——静默损坏已结构性消除）。
+- **回归与验证**：新增 `native/tests/r1_memory_boundary_test.rs` 7 项（大全局+malloc 数据完好 /
+  malloc 耗尽明确返回 NULL / 深递归明确 trap / argv 不与全局数据重叠 / 超上限编译失败 /
+  大全局 warning / 布局函数单元测试）；`cargo test --workspace --all-features` **852 passed / 0 failed**；
+  clippy `--all-targets -D warnings` 零警告；C Shadow 636 用例与 C++ Shadow 100 用例
+  **均 0 非预期差异**（`lc_22` / `lc_977` 等"全局区越过 20 KB 不用堆"存量用例行为不变）；
+  `lc_22`/`lc_977` 回归由 Shadow 防线覆盖通过。
+
 ### Fixed (CI 门禁失效 + Bytecode Libc 产物漂移 / 不可重现 / 全局区越界)
 
 起因：CI 在 `python scripts/precompile_bytecode_libc.py --check` 步骤失败。

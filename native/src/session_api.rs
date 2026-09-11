@@ -222,6 +222,7 @@ pub fn memory_regions(session: &Session) -> Value {
             "budget": session.memory.quarantine_budget,
             "blocks": session.memory.quarantine.len(),
         },
+        "heap_base": session.memory.heap_base,
         "heap_offset": session.memory.heap_offset,
         "alloc_counter": session.memory.alloc_counter,
     })

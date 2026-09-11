@@ -105,6 +105,8 @@ pub struct MemorySnapshot {
     pub quarantine: std::collections::VecDeque<FreeBlock>,
     pub quarantine_bytes: i32,
     pub quarantine_budget: i32,
+    /// 动态堆起点（R1）：时间旅行回退后统计口径仍须以本次运行的堆起点为基准。
+    pub heap_base: u32,
     pub heap_offset: u32,
     pub alloc_counter: i32,
 }
@@ -133,6 +135,7 @@ impl From<&MemoryState> for MemorySnapshot {
             quarantine: mem.quarantine.clone(),
             quarantine_bytes: mem.quarantine_bytes,
             quarantine_budget: mem.quarantine_budget,
+            heap_base: mem.heap_base,
             heap_offset: mem.heap_offset,
             alloc_counter: mem.alloc_counter,
         }

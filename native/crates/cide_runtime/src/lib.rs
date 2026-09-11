@@ -23,9 +23,9 @@ pub mod unified_types;
 
 pub use func_meta::{FuncMeta, LocalBuffer};
 pub use memory_state::{
-    build_heap_stats, find_region_by_addr, fragmentation_rate, FreeBlock, HeapStatsData, MemoryFragmentData,
-    MemoryRegionData, MemoryState, GLOBAL_START, HEAP_START, MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE,
-    SNAPSHOT_INTERVAL, STACK_START,
+    align4, argv_region_footprint, build_heap_stats, compute_heap_base, find_region_by_addr, fragmentation_rate,
+    FreeBlock, HeapStatsData, MemoryFragmentData, MemoryRegionData, MemoryState, GLOBAL_REGION_LIMIT, GLOBAL_START,
+    HEAP_START, MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE, SNAPSHOT_INTERVAL, STACK_START,
 };
 pub use output::{OutputChunk, OutputKind};
 pub use runtime_state::{

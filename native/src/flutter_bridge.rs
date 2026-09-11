@@ -381,21 +381,9 @@ pub fn get_heap_stats() -> crate::session::HeapStats {
     let session_arc_l342 = current_session();
     let session = lock_or_reset(&session_arc_l342);
     let mem = &session.memory;
-    let heap_start = cide_runtime::HEAP_START as i32;
-    let total_heap = (mem.heap_offset as i32).saturating_sub(heap_start);
-    let allocated: i32 = mem.regions.iter().filter(|r| r.is_heap && !r.is_freed).map(|r| r.size).sum();
-    let fragmented: i32 = mem.free_list.iter().map(|b| b.size).sum();
-    let fragmentation_rate = if total_heap > 0 {
-        ((fragmented as f64 / total_heap as f64) * 100.0) as i32
-    } else {
-        0
-    };
-    crate::session::HeapStats {
-        total_heap,
-        allocated,
-        fragmented,
-        fragmentation_rate,
-    }
+    // R1：统计口径统一走 cide_runtime::build_heap_stats（动态 heap_base 基准），
+    // 不再在此内联复算一份（此前与 runtime 侧公式双写）。
+    cide_runtime::build_heap_stats(&mem.regions, &mem.free_list, mem.heap_offset, mem.heap_base).into()
 }
 
 /// 获取 VM 内存总大小（字节）

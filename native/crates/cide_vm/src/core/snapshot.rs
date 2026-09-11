@@ -165,6 +165,7 @@ impl CideVM {
         session.memory.quarantine = snap.memory_state.quarantine.clone();
         session.memory.quarantine_bytes = snap.memory_state.quarantine_bytes;
         session.memory.quarantine_budget = snap.memory_state.quarantine_budget;
+        session.memory.heap_base = snap.memory_state.heap_base;
         session.memory.heap_offset = snap.memory_state.heap_offset;
         session.memory.alloc_counter = snap.memory_state.alloc_counter;
 

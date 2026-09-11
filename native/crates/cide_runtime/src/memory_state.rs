@@ -6,8 +6,14 @@ pub const MEM_SIZE: u32 = 1024 * 1024;
 pub const NULL_TRAP_SIZE: u32 = 0x1000;
 /// 全局区起始地址。
 pub const GLOBAL_START: u32 = 0x1000;
-/// 堆区起始地址。
+/// 堆区默认起始地址（全局数据未越过时的堆起点下限）。
 pub const HEAP_START: u32 = 0x5000;
+/// 全局数据区（全局变量/静态变量/vtable/字符串字面量）的编译期硬上限，绝对地址。
+///
+/// R1 ② 判据单源化：取代 codegen `literal.rs` 的 `MEM_SIZE / 16` 与 VM `setup_argv`
+/// 的 `HEAP_START` 两套魔数——所有"全局区还能不能长"的判断统一以本常量为界。
+/// 取值与旧字符串字面量判据（`MEM_SIZE / 16` = 64KB）保持一致，不收紧存量行为。
+pub const GLOBAL_REGION_LIMIT: u32 = MEM_SIZE / 16;
 /// 栈区起始地址（从高地址向低地址增长）。
 pub const STACK_START: u32 = MEM_SIZE;
 /// 快照间隔步数。
@@ -22,6 +28,39 @@ pub const MAX_STACK_DEPTH: usize = 10_000;
 ///
 /// [`CIDE_HEAP_QUARANTINE_DECISION.md`]: ../../../docs/current/CIDE_HEAP_QUARANTINE_DECISION.md
 pub const DEFAULT_QUARANTINE_BUDGET: i32 = (MEM_SIZE / 4) as i32;
+
+/// 4 字节向上对齐。
+pub fn align4(x: u32) -> u32 {
+    (x + 3) & !3
+}
+
+/// argv 区域占用字节数（指针数组 + 字符串数据，4 字节对齐）。
+///
+/// R1 ③：argv 自 `GLOBAL_REGION_LIMIT` 向下分配，本函数是占用的唯一计算口径，
+/// `setup_argv` 的编址与 `compute_heap_base` 的堆起点都从它推导，杜绝两处各算一套。
+pub fn argv_region_footprint(argc: i32, argv: &[String]) -> u32 {
+    if argc <= 0 {
+        return 0;
+    }
+    // 指针数组按 argc 开槽（未填满的槽为零，与 setup_argv 的写入布局一致），
+    // 字符串数据只按实际存在的 min(argc, argv.len()) 条计数。
+    let count = (argc as usize).min(argv.len());
+    let strings: u64 = argv.iter().take(count).map(|s| s.len() as u64 + 1).sum();
+    align4((argc as u64 * 4 + strings) as u32)
+}
+
+/// R1 ① 动态堆起点：`max(HEAP_START, align4(global_data_end))`；存在 argv 时
+/// 还必须越过 argv 顶界（`GLOBAL_REGION_LIMIT`），否则堆 bump 会覆盖参数区。
+///
+/// `global_data_end` 为全局数据区末端的**绝对地址**（codegen 导出，
+/// 含 Bytecode Libc 预留段），未编译时传 0 即退化为静态 `HEAP_START`。
+pub fn compute_heap_base(global_data_end: u32, argc: i32, argv: &[String]) -> u32 {
+    let mut base = HEAP_START.max(align4(global_data_end));
+    if argc > 0 && !argv.is_empty() {
+        base = base.max(GLOBAL_REGION_LIMIT);
+    }
+    base
+}
 
 /// 内存区域基础数据：VM 内部使用；`cide_native` 会定义带 `#[frb]` 的同名包装。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -48,7 +87,10 @@ pub struct MemoryFragmentData {
 /// 堆统计信息基础数据。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HeapStatsData {
-    /// 总堆空间（heap_offset - HEAP_START），字节
+    /// 本次运行的堆起点（R1：动态堆起点，原为常量 HEAP_START）
+    #[serde(default)]
+    pub heap_base: i32,
+    /// 总堆空间（heap_offset - heap_base），字节
     pub total_heap: i32,
     /// 已分配且未释放的堆内存，字节
     pub allocated: i32,
@@ -85,12 +127,20 @@ pub struct MemoryState {
     /// 隔离区字节预算，超预算触发 FIFO 驱逐。
     #[serde(default = "default_quarantine_budget")]
     pub quarantine_budget: i32,
+    /// 动态堆起点（R1 ①）：由全局数据上界与 argv 占用决定，运行重置时经
+    /// `set_heap_base` 设置；统计口径（total_heap 等）统一以它为基准。
+    #[serde(default = "default_heap_base")]
+    pub heap_base: u32,
     pub heap_offset: u32,
     pub alloc_counter: i32,
 }
 
 fn default_quarantine_budget() -> i32 {
     DEFAULT_QUARANTINE_BUDGET
+}
+
+fn default_heap_base() -> u32 {
+    HEAP_START
 }
 
 impl Default for MemoryState {
@@ -101,6 +151,7 @@ impl Default for MemoryState {
             quarantine: VecDeque::new(),
             quarantine_bytes: 0,
             quarantine_budget: DEFAULT_QUARANTINE_BUDGET,
+            heap_base: HEAP_START,
             heap_offset: HEAP_START,
             alloc_counter: 0,
         }
@@ -108,6 +159,13 @@ impl Default for MemoryState {
 }
 
 impl MemoryState {
+    /// 设置本次运行的堆起点（R1 ①）：`heap_base` 与 `heap_offset` 必须同步重置，
+    /// 运行入口（`reset_runtime`）统一经此落位，禁止各自直接写字段造成口径分裂。
+    pub fn set_heap_base(&mut self, base: u32) {
+        self.heap_base = base;
+        self.heap_offset = base;
+    }
+
     /// 分配 `aligned_size` 字节（决议 §1/§3 的 bump + 有界隔离）。
     ///
     /// 顺序：
@@ -236,9 +294,9 @@ pub fn total_fragmented(free_list: &[FreeBlock]) -> i32 {
     free_list.iter().map(|b| b.size).sum()
 }
 
-/// 计算碎片率（0~100）。
-pub fn fragmentation_rate(free_list: &[FreeBlock], heap_offset: u32) -> i32 {
-    let heap_total = heap_offset.saturating_sub(HEAP_START);
+/// 计算碎片率（0~100）。`heap_base` 为本次运行的动态堆起点（R1）。
+pub fn fragmentation_rate(free_list: &[FreeBlock], heap_offset: u32, heap_base: u32) -> i32 {
+    let heap_total = heap_offset.saturating_sub(heap_base);
     if heap_total == 0 {
         return 0;
     }
@@ -248,12 +306,18 @@ pub fn fragmentation_rate(free_list: &[FreeBlock], heap_offset: u32) -> i32 {
 }
 
 /// 构建教学用的 `HeapStatsData` 快照。
-pub fn build_heap_stats(regions: &[MemoryRegionData], free_list: &[FreeBlock], heap_offset: u32) -> HeapStatsData {
-    let total_heap = heap_offset.saturating_sub(HEAP_START) as i32;
+pub fn build_heap_stats(
+    regions: &[MemoryRegionData],
+    free_list: &[FreeBlock],
+    heap_offset: u32,
+    heap_base: u32,
+) -> HeapStatsData {
+    let total_heap = heap_offset.saturating_sub(heap_base) as i32;
     let allocated = total_allocated(regions);
     let fragmented = total_fragmented(free_list);
-    let rate = fragmentation_rate(free_list, heap_offset);
+    let rate = fragmentation_rate(free_list, heap_offset, heap_base);
     HeapStatsData {
+        heap_base: heap_base as i32,
         total_heap,
         allocated,
         fragmented,

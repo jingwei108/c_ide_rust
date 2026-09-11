@@ -7,13 +7,11 @@ use cide_runtime::VisEventData;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-pub const MEM_SIZE: u32 = 1024 * 1024;
-pub const NULL_TRAP_SIZE: u32 = 0x1000;
-pub const GLOBAL_START: u32 = 0x1000;
-pub const HEAP_START: u32 = 0x5000;
-pub const STACK_START: u32 = MEM_SIZE;
-pub const SNAPSHOT_INTERVAL: i32 = 100_000;
-pub const MAX_STACK_DEPTH: usize = 10_000;
+// R1 ②：内存布局常量单源化——`cide_runtime` 为唯一真相，本文件仅再导出。
+// （此前与 `cide_runtime::memory_state` 同值双写，属"同一概念多个真相来源"。）
+pub use cide_runtime::{
+    GLOBAL_START, HEAP_START, MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE, SNAPSHOT_INTERVAL, STACK_START,
+};
 
 /// Epsilon for approximate float comparison (f32).
 pub const EPS_F32: f32 = 1e-6;
@@ -250,20 +248,33 @@ impl CideVM {
         }
     }
 
-    /// 在全局数据区之后为 `main(int argc, char *argv[])` 分配 argv 内存。
-    /// 指针数组紧随其后存放字符串指针，字符串数据跟在其后。
-    pub fn setup_argv(&mut self, argc: i32, argv: &[String]) {
+    /// 在全局数据区上界之下为 `main(int argc, char *argv[])` 分配 argv 内存（R1 ③）。
+    ///
+    /// 旧实现以 `global_count`（恒为 0）编址，argv 指针数组落在 `GLOBAL_START`，
+    /// 与 codegen 全局数据重叠（预存 bug）。现改为自 `GLOBAL_REGION_LIMIT` 向下分配：
+    /// 指针数组在区域底部、字符串数据在其上；占用由 `argv_region_footprint` 统一计算，
+    /// 堆起点经 `compute_heap_base` 越过 argv 顶界，故堆 bump 不会覆盖参数。
+    /// `global_data_end` 为全局数据末端的绝对地址（codegen 导出），冲突时明确 trap。
+    pub fn setup_argv(&mut self, argc: i32, argv: &[String], global_data_end: u32) {
         if argc <= 0 || argv.is_empty() {
             self.argc = 0;
             self.argv_addr = 0;
             return;
         }
-        let array_addr = GLOBAL_START + (self.global_count as u32) * 4;
+        let footprint = cide_runtime::argv_region_footprint(argc, argv);
+        let array_addr = cide_runtime::GLOBAL_REGION_LIMIT - footprint;
+        if array_addr < cide_runtime::align4(global_data_end) {
+            self.trap(
+                "setup_argv: 命令行参数与全局数据区冲突（全局数据过大），无法安放 argv",
+                &SourceLoc::default(),
+            );
+            return;
+        }
         let mut string_addr = array_addr + (argc as u32) * 4;
         let count = (argc as usize).min(argv.len());
         for (i, s) in argv.iter().enumerate().take(count) {
             let next = string_addr + s.len() as u32 + 1;
-            if next > HEAP_START {
+            if next > cide_runtime::GLOBAL_REGION_LIMIT {
                 self.trap("setup_argv: 命令行参数过长，超出全局数据区", &SourceLoc::default());
                 return;
             }

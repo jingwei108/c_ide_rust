@@ -317,7 +317,9 @@ impl BytecodeGen {
                 continue;
             }
             let sz = self.type_size(&g.ty);
-            let offset = self.next_global_offset;
+            let Some(offset) = self.bump_global_offset(sz, &format!("全局变量 '{}'", g.name), &g.loc) else {
+                continue;
+            };
             self.global_indices.insert(g.name.clone(), offset);
             self.global_types.insert(g.name.clone(), g.ty.clone());
             if let Some(ref init) = g.init {
@@ -415,7 +417,6 @@ impl BytecodeGen {
                 func_name: String::new(),
                 decl_line: g.loc.line,
             });
-            self.next_global_offset += sz;
         }
 
         // Second: allocate placeholder for extern globals without a definition
@@ -424,7 +425,11 @@ impl BytecodeGen {
                 continue;
             }
             let sz = self.type_size(&g.ty).max(4);
-            let offset = self.next_global_offset;
+            let Some(offset) =
+                self.bump_global_offset(sz, &format!("extern 声明 '{}'", g.name), &g.loc)
+            else {
+                continue;
+            };
             self.global_indices.insert(g.name.clone(), offset);
             self.global_types.insert(g.name.clone(), g.ty.clone());
             self.sym_index.insert(g.name.clone(), self.symbols.len() as i32);
@@ -437,7 +442,6 @@ impl BytecodeGen {
                 func_name: String::new(),
                 decl_line: g.loc.line,
             });
-            self.next_global_offset += sz;
         }
 
         // Allocate vtables in global memory for virtual dispatch (C++ extension)
@@ -445,8 +449,11 @@ impl BytecodeGen {
             if let Some(ref vtable) = c.vtable {
                 let entries = &vtable.entries;
                 let vtable_size = entries.len() as i32 * 4;
-                let vtable_offset = self.next_global_offset;
-                self.next_global_offset += vtable_size;
+                let Some(vtable_offset) =
+                    self.bump_global_offset(vtable_size, &format!("类 '{}' 的虚表", c.name), &SourceLoc::default())
+                else {
+                    continue;
+                };
                 self.class_vtables.insert(c.name.clone(), vtable_offset as u32);
                 for (i, (method_name, _)) in entries.iter().enumerate() {
                     let mangled = format!("{}__{}", c.name, method_name);
@@ -460,9 +467,13 @@ impl BytecodeGen {
         let pending = std::mem::take(&mut self.pending_string_inits);
         for (base_offset, value) in pending {
             let aligned = ((value.len() + 1) as u32 + 3) & !3;
-            let str_addr = cide_runtime::GLOBAL_START + self.next_global_offset as u32;
+            let Some(str_offset) =
+                self.bump_global_offset(aligned as i32, "全局初始化字符串", &SourceLoc::default())
+            else {
+                continue;
+            };
+            let str_addr = cide_runtime::GLOBAL_START + str_offset as u32;
             self.string_data.push((str_addr, value));
-            self.next_global_offset += aligned as i32;
             self.globals_init_32.push((base_offset, str_addr as i32));
         }
 
@@ -543,6 +554,8 @@ impl BytecodeGen {
             union_defs: self.union_defs,
             f64_constants: self.f64_constants,
             i64_constants: self.i64_constants,
+            global_data_end: cide_runtime::GLOBAL_START
+                + cide_runtime::align4(self.next_global_offset.max(0) as u32),
         })
     }
 
@@ -571,6 +584,30 @@ impl BytecodeGen {
 
     fn report_error(&mut self, msg: &str, loc: &SourceLoc) {
         self.errors.push(format!("第 {} 行：{}", loc.line, msg));
+    }
+
+    /// R1 ②：全局数据区 bump 的唯一入口。越过 `GLOBAL_REGION_LIMIT` 时报错并
+    /// 返回 `None`（调用方放弃本次登记即可——错误已入 `errors`，`generate` 终将
+    /// 失败返回）；成功时推进 `next_global_offset` 并返回分配基偏移。
+    ///
+    /// `size` 是否对齐由调用方决定，保持各站点既有的 bump 量不变
+    /// （全局地址是行为锚，不顺手改变布局）。
+    fn bump_global_offset(&mut self, size: i32, what: &str, loc: &SourceLoc) -> Option<i32> {
+        let offset = self.next_global_offset;
+        let end = offset as i64 + size as i64;
+        let limit = (cide_runtime::GLOBAL_REGION_LIMIT - cide_runtime::GLOBAL_START) as i64;
+        if end > limit {
+            self.report_error(
+                &format!(
+                    "{}：全局数据区容量不足（已用 {} 字节，还需 {} 字节，上限 {} 字节）。请减小全局数组或字符串的规模",
+                    what, offset, size, limit
+                ),
+                loc,
+            );
+            return None;
+        }
+        self.next_global_offset = end as i32;
+        Some(offset)
     }
 
     fn enter_scope(&mut self) {
@@ -827,6 +864,10 @@ pub struct CompileOutput {
     pub union_defs: HashMap<String, Vec<StructField>>,
     pub f64_constants: Vec<f64>,
     pub i64_constants: Vec<i64>,
+    /// 全局数据区末端的**绝对地址**（R1：`GLOBAL_START + align4(next_global_offset)`，
+    /// 含 Bytecode Libc 预留段）。运行层据此计算动态堆起点
+    /// `max(HEAP_START, align4(global_data_end))`。
+    pub global_data_end: u32,
 }
 
 #[cfg(test)]

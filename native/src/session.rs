@@ -67,6 +67,10 @@ pub struct CompileState {
     /// 语义标注 / 源码行查询必须经此映射换算，不能再假设"第一个编译单元"。
     #[serde(default)]
     pub file_ranges: Vec<crate::engine::compile_pipeline::FileRange>,
+    /// 全局数据区末端的**绝对地址**（R1：codegen 导出，含 Bytecode Libc 预留段）。
+    /// 运行入口据此计算动态堆起点 `max(HEAP_START, align4(global_data_end))`。
+    #[serde(default)]
+    pub global_data_end: u32,
 }
 
 impl Session {
@@ -290,7 +294,9 @@ impl From<MemoryFragment> for cide_runtime::MemoryFragmentData {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HeapStats {
-    /// 总堆空间（heap_offset - HEAP_START），字节
+    /// 本次运行的堆起点（R1：动态堆起点，原为常量 HEAP_START）
+    pub heap_base: i32,
+    /// 总堆空间（heap_offset - heap_base），字节
     pub total_heap: i32,
     /// 已分配且未释放的堆内存，字节
     pub allocated: i32,
@@ -303,6 +309,7 @@ pub struct HeapStats {
 impl From<cide_runtime::HeapStatsData> for HeapStats {
     fn from(value: cide_runtime::HeapStatsData) -> Self {
         Self {
+            heap_base: value.heap_base,
             total_heap: value.total_heap,
             allocated: value.allocated,
             fragmented: value.fragmented,
@@ -314,6 +321,7 @@ impl From<cide_runtime::HeapStatsData> for HeapStats {
 impl From<HeapStats> for cide_runtime::HeapStatsData {
     fn from(value: HeapStats) -> Self {
         Self {
+            heap_base: value.heap_base,
             total_heap: value.total_heap,
             allocated: value.allocated,
             fragmented: value.fragmented,

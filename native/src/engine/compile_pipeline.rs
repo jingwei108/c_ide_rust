@@ -181,6 +181,47 @@ pub fn push_hints<T: CompileError>(
     }
 }
 
+/// R1 ⑤：全局数据越过默认堆起点时的编译期信息（severity=1，warning）。
+///
+/// 动态堆起点（R1 ①）已保证不发生静默压坏，此提示只告知"堆起点会上移、
+/// malloc 可用空间相应减少"，教学上引导控制全局数组/字符串规模。
+struct GlobalLayoutNote {
+    message: String,
+}
+
+impl CompileError for GlobalLayoutNote {
+    fn line(&self) -> i32 {
+        1
+    }
+    fn column(&self) -> i32 {
+        0
+    }
+    fn code(&self) -> i32 {
+        0
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
+}
+
+fn note_global_layout(session: &mut Session, global_data_end: u32, source: &str, file_ranges: Option<&[FileRange]>) {
+    if global_data_end <= HEAP_START {
+        return;
+    }
+    // 预估口径按无 argv 计算（编译期不知道运行期 argc），argv 场景由堆起点函数另行上移。
+    let heap_base = cide_runtime::compute_heap_base(global_data_end, 0, &[]);
+    let note = GlobalLayoutNote {
+        message: format!(
+            "全局数据区达 {} 字节，已超过默认堆起点（{} 字节）。运行时堆起点将自动上移至 0x{:04X}，malloc 可用空间相应减少（约 {} KB）",
+            global_data_end - GLOBAL_START,
+            HEAP_START,
+            heap_base,
+            (MEM_SIZE - heap_base) / 1024
+        ),
+    };
+    push_warnings(session, &[note], source, file_ranges);
+}
+
 // ========== VM 初始化 ==========
 
 pub fn setup_vm(vm: &mut CideVM, session: &Session) {
@@ -315,7 +356,8 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     vm.set_ip(libc_code_len);
 
     // ── 12. 设置命令行参数（供 `main(int argc, char *argv[])` 使用）──
-    vm.setup_argv(session.runtime.argc, &session.runtime.argv);
+    // R1 ③：argv 自全局区上界向下分配，需全局数据末端做冲突检查
+    vm.setup_argv(session.runtime.argc, &session.runtime.argv, session.compile.global_data_end);
 }
 
 // ========== 统一编译管线 ==========
@@ -341,6 +383,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.struct_fields.clear();
     session.compile.errors.clear();
     session.compile.compiled = false;
+    session.compile.global_data_end = 0;
 
     // 单文件管线：全局行号即文件内行号，清空多文件映射（collector 据此回退到直接行号查询）
     session.compile.file_ranges.clear();
@@ -392,6 +435,9 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
         }
     };
 
+    // R1 ⑤：全局数据越过默认堆起点 → 信息性 warning（堆起点将动态上移）
+    note_global_layout(session, output.global_data_end, full_source, None);
+
     // 填充编译结果
     session.compile.bytecode = output.code;
     session.compile.globals_init = output.globals_init_32;
@@ -434,6 +480,8 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     }
 
     session.compile.string_data = output.string_data;
+    // R1：全局数据末端（运行层据此计算动态堆起点）
+    session.compile.global_data_end = output.global_data_end;
 
     for sym in output.symbols {
         session.compile.symbols.push(Symbol {
@@ -543,6 +591,7 @@ pub fn run_multi_file_pipeline(
     session.compile.struct_fields.clear();
     session.compile.errors.clear();
     session.compile.compiled = false;
+    session.compile.global_data_end = 0;
 
     let (full_source, file_ranges) = merge_compile_units(&units);
     // P0-4：记录"全局行号 → 文件"映射，供 StepPayload 的语义标注按文件定位源码行
@@ -617,6 +666,9 @@ pub fn run_multi_file_pipeline(
         }
     };
 
+    // R1 ⑤：全局数据越过默认堆起点 → 信息性 warning（堆起点将动态上移）
+    note_global_layout(session, output.global_data_end, &full_source, Some(&file_ranges));
+
     // 填充编译结果（与 run_compile_pipeline 相同）
     session.compile.bytecode = output.code;
     session.compile.globals_init = output.globals_init_32;
@@ -659,6 +711,8 @@ pub fn run_multi_file_pipeline(
     }
 
     session.compile.string_data = output.string_data;
+    // R1：全局数据末端（运行层据此计算动态堆起点）
+    session.compile.global_data_end = output.global_data_end;
 
     for sym in output.symbols {
         session.compile.symbols.push(Symbol {
