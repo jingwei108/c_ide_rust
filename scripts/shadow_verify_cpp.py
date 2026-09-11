@@ -393,6 +393,19 @@ class _WorkDir:
 
 
 def run_with_clang(source: str) -> RunResult:
+    """编译失败时重试（CI runner 上 clang 偶发瞬时失败——实测 2026-09-12：
+    同一用例首跑 35s 后 CLANG_COMPILE_FAIL、复跑 0.15s 通过，属环境抖动）。
+    最多 3 次尝试；真正的语法错误 3 次同样失败，代价可忽略（小文件）。"""
+    result = None
+    for attempt in range(3):
+        result = _run_with_clang_once(source)
+        if result.compile_success:
+            return result
+        time.sleep(0.5 * (attempt + 1))
+    return result
+
+
+def _run_with_clang_once(source: str) -> RunResult:
     start = time.time()
     with _WorkDir(PROJECT_ROOT / ".shadow_cpp_tmp") as tmpdir:
         cpp_file = Path(tmpdir) / "test.cpp"
@@ -545,7 +558,11 @@ def load_directory_cases() -> List[ShadowCase]:
 
 
 def main():
-    all_cases = CPP_CASES + load_directory_cases()
+    # R4/G10：目录 `cases/cpp/*.cpp` 是维护真相——与内嵌 CPP_CASES 同名时以
+    # 目录版为准（曾发生内嵌副本内容漂移导致同一用例双跑、结果互相矛盾）
+    dir_cases = load_directory_cases()
+    dir_names = {c.name for c in dir_cases}
+    all_cases = [c for c in CPP_CASES if c.name not in dir_names] + dir_cases
     diffs: List[ShadowDiff] = []
     for case in all_cases:
         print(f"Running {case.name} ...", flush=True)
