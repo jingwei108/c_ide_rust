@@ -44,12 +44,13 @@ if (!fs.existsSync(wasmPath)) {
   ok(typeof ex.cide_abi_version === "function", "cide_abi_version 导出存在");
   ok(ex.cide_abi_version() >= 1, `ABI 版本 ${ex.cide_abi_version()} >= 1`);
 
-  ok(typeof ex.__heap_base === "object" || typeof ex.__heap_base === "number", "__heap_base 导出存在");
-  const heapBase = Number(ex.__heap_base?.value ?? ex.__heap_base ?? 0);
-  ok(heapBase > 0, `堆基址 0x${heapBase.toString(16)}`);
-
-  // 布局：fname @ base，src @ base+64（均含 NUL，互不重叠）
-  const base = heapBase + 16;
+  // 暂存区：memory.grow 追加一页（零初始化、位于程序堆之上——dlmalloc 自
+  // __heap_base 向高地址生长，不会回 claim 已存在的页）。不依赖 __heap_base
+  // 导出（部分 Rust 版本默认不导出，CI 曾因此失败）。
+  const prevPages = ex.memory.grow(1);
+  ok(prevPages !== -1, "memory.grow 追加暂存页成功");
+  const base = prevPages * 65536;
+  ok(base > 0, `暂存页基址 0x${base.toString(16)}`);
   const mem = () => new Uint8Array(ex.memory.buffer);
   const writeCStr = (ptr, s) => {
     const b = Buffer.from(s + "\0", "utf-8");
