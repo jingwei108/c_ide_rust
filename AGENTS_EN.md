@@ -3,12 +3,16 @@
 
 ## Project Overview
 
-Cide is a cross-platform C/C++ teaching IDE consisting of:
+> **Repositioning (2026-09-11)**: Cide has transitioned from a "cross-platform C IDE" into a **teaching C/C++ subset reference execution engine (white-box)** — this repository is backend-only (MIT license); the frontend is split out to the community and native mobile is dropped. See [`docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md).
+>
+> **Frontend split executed (2026-09-11)**: `CideFlutter/`, the FRB bridge (`native/src/api/` + `frb_generated`), the web deploy workflow and all Flutter build scripts have been removed. The last complete pre-split state is preserved by tag `before-frontend-split` (`git checkout before-frontend-split -- CideFlutter` to recover).
 
-- **Frontend**: Flutter (Android + Desktop Windows) — using self-developed `CideEditor` + `flutter_riverpod` state management
-- **Backend**: Shared Rust native compiler / VM (`cide_native`)
-- **Compiler pipeline**: Lexer → Parser → TypeChecker → BytecodeGen → CideVM
-- **Bridge**: flutter_rust_bridge v2 (`native/src/api/cide.rs` → `CideFlutter/lib/src/rust`)
+Current architecture (one core, three exits):
+
+- **Core**: Rust workspace compiler/VM (`native/`, 10 sub-crates); pipeline Lexer → Parser → TypeChecker → BytecodeGen → CideVM
+- **Exit 1**: C ABI (`native/src/capi/`) — first consumption path of `cide_cli` and the shadow defenses (ctypes)
+- **Exit 2**: wasm32 (smoke-tested: builds at 3.75MB with zero changes; C API full chain + safety checks work under wasm) — browser/white-box form
+- **Exit 3**: `cide_cli serve` JSON-lines session mode (id correlation / isomorphic error frames / `session.reset`; shares `native/src/session_api.rs` with capi) — headless interaction
 - **No git commits without permission**
 - **Honest records**: This project is a teaching C/CPP subset, with Clang as the standard. Any deviation between this project and the standard must be recorded.
 
@@ -16,11 +20,9 @@ Cide is a cross-platform C/C++ teaching IDE consisting of:
 
 | Layer | Technology |
 |:------|:-----------|
-| Android | Flutter + self-developed `CideEditor` + CustomPainter visualization |
-| Desktop | Flutter + self-developed `CideEditor` + CustomPainter visualization |
 | Native | **Rust 1.95.0**, Cargo, cdylib/staticlib/rlib |
 | VM | Custom bytecode interpreter, 1 MB linear memory |
-| Bridge | flutter_rust_bridge v2.12.0 (SSE codec) |
+| Exits | C ABI (capi), wasm32 (wasm-bindgen), JSON-lines (serve) |
 
 ## Key Directories
 
@@ -38,14 +40,15 @@ native/crates/          Compiler/runtime sub-crates (crate modularization in pro
 native/src/compiler/    Remaining local modules: algorithm_detector, cfg, data_flow, intent (Rust)
 native/src/unified/     Unified mode / time-travel engine (Rust)
 native/src/engine/      Compiler pipeline and tools (Rust)
-native/src/capi/        C API (MAUI compatibility layer) (Rust)
-native/src/api/         FRB API (flutter_rust_bridge) (Rust)
+native/src/capi/        C API (exit 1, public API, ABI-versioned) (Rust)
+native/src/session_api.rs Language-neutral session layer (shared by capi and serve; exits stay thin) (Rust)
+native/src/flutter_bridge.rs Legacy session wrapper (currently consumed by cide_cli; rename pending) (Rust)
 native/src/diagnostics/ Structured diagnostics, auto-fix suggestions, knowledge graph, teaching reasoning (Rust)
-CideFlutter/            Flutter cross-platform frontend (Android + Desktop Windows)
+templates/              Algorithm template sources (source.c + meta.yaml; kept pending community-frontend adoption)
 docs/                   Design documents, incident reports
 ```
 
-For the Flutter frontend testing framework, see [`docs/current/FLUTTER_TESTING_EN.md`](docs/current/FLUTTER_TESTING_EN.md).
+> The historical frontend `CideFlutter/` and the FRB bridge have been split out (tag `before-frontend-split`).
 
 ## Rust Migration Progress (Completed ✅)
 
@@ -191,12 +194,7 @@ Use a **deterministic RNG** to generate random memory states and random standard
 - Error handling: no panic; collect into `Vec<Error>` and return uniformly
 - Borrow checker conflict resolution pattern: clone data first, then call methods requiring `&mut self`
 
-### Dart / Flutter (frontend)
-- State management: `flutter_riverpod` (`StateNotifier` + `StateNotifierProvider`)
-- Editor: self-developed `CideEditor` (`EditableText` + `CustomPaint` implementation), not CodeMirror / not `re_editor`
-- Rust calls via `flutter_rust_bridge`: `rust.compile()` / `rust.stepNext()` etc.
-- UI thread: `Future.delayed` / `async-await`, no explicit main-thread switching needed
-- Custom components: algorithm validation, memory map, linked list visualization, tutorial guidance, etc. are all CustomPainter / Widget implementations
+> No Dart/Flutter code remains in this repository after the frontend split; see tag `before-frontend-split` for historical frontend conventions.
 
 ## C Teaching Subset Overview
 
@@ -268,55 +266,29 @@ The following inconsistencies between Cide and Clang were discovered during Leet
 ## Build Commands
 
 ```bash
-# Daily build (Desktop Debug)
-python scripts/build_flutter.py
+# Build the Rust engine (Debug / Release)
+cd native && cargo build            # Debug
+cd native && cargo build --release  # Output: native/target/release/cide_native.dll
 
-# Build and run desktop Release
-python scripts/build_flutter.py -c Release --run
+# Build the CLI debug tool
+cd native && cargo build --release --bin cide_cli
 
-# Full Android build (.so + APK)
-python scripts/build_flutter.py -t Android
+# Build the wasm32 exit (browser/white-box form; smoke-tested at 3.75MB)
+cd native && cargo build --target wasm32-unknown-unknown --release
 
-# Build + install + launch + logs (mobile full pipeline)
-python scripts/test_mobile.py --install --run --logcat
+# Tests and static checks
+cd native && cargo test --workspace --all-features
+cd native && cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Release build
-python scripts/build_release.py
+# Shadow defenses (C / C++)
+python native/tests/shadow_verification/shadow_verify.py --jobs 8
+python scripts/shadow_verify_cpp.py
 
-# Run tests and lint before build
-python scripts/build_flutter.py --test
-
-# Flutter offline build (no network)
-python scripts/build_flutter.py --offline
-
-# Clean Flutter build artifacts
-python scripts/build_flutter.py --clean
-
-# --- Manual commands (fallback when scripts are unavailable) ---
-
-# Build native DLL (Release Desktop)
-cd native && cargo build --release
-# Output: native/target/release/cide_native.dll
-
-# Build Android .so (arm64-v8a + armeabi-v7a)
-cd native
-cargo ndk -t aarch64-linux-android --platform 21 build --release
-cargo ndk -t armv7-linux-androideabi --platform 21 build --release
-
-# Build and run Flutter desktop (manual)
-cd CideFlutter
-flutter pub get --offline
-flutter build windows --debug
-flutter run -d windows
-
-# Build Flutter Android APK (manual)
-cd CideFlutter
-flutter build apk --release
-
-# Install and launch (manual)
-adb install -r "build/app/outputs/flutter-apk/app-release.apk"
-adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
+# serve protocol smoke
+cargo build --bin cide_cli && python scripts/serve_smoke.py
 ```
+
+> Historical frontend builds (Flutter / Android / iOS) were removed with the frontend; scripts live under tag `before-frontend-split`.
 
 ## Debugging Tips
 
@@ -324,14 +296,14 @@ adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
 1. Project properties → Debug → **Enable native code debugging**
 2. Set breakpoints in `cide_compile_all` / `cide_run` in `native/src/capi/mod.rs`
 3. PDB warning (`apphost.pdb` missing) can be safely ignored
+4. Frontend-less debugging: `cide_cli step <file>` interactive stepping (`p` prints variables / `o` prints output), or `cide_cli serve` JSON-lines sessions
 
 ### Memory Leak Localization
-- Managed vs native: VS Memory Analyzer looks at "managed memory"; if growth is small there but Task Manager shows large memory growth → leak is in native heap
 - Parser infinite loop symptom: memory grows slowly and continuously (~100MB/s), AST nodes or error messages keep accumulating
 
 ## CLI Debugging Tool
 
-The project provides an independent command-line debugging tool `cide_cli`, which can directly operate the Rust backend compiler/VM without launching the Flutter frontend.
+The project provides an independent command-line debugging tool `cide_cli` that operates the Rust backend compiler/VM directly (no frontend dependency; the first entry point for headless debugging).
 
 ### Build
 

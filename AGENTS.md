@@ -5,6 +5,8 @@
 ## 项目概览
 
 > **定位转型（2026-09-11）**：Cide 从"跨平台 C 语言 IDE"转型为**教学 C/C++ 子集参考执行引擎（白箱）**——本仓库只做后端（MIT 许可），前端切割给社区，原生移动端放弃。完整决策依据与路线见 [`docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)。
+>
+> **前端切割已执行（2026-09-11）**：`CideFlutter/`、FRB 桥接（`native/src/api/` + `frb_generated`）、web 部署 workflow 与全部 Flutter 构建脚本已从仓库移除；切割前最后完整状态由标签 `before-frontend-split` 保留（`git checkout before-frontend-split -- CideFlutter` 可取回）。
 
 当前架构（三出口一核心）：
 
@@ -12,7 +14,6 @@
 - **出口 1**：C ABI（`native/src/capi/`）——`cide_cli` 与 shadow 防线（ctypes）的第一消费路径
 - **出口 2**：wasm32（已冒烟实证：零修改构建 3.75MB，C API 全链路 + 安全检测在 wasm 下工作）——浏览器/白箱形态
 - **出口 3**：`cide_cli serve` JSON-lines 会话模式（已落地：id 关联 / 错误帧同构 / `session.reset`；与 capi 共用 `native/src/session_api.rs`）——headless 交互
-- **历史前端**：`CideFlutter/`（Flutter，处于切割迁出流程；FRB 桥接随前端走）
 
 **架构纪律**：新能力一律先落语言中立 Rust 层，三个出口只做薄包装且共用同一套入口语义；复杂结构过边界走 JSON 字符串；capi 是公共 API（`cide_abi_version()` 版本化）。
 
@@ -23,11 +24,9 @@
 
 | 层级 | 技术 |
 |------|------|
-| Android | Flutter + 自研 `CideEditor` + CustomPainter 可视化 |
-| Desktop | Flutter + 自研 `CideEditor` + CustomPainter 可视化 |
 | Native | **Rust 1.95.0**, Cargo, cdylib/staticlib/rlib |
 | VM | 自定义字节码解释器，1MB 线性内存 |
-| Bridge | flutter_rust_bridge v2.12.0 (SSE codec) |
+| 出口 | C ABI（capi）、wasm32（wasm-bindgen）、JSON-lines（serve） |
 
 ## 关键目录
 
@@ -45,14 +44,15 @@ native/crates/          编译器/运行时子 crate（独立 crate 化进行中
 native/src/compiler/    剩余本地模块：algorithm_detector、cfg、data_flow、intent (Rust)
 native/src/unified/     统一模式 / 时间旅行引擎 (Rust)
 native/src/engine/      编译管线与工具 (Rust)
-native/src/capi/        C API (MAUI 兼容层) (Rust)
-native/src/api/         FRB API (flutter_rust_bridge) (Rust)
+native/src/capi/        C API（出口 1，公共 API，ABI 版本化）(Rust)
+native/src/session_api/ 会话语义中立层（capi 与 serve 共用，出口只做薄包装）(Rust)
+native/src/flutter_bridge.rs 历史会话包装层（cide_cli 当前消费；名称待后续重构收敛）(Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议、知识图谱、教学推理 (Rust)
-CideFlutter/            Flutter 跨平台前端 (Android + Desktop Windows)
+templates/              算法模板源（source.c + meta.yaml；前端资产源，暂保留待社区前端认领）
 docs/                   设计文档、事故报告
 ```
 
-Flutter 前端测试框架详见 [`docs/current/FLUTTER_TESTING.md`](docs/current/FLUTTER_TESTING.md)。
+> 历史前端 `CideFlutter/` 与 FRB 桥接已迁出（标签 `before-frontend-split`）。
 
 ## Rust 迁移进度（已完成 ✅）
 
@@ -202,12 +202,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 - 错误处理：不 panic，收集到 `Vec<Error>` 后统一返回
 - Borrow checker 冲突解决模式：先 clone 数据再调用需要 `&mut self` 的方法
 
-### Dart / Flutter (frontend)
-- 状态管理：`flutter_riverpod` (`StateNotifier` + `StateNotifierProvider`)
-- 编辑器：自研 `CideEditor`（`EditableText` + `CustomPaint` 实现），非 CodeMirror / 非 `re_editor`
-- Rust 调用通过 `flutter_rust_bridge`：`rust.compile()` / `rust.stepNext()` 等
-- UI 线程：`Future.delayed` / `async-await`，无需显式主线程切换
-- 自定义组件：算法验证、内存映射、链表可视化、教程引导等均为 CustomPainter / Widget 实现
+> 前端切割后本仓库无 Dart/Flutter 代码；历史前端约定见标签 `before-frontend-split`。
 
 ## C 教学子集支持概览
 
@@ -280,55 +275,29 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 ## 构建命令
 
 ```bash
-# 日常构建（桌面端 Debug）
-python scripts/build_flutter.py
+# 构建 Rust 引擎（Debug / Release）
+cd native && cargo build            # Debug
+cd native && cargo build --release  # 输出: native/target/release/cide_native.dll
 
-# 构建并运行桌面端 Release
-python scripts/build_flutter.py -c Release --run
+# 构建 CLI 调试工具
+cd native && cargo build --release --bin cide_cli
 
-# Android 完整构建（.so + APK）
-python scripts/build_flutter.py -t Android
+# 构建 wasm32 出口（浏览器/白箱形态；冒烟实证 3.75MB）
+cd native && cargo build --target wasm32-unknown-unknown --release
 
-# 构建 + 安装 + 启动 + 日志（移动端完整流水线）
-python scripts/test_mobile.py --install --run --logcat
+# 测试与静态检查
+cd native && cargo test --workspace --all-features
+cd native && cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# Release 发布构建
-python scripts/build_release.py
+# Shadow 防线（C / C++）
+python native/tests/shadow_verification/shadow_verify.py --jobs 8
+python scripts/shadow_verify_cpp.py
 
-# 构建前运行测试和 lint
-python scripts/build_flutter.py --test
-
-# Flutter 离线构建（无网络环境）
-python scripts/build_flutter.py --offline
-
-# Flutter 清理构建产物
-python scripts/build_flutter.py --clean
-
-# --- 手动命令（脚本不可用时的备选） ---
-
-# 构建 native DLL (Release Desktop)
-cd native && cargo build --release
-# 输出: native/target/release/cide_native.dll
-
-# 构建 Android .so (arm64-v8a + armeabi-v7a)
-cd native
-cargo ndk -t aarch64-linux-android --platform 21 build --release
-cargo ndk -t armv7-linux-androideabi --platform 21 build --release
-
-# 构建并运行 Flutter 桌面端（手动命令）
-cd CideFlutter
-flutter pub get --offline
-flutter build windows --debug
-flutter run -d windows
-
-# 构建 Flutter Android APK（手动命令）
-cd CideFlutter
-flutter build apk --release
-
-# 安装并启动（手动命令）
-adb install -r "build/app/outputs/flutter-apk/app-release.apk"
-adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
+# serve 协议冒烟
+cargo build --bin cide_cli && python scripts/serve_smoke.py
 ```
+
+> 历史前端构建（Flutter / Android / iOS）已随前端迁出，脚本见标签 `before-frontend-split`。
 
 ## 调试技巧
 
@@ -336,14 +305,14 @@ adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
 1. 项目属性 → 调试 → **启用本机代码调试**
 2. 在 `native/src/capi/mod.rs` 的 `cide_compile_all` / `cide_run` 打断点
 3. PDB 警告（`apphost.pdb` 缺失）可以安全忽略
+4. 无前端调试：`cide_cli step <file>` 交互式单步（`p` 打印变量 / `o` 打印输出），或 `cide_cli serve` JSON-lines 会话
 
 ### 内存泄漏定位
-- 托管 vs 本机：VS 内存分析器看"托管内存"，如果增长很小但任务管理器内存很大 → 泄漏在 native heap
 - Parser 死循环特征：内存缓慢持续增长（~100MB/秒），AST 节点或错误消息不断累积
 
 ## CLI 调试工具
 
-项目提供独立的命令行调试工具 `cide_cli`，无需启动 Flutter 前端即可直接操作 Rust 后端编译器/VM。
+项目提供独立的命令行调试工具 `cide_cli`，直接操作 Rust 后端编译器/VM（无前端依赖，headless 调试的第一入口）。
 
 ### 构建
 

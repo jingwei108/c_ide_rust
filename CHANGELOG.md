@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed (前端切割：仓库转型为纯后端)
+- **执行主计划的前端切割决议**（[`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)）：
+  本仓库只保留教学 C/C++ 子集参考执行引擎（白箱后端），前端迁出给社区，原生移动端放弃。
+  切割前最后完整状态由标签 **`before-frontend-split`**（打在 `7dfd04f`）保留，
+  `git checkout before-frontend-split -- CideFlutter` 可取回。
+- 移除 `CideFlutter/`（Flutter 前端全套：编辑器、调试面板、算法可视化、教程引导、Android/iOS/Windows 工程）。
+- 移除 FRB 桥接：`native/src/api/`（FRB 出口层）与 `native/src/frb_generated.rs`（本地生成物），
+  `Cargo.toml` 删除 `flutter_rust_bridge` 依赖；9 个文件清除 `use flutter_rust_bridge::frb` 与 `#[frb]` 标记。
+  - **能力保留**：自动修复应用器 `apply_fix` 的本体此前只存在于 FRB api 层（前端迁出会连带丢失），
+    现迁入语言中立层 `native/src/diagnostics/auto_fix.rs`（三出口均可复用），
+    `crash_regression_tests` 的 3 个相关用例改走新入口。
+  - `flutter_bridge.rs`（手写会话包装层，无 FRB 依赖）保留——`cide_cli` 当前消费；名称待后续重构收敛。
+- 移除 web 部署：`.github/workflows/deploy_web.yml`（CideFlutter web → GitHub Pages + Gitee Pages）。
+- 移除 Flutter 构建脚本（`build_flutter.py` / `build.py` / `build_release.py` / `build_utils.py` /
+  `test_mobile.py` / `test_full_chain.py` / `patch_flutter_windows_generator.py` / `build_web.sh` /
+  `sync_templates.py` / `test_templates.py`）与 5 份 FLUTTER_* 文档；`.gitignore` 清理对应条目。
+- CI 收缩为纯后端：`ci.yml` 删除 flutter / android / ios 三个 job 与 rust job 内的
+  FRB codegen / 模板同步步骤；Rust 引擎 + 三出口防线（shadow / serve 冒烟 / 一致性检查）全部保留。
+- `templates/`（算法模板源）暂保留——后端防线不依赖（Shadow 模板用例已静态化在
+  `native/tests/cases/`），待社区前端或 wasm 出口认领。
+- 同步改写 `AGENTS.md` / `AGENTS_EN.md`：定位、技术栈、目录、构建命令、调试技巧全部对齐纯后端仓。
+
 ### Fixed (C++ lambda · 批次 H：条目 1 返回类型推断 / 条目 2 文件作用域 lambda 变量)
 - **条目 1（lambda 返回类型硬编码 `Type::int()`）**：`__call` 的返回类型此前在
   `resolve_lambda`（`crates/cide_typeck/src/expr/cpp.rs`）与 Pass 4 生成的 `FuncDecl`
