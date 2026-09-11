@@ -4,12 +4,10 @@
 //! When a student encounters an error or browses code, the system dynamically
 //! activates a relevant concept sub-graph and shows relationships.
 
-use flutter_rust_bridge::frb;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 /// A concept node in the knowledge graph.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct ConceptNode {
     pub id: String,
@@ -21,7 +19,6 @@ pub struct ConceptNode {
 }
 
 /// A directed edge between two concepts.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct ConceptEdge {
     pub from: String,
@@ -31,7 +28,6 @@ pub struct ConceptEdge {
 }
 
 /// An activated concept with its 1-hop neighbors.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct ActivatedConcept {
     pub node: ConceptNode,
@@ -40,7 +36,6 @@ pub struct ActivatedConcept {
 }
 
 /// A neighboring concept in the activated sub-graph.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct NeighborConcept {
     pub node: ConceptNode,
@@ -462,7 +457,6 @@ static ERROR_CONCEPT_MAP: LazyLock<HashMap<i32, Vec<String>>> = LazyLock::new(||
 // ===================================================================
 
 /// Activate concepts from an error code.
-#[frb]
 pub fn activate_from_error(error_code: i32) -> Vec<ActivatedConcept> {
     let mut result = Vec::new();
     let node_map: HashMap<String, &ConceptNode> = NODES.iter().map(|n| (n.id.clone(), n)).collect();
@@ -483,7 +477,6 @@ pub fn activate_from_error(error_code: i32) -> Vec<ActivatedConcept> {
 }
 
 /// Activate concepts from a list of AST feature keywords.
-#[frb]
 pub fn activate_from_ast(features: Vec<String>) -> Vec<ActivatedConcept> {
     let mut result = Vec::new();
     let node_map: HashMap<String, &ConceptNode> = NODES.iter().map(|n| (n.id.clone(), n)).collect();
@@ -521,7 +514,6 @@ pub fn activate_from_ast(features: Vec<String>) -> Vec<ActivatedConcept> {
 }
 
 /// Find the prerequisite learning path from basic concepts to the target.
-#[frb]
 pub fn find_prerequisite_path(target_id: String) -> Vec<ConceptNode> {
     let node_map: HashMap<String, &ConceptNode> = NODES.iter().map(|n| (n.id.clone(), n)).collect();
     let mut visited = HashSet::new();
@@ -553,13 +545,11 @@ pub fn find_prerequisite_path(target_id: String) -> Vec<ConceptNode> {
 }
 
 /// Get all concept nodes (for rendering the full graph).
-#[frb]
 pub fn get_all_concept_nodes() -> Vec<ConceptNode> {
     NODES.clone()
 }
 
 /// Get all concept edges (for rendering the full graph).
-#[frb]
 pub fn get_all_concept_edges() -> Vec<ConceptEdge> {
     EDGES.clone()
 }

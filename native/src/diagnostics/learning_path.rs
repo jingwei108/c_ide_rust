@@ -3,12 +3,10 @@
 //! Given a list of detected misconceptions, assembles minimal effective
 //! learning paths from the existing knowledge-card and template libraries.
 
-use flutter_rust_bridge::frb;
 
 use crate::diagnostics::misconception_patterns::DetectedMisconception;
 
 /// A single step in a recommended learning path.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct PathStep {
     /// Step type identifier: "ReadKnowledgeCard" | "StudyTemplate" | "CompleteExercise" | "ReviewOwnCode"
@@ -24,7 +22,6 @@ pub struct PathStep {
 }
 
 /// A complete learning path for a single misconception.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct LearningPath {
     pub target_misconception_id: String,
@@ -35,7 +32,6 @@ pub struct LearningPath {
 }
 
 /// Recommend learning paths for the given detected misconceptions.
-#[frb]
 pub fn recommend_learning_paths(detected: Vec<DetectedMisconception>) -> Vec<LearningPath> {
     detected.into_iter().filter_map(|d| build_path(&d)).collect()
 }

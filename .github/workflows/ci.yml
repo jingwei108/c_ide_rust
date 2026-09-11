@@ -11,6 +11,9 @@ on:
     # （见 shadow_verify.py 文件头「提速设施」与 docs/current 工作记录）
     - cron: '0 18 * * *'
 
+# 前端切割（2026-09-11）：CideFlutter / FRB / flutter-android-ios jobs 已随前端
+# 迁出（标签 before-frontend-split 保留完整历史）。本仓库现为纯后端仓，
+# CI 只验证 Rust 引擎 + 三出口防线。wasm 出口冒烟见主计划 Phase 2a。
 jobs:
   rust:
     name: Rust Build & Test
@@ -25,19 +28,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: native
-
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.x'
-          cache: true
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
-
-      - name: Generate FRB bindings
-        run: flutter_rust_bridge_codegen generate
-        working-directory: CideFlutter
 
       - name: Build native (Debug)
         run: cargo build
@@ -54,12 +44,6 @@ jobs:
       - name: Run Rust tests
         run: cargo test --workspace --all-features
         working-directory: native
-
-      # 模板静态一致性：校验 templates/ 源文件与 Flutter assets 同步，
-      # 参数占位符与 meta.yaml 一致，C/C++ 扩展名正确。
-      - name: Template Consistency Check
-        run: python scripts/test_templates.py
-        shell: bash
 
       # cargo test 已覆盖全部单元/集成测试（含 Phase A/B/C/E/Dogfooding），
       # 无需再单独运行各防线测试套件。
@@ -146,201 +130,3 @@ jobs:
         with:
           name: coverage-report
           path: native/lcov.info
-
-  flutter:
-    name: Flutter Build & Test
-    runs-on: windows-latest
-    needs: rust
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.x'
-          cache: true
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
-
-      # Flutter 3.29 在 Windows 上总是根据检测到的 VS 版本显式传入 -G <generator>，
-      # 导致 CI 中设置的 CMAKE_GENERATOR 环境变量被覆盖。当 runner 检测异常时，
-      # 会回退到 Visual Studio 16 2019 但实例不存在。此 patch 让 Flutter 工具优先
-      # 读取 CMAKE_GENERATOR 环境变量，使历史修复真正生效。
-      - name: Patch Flutter tools to honor CMAKE_GENERATOR
-        run: python scripts/patch_flutter_windows_generator.py
-        shell: bash
-
-      - name: Get Flutter dependencies
-        run: flutter pub get
-        working-directory: CideFlutter
-
-      - name: Generate FRB bindings
-        run: flutter_rust_bridge_codegen generate
-        working-directory: CideFlutter
-
-      # 提前构建 Rust DLL，使 cide_native 插件的 Windows CMakeLists.txt 能直接使用
-      # 预构建产物，避免在 MSBuild 中通过 cargokit 调用 cargo 时因环境/路径问题失败。
-      - name: Build native DLL (Debug)
-        run: cargo build
-        working-directory: native
-
-      - name: Build native DLL (Release)
-        run: cargo build --release
-        working-directory: native
-
-      - name: Run Flutter tests
-        run: flutter test
-        working-directory: CideFlutter
-
-      - name: Clean Windows build cache
-        run: if exist build\windows\x64 rmdir /s /q build\windows\x64
-        working-directory: CideFlutter
-        shell: cmd
-
-      - name: Build Windows (Debug)
-        run: flutter build windows --debug -v
-        working-directory: CideFlutter
-        env:
-          CMAKE_GENERATOR: Visual Studio 17 2022
-
-      - name: Build Windows (Release)
-        run: flutter build windows --release -v
-        working-directory: CideFlutter
-        env:
-          CMAKE_GENERATOR: Visual Studio 17 2022
-
-  android:
-    name: Android Build
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Add Rust Android targets
-        run: |
-          rustup target add aarch64-linux-android
-          rustup target add armv7-linux-androideabi
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-
-      - name: Install cargo-ndk
-        run: cargo install cargo-ndk --version 3.5.4
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: 11076708
-          packages: 'ndk;27.1.12297006'
-
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.x'
-          cache: true
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
-
-      - name: Configure Android SDK/Flutter paths
-        run: |
-          $flutterRoot = (Get-Command flutter).Source | Split-Path -Parent | Split-Path -Parent
-          Remove-Item -Path CideFlutter/android/local.properties -Force -ErrorAction SilentlyContinue
-          @"
-          sdk.dir=$env:ANDROID_SDK_ROOT
-          flutter.sdk=$flutterRoot
-          "@ | Out-File -FilePath CideFlutter/android/local.properties
-          "ANDROID_NDK_HOME=$env:ANDROID_SDK_ROOT\ndk\27.1.12297006" | Out-File -FilePath $env:GITHUB_ENV -Append
-        shell: pwsh
-
-      - name: Get Flutter dependencies
-        run: flutter pub get
-        working-directory: CideFlutter
-
-      - name: Generate FRB bindings
-        run: flutter_rust_bridge_codegen generate
-        working-directory: CideFlutter
-
-      - name: Build Rust Android .so (arm64 + armv7)
-        run: cargo ndk -t aarch64-linux-android -t armv7-linux-androideabi --platform 21 build
-        working-directory: native
-
-      - name: Run Flutter Dart tests
-        run: flutter test
-        working-directory: CideFlutter
-
-      - name: Build Android APK
-        run: flutter build apk --debug
-        working-directory: CideFlutter
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: android-apk
-          path: CideFlutter/build/app/outputs/flutter-apk/app-debug.apk
-
-  ios:
-    name: iOS Build
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Flutter
-        uses: subosito/flutter-action@v2
-        with:
-          flutter-version: '3.29.x'
-          cache: true
-
-      - name: Install Rust (with iOS targets)
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios,aarch64-apple-ios-sim
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: native
-
-      - name: Install flutter_rust_bridge_codegen
-        run: cargo install flutter_rust_bridge_codegen --version 2.12.0
-
-      - name: Get Flutter dependencies
-        run: flutter pub get
-        working-directory: CideFlutter
-
-      - name: Generate FRB bindings
-        run: flutter_rust_bridge_codegen generate
-        working-directory: CideFlutter
-
-      # CocoaPods 已随 Xcode 安装在 macOS runner 上。
-      # pod install 会读取 rust_builder/ios/cide_native.podspec，
-      # 其中通过 cargokit build_pod.sh 在 Xcode 编译阶段自动构建 Rust 静态库。
-      - name: Install CocoaPods dependencies
-        run: |
-          cd CideFlutter/ios
-          pod install --repo-update
-        env:
-          LANG: en_US.UTF-8
-
-      # --no-codesign 仅验证编译通过，不上传 App Store，适合 CI 回归。
-      - name: Build iOS (Release, no codesign)
-        run: flutter build ios --release --no-codesign
-        working-directory: CideFlutter
-
-      - name: Upload iOS build artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ios-build
-          path: |
-            CideFlutter/build/ios/iphoneos/Runner.app
-            CideFlutter/build/ios/Release-iphoneos/*.app

@@ -4,10 +4,8 @@
 //! stable misconception patterns (e.g. boundary confusion, pointer lifetime
 //! misunderstanding, assignment-vs-comparison mix-up).
 
-use flutter_rust_bridge::frb;
 
 /// A single compile/run record from the student’s history.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct CompileRecord {
     /// Unix timestamp in milliseconds.
@@ -21,7 +19,6 @@ pub struct CompileRecord {
 }
 
 /// A predefined misconception pattern.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct MisconceptionPattern {
     pub id: String,
@@ -36,7 +33,6 @@ pub struct MisconceptionPattern {
 }
 
 /// A detected misconception with confidence score.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct DetectedMisconception {
     pub pattern_id: String,
@@ -103,7 +99,6 @@ pub fn default_patterns() -> Vec<MisconceptionPattern> {
 }
 
 /// Analyze recent compile history and return detected misconceptions.
-#[frb]
 pub fn detect_misconceptions(history: Vec<CompileRecord>) -> Vec<DetectedMisconception> {
     let patterns = default_patterns();
     let mut results = Vec::new();

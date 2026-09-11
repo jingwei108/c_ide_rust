@@ -484,15 +484,15 @@ fn test_apply_fix_chinese_line_no_panic() {
     let source = "int 中文变量 = 1;".to_string();
 
     // 字节列恰好合法（列 6：'文' 之后）
-    let r = cide_native::api::cide::apply_fix(source.clone(), make_diag(6, 9, "X"));
+    let r = cide_native::diagnostics::auto_fix::apply_fix(source.clone(), make_diag(6, 9, "X"));
     assert!(r.is_some(), "合法字节边界列应正常替换");
 
     // 字节列落在多字节字符中间（列 3）：旧实现 panic，新实现按字符语义回退
-    let r = cide_native::api::cide::apply_fix(source.clone(), make_diag(3, 9, "X"));
+    let r = cide_native::diagnostics::auto_fix::apply_fix(source.clone(), make_diag(3, 9, "X"));
     assert!(r.is_some(), "非字符边界列不应 panic，应按字符语义回退");
 
     // 字符语义列（列 4 = 第 5 个字符 '文' 之后的位置）也应工作
-    let r = cide_native::api::cide::apply_fix(source.clone(), make_diag(4, 10, "X"));
+    let r = cide_native::diagnostics::auto_fix::apply_fix(source.clone(), make_diag(4, 10, "X"));
     assert!(r.is_some(), "字符语义列应正常替换");
 }
 

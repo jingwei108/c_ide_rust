@@ -12,15 +12,11 @@ pub fn wasm_start() {
     console_error_panic_hook::set_once();
 }
 
-pub mod api;
 pub mod capi;
 pub mod compiler;
 pub mod diagnostics;
 pub mod engine;
 pub mod flutter_bridge;
-// FRB 生成文件会在构建时重新生成，其 unwrap/expect 由生成器控制，项目级 lint 不约束生成代码。
-#[allow(clippy::unwrap_used, clippy::expect_used)]
-mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
 pub mod session;
 pub mod session_api;
 pub mod shared;

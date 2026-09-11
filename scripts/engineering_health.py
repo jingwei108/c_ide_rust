@@ -29,7 +29,6 @@ REPORTS_DIR = PROJECT_ROOT / "reports"
 NATIVE_SRC = PROJECT_ROOT / "native" / "src"
 NATIVE_CRATES = PROJECT_ROOT / "native" / "crates"
 NATIVE_CODE_DIRS = [NATIVE_SRC, NATIVE_CRATES]
-FLUTTER_LIB = PROJECT_ROOT / "CideFlutter" / "lib"
 SHADOW_REPORT_DIR = PROJECT_ROOT / "native" / "tests" / "shadow_verification" / "reports"
 FAILURES_FILES = [
     PROJECT_ROOT / "native" / "tests" / "FUZZ_FAILURES.md",
@@ -296,13 +295,9 @@ def generate_report() -> str:
     dirty = " (dirty)" if get_git_dirty() else ""
 
     rust_top = top_files_by_lines(NATIVE_CODE_DIRS, "rs")
-    dart_top = top_files_by_lines(FLUTTER_LIB, "dart")
 
     todo_total, todo_per_file = count_pattern_in_files(
         PROJECT_ROOT / "native", "rs", r"//\s*(TODO|FIXME|HACK)"
-    )
-    dart_todo_total, dart_todo_per_file = count_pattern_in_files(
-        FLUTTER_LIB, "dart", r"//\s*(TODO|FIXME|HACK)"
     )
 
     unwrap_total, unwrap_per_file = count_pattern_in_files(
@@ -325,7 +320,6 @@ def generate_report() -> str:
     lines.append("| 指标 | 数值 |")
     lines.append("|------|------|")
     lines.append(f"| Rust TODO/FIXME/HACK | {todo_total} |")
-    lines.append(f"| Dart TODO/FIXME/HACK | {dart_todo_total} |")
     lines.append(f"| Rust unwrap/expect（全量） | {unwrap_total} |")
     lines.append(f"| Rust unwrap/expect（生产代码） | {prod_unwrap_total} |")
     lines.append(f"| 活跃失败记录条目 | {active_failures} |")
@@ -342,14 +336,6 @@ def generate_report() -> str:
         lines.append(f"| {i} | `{rel}` | {n} |")
     lines.append("")
 
-    lines.append("## Dart 源文件行数 Top 20")
-    lines.append("")
-    lines.append("| 排名 | 文件 | 非空行数 |")
-    lines.append("|------|------|----------|")
-    for i, (p, n) in enumerate(dart_top, 1):
-        rel = p.relative_to(PROJECT_ROOT)
-        lines.append(f"| {i} | `{rel}` | {n} |")
-    lines.append("")
 
     lines.append("## Rust TODO/FIXME/HACK 分布（Top 10）")
     lines.append("")
@@ -359,13 +345,6 @@ def generate_report() -> str:
         lines.append(f"| `{p}` | {n} |")
     lines.append("")
 
-    lines.append("## Dart TODO/FIXME/HACK 分布（Top 10）")
-    lines.append("")
-    lines.append("| 文件 | 数量 |")
-    lines.append("|------|------|")
-    for p, n in dart_todo_per_file.most_common(10):
-        lines.append(f"| `{p}` | {n} |")
-    lines.append("")
 
     lines.append("## Rust unwrap/expect 分布（Top 10）")
     lines.append("")
