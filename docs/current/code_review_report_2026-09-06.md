@@ -217,7 +217,7 @@
 2. **Session/UnifiedEngine Map 无上限无回收**；`destroy_session(0)` 可移除共享默认 session；多 Session API 前端 0 调用（已暴露未使用）— `flutter_bridge.rs:44-59,74-88`。
 3. **E2E golden 缺失时测试静默通过**（读不到 .out 返回 None 直接 Ok），防线 2 可退化为 smoke test — `cide_e2e.rs:151-161,214-218`。
 4. **测试统计四处口径互相矛盾**：E2E_FAILURES.md 统计表 78+4 vs 正文 3 条 vs KNOWN 常量 3 个；LEETCODE_FAILURES.md「68 题」vs 实际 138 题；AGENTS.md 内部 314/69 vs 316/81 自相矛盾 — 多文件多处。
-5. **Shadow「完全匹配」建立在对 Cide stdout 的正则清洗之上，且清洗逻辑三处重复**（Python 两份 + Rust 一份）；教学程序自己打印"程序运行完成"文本会被误清洗 — `shadow_verify.py:220-224`、`shadow_verify_cpp.py:455-460`、`cide_e2e.rs:100-113`。
+5. ~~**Shadow「完全匹配」建立在对 Cide stdout 的正则清洗之上，且清洗逻辑三处重复**（Python 两份 + Rust 一份）；教学程序自己打印"程序运行完成"文本会被误清洗 — `shadow_verify.py:220-224`、`shadow_verify_cpp.py:455-460`、`cide_e2e.rs:100-113`。~~ **✅ 已修复（E-P1-5，2026-09-11）**：根因是 `RuntimeState::output_lines` 一条字节流同时承担"程序 stdout / 程序 stderr / 引擎附注"三种语义（且附注可在流中间插入，如堆耗尽提示）。现改为带 `OutputKind` 的分段输出（`output_chunks` + `stdout()`/`stderr()`/`notes()`/`display()` 投影），新增 capi 出口 `cide_get_program_output*` / `cide_get_engine_notes*` / `cide_get_program_output_delta`（ABI 1.0.0 → 1.1.0，加函数=minor），serve 的 `output.delta` 增加 `stream` 参数。**十余处清洗规则全部删除**——实际数量远超本条记录的"三处"：`bytecode_libc_consistency.rs`、`test_utils.rs`、`bytecode_gen_cpp_unit_test.rs`、`end_to_end_extra_test.rs`、`qsort_test.rs`、`test_more.py`、`test_massive.py` 等。回归用例 `native/tests/cases/baseline/engine_note_lookalike.c`（程序打印与引擎附注逐字相同的文本 + 走一次 stderr + 无尾换行收尾）已纳入 Shadow 与 E2E 防线。
 6. **`apply_fix` 按字节列切片字符串，含中文的行 panic**（FRB 返回错误，前端"一键修复"崩溃）— `native/src/api/cide.rs:241-249,292-295`（error_catalog 的字节坐标与字符语义混用）。
 
 ---
@@ -274,6 +274,7 @@
 ### 7.2 代码生成层
 6. **统一内存读写宽度决策函数**：`load_opcode(ty)/store_opcode(ty)` 收口 30+ 处手写 match（Char 分支遗漏家族的根因），新类型只改一处。
 7. **临时槽位作用域化分配器**：temp_slot0~3 全局固定 + 隐式"立即消费"约定已产生 3 起同类 bug（历史 side_effect_index、本次嵌套复合赋值、嵌套 new）。改线性 bump 分配器或至少 debug 断言不重复占用，一次性根除。
+   > **2026-09-11 补充（第四起，已局部修复）**：SharpTutor Issue B2 是同一家族的新成员，但根因方向相反——不是槽位重复占用，而是**槽位少算**：`gen_lambda` 在栈上推的是闭包**对象地址**、lambda 变量槽里存的也是地址（4 字节），而槽位大小按闭包类字段总大小计算，无捕获闭包 size=0 → 帧内根本没有槽位，`StoreLocal` 直接冲出 1MB 线性内存（实测 `locals_base=1048572`、`operand=4`、`addr=1048576`）。触发条件为"先立即调用 lambda、后声明 lambda 变量"。已引入 `is_lambda_closure_type` 单一判定（变量槽位与闭包对象保底 4 字节、实参一律 1 word）局部修复；**分配器整体重构（本条原议题）仍未启动**，`next_local_offset` 只增不减、闭包对象每次求值重复分配的问题仍在。
 8. **typeck 与 codegen 收敛到单一语义模型**：符号解析优先级、类型大小（vptr）、整数类别（is_int）、指针步长、unsigned 转换全部下沉到共享 crate（如 `cide_runtime::semantics`），两层只调不改。
 9. **建立 codegen 语义回归层**：本次 8 个 P0 全部漏过五层防线（shadow 用例未覆盖边角组合）。把复现用例固化为 `cide_cli run` + stdout 断言回归集；补"生成层栈平衡/槽位冲突"debug 校验器。
 

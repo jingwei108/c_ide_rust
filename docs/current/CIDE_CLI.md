@@ -27,6 +27,7 @@ cide_cli <command> <file> [options]
 | `run <file>` | 编译并全速运行程序 |
 | `step <file>` | 交互式单步调试 |
 | `unified <file>` | 统一模式（时间旅行引擎）批量执行并输出摘要（支持 `--max-steps <n>`） |
+| `serve` | **JSON-lines 会话模式**（headless 交互；无文件参数，内容经 stdin 提供），见下文 |
 
 ## 选项
 
@@ -158,6 +159,83 @@ sum=15
 ```bash
 cide_cli unified long_sort.c --max-steps 500000
 ```
+
+### 6. serve：JSON-lines 会话模式（Phase 1 出口 3）
+
+长寿命 headless 会话进程：**stdin 每行一个 JSON 请求，stdout 每行一个 JSON 响应**（NDJSON）。
+供 IDE 后端/判分服务/自动化脚本以任意语言消费，无需 ctypes 或 FFI。
+
+```bash
+cide_cli serve
+```
+
+协议契约：
+
+| 契约 | 说明 |
+|---|---|
+| **id 关联** | 请求可带 `id`（任意 JSON 值），响应原样回填 —— 便于异步/乱序对账 |
+| **帧同构** | 成功帧 `{"id":N,"ok":true,"result":{…}}`，错误帧 `{"id":N,"ok":false,"error":{"kind":…,"message":…}}` —— 解析路径统一 |
+| 错误 kind | `protocol`（请求格式/未知方法）/ `state`（会话状态不满足）/ `internal` |
+| 入口语义 | 与 capi **共用 `session_api`**（运行结果/诊断/步 payload 形状完全一致），三出口不产生语义分叉 |
+| 会话配置 | `quarantine_budget` / `deterministic` / `max_steps` / `call_depth_limit` 与 capi 同名 setter 一致 |
+| 重置语义 | `session.reset` 清空编译/运行状态，**保留会话级配置**（隔离预算、判分确定性、argv） |
+
+方法一览：
+
+| 方法 | 参数 | 说明 |
+|---|---|---|
+| `ping` | — | 存活探测，返回 ABI 版本 |
+| `compile` | `source`（或 `files:[{filename,source}]`） | 覆盖式编译当前单元集合，返回诊断 JSON |
+| `run` | `input` / `argv` / `batch_input` / `max_steps` / `deterministic` | 全速运行，返回 `status`/`return_value`/`steps_executed` |
+| `output.delta` | `cursor` | 增量取输出（字节游标，UTF-8 边界安全） |
+| `step.begin` | — | 初始化统一模式（时间旅行），需先编译成功 |
+| `step.next` | — | 单步推进，返回 `payloads`（StepPayload，见 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)） |
+| `payload.get` | `start` / `end` | 取窗口内步 payload（窗口 2000 帧，越窗静默裁剪） |
+| `seek` | `step` | 时间旅行定位（窗口外走检查点恢复 + 正向重放） |
+| `breakpoints.set` | `lines:[int]` | 设置断点行集合（应在 `step.begin` 之后） |
+| `memory.regions` | — | 内存区域 + 隔离区统计（三色堆图数据源；第二批将定型 `kind` 三段式） |
+| `config.get` / `config.set` | 同上配置项 | 读写会话级配置 |
+| `session.create` / `session.reset` / `session.destroy` | — | 会话生命周期 |
+| `shutdown` | — | 结束 serve 进程（EOF 亦可） |
+
+示例（一次会话跑完编译 → 运行 → 取输出 → 单步 → 收尾）：
+
+```bash
+$ cide_cli serve <<'EOF'
+{"id":1,"method":"compile","params":{"source":"#include <stdio.h>\nint main(){ printf(\"%d\", 1+2); return 0; }\n"}}
+{"id":2,"method":"run"}
+{"id":3,"method":"output.delta","params":{"cursor":0}}
+{"id":4,"method":"step.begin"}
+{"id":5,"method":"step.next"}
+{"id":6,"method":"session.reset"}
+{"id":7,"method":"shutdown"}
+EOF
+{"id":1,"ok":true,"result":{"diagnostics":[],"ok":true}}
+{"id":2,"ok":true,"result":{"ok":true,"return_value":0,"status":"finished","steps_executed":13,"trap":"","waiting_input":false}}
+{"id":3,"ok":true,"result":{"cursor":36,"delta":"3程序运行完成，返回值：0\n","stream":"display","total":36}}
+{"id":4,"ok":true,"result":{"max_collected_step":-1,"ready":true}}
+{"id":5,"ok":true,"result":{"cache_start_step":0,"current_line":0,"finished":false,"paused":false,"payloads":[{"accessed_vars":[],"algorithm_step":null,"array_snapshots":[],"call_stack":[],"code_line":0,"func_name":"","heatmap_count":0,"heatmap_line":0,"local_vars":[],"pointer_snapshots":[],"root_cause_hint":null,"semantic_label":"","step_index":0,"vis_events":[]}],"trapped":false,"waiting_input":false}}
+{"id":6,"ok":true,"result":{"config":{"compiled":false,"deterministic":false,"input_mode_batch":false,"quarantine_budget":262144},"reset":true}}
+{"id":7,"ok":true,"result":{"shutdown":true}}
+```
+
+> 上述输出为 2026-09-11 实测（字段顺序由 JSON 对象语义决定，消费方不应依赖顺序）。
+>
+> **E-P1-5（输出通道）**：`output.delta` 默认返回 `stream:"display"` —— 即展示视图，除程序输出外
+> 还含 Cide 追加的"程序运行完成"提示与（有泄漏时的）泄漏报告，供 UI 原样显示。
+> 需要**纯净程序 stdout**（判分 / 与 Clang golden 比对）时传 `"stream":"stdout"`：
+>
+> ```json
+> {"id":3,"method":"output.delta","params":{"cursor":0,"stream":"stdout"}}
+> ```
+>
+> 可用取值：`display`（默认）/ `stdout` / `stderr` / `note`（引擎附注）。引擎内部按
+> `OutputKind` 给每段输出打标，消费方**不得**再对文本做正则清洗——此前散落十余处的
+> "程序运行完成"清洗规则已在 E-P1-5 中全部废除（程序自己打印同类文本时会被误删）。
+>
+> 与 `jq` 配合：`cide_cli serve < session.ndjson | jq -c 'select(.ok|not)'` 可只筛错误帧。
+>
+> 防线：`python scripts/serve_smoke.py` 覆盖 id 关联 / 帧同构 / 生命周期 / 配置一致性的 26 项断言（CI 已纳入）。
 
 ## 快速测试片段
 

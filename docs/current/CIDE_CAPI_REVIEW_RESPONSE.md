@@ -114,7 +114,36 @@
 
 ## 10. 落地追踪
 
-本文档结论的代码落点随 Phase 1 执行，验收即主计划 §6.1 Phase 1 标准新增两条：
+### 10.1 capi 第一批实现状态（2026-09-11）
+
+| 函数 | 状态 | 说明 |
+|---|---|---|
+| `cide_abi_version` | ✅ | 返回 `1.1.0`（**加函数 = minor，改签名/语义 = major**；1.1.0 为 E-P1-5 追加输出通道函数） |
+| `cide_engine_version` | ✅ | crate 版本（可选拼接构建期注入的 `CIDE_GIT_HASH`） |
+| `cide_free_string` | ✅ | rust-alloc 所有权唯一释放入口；null 安全；不保留 caller-buffer 双轨 |
+| `cide_last_error` | ✅ | JSON `{kind: "compile"\|"runtime"\|"none", message}` |
+| `cide_compile_json` | ✅ | 诊断 JSON：code / error_code / severity(`error\|warning\|hint\|info`) / line / column / **end_line / end_column**（先给"起点+1"退化值）/ message / fix_suggestion / filename |
+| `cide_run_json` | ✅ | ok / status(`finished\|trap\|waiting_input\|not_compiled`) / return_value / trap（E 码透传）/ waiting_input / steps_executed |
+| `cide_get_output_delta` | ✅ | 游标增量 + 新游标 + 总字节 + `stream`；游标越界按末尾处理、落在多字节字符中间时前移到字符边界。**展示视图**（含引擎附注），纯净 stdout 用 `cide_get_program_output_delta` |
+| `cide_get_program_output_length` / `cide_get_program_output` | ✅ | **E-P1-5（1.1.0）**：纯程序 stdout —— 判分、与 Clang golden 比对、第三方消费的唯一合法来源；不含引擎附注与 stderr |
+| `cide_get_engine_notes_length` / `cide_get_engine_notes` | ✅ | **E-P1-5（1.1.0）**：引擎附注单独通道（运行完成提示 / 内存泄漏报告 / 教学安全警告） |
+| `cide_get_program_output_delta` | ✅ | **E-P1-5（1.1.0）**：纯 stdout 的游标增量，返回 `stream:"stdout"` |
+| `cide_set_max_steps` | ✅ | 会话级保险丝（映射 `CideVM::set_max_steps`；`reset()` 不再清空会话配置） |
+| `cide_set_call_depth_limit` | ✅ | V-P1-10：VM 新增 `call_depth_limit` 字段 + `do_call_inner` 深度检查（下限 16 层兜底） |
+| `cide_set_deterministic` / `cide_get_deterministic` | ✅ | 最小形态：`time()` / `clock()` 固定返回 0 |
+| `cide_set_breakpoints` | ✅ | 入参为 JSON 整数数组（`[]` 清空）；**须在 `cide_step_begin` 之后调用**（step_begin 重建 VM 会清空断点） |
+| `cide_step_begin` | ✅ | 新增辅助入口：初始化统一模式会话（装载 VM + 重建运行时 + 初始检查点），未编译返回 -2 |
+| `cide_step_next_json` | ✅ | 单步推进并返回 `AutoStepResult` JSON（payloads / finished / trapped / waiting_input / paused / current_line / trap_message / cache_start_step）；命中断点时 `paused=true` |
+| `cide_get_step_payloads_json` | ✅ | 按步号区间取 payload 数组 + `cache_start_step` / `max_collected_step`；`StepPayload` 类型链已补 `serde::Serialize` |
+
+**横切契约落实**：全部 JSON 函数为 rust-alloc 所有权（`cide_free_string` 释放）；全部入口 `catch_unwind` 包裹（panic 不跨 C 边界）；状态码 `0/负/正` 约定；Session 非线程安全已声明；输入输出 UTF-8。
+
+**集成测试**：`native/tests/capi_first_batch_tests.rs`（12 用例）——覆盖字符串所有权、severity 与 end 字段、运行三态、游标增量语义、三处保险丝（max_steps / call_depth_limit / deterministic）。
+
+**已知问题（本次实测发现，待修，不属于本批复核范围）**：`#include <time.h>` 会导致"编译失败"且**不给出任何诊断**（runtime_libc 的 `time.h` stub 经 include 展开路径失败；把同样内容手写进源文件则编译成功）。自带原型声明 `long time(long *t);` 可绕过。
+
+### 10.2 待 Phase 1 收尾
 
 - SharpTutor 用 capi 第一批（含 deterministic 最小形态）+ serve 跑通三进程集成（其 15 用例冒烟集全绿）；
-- StepPayload schema v0.1 文档发布（含双方回放场景校验记录）。
+- **StepPayload schema v0.1 文档发布**（含双方回放场景校验记录）——类型链已全链路可序列化，待定型为 `docs/spec/` 下的语言中立 schema；
+- `cide_cli serve` JSON-lines 会话模式（请求 `id` 关联 / 错误帧同构 / `session.reset`）。

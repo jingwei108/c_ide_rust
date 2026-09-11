@@ -46,7 +46,7 @@ Cide 已有 300+ 测试用例，但 C 语言极其灵活，即使如此规模的
 | 类型 | 示例 | 必须放在 | 原因 |
 |---|---|---|---|
 | **内存安全诊断敏感** | `strcpy`, `strcat`, `memcpy`, `memmove`, `malloc`, `free`, `realloc` | **Layer B: Rust Host** | 需要注入边界检查、UAF 检测、行号追踪，Rust 侧可精确控制错误信息。 |
-| **I/O 沙盒敏感** | `printf`, `scanf`, `fopen`, `fgets` | **Layer B: Rust Host** | 需要操作 `session.runtime.output_lines` / VFS / input buffer。 |
+| **I/O 沙盒敏感** | `printf`, `scanf`, `fopen`, `fgets` | **Layer B: Rust Host** | 需要操作会话输出通道（`session.runtime.output_chunks`，E-P1-5 后按 stdout/stderr/note 打标）/ VFS / input buffer。 |
 | **VM 回调敏感** | `qsort`, `bsearch` | **Layer B: Rust Host** | 需要 `call_user_function` 回调 VM 函数。 |
 | **纯计算、无副作用** | `sin`, `cos`, `abs`, `atoi`, `isdigit` | **Layer C: Bytecode** 或 **Layer B: Rust** | 无诊断需求，Bytecode 可教学展示；Rust 可借助 `libm` 精度。 |
 | **超高频内存原语** | `memcpy`, `memset`, `strlen`（未来） | **Layer A: Builtin 指令** | 原生执行，避免 CallHost 开销。 |

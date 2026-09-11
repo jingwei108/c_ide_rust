@@ -339,6 +339,12 @@ impl CideVM {
 
 **output_lines 截断处理**：
 
+> **实现更新（E-P1-5，2026-09-11）**：下面这段伪代码描述的是早期设计。当前实现**不按长度截断**，
+> 而是在 `RuntimeSnapshot` 中**整体克隆输出分段** `output_chunks: Vec<OutputChunk>`
+> （`cide_vm/src/snapshot.rs`），恢复时整段还原（`cide_vm/src/core/snapshot.rs`）。
+> 原因：输出已按 `OutputKind::Stdout / Stderr / Note` 打标，按长度截断会丢失通道标记；
+> 整段克隆同时保证"回到某一步"后程序 stdout 与引擎附注仍各自可分辨。
+
 ```rust
 /// 从检查点恢复时，截断 output_lines 到检查点时的长度
 pub fn restore_with_output_truncate(

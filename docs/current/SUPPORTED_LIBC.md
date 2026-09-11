@@ -228,7 +228,7 @@
 | 类型 | 必须放在 | 原因 |
 |------|---------|------|
 | **内存安全诊断敏感** | **Layer B** | 需要注入边界检查、UAF 检测、行号追踪 |
-| **I/O 沙盒敏感** | **Layer B** | 需要操作 `session.runtime.output_lines` / VFS |
+| **I/O 沙盒敏感** | **Layer B** | 需要操作会话输出通道（`session.runtime.output_chunks`，按 stdout/stderr/note 打标）/ VFS |
 | **VM 回调敏感** | **Layer B** | 需要 `call_user_function` 回调 VM 函数 |
 | **纯计算、无副作用** | **Layer C**（优先）或 **Layer B** | Bytecode 可教学展示源码；Rust 可借助 `libm` |
 | **超高频内存原语** | **Layer A** | 原生执行，避免 CallHost 开销（待 profiling） |

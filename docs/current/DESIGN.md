@@ -1,4 +1,4 @@
-﻿# C IDE 项目设计文档
+# C IDE 项目设计文档
 
 > 一款面向教学场景的移动端 C 语言子集 IDE
 > 核心技术：Flutter 前端（Android + Desktop Windows） + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
@@ -455,9 +455,16 @@ void cide_set_input_mode(CideSession* s, int is_batch);
 int cide_is_waiting_input(CideSession* s);
 int cide_provide_input_line(CideSession* s, const char* line);
 
-// 输出
+// 输出（展示视图：程序 stdout/stderr + 引擎附注，按写入顺序拼接）
 int cide_get_output_length(CideSession* s);
 void cide_get_output(CideSession* s, char* buf, int max_len);
+
+// 输出（E-P1-5，ABI 1.1.0：结构化通道——判分/与 Clang golden 比对用纯 stdout）
+int cide_get_program_output_length(CideSession* s);
+void cide_get_program_output(CideSession* s, char* buf, int max_len);
+int cide_get_engine_notes_length(CideSession* s);
+void cide_get_engine_notes(CideSession* s, char* buf, int max_len);
+char* cide_get_program_output_delta(CideSession* s, int cursor);
 ```
 
 #### FRB API（Flutter 前端实际使用）

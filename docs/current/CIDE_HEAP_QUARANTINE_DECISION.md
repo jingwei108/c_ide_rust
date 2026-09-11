@@ -1,7 +1,7 @@
 # 设计决议：堆内存改为 Bump 分配 + 有界隔离（Bounded Quarantine）
 
 > 决议日期：2026-09-11（同日修订：v2，采纳 churn/leak 区分修正）
-> 状态：**已拍板**
+> 状态：**已拍板 · 已实施**（2026-09-11 落地，验收清单见 §6）
 > 归属：主计划 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) 的引擎层决策，Phase 1 内可实施（与切割无依赖）
 >
 > **v2 修订说明**：v1 为"永久隔离"（free 后地址永不复用），评审指出其误伤合法 churn 程序（`while(记录) { p=malloc(100); 用; free(p); }` 在真实 C 可无限跑，永久隔离下约 1 万轮撞 1MB 墙）。v2 改为 **ASAN 原版的有界隔离**：隔离区超预算时驱逐最老块复用——churn 与 leak 由此正确分离。
@@ -55,13 +55,35 @@ Cide 堆采用 **bump 分配 + 有界隔离**：
 
 ## 6. 验收清单
 
-- [ ] host_malloc / host_free / host_realloc 按新语义实现（隔离区 + FIFO 驱逐 + first-fit 归还），merge_free_list 移除或降级为驱逐路径内部实现；
-- [ ] **churn 无限循环用例**：超隔离预算的 `malloc(100)/free` 循环 10 万次不撞墙、地址在驱逐后复用（防 v1 误伤回归）；
-- [ ] UAF / Double-Free / 泄漏报告 / 无效 free 诊断在隔离窗口语义下全部回归（`crash_regression_tests.rs` 补专项：free 后立即读必检出、隔离窗口内双 free 必检出、窗口外漏检案例标注为已知差异）；
-- [ ] 防线 3a / 3c / fuzz E 断言重写并全绿；
-- [ ] `C_SUBSET_SPEC.md` 已知差异补录（§4-1）；CHANGELOG 记录碎片可视化资产处置；
-- [ ] 三道墙用例（1MB 耗尽 / max_steps / region 表封顶推导验证）；
-- [ ] Shadow 门禁全绿（含 K&R/LeetCode 内存密集用例）。
+- [x] host_malloc / host_free / host_realloc 按新语义实现（隔离区 + FIFO 驱逐 + first-fit 归还），merge_free_list 移除或降级为驱逐路径内部实现；
+      → `MemoryState::allocate_raw`（bump + 驱逐 + first-fit）/ `release_to_quarantine`（free 唯一出口）/ `evict_quarantine`（FIFO 驱逐，内部调用 merge）；`merge_free_list` 降级为驱逐路径内部实现。三条释放路径（`host_free`、`realloc(p,0)`、VM `free_memory`）统一走隔离区出口；`fopen` 的 FILE* 分配亦改走统一分配入口。
+- [x] **churn 无限循环用例**：超隔离预算的 `malloc(100)/free` 循环 10 万次不撞墙、地址在驱逐后复用（防 v1 误伤回归）；
+      → `crash_regression_tests.rs::test_heap_churn_beyond_quarantine_budget_no_wall`（`reuse=1` + `churn ok`；反证：无复用则 10485 次即撞墙）。
+- [x] UAF / Double-Free / 泄漏报告 / 无效 free 诊断在隔离窗口语义下全部回归（`crash_regression_tests.rs` 补专项：free 后立即读必检出、隔离窗口内双 free 必检出、窗口外漏检案例标注为已知差异）；
+      → 新增 `test_heap_uaf_within_quarantine_window_detected`（E3060）、`test_heap_double_free_within_quarantine_window_detected`（E3061）；窗口外漏检记入 `C_SUBSET_SPEC.md` §2.9-1；泄漏报告与无效 free 诊断由全量防线回归。
+- [x] 防线 3a / 3c / fuzz E 断言重写并全绿；
+      → 3a（`host_contract_tests.rs`）新增 4 条隔离区契约（free 入隔离区不入 free_list / 驱逐后地址复用 / realloc 必搬移 / heap_offset 不回退）；3c `differential_stress` 与 fuzz A/E 的断言（基于 `freed_logs` 实时取址）与新语义天然兼容，全量回归通过。
+- [x] `C_SUBSET_SPEC.md` 已知差异补录（§4-1）；CHANGELOG 记录碎片可视化资产处置；
+      → 新增 §2.9「堆分配模型：bump + 有界隔离」（含四项与 Clang 的差异）；CHANGELOG 记录碎片统计语义收窄与三色堆图随 capi 第二批落地。
+- [x] **§1「隔离预算可调，写进会话配置」的对外暴露**（补齐完整性缺口，2026-09-11）：
+      `cide_set_quarantine_budget` / `cide_get_quarantine_budget`（`native/src/capi/first_batch.rs`）——
+      `budget = 0` 关闭隔离（教学对照）、超大值裁剪到堆上限（1MB）、负值拒绝；
+      `cide_cli serve` 经 `config.set` / `config.get` 暴露同一字段。
+      → 测试：`capi_first_batch_tests::test_set_quarantine_budget_controls_address_reuse`（默认 256KB 下 free 后不复用 → 预算 0 时立即复用）、
+      `test_quarantine_budget_is_clamped_to_heap_limit`、`test_quarantine_budget_setter_rejects_null_session`；
+      serve 侧由 `scripts/serve_smoke.py` 断言默认值 262144 与 `config.set` 生效。
+- [x] 三道墙用例（1MB 耗尽 / max_steps / region 表封顶推导验证）—— **2026-09-11 全部补齐**：
+      → **1MB 耗尽**：`crash_regression_tests::test_heap_1mb_wall_returns_null_with_teaching_hint`（NULL + 教学提示）；
+      → **步数保险丝**：`crash_regression_tests::test_second_wall_max_steps_fuse`（并回显配置值 `（1000 步）`）；
+      → **region 表封顶**：`crash_regression_tests::test_third_wall_region_table_bounded_when_step_fuse_trips_first`
+      （leak 路径上步数保险丝先触发时，region 条数 ≤ 步数上限、heap_offset 未达 1MB）。
+      > **补用例时发现的严重缺陷（已修，2026-09-11）**：`compile_pipeline::setup_vm` 里硬编码
+      > `vm.set_max_steps(10_000_000)`，**每次 run 都抹掉会话配置** —— 步数保险丝对全速运行的程序
+      > 从未生效（实测设 2000 步的程序跑到 16 万步、撞 1MB 堆墙才停）。旧用例只断言"消息含步数超限"，
+      > 1000 万步同样满足，故长期掩盖。同批修复：capi/serve 在会话无 VM 时静默丢弃配置、
+      > `config()` 不回显上限。回归见 `native/tests/session_config_test.rs`（4 用例）。
+- [x] Shadow 门禁全绿（含 K&R/LeetCode 内存密集用例）。
+      → C shadow 632 用例与 C++ shadow 100 用例均 0 非预期差异（2026-09-11 实测，见 CHANGELOG）。
 
 ## 7. 对"伪 GC"PR 的处置
 

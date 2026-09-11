@@ -318,6 +318,24 @@ Cide 会擦除 `std::` 前缀，因此 `std::vector<int>` 等价于 `vector<int>
 
 `T()` 值初始化当前不支持，会解析为函数调用错误。POD 类型请用 `(T)0`。
 
+### 4.5 指针赋值的方向语义（2026-09-11 修订，含诚实记录）
+
+| 场景 | Clang++（`-std=c++14 -Wall -Wextra`，实测） | Cide | 判定 |
+|---|---|---|---|
+| **向上转型**<br>`Base* b = new Derived();` | 零警告（多态的基础写法） | 零警告 —— 修复前误报 `W3053`："不兼容的指针类型赋值：Base* ← Derived*" + 建议"隐式类型转换可能导致数据截断" | ✅ **已对齐（2026-09-11）** |
+| **向下转型**<br>`Base* b; Derived* d = b;` | **error**：`cannot initialize a variable of type 'Derived *' with an lvalue of type 'Base *'`（拒绝编译） | **警告 `W3067`**："指针类型不兼容：Derived* ← Base*，需要显式转换（向上转型 Derived* → Base* 除外）"，**仍继续编译** | ⚠️ **剩余差异**：Cide 不阻断编译，严格度低于 Clang；教学时需口头强调必须写 `static_cast`/`dynamic_cast` |
+| **无关类型**<br>`double* p; int* q = p;` | 警告 `incompatible pointer types …` | 警告 `W3067`（同上文案） | ✅ 级别一致（措辞不同） |
+
+**修复记录**：此前两种情况共用**标量**转换码 `W3053_ImplicitScalarConversion`（语义是"隐式标量转换 /
+可能导致数据截断"），把多态基础讲成了危险操作；且该差异当时未记录在本规范中（违反项目
+"以 Clang 为标准、任何不一致必须记录"的纪律）。2026-09-11 新增专用码 `W3067_PointerTypeMismatch`
+（`cide_shared::ErrorCode`，附错误目录条目与建议文案），并在 `TypeChecker::is_upcast` 中实现
+**单继承链可达性判定**（带步数上限防环）以区分上/下转型。回归：`native/tests/pointer_upcast_test.rs`（3 用例）。
+
+**已知显示瑕疵（未修，如实记录）**：诊断 JSON 的 `code` 字段与 CLI 输出对**警告**也加 `E` 前缀
+（`W3067` 显示为 `E3067`）；`severity` 字段本身正确（`warning`）。修复需调整 `session_api::compile`
+的 code 前缀生成规则（按 severity 输出 `E`/`W`/`H`），属独立小项。
+
 ---
 
 ## 5. 教学建议

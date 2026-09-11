@@ -11,7 +11,7 @@
 - **核心**：Rust workspace 编译器/VM（`native/`，10 个子 crate），编译管线 Lexer → Parser → TypeChecker → BytecodeGen → CideVM
 - **出口 1**：C ABI（`native/src/capi/`）——`cide_cli` 与 shadow 防线（ctypes）的第一消费路径
 - **出口 2**：wasm32（已冒烟实证：零修改构建 3.75MB，C API 全链路 + 安全检测在 wasm 下工作）——浏览器/白箱形态
-- **出口 3**：`cide_cli serve` JSON-lines 会话模式（计划中）——headless 交互
+- **出口 3**：`cide_cli serve` JSON-lines 会话模式（已落地：id 关联 / 错误帧同构 / `session.reset`；与 capi 共用 `native/src/session_api.rs`）——headless 交互
 - **历史前端**：`CideFlutter/`（Flutter，处于切割迁出流程；FRB 桥接随前端走）
 
 **架构纪律**：新能力一律先落语言中立 Rust 层，三个出口只做薄包装且共用同一套入口语义；复杂结构过边界走 JSON 字符串；capi 是公共 API（`cide_abi_version()` 版本化）。
@@ -137,15 +137,18 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 将同一 C 源码同时交给 **Clang** 与 **Cide** 编译执行，对比 stdout 输出是否完全一致。Golden 只能来自 Clang，不能来自 Cide 自己。
 
 - **门禁**：自 2026-09-06 起为 CI 硬门禁——Clang 预检缺失时 fail fast（exit 2）；存在非预期差异（compile_gap / runtime_gap / output_gap）时 exit 1；match / known_issue / cide_better 视为通过。`KNOWN_FAILURE_CASES` 与 E2E 防线的 `KNOWN_TEMPLATE_FAILURES` 常量对齐（双向监控：任一防线转绿需同步移除）。
-- **覆盖**：317 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 632 个用例，完全匹配 612、cide_better 16、known_issue 4（2 个存量 "bug" 分类 + 2 个模板已知偏差，见 `E2E_FAILURES.md`）；统计口径含 match + cide_better + known_issue；2026-09-06 门禁化+第三批 codegen 修复后实测）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测）
-- **驱动**：`python native/tests/shadow_verification/shadow_verify.py`、`python scripts/shadow_verify_cpp.py`
+- **覆盖**：321 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 636 个用例，完全匹配 617、cide_better 16、known_issue 3（`function_pointer_sizeof` / `sizeof_array_param` 存量 "bug" 分类 + `spfa_default` 模板已知偏差；`bTree_default` 已转为 match，见 `E2E_FAILURES.md`）；统计口径含 match + cide_better + known_issue；2026-09-11 复测）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测，2026-09-11 复测仍一致）
+- **标准输入（2026-09-11 新增能力）**：用例可自带同名 `.in` 文件，Clang 与 Cide 喂**同一份字节**（缓存 key 纳入真实 stdin）。此前防线一律批量运行且不喂 stdin —— K&R 目录里 29 个 `.in` 从未被使用，两侧"都无输入"造成的**虚假 match**；启用后立即暴露"输入注入丢换行"缺陷（`getchar()` 读不到 `'\n'`，19 例 `output_gap`），已随 `RuntimeState::split_stdin` 统一修复
+- **输出口径（E-P1-5，2026-09-11）**：比对读的是引擎的**纯程序 stdout 通道**（capi `cide_get_program_output*`，ABI 1.1.0）——引擎附注（"程序运行完成，返回值：N"、内存泄漏报告、教学警告）与 stderr 各有独立通道。**驱动侧不得再对输出做正则清洗**：此前十余处清洗规则语义互不一致，且在教学程序自己打印同类文本时会误删真实输出（假阳性 `output_gap`），现全部废除。读取入口统一在 `native/tests/shadow_verification/cide_output.py`；DLL 缺新符号时 fail fast，不退回旧清洗。回归用例 `baseline/engine_note_lookalike.c` 固化该口径
+- **驱动**：`python native/tests/shadow_verification/shadow_verify.py`（`--jobs N` 并行，0=自动/1=串行；`--refresh-clang` 强制全量重算，CI 夜间使用；`--rebuild` 在 release DLL 比引擎源码旧时自动重建）、`python scripts/shadow_verify_cpp.py`（工作目录为自管 `.shadow_cpp_tmp/`，已 gitignore —— `tempfile.TemporaryDirectory` 在受限环境下会因 WinError 5 崩溃）
+- **提速设施（2026-09-11）**：Clang Golden 结果缓存（key = 源码 + stdin + clang 版本 + 参数 + 预设文件）+ 并行执行；632 用例实测 **103.6s → 1.1s（缓存命中）/ 20.4s（冷启动全量重算）**，四次运行判定逐项一致。缓存与 worker 运行目录为 `.clang_cache/` / `.shadow_tmp/`（已 gitignore）——**改动用例后无需手动清缓存**（源码哈希变化自动失效）。**⚠️ 并行化对顺序敏感**：用例加载与分片分发必须确定性（`sorted(glob)` + 按 name 对账），否则会出现"结果错配但门禁仍绿"的静默失败
 - **报告**：`native/tests/shadow_verification/reports/`
 
 ### 防线 2：K&R 真实程序回归（已有）+ LeetCode（计划中）
 
 收集真实教学/竞赛代码作为端到端回归用例，验证"真实世界代码能不能跑"。
 
-- **Baseline**：`native/tests/cases/baseline/`（317 个，全绿；2026-09-06 新增 `codegen_soundness_regression.c` 固化第三批 soundness 修复）
+- **Baseline**：`native/tests/cases/baseline/`（321 个，全绿；2026-09-06 新增 `codegen_soundness_regression.c` 固化第三批 soundness 修复；2026-09-11 新增 `engine_note_lookalike.c` 固化 E-P1-5 输出通道口径、`scanf_return_value.c` / `scanf_literal_match.c` / `scanf_literal_mismatch.c` 固化 scanf 返回值与普通字符指令）
 - **K&R**：《C程序设计语言》课后习题（69 个，69 绿，0 已知失败）
 - **Template Generated**：算法模板批量生成（82 个，78 绿，4 已知失败）
 - **LeetCode**：已全面实施阶段 4 + 阶段 5，当前 138 道题全部通过，详见 `native/tests/LEETCODE_FAILURES.md`
@@ -263,6 +266,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 - ~~**函数返回 `double` 值异常**~~ — **已修复（2026-06-24）**。根因是 `return` 语句未对返回值表达式插入隐式类型转换，导致 `return 2.5;`（`2.5` 被解析为 `float` 字面量）在函数返回类型为 `double` 时实际生成 `PushConstF` 而非 `PushConstD`。修复后 TypeChecker 在 `return` 语句的 `check_assignable` 成功后调用 `insert_implicit_cast`，并在 `baseline/float_func_return.c` 增加回归用例。
 - ~~**`scanf` 的 `%s` 格式符暂不支持**~~ — **已修复（2026-06-25）**。`scanf`/`sscanf`/`fscanf` 中的 `%s` 现在可正确读取空白分隔的字符串并写入目标缓冲区；新增 `baseline/scanf_string.c` 回归用例（基于 `sscanf`，避免 Shadow Verification 用例间输入不可控问题）。
 - ~~**`fputs(str, stdout)` 无输出**~~ — **已修复（2026-06-19）**。`fputs` 现在可正确写入 `stdout`/`stderr`（通过 lexer 预定义宏 fd=1/2）并输出到程序 stdout；写入普通 `FILE*` 文件流行为保持不变。
+- **`fprintf` 到自定义 `FILE*` 不落盘** — **既有偏差（2026-09-11 记录，E-P1-5 顺带核查）**。`host_fprintf_n` 当前不解析 `stream` 实参：写入 `stderr` 已按 E-P1-5 正确分流到 stderr 通道，但 `fprintf(fp, ...)`（`fp` 来自 `fopen`）不会写入 VFS 文件，而是被当作 stdout 输出（与 Clang 不一致）。教学子集里 `fprintf` 主要配合 `stderr` 使用，既有 633 个 Shadow 用例未触发该差异；需要写文件时请用 `fputs`/`fwrite`/`fputc`。
 - ~~**`fclose` 后 VFS `FILE*` 仍被报告为内存泄漏**~~ — **已修复（2026-06-25）**。根因是 `host_fclose` 仅关闭 VFS 文件描述符，未释放 `host_fopen` 在 VM Heap 中为 `FILE*` 结构体分配的 4 字节内存。修复方案为在 `host_fclose` 中调用 `MemoryState::free_region(stream)` 释放该内存；stdout/stderr 等非堆分配 stream 找不到对应 region，安全忽略。新增 `baseline/fclose_leak.c` 回归用例。
 - **指针复合赋值 `+=` / `-=`** — **已支持（2026-06-28）**。`int* p; p += n;` 与 `p -= n;` 全链路支持，按 pointee 大小缩放；`void* p; p += n;` 按 GCC/Clang 扩展按 1 字节处理。函数指针算术、指针与指针的 `+=` / `-=`、以及其他复合赋值运算符（`*=`、`/=` 等）保持报错。新增 `baseline/pointer_add_assign*.c` 系列回归用例。
   - ⚠️ **与 Clang 的行为差异**：`void*` 算术属于 GCC/Clang 扩展，严格 C 标准未定义；教学中应引导学生优先使用具体类型指针。复合赋值表达式返回值在 Cide 中为右值指针，与 C 标准左值语义存在差异，但教学场景通常不依赖此差异。
@@ -356,6 +360,7 @@ cd native && cargo build --release --bin cide_cli
 | `step <file>` | 交互式单步调试（支持 `p` 打印变量、`o` 打印输出、`r` 运行到结束、`q` 退出） |
 | `unified <file>` | 统一模式（时间旅行引擎）批量执行并输出摘要（支持 `--max-steps <n>`） |
 | `export <file1> [file2 ...] -o <out.json>` | 预编译为字节码产物（多文件 + `--builtin-libc` 选项） |
+| `serve` | JSON-lines 会话模式（stdin 请求 / stdout 响应，id 关联 + 错误帧同构 + `session.reset`；与 capi 共用 `session_api` 入口语义） |
 
 ### 选项与特殊文件名
 

@@ -7,6 +7,266 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (C++ lambda · 批次 H：条目 1 返回类型推断 / 条目 2 文件作用域 lambda 变量)
+- **条目 1（lambda 返回类型硬编码 `Type::int()`）**：`__call` 的返回类型此前在
+  `resolve_lambda`（`crates/cide_typeck/src/expr/cpp.rs`）与 Pass 4 生成的 `FuncDecl`
+  （`crates/cide_typeck/src/lib.rs`）中**各自硬编码 `int`**，非 `int` 返回的 lambda 在调用点被当作 `int`
+  （`printf("%.2f", d(1.5))` 触发 `E3062` 格式不匹配）。
+  新增 `TypeChecker::infer_lambda_return_type`（取 body 首个 `return` 表达式的轻量推断：字面量 /
+  形参 / 已捕获变量 / 二元运算取较宽者 / 显式转型），结果存入 `LambdaInfo::return_type`，**两处共用同一来源**。
+  实测 `auto d = [](double x){ return x * 2.0; };` → Cide `d=3.00`，与 Clang++ 一致。
+- **条目 2（文件作用域 lambda 变量）**：`auto gf = [](int x){ return x + 7; };` 定义在 `main` 之外时，
+  Pass 2.5 的 `declare_var` 登记的是**替换前的 `auto`**（类型替换发生在登记之后），于是调用点查表得到
+  `auto` → `E3066 不能对非函数类型进行调用`。Pass 2.5 改为**先定型再登记**：全局 `auto`/`typeof`
+  先由初始化器解析出类型并替换 `g.ty`，再登记符号；解析结果缓存给检查循环复用（避免重复解析 lambda
+  导致 `pending_lambdas` 二次登记）。实测 `gg=8 6`，与 `CPP_FAILURES.md` 记录的 Clang++ 对照一致。
+- 附带：`TypeChecker` 的 4 个类型工具函数（`type_has_auto` / `type_has_typeof` /
+  `resolve_typeof_in_type` / `replace_auto_in_type`）提升为 `pub(crate)` 以便跨模块复用。
+- 回归：新增 `native/tests/cpp_lambda_test.rs`（3 用例：返回类型推断、文件作用域 lambda 可调用、
+  带捕获的局部 lambda 回归护栏）；`native/tests/CPP_FAILURES.md` 两项标记已修复并附剩余限制
+  （多 `return` 类型合并与尾置返回类型 `-> T` 仍按 `int` 处理）。
+
+### Fixed (scanf 族与标准输入 · 批次 G：条目 3 / 条目 4 + 输入换行口径统一 + Shadow 支持 `.in` 注入)
+- **条目 3（scanf 返回值未实现）**：`scanf` 此前被 typeck 声明为 `void`，`int r = scanf(...)` 报 `E3004`，
+  `while (scanf(...) != EOF)` 一类教学写法完全不可用。现按 C11 7.21.6.2 返回**成功匹配并赋值的项数**：
+  typeck 侧返回 `int`，VM 侧 `host_scanf_n` 统计成功项并压栈（`sscanf` 早已如此，本次对齐）。
+- **条目 4（scanf 普通字符指令被忽略）**：格式串中的非空白非 `%` 字符（如 `"a=%d"` 的 `a=`）此前被整段忽略，
+  `scanf("a=%d", &x)` 读 `a=42` 得到 `x=0`（Clang 得 42）。现新增 `ScanfItem::Literal(u8)`：与输入流的下一个
+  字符**精确比较**，不匹配即按标准**停止解析**并返回已赋值项数；`%%` 同样展开为字面 `%` 参与匹配。
+  `sscanf` 同族同修（与空白指令修复的先例一致）。
+- **标准输入换行口径统一（重要，由防线扩容暴露）**：capi `cide_set_input`、FRB `set_input`、
+  `cide_cli serve` 的 `run.input` 与 `-i` 输入文件此前各自用 `str::lines()` 拆分，**丢掉行尾 `'\n'`**，
+  而 E2E 防线用 `split_inclusive('\n')` —— 同一份输入在不同出口语义不一致，`getchar()` 永远读不到换行。
+  现统一到 `RuntimeState::split_stdin` / `set_stdin`（保留换行、`\r\n` 规整为 `\n`），四个入口共用。
+- **Shadow 防线支持用例自带 `.in` 注入（能力扩容）**：此前 Shadow 一律批量运行且不喂 stdin
+  （脚本注释自述"纳入 key 以备扩展"），K&R 目录里 29 个 `.in` 文件从未被使用 ——
+  "无输入"两侧恰好一致的**虚假 match**。现 `ShadowCase` 携带 `stdin`、Clang 与 Cide 喂同一份字节、
+  缓存 key 纳入真实 stdin。首次启用即暴露上述换行缺陷（19 例 `output_gap`：`kr_1_8` 的换行计数恒为 0
+  等），修复后全部转绿。
+- 回归：新增 3 个 Shadow/E2E 用例（`baseline/scanf_return_value.c`、`scanf_literal_match.c`、
+  `scanf_literal_mismatch.c`，含负向"字面不匹配须停止解析"），Golden 由 Clang 生成。
+
+### Fixed (会话级保险丝 · 批次 F：步数保险丝从未生效 + 配置静默丢弃 + 无回显)
+> 起因：复核 PR 清单「条目 5：堆决议第三道墙」时给第三道墙补用例，结果发现**第二道墙本身是坏的**。
+- **步数保险丝对全速运行的程序从未生效（严重）**：`native/src/engine/compile_pipeline.rs::setup_vm`
+  里硬编码了 `vm.set_max_steps(10_000_000)` —— 每次 `run` 之前都会把会话配置**抹掉**，
+  与 `CideVM::reset()` 的"保留会话级配置"注释直接冲突。实测：设 2000 步的程序一路跑到
+  **16 万步、直到撞 1MB 堆墙**才停；教学场景"可控地撞上限拿教学 trap"完全落空。
+  旧用例 `test_second_wall_max_steps_fuse` 只断言 trap 消息含"步数超过限制"，1000 万步同样满足，
+  因此长期掩盖该缺陷。现删除该行（默认值由 `CideVM::default()` 提供、`reset()` 保留用户配置），
+  并把用例强化为**回显配置值**（`（1000 步）`）。
+- **会话级配置静默丢弃**：`cide_set_max_steps` / `cide_set_call_depth_limit`（capi）与
+  `cide_cli serve` 的 `config.set` 此前都写成 `if let Some(vm) = session.vm.as_mut() { .. }`
+  并返回"成功" —— 会话尚未编译时（无 VM）配置被丢弃却报告成功。现下沉到语言中立层
+  `Session::set_max_steps` / `Session::set_call_depth_limit`（无 VM 时先建立承载配置的 VM），
+  capi 与 serve 共用同一入口。
+- **配置可写不可读**：`session_api::config()` 补 `max_steps` / `call_depth_limit` 回显
+  （VM 未创建时为 `null`），并给 `CideVM` 补 `max_steps()` getter —— 消费方（SharpTutor / 判分脚本）
+  据此可确认保险丝真的落到 VM 上，而不是"设置成功、实际未生效"。
+- **堆决议三道墙用例补齐**（`CIDE_HEAP_QUARANTINE_DECISION.md` §6 的最后一项，原记为"推导项"）：
+  新增 `crash_regression_tests::test_third_wall_region_table_bounded_when_step_fuse_trips_first`
+  —— leak 路径上步数保险丝先触发时，region 条数必须 ≤ 步数上限（有界），且未撞 1MB 墙。
+- 回归：新增 `native/tests/session_config_test.rs`（4 用例：配置跨 run 存活并生效、调用深度上限存活、
+  `config()` 回显、capi 在编译前设置也生效）；`test_second_wall_max_steps_fuse` 强化断言。
+
+### Fixed (教学标注 · 批次 E：P1-6 C++ 向上转型被误报为"数据截断")
+- **P1-6（多态基础被讲成危险操作）**：`Base* b = new Derived();` 此前报
+  `不兼容的指针类型赋值：Base* ← Derived*` 并建议"隐式类型转换可能导致数据截断" ——
+  复用了**标量**转换码 `W3053_ImplicitScalarConversion`。C++ 向上转型是隐式允许的多态基础写法，
+  Clang++ 在 `-Wall -Wextra` 下实测零警告。
+  - 新增专用码 `W3067_PointerTypeMismatch`（`cide_shared::ErrorCode` + 错误目录条目 + 建议文案
+    "指针类型不兼容，需要显式转换；向上转型（派生类指针 → 基类指针）本就不需要转换"）。
+  - `TypeChecker::is_upcast`：沿**单继承链**回溯判定向上转型（教学子集不支持多继承，单链足够；
+    带 32 步步数上限防环），向上转型不再产生任何指针诊断。
+  - 向下转型（`Base* → Derived*`）与无关类型指针仍报 `W3067`，文案改为指针语义
+    （不再出现"数据截断"）。
+- **诚实记录补录**：该差异此前未写入 `CPP_SUBSET_SPEC.md`（违反"以 Clang 为标准、不一致必须记录"的纪律）。
+  现补 §4.5「指针赋值的方向语义」：三场景对照表 + 修复记录 + **剩余差异**（Clang 对向下转型是
+  **error** 拒绝编译，Cide 仅为警告并继续编译）+ 已知显示瑕疵（警告的 code 被加 `E` 前缀，见下）。
+- 回归：新增 `native/tests/pointer_upcast_test.rs`（3 用例：向上转型无指针诊断、向下转型仍提示、
+  无关类型仍提示且不出现"截断"文案）；`type_checker_unit_test.rs` 的 B39 用例改用新码文案。
+- **已知显示瑕疵（未修，如实记录）**：诊断 JSON 的 `code` 字段与 `cide_cli` 输出对**警告**也加 `E` 前缀
+  （`W3067` → `E3067`，此前 `W3053` → `E3053` 同源）；`severity` 字段正确。修复需让
+  `session_api::compile` 按 severity 生成 `E`/`W`/`H` 前缀 —— 属独立小项，本次不动。
+
+### Fixed (教学标注 · 批次 D：P0-4 多文件会话的行号归属)
+- **P0-4（多文件会话语义标注凭空捏造）**：多文件编译会把各编译单元合并成一份源码
+  （`merge_compile_units`），因此字节码与 `code_line` 里的是**全局行号**；而语义标注此前固定用
+  `compile_units.first()` 的**文件内行号**去查 —— 单文件时两者恰好一致（所以问题长期未暴露），
+  多文件时必然错配（实测 `main.c` 仅 13 行却报出 `line 20..25`），会产出与真实执行行无关的
+  "看似合理"的描述。
+  - 新增 `Session::source_line_at(global_line)`：按 `CompileState.file_ranges`（`merge_compile_units`
+    产出，随编译期写入）换算 `(文件, 文件内行号)`；单文件会话（`file_ranges` 为空）保持
+    "全局行号 == 文件内行号"的原语义。
+  - 四处重复且各自为政的实现统一到该方法：`unified/collector.rs`（语义标签）、
+    `Session` 的 `AlgorithmContext::source_line`（算法步骤）、`unified/engine.rs`（检查点用的
+    轻量标签）、`unified/trace_analyzer/utils.rs`（轨迹分析）。
+  - **顺带修复**：函数定义行（`int helper(int x) {` 含 `helper(`）此前被标成"递归调用 helper"，
+    现按"签名与 `{` 同行"排除该误判（左花括号换行的写法仍可能误判，已记为已知限制）。
+- 回归：`native/tests/step_payload_vars_test.rs` 扩至 **8 用例**（新增：多文件下 main 的标签不得
+  串用 helper.c 的源码行、函数定义行不得报为递归调用）。
+
+### Fixed (教学标注 · 批次 C：P0-2 越界描述 / P0-3 两套标注互相矛盾)
+- **P0-2（描述不存在的比较）**：`cide_algorithm_steps::sorting::infer_bubble_sort` 新增内层下标有效性判据
+  —— 内层循环条件为 `j < n-1-i`，故参与相邻比较的 `j` 合法上界是 `n-2-i`；当 `j` 停在退出值上时
+  **不再产出** "比较/交换 `arr[j]` 与 `arr[j+1]`"，直接返回 `None`（宁缺勿错）。修复前实测 5 元素数组
+  产生 **24 步**含 `arr[5]`（数组上界为 4）的描述、真实比较只有 10 次；修复后 **0 步**。
+  （诚实记录：这 24 步此前落在**交换**模板上而非清单所写的"比较"模板 —— 比较模板采样时 `j` 尚未自增到退出值。）
+- **P0-3（同一 payload 内两套标注互相矛盾）**：`native/src/unified/collector.rs` 的交换标签不再取
+  `loop_vars.first()`（白名单首位常是规模量 `n`，实测取到 `n=5` → `交换 arr[5]↔arr[6]`，而同一 payload 的
+  `algorithm_step` 说 `交换 arr[0]↔arr[1]`）。改为**从源码行解析数组下标标识符**（`temp = arr[j];` → `j`）
+  后到循环变量里查值；解析不到时按内层循环命名回退（`j` → `i` → `k` …），最后才取候选末位。
+  实测同一步的两套标注现已逐字一致。
+- 回归：`native/tests/step_payload_vars_test.rs` 扩至 **6 用例**（新增：算法描述不得引用越界下标、
+  同一步两套交换标注必须一致、冒泡"第 k 趟"必须等于"第 k 大"）。
+
+### Fixed (教学标注与 CLI 契约 · 批次 B：P2-7 变量快照可见性与类型名)
+- **P2-7a（同名变量无法区分）**：`CideVM::get_variable_snapshot` 改为按 **(函数归属, 声明行)** 过滤并对同名去重 ——
+  新增 `Symbol::decl_line`（codegen 在参数/局部/静态/全局各构造点填入），`decl_line > 当前执行行` 的符号视为
+  "尚未进入作用域"不可见，同名保留"已进入作用域且声明最晚"者；`code_line == 0`（预热步 / 库函数内部）时
+  不输出局部变量（无法判定作用域时保守留空，而不是猜一个）。两个 `for` 各声明一个 `i` 时，现在按执行位置
+  在两者之间正确切换（回归测试断言地址序列恰为两个且有序）。
+  `scope_depth` 在所有构造点都是常量（局部 1 / 静态 0），不表达嵌套深度，**不能**用作判据 —— 已在字段注释如实记录。
+- **同源缺陷（清单未提，本次一并修复）**：函数内声明的符号此前**不过滤函数归属**，`helper` 的局部变量会出现在
+  `main` 的 payload 里，并且是用 `main` 的 `locals_base` 去读 `helper` 的偏移 —— 地址错位、值无意义。
+  多文件会话下这还会污染 `semantic_label`（出现两个 `i` / 两个 `j`）。
+- **P2-7b（数组暴露"地址式"值）**：`local_vars` 中数组条目的 `value` 改为**元素摘要**（`{5, 3, 1, 4, 2}`，
+  超过 16 个元素截断为 `…`）。此前显示首元素（多为 `0`），与 `array_snapshots` 重复且易被消费方误读成
+  "数组的值"；`addr` 字段保留（内存/指针视图仍需数组基址）。
+- **P2-7c（类型名泄漏内部结构）**：`ty_name` 由 `format!("{:?}", ty)` 改为 `cide_runtime::type_display_name`
+  —— C/C++ 风格稳定可读名（`int` / `unsigned int` / `const char*` / `int[5]` / `struct Node` / `Foo` / `int&`）。
+  该函数同时成为 `array_snapshots[].element_ty` 的单一来源（输出值不变 `int`，消除手写映射漂移）。
+- **回归与文档**：新增 `native/tests/step_payload_vars_test.rs`（3 用例：同名变量按声明行切换、跨函数隔离、
+  数组摘要与可读类型名）；`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md` 同步（`ty_name` 语义与示例、
+  §8 风险 #7 标记已修复、新增 #8 记录跨函数/同名问题）。
+
+### Fixed (教学标注与 CLI 契约 · 批次 A：P0-1 冒泡趟数文案 / P1-5 `compile` 退出码 / 引擎附注粘连)
+- **P0-1（教学文案把概念教反）**：`crates/cide_algorithm_steps/src/sorting.rs` 冒泡排序外层循环的描述由
+  `kth = n - i` 改为 `i + 1` —— 第 pass 趟确定的是「第 pass 大」的元素（升序冒泡每趟把当前未排序区间的最大值
+  冒到区间末尾），旧式是"剩余待排个数"，与排名恰好相反（n=5 时第 1 趟显示"第 5 大"= 最小元素）。同时加
+  `i + 1 <= n` 有效性判据。错误并非实现偏离设计：`docs/archive/REVIEW_REPORT_2026-05-18_FULL.md:1059`
+  的设计稿即写作 `第 {i} 趟：将第 {n-i} 大的元素`。
+- **P1-5（CLI 退出码不反映编译失败）**：`native/src/bin/cide_cli.rs::cmd_compile` 此前丢弃 `compile_file`
+  的返回值，`cide_cli compile bad.c` 会带着诊断信息退出 0，CI 脚本 / headless 消费方（SharpTutor）据此
+  误判"编译通过"。现与 `cmd_run` 一致：编译失败即 `std::process::exit(1)`。
+- **引擎附注粘连（泄漏报告压成一行）**：`RuntimeState::push_note` 统一为每段附注补齐尾随 `\n`。display 视图是
+  零分隔顺序拼接，而 `append_leak_report` 的 5 行**全部没有尾随换行**（只有首行有前导 `\n`），实测输出被压成
+  `===== 内存泄漏检测报告 =====发现 1 处未释放的堆内存，共 16 字节：  • 第 4 行的 malloc…💡 提示：…======`。
+  **仅 note 通道做此规范化；程序 stdout / stderr 逐字节保真，不做任何加工。**
+- 复核与修复跟踪：新增 [`docs/current/code_review_report_2026-09-11.md`](docs/current/code_review_report_2026-09-11.md)
+  （外部 PR 清单 12 项的独立复现结论、对清单 3 处表述的修正、以及分批修复状态表）。
+
+### Fixed (E-P1-5：输出通道分离——程序 stdout 与引擎附注不再混装)
+- **根因**：`RuntimeState::output_lines` 一个 `Vec<String>` 同时承担「程序 stdout / 程序 stderr / 引擎附注」三种语义，
+  且附注可在流**中间**插入（如 `[堆] 内存耗尽` 提示在 `malloc` 失败处 push，程序随后还会继续输出）。
+  消费方只能靠文本正则把附注洗掉，同一套清洗规则散落**十余处**（`shadow_verify.py`、`shadow_verify_cpp.py`、
+  `cide_e2e.rs`、`bytecode_libc_consistency.rs`、`test_utils.rs`、`bytecode_gen_cpp_unit_test.rs`、
+  `end_to_end_extra_test.rs`、`qsort_test.rs`、`test_more.py`、`test_massive.py` …），且语义互不一致
+  （全局替换 vs 行内截断、`>=30` vs `==30` 个等号、丢空行 vs 仅 strip 首尾）。教学程序自己打印
+  `程序运行完成，返回值：7` 时会被**整段删除**，一条本来正确的用例被记成 `output_gap`（假阳性）。
+- **修复**：`cide_runtime` 新增 `OutputKind{Stdout,Stderr,Note}` + `OutputChunk`；`RuntimeState::output_chunks`
+  成为唯一真相，提供 `stdout()` / `stderr()` / `notes()` / `display()` 四个投影（`output()` 保留为 `display()` 别名，
+  UI / CLI 展示语义不变）。约 20 处 push 点完成分类迁移：`printf`/`puts`/`putchar`/`fputs(stdout)` → stdout；
+  `fputs(stderr)`/`fprintf(stderr)`/`perror` → stderr；运行完成提示 / 泄漏报告 / `malloc(0)` 警告 / 堆耗尽提示 /
+  `[abort]` / 断言失败 / `qsort`·`bsearch` 深度提示 → note。快照（`cide_vm::snapshot::RuntimeSnapshot`）
+  同步携带分段，时间旅行回退不丢通道标记。
+- **出口（ABI 1.0.0 → 1.1.0，加函数 = minor）**：capi 新增 `cide_get_program_output_length` /
+  `cide_get_program_output` / `cide_get_engine_notes_length` / `cide_get_engine_notes` /
+  `cide_get_program_output_delta`；`cide_get_output*` 保持「展示视图」语义不变（`CideFlutter` 集成测试依赖其含
+  "程序运行完成"文本，故不改语义、不升 major）；`cide_cli serve` 的 `output.delta` 新增可选 `stream` 参数
+  （`display`（默认）/ `stdout` / `stderr` / `note`），响应带 `stream` 字段。`native/include/cide_capi.h` 同步。
+- **驱动侧**：十余处清洗规则**全部删除**；`shadow_verify.py` 与 `scripts/shadow_verify_cpp.py` 共用
+  `native/tests/shadow_verification/cide_output.py`（结构化读取唯一入口，禁止再自行清洗）；DLL 缺新符号时
+  **fail fast** 并提示重建，不退回旧清洗口径。
+- **回归固化**：新增 `native/tests/cases/baseline/engine_note_lookalike.c`（程序打印与引擎附注逐字相同的文本、
+  触发一次 `malloc(0)` 附注、走一次 stderr、以无尾换行收尾），Golden 由 Clang 生成（`cases_golden/baseline/`）；
+  新增 `end_to_end_extra_test::test_e2e_engine_note_does_not_pollute_stdout` 断言 stdout / note 分离。
+
+### Changed (Shadow 验证提速：Clang 结果缓存 + 并行执行 + release DLL 陈旧检测)
+- **Clang 结果缓存（方案 A）**：`native/tests/shadow_verification/shadow_verify.py` 新增 Clang Golden 缓存 ——
+  key = `schema + platform + clang 版本 + 编译/运行参数 + 用例源码（含 `#include` 头文件内容哈希）+ stdin + VFS 预设文件哈希`，
+  任何一项变化自动失效；`--refresh-clang` 无条件重算并覆盖（CI 夜间 schedule 使用，防 clang 版本漂移）。
+  原子落盘（临时文件 + `os.replace`），损坏/schema 不符一律视为未命中（宁重算，不用不可信 Golden）。
+- **并行执行（方案 B）**：`--jobs N`（默认 0 = `min(CPU, 8)`，1 = 串行）。
+  首选 `multiprocessing.Pool`（`imap_unordered` 任务级负载均衡）；**命名管道被禁的环境自动回退分片 subprocess**
+  （`subprocess` 用匿名管道，不受限）。两条路径均按用例索引重排 —— 报告与门禁结论与串行逐项一致。
+  `prepare_test_files` 从"每用例调用"改为 **worker init 一次**，且写入**各 worker 私有的隔离运行目录**
+  （同时作为 Clang 运行的 cwd），并行 worker 之间不再互相覆盖。
+- **release DLL 陈旧检测（顺手修）**：Shadow 用 `target/release` DLL 而日常构建多为 debug，改完引擎不重建就会
+  拿**旧引擎**跑门禁（2026-09-11 实际踩到）。现启动时比对引擎源码（`native/src`、`native/crates`、`Cargo.toml`）
+  与 DLL 的 mtime，过期即打印醒目警告；`--rebuild` 可自动 `cargo build --release`。
+- **不再使用 `tempfile`**：其 `mkdtemp` 内部以 `os.mkdir(p, 0o700)` 建目录，在受限（沙箱）环境下生成**不可写**目录
+  （实测 WinError 5），且临时目录位于系统 TEMP 时同样不可用 —— 改为自管生命周期的工作区目录 `.shadow_tmp/`。
+- **确定性修复**：`load_case_files()` 的 glob 结果改为 `sorted(...)`（glob 顺序依赖底层 scandir，**跨进程不保证一致**，
+  并行 worker 按索引取用例会错配）；分片 payload 同时携带用例 **name**，主进程按索引回收后再做 name 对账。
+- **实测（632 用例，2026-09-11）**：优化前串行全量 **103.6s** → 优化后（缓存命中 + 8 并行）**1.1s**，
+  冷启动（并行 + `--refresh-clang` 全量重算）**20.4s**；三次运行的 `(用例, 判定)` 序列**逐项完全一致**（0 非预期差异）。
+- **CI**：`.github/workflows/ci.yml` 新增 `schedule`（夜间 18:00 UTC）夜间模式加 `--refresh-clang`；
+  新增 `actions/cache` 缓存 `.clang_cache`（key 含 OS + clang 版本 + 脚本哈希，clang 升级自动失效）。
+- **性能顺带优化**：`run_with_cide` 的 `ctypes.CDLL` 加载与全部函数签名设置从**每用例一次**改为**每进程一次**。
+
+### Added (Phase 1 出口 3：`cide_cli serve` JSON-lines 会话模式)
+- **新增 `native/src/bin/cide_cli.rs::cmd_serve`**：stdin 每行一个 JSON 请求 / stdout 每行一个 JSON 响应（NDJSON）。
+  契约：**id 关联**（响应原样回填 `id`）、**错误帧与成功帧同构**（`{"id","ok","result"}` / `{"id","ok","error":{kind,message}}`）、
+  `session.reset`（长寿命进程复用）；方法集 `compile` / `run` / `output.delta` / `step.begin` / `step.next` /
+  `payload.get` / `seek` / `breakpoints.set` / `memory.regions` / `config.get|set` / `session.*` / `ping` / `shutdown`。
+- **语言中立层提炼 `native/src/session_api.rs`（新增）**：capi 第一批的 JSON 结果构造（编译诊断 / 运行三态 /
+  游标增量 / 单步 payload / 窗口查询 / 断点写入 / 内存视图 / 会话配置）全部下沉，`capi` 与 `serve` **共用同一实现**
+  （主计划纪律 §2.2-2：三出口只做薄包装，防"typeck 与 codegen 双轨语义"重演）。capi 侧变为薄包装，出口 JSON 形状不变。
+- **防线**：`scripts/serve_smoke.py`（26 项断言：id 关联 / 帧同构 / 生命周期 / 与 capi 同形的 payload 字段 /
+  默认隔离预算 262144 / `config.set` 生效 / 非法程序诊断 / 未知方法错误帧），已进 CI。
+  文档见 [`docs/current/CIDE_CLI.md`](docs/current/CIDE_CLI.md) §6。
+
+### Added (StepPayload Schema v0.1 定稿文档 + 字段冻结测试)
+- **新增 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md)**（语言中立）：
+  顶层 14 字段语义、子结构、**指针四状态枚举（Valid/Freed/Null/Dangling）及其判定优先级**、
+  `accessed_vars` 读写枚举、`vis_events.ty` 编码、**frameCache 窗口语义**（2000 帧 / 丢弃最早 20% /
+  `cache_start_step` / 越窗 seek = 检查点恢复 + 正向重放 / seek 后窗口重置与截断）、
+  `StepStreamBatch`/`StepPayloadDelta` 差分编码（`null` = 未变 vs `[]` = 空 的区分是契约）、
+  出口形状、版本化纪律（字段只增不改语义）与**回放场景校验记录**（我方 C1–C4 已实测；对端 S1–S3 待 SharpTutor 执行，如实标注）。
+- **新增 `native/tests/step_payload_schema_v0_1_test.rs`（5 用例）**：从 **capi 出口 JSON** 层面冻结 schema ——
+  顶层 14 字段键集合、子结构字段集合、`PointerStatus` 与 `access_type` 字面量、窗口 2000 帧上限与
+  `cache_start_step` 前移。字段一旦改名/增删即测试失败，强制走版本化流程（防止 schema 文档悄悄过期）。
+
+### Added (堆隔离预算的会话配置出口)
+- **`cide_set_quarantine_budget` / `cide_get_quarantine_budget`（capi）**：补齐堆决议 §1「隔离预算可调，写进会话配置」
+  的对外暴露缺口（此前仅引擎字段可调，capi 无 setter）。语义：默认 256KB；`0` = 关闭隔离（教学对照，
+  free 后立即可复用）；超大值裁剪到堆上限（1MB）；负值拒绝。serve 侧经 `config.set` / `config.get` 暴露同一字段。
+- **集成测试 3 例**（`capi_first_batch_tests.rs`，该文件 15→18）：`test_set_quarantine_budget_controls_address_reuse`
+  （默认预算下 `free` 后地址不复用 → 预算 0 时立即复用，用同一程序的 `p == q` 输出证明）、
+  `test_quarantine_budget_is_clamped_to_heap_limit`、`test_quarantine_budget_setter_rejects_null_session`。
+
+### Added (capi 第一批：SharpTutor 评审定稿落地，10/13 函数)
+- **新增 `native/src/capi/first_batch.rs`**，按 [`CIDE_CAPI_REVIEW_RESPONSE.md`](docs/current/CIDE_CAPI_REVIEW_RESPONSE.md) §1 落地第一批：`cide_abi_version`（契约版本 `1.0.0`，加函数=minor / 改签名=major）、`cide_engine_version`（crate 版本 + 可选构建期 git hash）、`cide_free_string`（rust-alloc 所有权唯一释放入口，废弃 caller-buffer 双轨）、`cide_last_error`、`cide_compile_json`（诊断含 `severity` 枚举与 `end_line/end_column`——精确跨度需动三处错误结构体，本批先给"起点+1"退化值，schema 不欠债）、`cide_run_json`（`status` 三态 + `return_value`/`trap` E 码透传/`waiting_input`/`steps_executed`）、`cide_get_output_delta`（游标增量，多字节边界安全）、`cide_set_max_steps`、`cide_set_call_depth_limit`、`cide_set_deterministic`/`cide_get_deterministic`。
+- **横切契约**：全部 JSON 返回为 rust-alloc 字符串（`cide_free_string` 释放）；全部入口 `catch_unwind` 包裹（panic 不跨 C 边界）；状态码 `0=成功/负=入参或会话无效/正=领域状态`；Session 非线程安全声明；UTF-8 输入输出。
+- **引擎侧配套**：`CideVM` 新增 `call_depth_limit` 字段（V-P1-10）与 `do_call_inner` 深度检查（下限 16 层兜底），`reset()` 不再清空会话级配置（`max_steps`/`call_depth_limit` 由 `set_*` 设定后须跨运行存活）；`RuntimeState` 新增 `deterministic` 字段，`host_time`/`host_clock` 在该模式下固定返回 0（Phase 1 判分确定性最小形态；完整 step 派生伪时钟仍留 Phase 3）。
+- **断点 / 单步三函数（同批落地）**：`cide_set_breakpoints`（JSON 整数数组，须在 `cide_step_begin` 之后设置——step_begin 会重建 VM 并清空断点）、`cide_step_begin`（新增入口：装载 VM + 重建运行时 + 初始检查点）、`cide_step_next_json`（返回 `AutoStepResult` JSON，命中断点时 `paused=true`）、`cide_get_step_payloads_json`（按步号区间取 payload 数组 + `cache_start_step`/`max_collected_step`）。配套：`UnifiedEngine` 由 `Session` 持有（`Session::unified`，三出口共用同一会话）；`StepPayload` 类型链（含 `PointerSnapshot`/`AccessedVar`/`ArraySnapshot`/`ApiFrameInfo`/`AlgorithmStepSnapshot`/`RootCauseHint` 等 16 处）补 `serde::Serialize`。
+- **集成测试** `native/tests/capi_first_batch_tests.rs`（15 用例）：字符串所有权与重复分配、`severity`/`end_column` 字段、运行三态、游标增量三场景（初始/末尾/负游标）、三处保险丝（max_steps 死循环 trap、call_depth_limit 深递归 trap、deterministic 冻住 `time()`）、统一模式（未编译返回 -2、单步 payload schema 关键字段、断点命中 `paused=true`、非法断点入参）。
+- **本批全部 13/13 落地**（含上表断点/单步三函数）。
+
+### Fixed (标准库 stub 头文件不可用 —— include 换行被吞)
+- **根因**：预处理器把标准库 stub 的换行**全部替换为空格**（原意是"避免源文件行号偏移"），导致 stub 内的 `#define` / `#ifdef` 等指令落到行中间、不再被识别为预处理指令 —— `time.h` / `float.h` / `errno.h` / `assert.h` / `stdarg.h` **五个含宏的标准库 stub 整体编译失败且不给任何诊断**（`stdio.h` 恰好不含宏，长期掩盖了该问题）。
+- **修复**：include 内容**保留原始换行**，改为**行号补偿** —— 插入前先把 `self.line` 减去插入内容的换行数，扫描完插入内容后行号恰好回到 include 行的下一行，因此后续源码的诊断行号与 include 无关。自定义头文件同样受益（此前它保留换行但无补偿，行号会整体偏移）。
+- **实测**：`CLOCKS_PER_SEC` / `FLT_RADIX` / `EINVAL` 宏可正常展开（输出 `1000000 2 1`）、`assert(1 == 1)` 可用、语法错误仍报原始第 4 行（零偏移）；C shadow 632 用例与 C++ shadow 100 用例 0 非预期差异。
+- **回归测试**：`crash_regression_tests.rs` 新增 3 例（含宏 stub 编译与展开、assert 函数式宏、include 不顶偏诊断行号）。
+
+### Changed (堆内存模型：bump 分配 + 有界隔离 —— 2026-09-11 决议落地)
+- **`malloc`/`calloc` 改为 bump 顶指针推进 + 隔离区驱逐复用**（`MemoryState::allocate_raw`）：隔离区超预算（默认堆上限 1/4 = **256KB**，会话级可调）时按 FIFO 驱逐最老已释放块归还 `free_list`，再 first-fit 复用。原"free_list 查找 + 相邻合并"的分配路径退役，`merge_free_list` 降级为驱逐路径内部实现。
+- **`free` 改为进入 FIFO 隔离区**（`MemoryState::release_to_quarantine`）：地址在隔离期内不复用。`freed_logs` / 泄漏判定 / E3027·E3061 诊断逻辑全部保留。`host_free`、`realloc(p, 0)`、VM 内部 `free_memory`（`new[]` 构造失败回滚）三条释放路径统一走该出口。
+- **`realloc` 恒为新块拷贝**：移除"堆顶原地收缩"与"优先复用旧地址"两个特例——前者会把 `heap_offset` 回退进隔离区，后者让刚 free 的地址立即重新生效，都会破坏"隔离窗口内地址不复用"的保证。E2E 断言 `test_e2e_realloc_in_place_shrink` 按决议 §4-3 重写为 `test_e2e_realloc_new_block_copy`（把分配器复用行为从契约中除名，改测"搬移 + 原数据完整保留"）。
+- **隔离区纳入快照与重置闭环**：`MemorySnapshot` 增加 quarantine 三字段（时间旅行回退后隔离窗口不丢失，否则 UAF 检测出现假阴性）；`reset_runtime` 清空隔离区但保留会话级预算配置。
+- **堆耗尽（1MB 墙）返回 NULL + 一次性教学提示**：leak 路径 bump 单调推进直至撞墙，`malloc`/`calloc`/`realloc` 三条 OOM 路径输出教学诊断（按内容去重）。**不 trap** —— C 标准要求分配失败返回 NULL，Clang 同样返回 NULL，trap 会偏离"必须检查返回值"的编程习惯（与决议 §5"教学 trap"措辞的差异已记入 `C_SUBSET_SPEC.md` §2.9-4）。
+- **`fopen` 的 FILE\* 分配统一走堆分配入口**：此前直接推进 `heap_offset`，绕过隔离与驱逐逻辑。
+- **碎片可视化语义变更（决议 §4-2 处置）**：`free_list` 现仅承载"隔离期满已归还"的块，外部碎片只在驱逐复用路径出现；Phase 14 的"碎片率"指标仍保留（`build_heap_stats` 不变）但语义收窄。三色堆图（已分配 / 隔离中 / 可复用）随 capi 第二批的内存 API 一并落地（`status: allocated|freed`），本次先在引擎层把语义备好。
+- **测试防线**：`host_contract_tests`（3a）新增 4 条隔离区契约（free 入隔离区不入 free_list / 驱逐后地址复用 / realloc 必搬移 / `heap_offset` 不回退）；`crash_regression_tests.rs` 新增 5 条堆语义专项（churn 10 万次不撞墙 + 驱逐后地址复用 / 隔离窗口内 UAF 与 Double-Free 必检出 / 1MB 墙 NULL + 教学提示 / realloc 搬移保留数据）。
+- **`C_SUBSET_SPEC.md` 新增 §2.9**：堆模型、设计动机（churn / leak 分离）与四项与 Clang 的差异（隔离窗口外 UAF 漏检、realloc 恒搬移、复用时机不同、堆耗尽不 trap）。
+
+### Fixed (SharpTutor Issue A/B：教学阻断修复)
+- **Issue A：scanf/sscanf 格式串空白指令不跳白**（教学阻断，优先级最高）。`parse_scanf_specs` 此前只提取 `%` 转换符、丢弃格式串中的空白字符，导致 `scanf("%d %c %d", &a, &op, &b)` 读 `3 + 4` 时 `%c` 捕获空格而非 `+`（C11 7.21.6.2 要求空白指令匹配输入中任意数量（含零）的空白字符）。现解析结果改为有序项序列 `ScanfItem::{Spec, Whitespace}`，空白指令只跳白不取参；参数计数改按 `Spec` 项数统计（空白指令不消费指针参数）。scanf/sscanf 共享解析，全族同病同修。`%c` 不自动跳白是既有正确语义，未受影响。
+- **Issue B1/B3：lambda 立即调用编译错与错误码误用**。`[](int a, int b){ return a + b; }(2, 3)` 此前编译失败——`cide_typeck/src/expr/call.rs::resolve_call_ptr` 只处理 callee 为标识符的调用，Lambda 表达式节点的 callee 一路落到"非函数指针"兜底，且误用 `E3045_CompoundAssignType`（复合赋值类型错误），建议文本随之串成"+= -= *= /= 等复合赋值要求操作数类型兼容"。现 typeck 识别 Lambda callee，与变量形式（`auto f = lambda; f(1)`）**共用同一改写函数 `rewrite_lambda_call`**（消除双轨语义）；新增错误码 **`E3066_CallNonFunction`**（含 error_catalog 条目与建议文本），兜底报错改用之。Clang 对照语义：`called object type 'int' is not a function or function pointer`。
+- **Issue B2：lambda 槽位按 0 字节分配，StoreLocal 冲出 1MB 线性内存**。`gen_lambda` 在栈上推的是**闭包对象地址**、lambda 变量槽里存的也是该地址（4 字节），但槽位与闭包对象大小一律按闭包类字段总大小计算——无捕获闭包 size 为 0，于是 `auto f = [](int x){ return x + 100; };` 在帧内根本没有槽位，`StoreLocal` 写到帧外并越出线性内存（实测 `locals_base=1048572`、`operand=4`、`addr=1048576` = MEM_SIZE）。触发条件为"先出现 lambda 立即调用、后声明 lambda 变量"（仅立即调用不触发，仅变量声明也不触发）。修复：新增 `is_lambda_closure_type` 作**单一判定来源**，lambda 变量槽位与闭包对象均保底 4 字节；同时修正实参处理——lambda 一律按 1 word（地址）压栈，不再按字段数补零（**双字段捕获闭包此前会多压 1 word 造成参数错位**，与 B2 同源）。**同源第三处**：`static` lambda 变量走全局区分配（`emit_static_var`），同样按闭包类字段大小占地——两个 static 闭包地址重叠，实测 `printf` 输出乱码（Clang 对照 `s=8 6`），已按同一判定修为一并覆盖。同批实测记录的两项**未实现能力**（文件作用域 lambda 变量、lambda 返回类型非 int）已记入 `native/tests/CPP_FAILURES.md`。
+- **回归测试**：`crash_regression_tests.rs` 扩展 11 个用例（19→30）——Issue A 4 个（空白指令正/反向对照 + 多空白等价 + sscanf 共享语义）、Issue B 7 个（立即调用、实参位置、立即调用后声明变量、有捕获闭包实参、static 变量槽位、变量形式反向对照、E3066 错误码与建议文本断言）。全部期望值取自 Clang/Clang++ 实测 Golden，Cide 输出逐字节一致。
+
 ### Added (capi 签名评审定稿：SharpTutor API 诉求逐条回应)
 - **新增评审回复文档** `docs/current/CIDE_CAPI_REVIEW_RESPONSE.md`：对 SharpTutor《后端 API 需求与签名评审》逐条回应（§1~§9 全覆盖）+ 六个开放问题的正式回答。核心结论：**整体接受，一处分歧修订为并行**。含三项实证核验——重复编译内存有界（10000 次交替编译 RSS 16.6→18.4MB 平台期，将固化为回归断言）、`MemoryRegionData.alloc_line/alloc_by` 已存在（零成本直通）、frameCache 越窗行为已查证（检查点恢复+正向重放）；SharpTutor 项目实地核验（三进程架构、EndLine/EndCharacter 消费点属实）。
 - **主计划修订（§3.2/§5.3/§6/§7）**：StepPayload schema v0.1 定稿从 Phase 3 **前置到 Phase 1**（第一批 `step_next_json` 输出即 StepPayload，协议不可能晚于消费它的 API）；`cide_set_deterministic` 最小形态（time 固定 + rand 种子固定）提前进 Phase 1，与 Phase 3 完整伪时钟分层（判分确定性 vs 重放确定性）；wasm 与 capi 第二批改为**并行**（Phase 2a/2b，各约一周互不抢资源——wasm 是社区前端生态冷启动开关，不因单一消费者无需求而后置）；capi 第一批扩容（engine_version/last_error/free_string 字符串所有权/set_max_steps/set_call_depth_limit/run_json 判分契约/断点三函数）；serve 增加 id 关联、错误帧同构、session.reset；JIT 断点完整性从 V-P1-2 提级为行为契约。

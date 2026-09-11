@@ -241,7 +241,7 @@ pub fn by_user_name(name: &str) -> Option<u32> {
 **原因**：
 - `strcpy`/`memcpy` 等函数在 Host 层注入了 **E3070 Buffer Overflow** 诊断，走 Bytecode 路径会丢失教学安全检测
 - `rand`/`srand` 在 Host 层维护全局状态，与 CRT 行为保持一致更为安全
-- `printf`/`scanf` 等 I/O 函数需要操作 `session.runtime.output_lines` 和 VFS，无法纯字节码化
+- `printf`/`scanf` 等 I/O 函数需要操作会话输出通道（E-P1-5 后为按 `OutputKind` 打标的 `session.runtime.output_chunks`）和 VFS，无法纯字节码化
 
 **后续扩展**：可逐步将纯计算函数迁移到 Bytecode 路径，但每次迁移需评估诊断能力损失。
 

@@ -43,8 +43,8 @@
 
 第三方教学 IDE（SharpTutor，WPF/.NET，三进程架构）主动提出把 Cide 后端作为 C/C++ 执行引擎接入，并提交了三个高质量 Issue（复现步骤、对照用例、根因分析全部核实无误）：
 
-- **Issue A（bug，教学阻断）**：scanf 格式串空白指令不跳白——`"%d %c %d"` 读 `3 + 4` 时 `%c` 捕获空格。核实补充：**sscanf 同样中招**，根因在共享的 `parse_scanf_specs` 只提取 `%` 转换符、丢弃格式串空白字符，scanf/sscanf/fscanf 全族同病。锚点：`cide_vm/src/host/io.rs` + `parse_scanf_specs`。
-- **Issue B（bug，两个根因已定位）**：lambda 调用缺陷——B1 立即调用 `[](..){..}(2,3)` 编译错（`cide_typeck/src/expr/call.rs:100` 的 lambda 分支依赖 `lookup_var`，Lambda 表达式节点查不到落到 `:197` 兜底）；B2 任何函数实参位置调用 lambda 运行时 StoreLocal 越界（补充发现：不限 printf，自定义函数同样触发；症状与审查报告 §7.2-7 临时槽位家族三起历史 bug 同构）；B3 `:197` 误用 `E3045_CompoundAssignType` 报调用错误（建议文本串行的真因，非 error_catalog 问题）。
+- **Issue A（bug，教学阻断）✅ 已修复（2026-09-11）**：scanf 格式串空白指令不跳白——`"%d %c %d"` 读 `3 + 4` 时 `%c` 捕获空格。核实补充：**sscanf 同样中招**，根因在共享的 `parse_scanf_specs` 只提取 `%` 转换符、丢弃格式串空白字符，scanf/sscanf/fscanf 全族同病。锚点：`cide_vm/src/host/io.rs` + `parse_scanf_specs`。修复：解析结果改为有序项序列 `ScanfItem::{Spec, Whitespace}`，空白指令只跳白不取参，参数计数按 `Spec` 项数统计。
+- **Issue B（bug，两个根因已定位）✅ 已修复（2026-09-11）**：lambda 调用缺陷——B1 立即调用 `[](..){..}(2,3)` 编译错（`cide_typeck/src/expr/call.rs:100` 的 lambda 分支依赖 `lookup_var`，Lambda 表达式节点查不到落到 `:197` 兜底）；B2 任何函数实参位置调用 lambda 运行时 StoreLocal 越界（补充发现：不限 printf，自定义函数同样触发；症状与审查报告 §7.2-7 临时槽位家族三起历史 bug 同构）；B3 `:197` 误用 `E3045_CompoundAssignType` 报调用错误（建议文本串行的真因，非 error_catalog 问题）。修复落点：typeck `resolve_call_ptr` 增加 Lambda callee 分支且与变量形式**共用 `rewrite_lambda_call`**（消除双轨）；新增错误码 `E3066_CallNonFunction`；codegen 新增 `is_lambda_closure_type` 单一判定——lambda 变量槽位与闭包对象保底 4 字节（B2 实测根因：无捕获闭包 size=0，帧内无槽位，`StoreLocal` 冲出 1MB 线性内存），实参一律按 1 word 地址压栈（双字段捕获闭包曾多压 1 word 致参数错位）。
 - **Issue C（提案）**：为 headless 消费者提供机器可读边界。关键事实：**capi 路线已有生产级先例**——shadow_verify.py 自始就用 Python ctypes 吃 C ABI 跑完 632 个用例。提案实质是"把已验证的边界补全"，不是新建边界。
 
 **结论：外部消费者已经出现，后端作为独立组件的定位是被需求推着成立的，切割是把这个事实固化。**
@@ -135,7 +135,10 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 - **请求带 `id` 字段做关联**（异步竞态对账）、**错误帧与响应帧同构**（`{"id":n,"error":{...}}`）、**提供 `session.reset`**（长寿命防抖进程复用场景，避免高频重启进程）——SharpTutor 评审新增，已采纳；
 - 会话生命周期镜像 capi：`session.create / session.reset / compile / run / step.next / seek / breakpoints.set / memory.regions / payload.get / session.destroy`；
 - 与 capi 共用入口函数（见 §2.2 纪律 2）；
-- 输出复用 shadow 的清洗规则单一来源（对应审查 E-P1-5：清洗逻辑三处重复）。
+- 输出走**结构化通道**（`OutputKind::Stdout/Stderr/Note` + capi `cide_get_program_output*` / `cide_get_engine_notes*`）——
+  原计划"复用 shadow 的清洗规则单一来源"已被更彻底的方案取代：审查 E-P1-5 的根因是引擎把程序 stdout 与
+  引擎附注写进同一条字节流，清洗规则散落十余处且会在程序打印同类文本时误删真实输出，故**废除清洗**、
+  改为源头打标。**✅ 已完成（2026-09-11）**，详见 `code_review_report_2026-09-06.md` 第 5 条。
 
 ---
 
@@ -189,7 +192,7 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 
 | 批次 | 函数族 | 受益方 |
 |---|---|---|
-| 第一批 | `cide_abi_version` / `cide_engine_version`（git hash）/ `cide_last_error`；`cide_compile_json`（诊断含 end_line/end_column 字段，默认"起点+1"退化值，severity 枚举含 warning/hint）；`cide_set_max_steps` / `cide_set_call_depth_limit`（V-P1-10）/**`cide_set_deterministic` 最小形态**（time 固定 + rand 种子固定，判分确定性）；`cide_run_json`（return_value/trap/waiting_input/steps_executed）；输出游标增量 `cide_get_output_delta`；`cide_set_breakpoints` / `cide_step_next_json` / `cide_get_step_payloads_json`；`cide_free_string` | SharpTutor 立即可用（80% 场景），**StepPayload schema v0.1 随本批定稿**（双方回放场景校验） |
+| 第一批 | `cide_abi_version` / `cide_engine_version`（git hash）/ `cide_last_error`；`cide_compile_json`（诊断含 end_line/end_column 字段，默认"起点+1"退化值，severity 枚举含 warning/hint）；`cide_set_max_steps` / `cide_set_call_depth_limit`（V-P1-10）/**`cide_set_deterministic` 最小形态**（time 固定 + rand 种子固定，判分确定性）；`cide_run_json`（return_value/trap/waiting_input/steps_executed）；输出游标增量 `cide_get_output_delta`；`cide_set_breakpoints` / `cide_step_next_json` / `cide_get_step_payloads_json`；`cide_free_string` | SharpTutor 立即可用（80% 场景），**StepPayload schema v0.1 随本批定稿**（双方回放场景校验）。**实现进度（2026-09-11）：13/13 全部落地**——含断点/单步三函数与 `StepPayload` serializable 类型链（`UnifiedEngine` 已由 `Session` 持有，三出口共用同一会话），逐项状态见 `CIDE_CAPI_REVIEW_RESPONSE.md` §10.1 |
 | 第二批 | `cide_get_memory_regions_json`（新增 `kind: global\|stack\|heap` 合成枚举 + `status: allocated\|freed`）/ `cide_read_memory_bytes_json`（字节粒度）/ `cide_get_heap_stats_json` / `cide_get_struct_fields_json`；错误码表机器可读导出（`error_catalog.rs` → JSON，含"超出教学子集"E4001~E4031 段声明 + 审查报告 §8 已知差异清单机器可读化） | 内存可视化、断点调试类前端 |
 | 第三批 | `run_auto_steps` / `seek_to_step` / `get_vis_events` / `get_heatmap` / `cide_demangle`；时间旅行完整体验 | schema v0.1 发布后按增量演进 |
 
@@ -202,18 +205,24 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 | 阶段 | 内容 | 规模 | 前置 |
 |---|---|---|---|
 | **Phase 0：切割准备** | 依赖盘点、模板用例迁移、切割清单执行、MIT 化、AGENTS/README 重写 | 2~3 天 | 无 |
-| **Phase 1：边界补全** | 语言中立 Rust 层提炼（session/unified/memory/breakpoints 下沉）；capi 第一批（含 deterministic 最小形态与运行时保险丝契约，见 §5.3）；`cide_cli serve` JSON-lines（含 id 关联/错误帧同构/session.reset）；`cide_abi_version()`；**StepPayload schema v0.1 定稿**（双方回放场景校验，定稿后 CoW 方可动工）；**Issue A/B 修复**（A 教学阻断最优先；B1/B3 锚点已定位，B2 需看 codegen 槽位序列） | 1~1.5 周 | Phase 0 |
+| **Phase 1：边界补全** | 语言中立 Rust 层提炼（session/unified/memory/breakpoints 下沉）；capi 第一批（含 deterministic 最小形态与运行时保险丝契约，见 §5.3）；`cide_cli serve` JSON-lines（含 id 关联/错误帧同构/session.reset）；`cide_abi_version()`；**StepPayload schema v0.1 定稿**（双方回放场景校验，定稿后 CoW 方可动工）；**Issue A/B 修复 ✅ 已完成（2026-09-11）** | 1~1.5 周 | Phase 0 |
 | **Phase 2a / 2b：并行** | **2a wasm 白箱**：FRB 门控（产物免 stub）；JS/TS 绑定包；wasm 进 CI；体积优化；浏览器最小 demo。**2b capi 第二批**：内存 API（kind 三段式合成/字节读取）+ 错误码机器可读导出 | 各约 1 周，互不抢资源（wasm 走构建/绑定层，第二批走纯 capi 层） | Phase 1 |
 | **Phase 3：时间旅行完整面** | capi 第三批（run_auto/seek/vis_events/heatmap/demangle）；时间旅行 CoW（V-P1-9）+ 快照边界完整化（VFS/local_sym_map/**完整 step 派生伪时钟**——与 Phase 1 判分确定性分层：前者服务重放，后者服务判分） | 2~3 周 | schema v0.1 定稿（Phase 1） |
 
 > 排序修订说明：SharpTutor 建议 wasm 完全后置于第二批；上游采纳"schema 提前"但 wasm 改为**并行**而非后置——wasm 是社区前端生态的冷启动开关（浏览器 demo 承载"五分钟跑通"承诺），且与第二批无模块冲突。详见 `CIDE_CAPI_REVIEW_RESPONSE.md` §7。
 
-**Issue A/B 可单独提前**：与切割无依赖，纯后端修复 + 回归测试，半天量级。
+**Issue A/B 可单独提前**：与切割无依赖，纯后端修复 + 回归测试，半天量级。**✅ 已于 2026-09-11 完成**（A 与 B1/B2/B3 全部修复并进回归防线，详见 CHANGELOG [Unreleased]）。
+
+> **Phase 1 实现进度（2026-09-11）**：
+> - `cide_cli serve` JSON-lines 会话模式 ✅ **已落地**（`native/src/bin/cide_cli.rs::cmd_serve`）——id 关联 / 错误帧同构 / `session.reset` / 与 capi 共用同一套入口语义；
+> - **语言中立层提炼 ✅ 部分落地**：新增 `native/src/session_api.rs`，capi 第一批的 JSON 结果构造全部下沉，`capi` 与 `serve` 共用同一实现（防三出口漂移，纪律 §2.2-2）；
+> - **StepPayload schema v0.1 ✅ 文档发布**：`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`（含回放场景校验记录；字段冻结由 `native/tests/step_payload_schema_v0_1_test.rs` 机械保证）；对端三组回放场景仍待 SharpTutor 执行；
+> - 隔离预算会话配置 ✅ 经 capi（`cide_set_quarantine_budget`）与 serve（`config.set`）双出口暴露。
 
 ### 6.1 验收标准（每阶段，已按评审补充）
 
 - Phase 0：仓库无 Flutter 依赖可完整交付；防线全绿；LICENSE/README/AGENTS 就位；
-- Phase 1：SharpTutor 用 capi 第一批（含 deterministic 最小形态）+ serve 跑通三进程架构集成，**其 15 用例冒烟集全绿**；**StepPayload schema v0.1 文档发布**（含双方回放场景校验记录）；重复编译内存有界固化为回归断言（实测基线：10000 次交替编译 RSS 平台期）；Issue A/B 回归用例进 `crash_regression_tests.rs`；
+- Phase 1：SharpTutor 用 capi 第一批（含 deterministic 最小形态）+ serve 跑通三进程架构集成，**其 15 用例冒烟集全绿**；**StepPayload schema v0.1 文档发布**（含双方回放场景校验记录）；重复编译内存有界固化为回归断言（实测基线：10000 次交替编译 RSS 平台期）；Issue A/B 回归用例进 `crash_regression_tests.rs` ✅（2026-09-11 已完成，10 个用例，Expect 值取自 Clang/Clang++ 实测 Golden）；
 - Phase 2a：`scripts/wasm_smoke/` 进 CI；社区用户 `npm i cide-wasm` 五分钟跑通 hello world + 一次 E3070 演示；
 - Phase 2b：内存地图三段式（global/stack/heap + freed 保留可见）经 SharpTutor WebView2 消费验证；错误码 JSON 导出 + 已知差异机器可读化上线；
 - Phase 3：协议 schema 增量演进（只增不改语义）；10 万步程序的 seek 延迟较全量快照方案有量级改善（基准：`benches/unified_perf_baseline.c`，当前约 18,500 步/秒）。
