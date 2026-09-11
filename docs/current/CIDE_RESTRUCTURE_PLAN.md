@@ -1,9 +1,12 @@
-# 结构重构决议与执行计划（2026-09-11）
+# 结构重构决议与执行计划（2026-09-11，v2）
 
 > **决策背景**：前端切割后仓库表面积最小、无外部借用（SharpTutor 未接入、社区前端未认领）——
-> 这是改内部结构零外部成本的唯一窗口。fix 历史的解剖显示脉冲式清偿（6-16 一波 14 个、
-> 9 月两波 6 个）间隔在缩短，且每波根因高度集中于同一结构病：**同一概念存在多个真相来源**。
+> 这是改内部结构零外部成本的唯一窗口。fix 历史的解剖显示脉冲式清偿（6-16 一波 14 个、9 月两波
+> 6 个）间隔在缩短，且每波根因高度集中于同一结构病：**同一概念存在多个真相来源**。
 > 与其等下一波脉冲，不如按手术清单一次收口。
+>
+> **v2 增补（同日后续讨论）**：重构批次与 **C23 语言锚定 + 模块化预处理器**合并规划——
+> 结构收口（R 系列）与语言能力（E 系列）交替推进，E3 大半是"从 C++ 路径移植"而非新写。
 >
 > **基线锚点**：标签 `pre-restructure`。Shadow 636 用例 0 非预期差异 / cargo test 全绿 /
 > clippy 零警告 / serve 冒烟 26/26 —— **重构期间全程在线**，任何一批导致行为漂移即回滚。
@@ -15,6 +18,7 @@
 - 内存协调：全局区/堆区静态边界（HEAP_START 写死）→ 堆起点动态化
 - 语义真相来源：已收口的（输出/stdin/行号/配置）保持；未收口的（教学标注双来源）单源化
 - 模块边界：>800 行文件拆分、host IO 家族收敛（fmt 解析单源）
+- **预处理器**：文本变换黑箱 → 模块化内核 + 预处理皮肤（见 §3）
 
 **不换（行为资产）**：
 - 编译管线五段结构（Lexer → Parser → TypeChecker → CodeGen → VM）
@@ -25,38 +29,114 @@
 **明确不做**：推倒重写编译器/VM。教学引擎的价值锚在行为正确性，重写等于重新欠一遍
 行为债，且无第二套防线能兜住重写期间的行为漂移。
 
-## 2. 批次计划（每批独立提交、独立过全防线）
+## 2. C23 锚定决议（替代 C99）
+
+**锚定 ISO C23（ISO/IEC 9899:2024）**。三个理由：① `nullptr`/`typeof`/`auto`
+在 C++ 子集路径已实现（t12/t18/t19 守护），E3 大半是移植；② 一次锚定到位，避免
+做完 C99 又追 C23；③ `__STDC_VERSION__` 固定 `202311L`，诊断文案按 C23 条款引用，
+`C_SUBSET_SPEC.md` / `SUPPORTED_LIBC.md` 口径全面换锚。
+
+**实测盘点（2026-09-11，cide_cli 探针）**：
+
+| C23 特性 | 现状 | 批次 |
+|---|---|---|
+| `bool/true/false`、`auto` 推断 | ✅ 已支持 | — |
+| `0b1010` 二进制字面量 / `1'000'000` 分隔符 | ❌ lexer 级 | E1 |
+| `enum E : int` 底层类型 / 标签后置 / `u8'a'` | ❌ parser 级 | E1 |
+| `nullptr` / `typeof` | ❌ C 侧（C++ 路径已实现） | **E3 移植** |
+| `static_assert(x)` 单参 | ❌ 连宏都未定义 | E3 |
+| `constexpr` 对象 | ❌ 类型系统级 | E3 |
+| `[[属性]]` / `unreachable()` | ❌ | E3 |
+| K&R 定义、隐式 int | 本就不支持 | C23 已移除，天然对齐 |
+
+**明确不做（撞 VM 槽位/布局边界）**：`_BitInt(N)`、`_Decimal32/64/128`、
+bitfield、`long double`/`_Complex`、setjmp/longjmp——全部进"明确不支持 + 替代话术"
+（如 long double → 清晰诊断建议改 double，替代现状含糊的 E2005）。
+
+**C23 预处理特性**（`#elifdef` / `#elifndef` / `__VA_OPT__` / `#embed`）归入 §3 模块化
+预处理器的范围。
+
+## 3. 模块化预处理器设计（E2 选型定案）
+
+**皮肤与内核分离**：学生写的仍是标准 C 预处理语法；引擎内部不做文本变换黑魔法。
+
+```
+表面（标准 C）                      内核（实际做的）
+#include "list.h"          →   模块加载：头文件 → AST 缓存，天然
+                                include-once + 依赖图 + 环检测
+#ifndef FOO_H / #define    →   守卫语义内置；写不写都正确
+#define MAX(a,b) ...        →   MacroTable：token 模板受控展开
+#if defined(X) && N > 10    →   配置求值（非图灵完备），分支
+                                选择原因记录进诊断
+#x / a##b / __VA_ARGS__    →   受限 token 操作（结果必须合法）
+#embed "font.bin"          →   字节数组资产导入（最自然的形态）
+```
+
+**选型**（抄架构不抄代码）：
+- 展开器内核 = **Rust `macro_rules!` 架构**：token 树转录 + 展开深度保险丝（64）+
+  展开链诊断。与 C 参数化宏同构（pattern → template），Cide 是 Rust 写的，架构对齐。
+- 模块语义 = **Zig `@import` / C++20 modules**：ModuleGraph（AST 缓存 + once +
+  依赖图 + 环检测）。
+- **按 C 规则自己写的两处**（不能照抄 Rust）：① `#`/`##` 操作数不预先展开
+  （C99 6.10.3.1 特例）；② 自引用停止 = 展开栈查重（等价红蓝标记，实现只要一个栈）。
+- **整个跳过 hygiene**（Rust 宏实现最贵的 SyntaxContext 系统）——C 宏本来就要文本语义。
+
+**诚实放弃清单**（记入 spec 已知差异，每条附教学替代建议）：自引用宏 trick、
+展开顺序敏感代码、`##` 动态拼标识符的元编程、X-macro 高级用法、宏拼 include 路径。
+教学代码命中率 <5%，且每条在黑箱 clang 下也是被劝退的写法。
+
+**白箱教学层**（黑箱给不了的增值）：展开链可视化（复用时间旅行 step 语义）、宏参数
+副作用检测（`SQ(a++)` 双重副作用警告）、`#if` 分支选择原因记录、`#define` 遮蔽诊断。
+
+**工时**：~1.5k 行（忠实复刻需 3~5k；省掉 hygiene 与红蓝标记，代价是两条 C 特例
+规则各 ~50 行）。架构落点：`cide_lexer/preprocessor/` 子模块化（resolver / macro_table /
+expander / cond / splice）。
+
+## 4. 批次计划（每批独立提交、独立过全防线）
+
+结构收口（R）与语言能力（E）交替推进，避免连续同质地工作：
 
 | 批次 | 内容 | 验收线 |
 |------|------|--------|
-| **R1 内存边界** | ① 堆起点动态化：`heap_offset = max(HEAP_START, align4(global_end))`——栈碰撞检查已确认用动态 `heap_offset`（`control.rs:69`），上移自动跟随；② **判据单源化**：`literal.rs`（`MEM_SIZE/16`=64KB）与 `state.rs`（`HEAP_START`=20KB）两套魔数统一到 `GLOBAL_REGION_LIMIT` 单一常量；③ **argv 编址修复**（评审后新发现）：`global_count` 恒为 0，argv 数组固定从 `GLOBAL_START` 写入，与 codegen 全局数据重叠编址（预存 bug）——改为自全局区上界**向下**分配；④ 影响面 6 个逻辑点：`session_ops.rs:68`（重置）、`memory_state.rs:104/241/252`（初始化/统计口径）、`state.rs:266`（argv）、`compile_pipeline.rs`（注入点）；⑤ `global_end > HEAP_START` 时编译 warning 提示堆可用空间 | 三方挤压用例（大全局 + malloc 失败明确 trap + 深递归栈溢出明确 trap）；大全局 + malloc 数据不损坏；lc_22/lc_977 回归；Shadow 0 非预期差异 |
-| **R2 会话收口** | cide_cli 四个子命令（compile/run/step/unified）迁 `Session` + `session_api`（serve 同款）；flutter_bridge 零消费后整删；3 处过时注释更新 | CLI 行为不变（冒烟对照）；G6 闭环；全局 static 清零 |
-| **R3 语义单源审计** | 以 E-P1-5 模式扫全库枚举残留「多真相」点；教学标注单源化（collector 标签与 algorithm_steps 描述共用一次推断）；审计报告进 docs | 审计清单归档；标注矛盾类缺陷结构性消除 |
-| **R4 债务与防线** | decl.rs 拆分（892 行 → 子模块）；unwrap×3 收敛；engineering_health 翻新进 CI（G11）；**G1** 模板生成器恢复（剥离 Flutter 半边）；**G10 + G12 数字自动对账**（C++ 侧 74vs78 与 C 侧三套口径——AGENTS 78绿/4失败、E2E_FAILURES 79/3、代码常量 2——对账须覆盖「文档声明数 vs 代码常量数」方向，现有 three_tier 只查单方向）；**G13** 两条 C++ 活约束（模板类跨文件重复定义、`T()` 值初始化）补入 CPP_SUBSET_SPEC；**G2** wasm 冒烟进 CI | CI 新增检查全绿；<800 行规约恢复 |
+| **R1 内存边界** | ① 堆起点动态化：`heap_offset = max(HEAP_START, align4(global_end))`——栈碰撞检查已确认用动态 `heap_offset`（`control.rs:69`）自动跟随；② 判据单源化：`literal.rs`（`MEM_SIZE/16`）与 `state.rs`（`HEAP_START`）两套魔数统一到 `GLOBAL_REGION_LIMIT`；③ argv 编址修复：`global_count` 恒 0，argv 与 codegen 全局数据重叠编址（预存 bug）——改自全局区上界向下分配；④ 影响面 6 逻辑点 + `heap_base` 统计字段；⑤ `global_end > HEAP_START` 编译 warning 提示堆可用空间 | 三方挤压用例（大全局 + malloc 失败明确 trap + 深递归栈溢出明确 trap）；大全局 + malloc 不损坏；lc_22/lc_977 回归；Shadow 0 非预期差异 |
+| **E1 C23 lexer 级 + B 档快赢** | `0b` 二进制 / `'` 分隔符 / `u8'a'` / `enum : T` / 标签后置（C23）；字符串拼接 `"ab" "cd"`（C89）、`long long` 位运算（E3048 半成品缺陷）、ULLONG_MAX（u64 坑）/ `<float.h>` / `va_copy` / `__func__` | 每特性 ≤3 个 E2E 用例（Clang golden）；Shadow 0 非预期差异 |
+| **R2 会话收口** | cide_cli 四个子命令迁 `Session` + `session_api`（serve 同款）；flutter_bridge 零消费后整删 | CLI 行为不变（冒烟对照）；G6 闭环；全局 static 清零 |
+| **E2 模块化预处理器** | §3 全部设计：ModuleGraph + MacroTable + cond 求值 + splice + 白箱教学层 | 宏/守卫/条件编译全套 E2E；include 环检测诊断；放弃清单记入 spec |
+| **R3 语义单源审计** | E-P1-5 模式扫全库枚举残留「多真相」点；教学标注单源化 | 审计清单归档；标注矛盾类缺陷结构性消除 |
+| **E3 C23 语义级** | `nullptr`/`typeof` 从 C++ 路径移植、`static_assert` 单参、`constexpr` 对象、`[[属性]]`（解析+忽略+记录）、`unreachable()` | 移植项复用既有 C++ 守护用例形态；Clang golden |
+| **R4 债务与防线** | decl.rs 拆分；unwrap×3 收敛；engineering_health 进 CI（G11）；**G1** 生成器恢复；**G10+G12 数字自动对账**（须覆盖"文档声明数 vs 代码常量数"方向）；**G13** 补入 CPP_SUBSET_SPEC；**G2** wasm 冒烟进 CI | CI 新增检查全绿；<800 行规约恢复 |
 
-### G9 独立决策（能力缺口，不属结构债，不混入 R1-R4）
+**B 档不做/延期清单**：`0x1.8p3` 十六进制浮点、`int a[static 10]`（明确不支持）；
+匿名 struct/union 成员（~200-400 行，等防线真实用例出现再动；基础 union 已实测与
+Clang 一致——`alias=DCBA size=4` 两边相同）。
+
+### G9 独立决策（能力缺口，不属结构债，不混入 R/E 批次）
 
 `validate_algorithm()` / `ValidationResult` 的"运行时算法属性验证"随前端切割**整体消失**
-（后端从未有过，原载体 `algorithm_validation.dart` 已迁出）。这不是重构能顺带解决的——
-需要显式选择：
+（后端从未有过，原载体 `algorithm_validation.dart` 已迁出）。
 
-- **方案 A（默认采纳）**：列入 Phase 2a 出口演进批次——`cide_algorithm_steps` 已有 41 个
-  模板元数据可作判定基础，落点 `validation.rs`（语言中立层），由 serve/capi 按需暴露；
-  由 SharpTutor 的实际诉求触发排期，避免做无人消费的能力。
-- **方案 B（若放弃）**：ROADMAP.md 的 G9 改标「能力已随前端迁出，待社区前端认领」，
-  并从 Phase 2a 计划中移除对应条目。
+- **方案 A（默认采纳）**：列入 Phase 2a 出口演进——`cide_algorithm_steps` 已有 41 个
+  模板元数据可作判定基础，落点 `validation.rs`（语言中立层），由 SharpTutor 诉求触发排期。
+- **方案 B（若放弃）**：ROADMAP.md 的 G9 改标「能力已随前端迁出，待社区前端认领」。
 
-二选一之前 G9 保持「待评估」状态；**不允许**默认沉默地丢掉教学能力。
+二选一之前保持「待评估」；**不允许**默认沉默地丢掉教学能力。
 
-顺序有依赖：R1 先修唯一正确性问题；R2 让 CLI 成为 session_api 第三活体测试，为 R3 提供三出口互证。
-
-## 3. 升级为更大重构的判据（诚实记录）
+## 5. 升级为更大重构的判据（诚实记录）
 
 R3 审计后若仍出现新的「多真相」类缺陷、或发生「修 A 坏 B」横切回归 ≥2 次、或
 known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶地图即重写图纸）。
 
-## 4. 已知风险与回滚
+## 6. 已知风险与回滚
 
-- R1 触碰 `MemoryState` 初始化时机（快照/时间旅行兼容）与泄漏报告的 `HEAP_START` 假设（约 5 处引用）
+- R1 触碰 `MemoryState` 初始化时机（快照/时间旅行兼容）与 `HEAP_START` 假设（6 逻辑点）
 - R2 触碰 CLI 全部子命令；Shadow 驱动走 capi 不受影响
+- E2 放弃病态宏后，Shadow 用例需回避该类写法（教学用例本就不写）；行为差异全部入 spec
 - 回滚单位 = 批次提交；`pre-restructure` 标签保底整轮回退
+
+## 7. 状态记录（2026-09-11）
+
+- R1 设计完成、首次实现已回滚（并入 C23/E 系列讨论后统一开工）
+- clippy 1.98 新 lint ×5 已修（`0790a8e`）
+- union 支持已实测确认（销项"未确认"）
+- 本文档 v2 吸收：外部评审三点（三方挤压用例 / 判据分裂 / G12/G13 遗漏）、
+  C23 锚定实测盘点、模块化预处理器选型定案
