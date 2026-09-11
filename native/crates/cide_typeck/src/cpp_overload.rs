@@ -291,8 +291,14 @@ impl TypeChecker {
 
         // 只为当前编译单元中实际定义的类生成隐式移动构造函数。
         // builtin_layout 预注册的类若未被使用，不应产生额外的移动构造。
-        let program_class_names: std::collections::HashSet<String> =
+        // 按类名排序后遍历：HashSet 的迭代顺序随进程随机种子变化，
+        // 会让隐式移动构造函数的生成顺序（进而整段字节码布局）不可重现——
+        // 表现为每次重新生成 Bytecode Libc 产物都得到不同的 code 布局
+        // （2026-09-11 由产物重生成 diff 定位）。排序保证编译输出确定。
+        let mut program_class_names: Vec<String> =
             program.classes.iter().map(|c| c.name.clone()).collect();
+        program_class_names.sort();
+        program_class_names.dedup();
         for class_name in program_class_names {
             let sym = match self.classes.get(&class_name) {
                 Some(s) => s,

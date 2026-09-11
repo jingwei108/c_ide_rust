@@ -9,9 +9,18 @@
 
 CI 检查：
     python scripts/precompile_bytecode_libc.py --check
+
+`--check` 以 `source_digest`（源文件内容 SHA-256）判定产物是否与
+`native/runtime_libc/{src,cide}/` 同步，**不依赖文件 mtime**。
+
+> 2026-09-11 修复：旧实现比较 mtime。CI 干净检出时 git 不保留 mtime，
+> 且 `actions/checkout` 按路径顺序写文件（`native/crates/...` 先于
+> `native/runtime_libc/...`），使源文件 mtime 普遍晚于产物 → 检查在 CI 中
+> **必然误报失败**（本地因为改过源码才重新生成，反而看不出问题）。
 """
 
 import argparse
+import hashlib
 import json
 import math
 import os
@@ -32,6 +41,51 @@ OUTPUT_RS = os.path.join(
 LAYOUT_JSON = os.path.join(
     NATIVE_DIR, "crates", "cide_cpp_frontend", "src", "builtin_layout_data.json"
 )
+
+# 摘要 schema 版本：源文件集合或摘要算法变化时递增，
+# 使旧产物无需比较内容即可判定为过期。
+DIGEST_SCHEMA = 1
+
+# 参与摘要的源文件扩展名
+SOURCE_EXTS = (".c", ".cpp", ".h")
+
+
+def source_files(include_headers: bool = True) -> list:
+    """返回 runtime_libc 下参与预编译的源文件（按路径排序）。
+
+    `include_headers=True` 用于内容摘要（头文件变化同样需要重新生成）；
+    传给 `cide_cli export` 时应为 `False`（只传 .c/.cpp）。
+    """
+    exts = SOURCE_EXTS if include_headers else (".c", ".cpp")
+    files = []
+    for src_dir in RUNTIME_LIBC_SRC_DIRS:
+        if not os.path.isdir(src_dir):
+            continue
+        for fname in os.listdir(src_dir):
+            if fname.endswith(exts):
+                files.append(os.path.join(src_dir, fname))
+    return sorted(files)
+
+
+def compute_source_digest() -> str:
+    """计算 runtime_libc 源文件内容摘要（SHA-256）。
+
+    只取决于源文件的相对路径与内容，**与 mtime 无关** ——
+    因此在 CI 干净检出与本地增量开发下判定结果一致。
+    """
+    h = hashlib.sha256()
+    h.update(f"schema={DIGEST_SCHEMA}\n".encode("utf-8"))
+    for path in source_files():
+        rel = os.path.relpath(path, PROJECT_ROOT).replace(os.sep, "/")
+        h.update(rel.encode("utf-8"))
+        h.update(b"\0")
+        with open(path, "rb") as f:
+            data = f.read()
+        # 行尾规范化：worktree 的 CRLF/LF 取决于 core.autocrlf，
+        # 同一份逻辑内容不应因为平台/检出设置不同而被判成"产物过期"。
+        h.update(data.replace(b"\r\n", b"\n"))
+        h.update(b"\0")
+    return "sha256:" + h.hexdigest()
 
 
 def find_cide_cli() -> str:
@@ -65,18 +119,9 @@ def build_cide_cli() -> str:
 
 def precompile(exe: str) -> dict:
     """调用 cide_cli export 预编译 runtime_libc。"""
-    sources = []
-    for src_dir in RUNTIME_LIBC_SRC_DIRS:
-        if os.path.isdir(src_dir):
-            sources.extend(
-                os.path.join(src_dir, f)
-                for f in os.listdir(src_dir)
-                if f.endswith(".c") or f.endswith(".cpp")
-            )
-    sources = sorted(sources)
     # Stage 2b: .cpp files now contain full C++ implementations,
     # and legacy .c container implementations are being removed.
-    source_paths = sources
+    source_paths = source_files(include_headers=False)
 
     print(f"Precompiling {len(source_paths)} files:")
     for p in source_paths:
@@ -101,6 +146,9 @@ def precompile(exe: str) -> dict:
             inst["operand"] = raw_to_fixed.get(raw, raw)
 
     data["func_index"] = {name: raw_to_fixed[raw] for name, raw in raw_func_index.items()}
+
+    # 记录源文件内容摘要：供 --check 在 CI 干净检出下做稳定判定（与 mtime 无关）
+    data["source_digest"] = compute_source_digest()
 
     validate_precompiled(data)
 
@@ -231,8 +279,12 @@ def generate_index_rs(data: dict) -> str:
 
 def write_outputs(data: dict) -> None:
     """写入 JSON 和 Rust 常量文件。"""
+    # sort_keys：产物由 Rust 侧的 HashMap 派生（func_index / func_table 等），
+    # 其序列化键顺序随进程随机种子变化，会让同一份语义内容的 JSON 文本每次不同
+    # （提交到版本库后表现为巨大的无意义 diff）。按键排序保证产物可重现
+    # （2026-09-11 定位）。
     with open(OUTPUT_JSON, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        json.dump(data, f, ensure_ascii=False, indent=2, sort_keys=True)
     print(f"Written: {OUTPUT_JSON}")
 
     rs_content = generate_index_rs(data)
@@ -242,19 +294,39 @@ def write_outputs(data: dict) -> None:
 
 
 def check_up_to_date() -> bool:
-    """检查预编译产物是否与 runtime_libc 源码同步。"""
-    if not os.path.exists(OUTPUT_JSON) or not os.path.exists(OUTPUT_RS):
+    """检查预编译产物是否与 runtime_libc 源码同步。
+
+    以 `source_digest`（源文件内容摘要）判定，**不使用文件 mtime**：
+    CI 干净检出时 git 不保留 mtime，且按路径顺序写文件使源文件看起来
+    比产物更新，mtime 判定在 CI 中必然误报（2026-09-11 修复）。
+    """
+    for path in (OUTPUT_JSON, OUTPUT_RS):
+        if not os.path.exists(path):
+            print(f"  missing artifact: {os.path.relpath(path, PROJECT_ROOT)}")
+            return False
+
+    try:
+        with open(OUTPUT_JSON, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError) as e:
+        print(f"  unreadable artifact: {e}")
         return False
 
-    json_mtime = os.path.getmtime(OUTPUT_JSON)
-    for src_dir in RUNTIME_LIBC_SRC_DIRS:
-        if not os.path.isdir(src_dir):
-            continue
-        for fname in os.listdir(src_dir):
-            if fname.endswith(".c") or fname.endswith(".cpp") or fname.endswith(".h"):
-                fpath = os.path.join(src_dir, fname)
-                if os.path.getmtime(fpath) > json_mtime:
-                    return False
+    recorded = data.get("source_digest")
+    if not recorded:
+        print(
+            "  artifact has no source_digest field "
+            "(generated by an older script) -> regenerate once"
+        )
+        return False
+
+    current = compute_source_digest()
+    if recorded != current:
+        print(f"  recorded digest: {recorded}")
+        print(f"  current  digest: {current}")
+        print(f"  source files: {len(source_files())} under native/runtime_libc/")
+        return False
+
     return True
 
 

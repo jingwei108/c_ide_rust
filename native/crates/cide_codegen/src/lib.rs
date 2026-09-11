@@ -158,7 +158,19 @@ impl BytecodeGen {
             assign_addr_slots: Vec::new(),
             globals_init_32: Vec::new(),
             globals_init_64: Vec::new(),
-            next_global_offset: BYTECODE_LIBC_GLOBALS_RESERVED as i32,
+            // 预编译 Bytecode Libc 自身（library mode）时，全局/字符串数据从 0 开始分配：
+            // 产物里的地址本就是"相对 GLOBAL_START 的偏移"（VM 加载时统一加 GLOBAL_START），
+            // 而用户侧会从 BYTECODE_LIBC_GLOBALS_RESERVED 之后开始分配，两者不会重叠。
+            //
+            // 若此处也用 GLOBALS_RESERVED，globals_size 会变成
+            // (GLOBALS_RESERVED + 数据大小)，脚本据此算出的新 reserved 再 +1024，
+            // 形成"每重新生成一次就膨胀 1KB"的自引用漂移，最终把用户全局区压缩到
+            // 不足 1KB 并溢出到堆区（2026-09-11 由 lc_67 / lc_76 回归定位）。
+            next_global_offset: if is_library_mode {
+                0
+            } else {
+                BYTECODE_LIBC_GLOBALS_RESERVED as i32
+            },
             f64_constants: Vec::new(),
             i64_constants: Vec::new(),
             symbols: Vec::new(),
