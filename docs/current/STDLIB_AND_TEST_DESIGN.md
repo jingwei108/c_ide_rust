@@ -24,7 +24,7 @@ Cide 已有 300+ 测试用例，但 C 语言极其灵活，即使如此规模的
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer A: VM Builtin 指令（极少量，性能关键）                 │
 │  Memcpy / Memset / Strlen（可选）                            │
-│  → 直接由 executor.rs 原生执行，Rust 实现，带边界检查          │
+│  → 直接由 cide_vm::core::executor 原生执行，Rust 实现，带边界检查        │
 ├─────────────────────────────────────────────────────────────┤
 │  Layer B: Rust Host Function（诊断敏感 + 宿主机能力）        │
 │  malloc/free/realloc, strcpy/strcat（带诊断）, printf/scanf │
@@ -146,15 +146,12 @@ fn test_host_atoi_standard_conformance() {
 **目录结构**：
 ```
 native/tests/bytecode_libc_consistency/
-├── src/                    # Bytecode Libc 的 C 源码副本
-│   ├── ctype.c
-│   └── string_simple.c
-├── drivers/                # 测试驱动（main 函数）
-│   ├── test_isdigit.c
-│   └── test_abs.c
-├── golden_clang/           # Clang 编译运行的输出
-└── run_consistency_test.py # 自动化脚本
+└── drivers/                # 测试驱动（main 函数），12 个 test_*.c
+    ├── test_isdigit.c
+    └── test_abs.c
 ```
+
+> **结构核对（2026-09-11）**：Bytecode Libc 的 C 源码已迁至 `native/runtime_libc/src/`；golden 由 `native/tests/bytecode_libc_consistency.rs` 在每个用例内现场调用 clang 生成并即时对比 —— 原设计中该目录下的 C 源码副本、`golden_clang/` 输出目录与独立 Python 驱动脚本**均已不存在**，一致性验证统一由上述 Rust 集成测试驱动（`cargo test --test bytecode_libc_consistency`）。
 
 **能 catch 的问题**：
 - Cide 编译器对 `ctype.c` 的某个指针运算生成错误字节码；
@@ -248,7 +245,7 @@ native/tests/bytecode_libc_consistency/
 | 阶段 | 任务 | 产出 |
 |---|---|---|
 | **Phase A** | Host Contract 骨架：`native/tests/host_contract_tests.rs`，覆盖 `malloc`/`free`/`strcpy`/`printf` 边界条件 | `cargo test --test host_contract_tests` 全绿 |
-| **Phase B** | Bytecode Libc 最小集：`isdigit`、`abs`、`tolower` C 源码 + 自举一致性驱动 + golden | `python run_bytecode_consistency.py` 通过 |
+| **Phase B** | Bytecode Libc 最小集：`isdigit`、`abs`、`tolower` C 源码 + 自举一致性驱动 + golden | `cargo test --test bytecode_libc_consistency` 通过 |
 | **Phase C** | 差分测试骨架：对 `strlen`/`isdigit`/`abs` 同时调用 Host 和 Bytecode 版，交叉验证 | 差分测试全绿 |
 | **Phase D** | 扩展 Bytecode Libc 到 20+ 函数，逐函数补齐 Host Contract + Bytecode Consistency + Differential | 覆盖矩阵更新 |
 | **Phase E** | 模糊测试：随机内存状态 + 随机标准库调用序列，验证安全检测不泄漏 | 24 小时 fuzz 无崩溃 |
@@ -260,7 +257,7 @@ native/tests/bytecode_libc_consistency/
 
 - `C_SUBSET_SPEC.md`：补充"Cide 标准库子集"章节，明确 Layer B/Layer C 支持清单；
 - `SHADOW_VERIFICATION_FRAMEWORK.md`：扩展 Shadow 报告格式，新增 `std_lib_gap` 分类；
-- `PHASE_KR_LEETCODE_TEST_PLAN.md`：K&R/LeetCode 中涉及标准库的题目，优先走 Bytecode Libc 路径，暴露编译器缺口；
+- `../archive/ARCHIVE_PHASE_KR_LEETCODE_TEST_PLAN.md`（原 `docs/current/PHASE_KR_LEETCODE_TEST_PLAN.md`，2026-09-11 归档）：K&R/LeetCode 中涉及标准库的题目，优先走 Bytecode Libc 路径，暴露编译器缺口；该计划已达成，现状见 `AGENTS.md` 防线 2；
 - `AGENTS.md`：更新"已知限制"，引用本文档中的标准库覆盖矩阵。
 
 ---
@@ -294,7 +291,7 @@ native/tests/bytecode_libc_consistency/
 | 缺口 | 影响 | 现状 |
 |---|---|---|
 | **3. Bytecode Libc 产品化** | 学生代码调用 `isdigit(c)` 时走的是 **Rust Host Func**，不是 Bytecode Libc 的 C 实现；无法展示"libc 源码"教学价值 | ✅ **已完成（2026-06-07）**。构建期预编译脚本 `scripts/precompile_bytecode_libc.py` + `cide_cli export` 已建立；全局函数表固定索引段（1000~）已实现；ctype 纯计算函数（`isdigit`/`isalpha`/.../`abs`）已切换为 Bytecode 路径；**2026-06-07 追加：`strlen`/`strcmp` 已加入 Bytecode Libc 产品路径**；`bytecode_libc_consistency.rs` 和 `differential_stress.rs` 测试验证通过 |
-| **4. VM Builtin 指令（Layer A）** | `memcpy`/`memset`/`strlen` 仍走 `OpCode::CallHost`，没有专用指令优化 | ⚠️ **实验性骨架已完成（2026-06-07）**。`OpCode::Memcpy`/`Memset`/`Strlen` 已添加至 `opcode.rs`；`executor.rs` 已实现带边界检查的指令语义；7 个单元测试全部通过。暂未接入 codegen，待 profiling 确认瓶颈后启用 |
+| **4. VM Builtin 指令（Layer A）** | `memcpy`/`memset`/`strlen` 仍走 `OpCode::CallHost`，没有专用指令优化 | ⚠️ **实验性骨架已完成（2026-06-07）**。`OpCode::Memcpy`/`Memset`/`Strlen` 已添加至 `native/crates/cide_runtime/src/opcode.rs`；`native/crates/cide_vm/src/core/executor/` 已实现带边界检查的指令语义；7 个单元测试全部通过。暂未接入 codegen，待 profiling 确认瓶颈后启用 |
 
 #### P2 — 文档与长期维护
 
@@ -341,7 +338,7 @@ Round 2（P0 紧急）：✅ 已完成
 
 Round 3（P1 架构）：✅ 已完成（2026-06-07）
   ├─ ✅ 构建期预编译脚本 `scripts/precompile_bytecode_libc.py` + `cide_cli export`
-  ├─ ✅ 生成 `native/src/vm/bytecode_libc_data.json` + `bytecode_libc_index.rs`
+  ├─ ✅ 生成 `native/crates/cide_vm/src/bytecode_libc_data.json` + `native/crates/cide_runtime/src/bytecode_libc_index.rs`
   ├─ ✅ 全局函数表固定索引段（1000~1021）+ VM 代码拼接 + Jump 重定位
   ├─ ✅ 编译器前端：ctype 纯计算函数生成 Call 而非 CallHost
   ├─ ✅ 全局地址空间预留（BYTECODE_LIBC_GLOBALS_RESERVED = 1024）
@@ -349,8 +346,8 @@ Round 3（P1 架构）：✅ 已完成（2026-06-07）
   └─ ✅ 2026-06-07 追加：`strlen`/`strcmp` 已加入 `BYTECODE_LIBC_PURE_FUNCS`，切换到 Bytecode Libc 产品路径；`is_builtin` 同步更新以支持无 `#include` 调用
 
 Round 4（P1 优化）：⚠️ 实验性骨架已完成（2026-06-07）
-  └─ ✅ `OpCode::Memcpy`/`Memset`/`Strlen` 已添加至 `opcode.rs`（124~126）
-  └─ ✅ `executor.rs` `execute_memory` 已实现原生执行逻辑（带 NULL 指针安全检查与越界截断）
+  └─ ✅ `OpCode::Memcpy`/`Memset`/`Strlen` 已添加至 `native/crates/cide_runtime/src/opcode.rs`（124~126）
+  └─ ✅ `native/crates/cide_vm/src/core/executor/` 的 `execute_memory` 已实现原生执行逻辑（带 NULL 指针安全检查与越界截断）
   └─ ✅ 7 个 Rust 单元测试全部通过（`builtin_tests`：strlen ×3、memset ×2、memcpy ×2）
   └─ ⏳ 暂未接入 codegen：待 profiling 确认 `CallHost`/`Call` 开销为瓶颈后，再由 BytecodeGen 对 `strlen`/`memcpy`/`memset` 生成 Layer A 指令
 
@@ -361,4 +358,5 @@ Round 5（P2 文档）：✅ 已完成
 ---
 
 *文档状态：设计草案 + 实现状态审计*
-*最后更新：2026-06-07*
+*最后更新：2026-09-11（前端切割后文档翻新：执行器/opcode/产物路径 crate 化，一致性驱动改为 `cargo test --test bytecode_libc_consistency`）*
+*历史审计口径：§八「当前实现状态：诚实盘点（As-of 2026-06-07）」是 2026-06-07 的代码审计快照，其中的完成度判定、行数与用例数均保持当日 as-of 语义，未随后续变更回填；引用该章数字时请以 as-of 日期为准。*

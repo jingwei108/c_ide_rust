@@ -1,7 +1,15 @@
 # Cide 标准库支持矩阵
 
-> **状态**：基于 STDLIB_AND_TEST_DESIGN.md 四层架构与分层规则，截至 2026-06-07。
+> **状态**：基于 STDLIB_AND_TEST_DESIGN.md 四层架构与分层规则，截至 2026-09-11（2026-06-07 基线 + 其后已核实变化的回填，逐项注明核实日期）。
 > **设计原则**：All in. Record don't hide. Fix real bugs, not test cases.
+>
+> **本次修订（2026-09-11，前端切割后文档翻新）**：回填 2026-06-07 之后**已核实**的能力变化 ——
+> ① **scanf 族三修**：返回值按 C11 7.21.6.2 返回成功项数、格式串普通字符指令精确匹配、`%%` 参与匹配
+> （见 `C_SUBSET_SPEC.md` §2.8 与 `CHANGELOG.md` [Unreleased]；同批还有空白指令跳白修复）；
+> ② **堆模型改为 bump 分配 + 有界隔离**：`free` 进 FIFO 隔离区（预算 256KB、会话级可调），超预算 FIFO 驱逐复用
+> （见 `CIDE_HEAP_QUARANTINE_DECISION.md` 与 `C_SUBSET_SPEC.md` §2.9）；
+> ③ 补齐 §一 遗漏的 `<stdarg.h>`（已核实 `native/runtime_libc/include/` 下实存 **14** 个头文件，文档原列 13 个）。
+> 其余未复核的判定一律保持 2026-06-07 原样，不做推测性更新。
 
 ---
 
@@ -14,6 +22,7 @@
 | `<ctype.h>` | ✅ | 完整字符分类：含 `isdigit`/`isalpha`/`islower`/`isupper`/`tolower`/`toupper`/`isspace`/`isalnum`/`isprint`/`iscntrl`/`isxdigit`/`isgraph`/`ispunct`/`isblank` |
 | `<math.h>` | ✅ | 完整教学 math：`sin`/`cos`/`tan`/`sqrt`/`pow`/`atan`/`log`/`log10`/`exp`/`fabs`/`ceil`/`floor`/`round`/`fmod`/`asin`/`acos`/`atan2`/`sinh`/`cosh`/`tanh`（`libm` `double` 精度） |
 | `<string.h>` | ✅ | 完整字符串：含 `strlen`/`strcpy`/`strncpy`/`strcmp`/`strncmp`/`strcat`/`strncat`/`memcpy`/`memmove`/`memset`/`memcmp`/`strchr`/`strrchr`/`strstr`/`memchr`/`strdup`/`strerror`/`strpbrk`/`strspn`/`strcspn` |
+| `<stdarg.h>` | ✅ | 变参：`va_list`（以 `char*` 模拟）+ `va_start`/`va_arg`/`va_end` 宏，展开为内部 Host 函数 `__cide_va_start`/`__cide_va_arg`/`__cide_va_end`（`native/crates/cide_vm/src/host/misc.rs`）；支持 `int`/`double`/`long long` 等常见类型（遵循 C 默认实参提升）；回归用例 `native/tests/cases/baseline/variadic.c`。原文档漏列本头文件，2026-09-11 核实补入 |
 | `<limits.h>` | ✅ | 空存根，宏由 Lexer 预定义（`INT_MAX`/`INT_MIN`/`LONG_MAX`/`LONG_MIN`/`CHAR_BIT`） |
 | `<stdbool.h>` | ✅ | 存根声明已加载，`bool` typedef + `true`/`false` 宏 |
 | `<stddef.h>` | ✅ | 存根声明已加载，`size_t`/`ptrdiff_t` typedef；`offsetof` 为编译器内置 |
@@ -32,14 +41,14 @@
 | 函数 | Layer | 类型检查 | Host Contract | Bytecode Consistency | Differential | 备注 |
 |------|-------|----------|---------------|----------------------|--------------|------|
 | `printf` | B | 硬编码（变参） | ✅ | N/A | N/A | 格式字符串诊断 E3032/E3062 |
-| `scanf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
-| `fprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
+| `scanf` | B | 硬编码（变参；返回类型 2026-09-11 由 `void` 改 `int`） | ✅ | N/A | N/A | 2026-09-11 三修：按 C11 7.21.6.2 返回成功项数 / 普通字符指令精确匹配 / `%%` 参与匹配；同批空白指令跳白修复（`C_SUBSET_SPEC.md` §2.8） |
+| `fprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | ⚠️ 既有偏差（2026-09-11 E-P1-5 核查记录）：`fprintf(fp, …)`（`fp` 来自 `fopen`）不写入 VFS 文件，而是被当作 stdout 输出；写 `stderr` 已正确分流。需要写文件请用 `fputs`/`fwrite`/`fputc` |
 | `getchar` | B | 硬编码 | ✅ | N/A | N/A | — |
 | `putchar` | B | 硬编码 | ✅ | N/A | N/A | — |
 | `puts` | B | 硬编码 | ✅ | N/A | N/A | — |
 | `sprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
 | `snprintf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
-| `sscanf` | B | 硬编码（变参） | ✅ | N/A | N/A | — |
+| `sscanf` | B | 硬编码（变参） | ✅ | N/A | N/A | 与 `scanf` 共享同一份格式串解析，2026-09-11 scanf 族三修同步生效 |
 | `fopen` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 | `fclose` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
 | `fread` | B | 硬编码 | N/A | N/A | N/A | VFS-backed |
@@ -63,10 +72,10 @@
 
 | 函数 | Layer | 类型检查 | Host Contract | Bytecode Consistency | Differential | 备注 |
 |------|-------|----------|---------------|----------------------|--------------|------|
-| `malloc` | B | 硬编码 | ✅ | N/A | N/A | UAF/泄漏检测 |
-| `free` | B | 硬编码 | ✅ | N/A | N/A | UAF/Double-Free 检测 |
-| `realloc` | B | 硬编码 | ✅ | N/A | N/A | — |
-| `calloc` | B | 硬编码 | ✅ | N/A | N/A | — |
+| `malloc` | B | 硬编码 | ✅ | N/A | N/A | bump 顶指针推进 + 隔离区驱逐复用（2026-09-11 起）；UAF/泄漏检测 |
+| `free` | B | 硬编码 | ✅ | N/A | N/A | 进入 FIFO 隔离区，隔离期内地址不复用（2026-09-11 起，预算 256KB 会话级可调）；UAF/Double-Free 检测保留 |
+| `realloc` | B | 硬编码 | ✅ | N/A | N/A | 恒为新块拷贝，旧块进隔离区（2026-09-11 起） |
+| `calloc` | B | 硬编码 | ✅ | N/A | N/A | 零初始化 + 统一堆分配入口（bump + 驱逐复用，2026-09-11 起） |
 | `atoi` | B | 硬编码 | ✅ | ✅ | ✅ | — |
 | `atof` | B | 硬编码 | ✅ | N/A | N/A | — |
 | `atol` | B | 硬编码 | ✅ | N/A | N/A | — |
@@ -80,6 +89,12 @@
 | `abort` | B | 硬编码 | N/A | N/A | N/A | 终止并输出诊断 |
 | `qsort` | B | 硬编码 | N/A | N/A | N/A | VM 回调敏感，未在存根中声明 |
 | `bsearch` | B | 硬编码 | N/A | N/A | N/A | VM 回调敏感 |
+
+> **分配器语义变更（2026-09-11，已核实）**：`malloc`/`calloc`/`realloc`/`free` 的底层堆模型改为
+> **bump 分配 + 有界隔离（Bounded Quarantine）** —— 隔离预算 = 堆上限的 1/4 = **256KB**（会话级可调，`cide_set_quarantine_budget`）；
+> 超预算时 FIFO 驱逐最老已释放块归还复用；堆耗尽（1MB 墙）返回 **NULL** + 教学提示（不 trap）。
+> 决策与验收清单见 [`CIDE_HEAP_QUARANTINE_DECISION.md`](CIDE_HEAP_QUARANTINE_DECISION.md)，与 Clang 的四项差异见 `C_SUBSET_SPEC.md` §2.9。
+> 上表函数在 Layer / 类型检查 / 三层验证状态上均无变化，仅**分配行为语义**变更。
 
 ### 2.3 ctype.h
 
@@ -215,6 +230,9 @@
 | `strdup` 不支持 | 2026-06-07 | 新增 `STRDUP` Host Func，复用 `allocate_raw` + `MemoryRegion` 追踪 |
 | 大量函数缺存根声明 | 2026-06-07 | 补全全部 6 个已有头文件存根；新增 7 个存骨头文件 |
 | P1 核心函数缺失 | 2026-06-07 | 完成 `abort`/`strtol`/`strtod`/`strerror`/`fflush`/`perror`/`clearerr`/`time`/`clock`/`assert`/`errno`/`remove`/`rename`/`strpbrk`/`strspn`/`strcspn` + ctype/math 补全 |
+| `scanf` 返回值未实现（被视作 `void`） | 2026-09-11 | 按 C11 7.21.6.2 返回**成功匹配并赋值的项数**；`int r = scanf(...)`、`while (scanf(...) != EOF)` 恢复可用（`C_SUBSET_SPEC.md` §2.8、`CHANGELOG.md` [Unreleased]） |
+| `scanf` 格式串**普通字符指令**被忽略 | 2026-09-11 | 新增 `ScanfItem::Literal(u8)`：与输入流下一个字符**精确比较**，不匹配即停止解析；`%%` 展开为字面 `%` 同样参与匹配；`sscanf` 同族同修（回归 `baseline/scanf_literal_match.c` / `scanf_literal_mismatch.c`） |
+| `scanf` 格式串**空白指令**不跳白 | 2026-09-11 | 按 C11 7.21.6.2 匹配输入中任意数量（含零）空白字符；此前 `scanf("%d %c %d", …)` 读 `3 + 4` 时 `%c` 捕获空格而非 `+`（教学阻断） |
 
 ---
 
@@ -395,4 +413,4 @@
 ---
 
 *文档状态：产品化进度追踪 + 下一阶段全面拓展蓝图*
-*最后更新：2026-06-07*
+*最后更新：2026-09-11（前端切割后文档翻新：回填 scanf 族三修与堆模型变更，核实并补齐 `<stdarg.h>`；其余判定保持 2026-06-07 原样）*

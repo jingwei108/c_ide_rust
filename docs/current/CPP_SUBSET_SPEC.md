@@ -332,6 +332,11 @@ Cide 会擦除 `std::` 前缀，因此 `std::vector<int>` 等价于 `vector<int>
 （`cide_shared::ErrorCode`，附错误目录条目与建议文案），并在 `TypeChecker::is_upcast` 中实现
 **单继承链可达性判定**（带步数上限防环）以区分上/下转型。回归：`native/tests/pointer_upcast_test.rs`（3 用例）。
 
+> **交叉引用**：本项的发现、根因定位与修复批次记录见
+> [`code_review_report_2026-09-11.md`](code_review_report_2026-09-11.md) —— §1 逐条复核结论（P1-6 行）、
+> §2.2「P1-6：Cide 输出的是警告 `W3053`，不是 `E3053`」与 §4 修复批次
+> 「批次 E（2026-09-11）：P1-6（向上转型误报）」。
+
 **已知显示瑕疵（未修，如实记录）**：诊断 JSON 的 `code` 字段与 CLI 输出对**警告**也加 `E` 前缀
 （`W3067` 显示为 `E3067`）；`severity` 字段本身正确（`warning`）。修复需调整 `session_api::compile`
 的 code 前缀生成规则（按 severity 输出 `E`/`W`/`H`），属独立小项。
@@ -381,9 +386,10 @@ int main() {
 |:---|:---|
 | `docs/current/C_SUBSET_SPEC.md` | C 语言子集规范 |
 | `docs/current/CPLUSPLUS_EXTENSION_PLAN.md` | C++ 扩展技术路线图 |
-| `docs/current/M7_BETA_READINESS.md` | M7 Beta 状态检查清单 |
+| `docs/current/code_review_report_2026-09-11.md` | 代码审阅报告（C++ 子集项见 §2.2 与「批次 E」） |
+| `docs/archive/ARCHIVE_M7_BETA_READINESS.md` | M7 Beta 状态检查清单（原 `docs/current/M7_BETA_READINESS.md`，已归档） |
 | `native/tests/CPP_FAILURES.md` | C++ 已知失败与偏差记录 |
 
 ---
 
-**最后更新**: 2026-06-13 — M7 Beta 文档完整化
+**最后更新**: 2026-09-11 — 文档翻新：页脚推进 + 补记 §4.5 指针赋值方向语义与 `W3067_PointerTypeMismatch`（2026-09-11 修订）+ 增补 `code_review_report_2026-09-11.md` 批次 E 交叉引用与失效文档路径修正

@@ -1,12 +1,19 @@
 # 数据结构教材算法模板拓展路线图
 
 > 基于严蔚敏《数据结构》（C 语言版）及其配套习题集，系统梳理 Cide 代码模板体系下一阶段需要补充的算法与数据结构模板。所有模板均要求使用**标准 C 实现**，不因 IDE 编译器限制而扭曲算法原貌。
+> 最后核对日期：2026-09-11
+> 修订说明（2026-09-11）：模板载体去前端化——载体说明从已迁出的 Dart 模板文件改为现状（模板源在 `templates/<key>/`：`source.c` + `meta.yaml`），并注明 `CHANGELOG.md` `[Unreleased]` Removed 段的归属说明（暂保留待社区前端或 wasm 出口认领）。模板清单、批次与验收标准等正文保持原样。
 
 ---
 
 ## 一、当前模板覆盖现状
 
-截至 2026-06-06，`CideFlutter/lib/models/templates/*.dart` 中已内置 **82 个模板**（按领域拆分为 11 个文件并通过 `template_registry.dart` 聚合），覆盖：
+截至 2026-06-06，模板共 **82 个**（当时按领域拆分为 11 个 Dart 源文件并通过注册表聚合）。
+
+> **载体现状（2026-09-11 前端切割后）**：上述 Dart 载体（模板常量文件 + 注册表）已随前端迁出本仓库，属**历史资产**（取回见标签 `before-frontend-split`）。模板源现位于本仓库 **`templates/<key>/`**：每个模板一个目录，内含 `source.c`（标准 C 源码）与 `meta.yaml`（`key` / `name` / `category` / `params` / `tutorial.steps` / `knowledge_nodes`）。当前 `templates/` 下共 82 个 `source.c`。
+> 归属说明见 [`CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased]` **Removed** 段：`templates/`（算法模板源）**暂保留**——后端防线不依赖（Shadow 模板用例已静态化在 `native/tests/`），**待社区前端或 wasm 出口认领**。
+
+覆盖：
 
 - **排序**：冒泡、选择、插入、快速、归并、堆排序、希尔排序、计数排序、基数排序、桶排序、外部排序
 - **查找**：线性查找、二分查找、插值查找、斐波那契查找
@@ -159,7 +166,14 @@ P0 共 **13 个模板**，是数据结构课堂与考研最常考察的核心算
 
 ### 4.2 代码模板格式
 
-所有模板按领域分类定义在 `CideFlutter/lib/models/templates/*.dart` 的对应 `const List<CodeTemplate>` 中（如排序模板放入 `sort.dart`），并通过 `template_registry.dart` 聚合为 `allTemplates`。新增模板时应选择最贴近的现有分类文件，若确实无法归类再新建文件。格式如下：
+**现载体（2026-09-11 前端切割后）**：模板源位于本仓库 `templates/<key>/`，每个模板一个目录：
+
+- `source.c`：标准 C 源码（算法原貌，不使用任何编辑器专属语法）；
+- `meta.yaml`：元数据与教程，现有字段为 `key` / `name` / `category` / `params` / `tutorial.steps`（`title` / `description` / `anchor`）/ `knowledge_nodes`。
+
+新增模板时在 `templates/` 下新建以模板 key 命名的目录并放入上述两个文件。
+
+> **历史载体（已迁出）**：切割前模板以 Dart `CodeTemplate` 常量按领域分散定义并在模板注册表中聚合为 `allTemplates`，该载体已随 2026-09-11 前端切割迁出（历史资产，已迁出；取回见标签 `before-frontend-split`）。以下 Dart 代码块为**历史格式参考**，不再是本仓库的模板格式：
 
 ```dart
 CodeTemplate(
@@ -184,17 +198,15 @@ CodeTemplate(
 ),
 ```
 
-占位符使用 `{{key:defaultValue}}` 语法，参数校验规则沿用现有逻辑：
-
-- `ParamType.int`：非负整数，上限 1000。
-- `ParamType.string`：任意字符串。
-- `ParamType.identifier`：标识符格式。
+占位符使用 `{{key:defaultValue}}` 语法，参数校验规则沿用现有逻辑（`ParamType.int` 非负整数上限 1000 / `ParamType.string` 任意字符串 / `ParamType.identifier` 标识符格式）；**替换与校验由认领该资产的消费方（社区前端或 wasm 出口）实现**——本仓库当前不含模板加载/参数替换代码（`scripts/sync_templates.py` / `test_templates.py` 已随前端切割移除，见 [`CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased]` Removed 段）。
 
 ### 4.3 教程步骤要求
 
-- **P0 模板必须带 `TutorialStep`**，每个模板至少 3 个步骤。
+> 载体说明（2026-09-11）：`TutorialStep` / `focusLines` / `LineExplanation` 为历史前端载体的 API 名称；在现载体中对应 `meta.yaml` 的 `tutorial.steps`（`title` / `description` / `anchor`）。下列要求的**教学意图**不变，渲染由消费方实现。
+
+- **P0 模板必须带教程步骤**，每个模板至少 3 个步骤。
 - **P1/P2 模板建议带教程**，若代码极简单可省略。
-- 每个 `TutorialStep` 必须包含 `focusLines`（要高亮的代码行号）和至少一个 `LineExplanation`。
+- 每个步骤必须包含定位信息（历史载体为 `focusLines`：要高亮的代码行号）和至少一条中文解释。
 - 行号从 1 开始，与代码模板中实际行号一致。
 
 ### 4.4 编译器特性确认
@@ -240,7 +252,7 @@ P0 模板依赖的 C 特性当前均已支持，无需新增编译器功能：
 
 ### 批次 1：P0 核心（13 个模板）
 
-预计工作量：中等（每个模板约 30~60 行 Dart 代码，含教程步骤）。
+预计工作量：中等（历史口径：每个模板约 30~60 行 Dart 代码，含教程步骤；现载体下为 `templates/<key>/source.c` + `meta.yaml`，源码量级不变）。
 
 推荐实现顺序：
 
@@ -267,8 +279,8 @@ P0 模板依赖的 C 特性当前均已支持，无需新增编译器功能：
 
 1. **编译通过**：能在 Cide 编译器中零错误编译。
 2. **运行正确**：输出与标准 C 编译器（Clang/GCC）执行结果一致。
-3. **参数替换正确**：`buildCode()` 能正确替换 `{{key:default}}` 占位符。
-4. **教程高亮正确**：`focusLines` 行号与代码实际行号一致，`LineExplanation` 无错别字。
+3. **参数替换正确**：`{{key:default}}` 占位符能被正确替换（历史载体 API 为 `buildCode()`；现由认领 `templates/` 资产的消费方实现，本仓库暂不含替换代码）。
+4. **教程高亮正确**：教程步骤的行号与代码实际行号一致，中文解释无错别字（历史载体字段为 `focusLines` / `LineExplanation`，现对应 `meta.yaml` 的 `tutorial.steps`）。
 5. **不扭曲算法**：代码逻辑与教材标准实现一致，没有为绕过 IDE 限制而引入的非常规写法。
 
 ---

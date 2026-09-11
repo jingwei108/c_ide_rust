@@ -1,7 +1,9 @@
 # 算法模板与验证解耦方案
 
-> 状态：Phase 1~4 已实施完成，旧 Dart 硬编码模板框架已移除  
-> 核心原则：**算法模板即合法 C 代码** + **语法验证双重验证参照** + **自验证降低维护成本**
+> 状态：Phase 1~4 已实施完成，旧 Dart 硬编码模板框架已移除；**其中 Phase 2 的同步脚本 `scripts/sync_templates.py`（历史资产，已迁出）与 Phase 4 的前端加载链路（历史资产，已迁出）已随 2026-09-11 前端切割移出仓库**（现状见 §1.1、§3、§5.1、§5.4）  
+> 核心原则：**算法模板即合法 C 代码** + **语法验证双重验证参照** + **自验证降低维护成本**（后端原则不因切割改变）
+>
+> **最后核对日期**：2026-09-11（前端切割后现状对齐：改写已删除脚本与 Flutter 加载链路为现状描述，并如实记录模板生成器缺失缺口；本文档的结构与"双重验证"设计原则保持不变）
 
 ---
 
@@ -9,14 +11,14 @@
 
 ### 1.1 算法模板与前端耦合
 
-~~当前 82 个算法模板硬编码在 `CideFlutter/lib/models/templates/*.dart` 中~~（**已移除**）。
+~~当前 82 个算法模板硬编码在 `CideFlutter/lib/models/templates/*.dart` 中~~（**已移除**，历史资产，已迁出）。
 
 新框架下：
 
-- 所有模板源码为合法 C 代码，存放于 `templates/<key>/source.c`
-- 运行时通过 `TemplateLoader` 从 `assets/templates/index.json` + `.c` 加载
-- 影子验证直接复用 `native/tests/cases_template_generated/*.c`
-- 前端替换时仅需复制 `assets/templates/` 目录
+- 所有模板源码为合法 C/C++ 代码，存放于 `templates/<key>/source.c`（或 `source.cpp`）
+- 模板的消费方**只剩后端防线**：渲染产物 `native/tests/cases_template_generated/*.c` 被 Shadow Verification（防线 1）与 Rust E2E 直接复用
+- 前端（Flutter/Dart）运行时的 `index.json` + 模板源码加载链路已随 2026-09-11 前端切割整体移除；社区前端可直接把 `templates/<key>/` 当作模板源读取，但**本仓库不再提供 index 产物与加载器**
+- ⚠️ **已知缺口**：负责"从 `templates/` 渲染出 `cases_template_generated/*.c` 并生成 Golden"的脚本（下称同步脚本）已随切割删除，现存 82 个 `.c` 生成用例是**静态留存**，模板源与防线用例之间已无自动化闭环（详见 §5.1 与 `TEMPLATE_GUIDE.md` §4.2）
 
 ### 1.2 语法验证重复劳动
 
@@ -84,7 +86,7 @@ int main() {
 | 教程锚点 | `// @tutorial-anchor: outer_loop` | 源码中的显式标记，重构时跟着代码走 |
 | 自验证 | `expected[]` + 循环比较 | 模板自身断言正确性，输出稳定 `"OK\n"` |
 
-**替换逻辑**：`sync_templates.py` 扫描 `/*__PARAM_{key}__*/\s*(\S+)`，将匹配到的整段替换为目标值。
+**替换逻辑**：同步脚本扫描 `/*__PARAM_{key}__*/\s*(\S+)`，将匹配到的整段替换为目标值。（⚠️ 该脚本已随前端切割删除，此规则现由维护者手工执行，见 `TEMPLATE_GUIDE.md` §4.3）
 
 **验证方式**：模板作者随时可 `clang templates/bubble_sort/source.c` 编译运行，确认语法和逻辑正确。
 
@@ -168,25 +170,24 @@ project_root/
 │   │   │   │   └── ...
 │   │   │   └── gap/                    # 已知缺失特性（可选）
 │   │   │       └── goto_basic.c
-│   │   ├── cases_golden/               # 模板 Golden 输出（CI 生成+锁定）
+│   │   ├── cases_golden/               # 模板 Golden 输出（Clang 生成 + 人工锁定）
 │   │   │   ├── bubble_sort_default.out
-│   │   │   └── ...
-│   │   ├── cases_template_generated/   # CI 从 templates/ 自动生成
+│   │   │   └── ...                     # 实测：顶层 82 个 .out（另有 baseline/cpp/knr/leetcode 子目录）
+│   │   ├── cases_template_generated/   # 模板生成用例（⚠️ 静态留存：生成脚本已删，不再自动重生成）
 │   │   │   ├── bubble_sort_default.c
-│   │   │   └── ...
+│   │   │   └── ...                     # 实测：82 个 .c + 1 个 E2E_FAILURES.md
 │   │   └── shadow_verification/
-│   │       ├── shadow_verify.py        # 影子验证框架
+│   │       ├── shadow_verify.py        # 影子验证框架（load_case_files() 扫描上述目录）
+│   │       ├── cide_output.py          # 纯程序 stdout 读取入口（E-P1-5 口径）
 │   │       └── reports/                # 输出报告
 │   └── src/...
 │
-├── CideFlutter/
-│   └── assets/templates/               # Flutter 打包
-│       ├── index.json                  # sync_templates.py 生成
-│       └── bubble_sort.c               # 按需加载的模板源码
-│
 └── scripts/
-    └── sync_templates.py               # 核心同步脚本
+    ├── extract_shadow_cases.py         # 历史迁移工具：从 SHADOW_CASES 提取 .c 文件
+    └── shadow_verify_cpp.py            # C++ 影子验证驱动
 ```
+
+> **已不存在的路径（2026-09-11 前端切割，历史资产，已迁出）**：`CideFlutter/assets/templates/`（含 `index.json`）、`scripts/sync_templates.py`、`scripts/test_templates.py`。历史实现见标签 `before-frontend-split`。
 
 ---
 
@@ -239,7 +240,7 @@ int main() {
 | 注释标记 | 用途 | 消费者 |
 |---------|------|--------|
 | `// @category:` | baseline / gap / arch_diff_bug | Python shadow, Rust e2e |
-| `// @features:` | 特性标签（逗号分隔） | 特性矩阵生成 |
+| `// @features:` | 特性标签（逗号分隔） | ⚠️ 暂无消费者：特性矩阵脚本未实现，`shadow_verify.py` 也不解析该标记 |
 | `// @expected_stdout:` | Rust e2e 断言预期 | Rust e2e |
 
 ### 4.3 Golden 输出文件：`cases_golden/<name>.out`
@@ -252,108 +253,50 @@ ative/tests/cases_golden/bubble_sort_default.out
 OK
 ```
 
-生成方式：`sync_templates.py` 先用 Clang 渲染并运行，stdout 写入 `.out`，首次需人工 Review 后提交锁定。
+生成方式：同步脚本先用 Clang 渲染并运行，stdout 写入 `.out`，首次需人工 Review 后提交锁定。**缺口期（2026-09-11 起）**：同步脚本已删，Golden 只能由维护者手工用 Clang 生成并人工锁定，流程见 `TEMPLATE_GUIDE.md` §4.3。
 
 ---
 
 ## 五、消费端实现
 
-### 5.1 `sync_templates.py`（核心同步脚本）
+### 5.1 同步脚本（⚠️ 已随前端切割删除 · 现状说明）
+
+**现状（2026-09-11 核实）**：`scripts/sync_templates.py` **不在仓库中**（历史资产，已迁出）。实测 `scripts/` 下现存的 Python 脚本为：`ci_three_tier_check.py`、`engineering_health.py`、`extract_cpp_builtin_layout.py`、`extract_shadow_cases.py`、`precompile_bytecode_libc.py`、`serve_smoke.py`、`shadow_verify_cpp.py`、`unified_perf_baseline.py`。`scripts/test_templates.py` 同样已不存在（历史资产，已迁出）。
+
+**它原本的职责（历史记录，保留供恢复时参照）**：
+
+1. 渲染 `templates/<key>/source.c` → `native/tests/cases_template_generated/<key>_<case>.c`（替换 `/*__PARAM_x__*/`，解析逻辑为正则 `/\*__PARAM_(\w+)__\*/\s*(\S+)`，未声明参数时保留源码中的默认值）；
+2. 调 Clang 编译运行渲染结果，生成/锁定 `native/tests/cases_golden/<key>_<case>.out`（仅当 `.out` 不存在时生成，避免覆盖人工 Review 过的 Golden）；
+3. 扫描 `// @tutorial-anchor: <name>` 得到 `{name: line_number}` 映射；
+4. 汇总元数据 + 锚点生成 `CideFlutter/assets/templates/index.json`（历史资产，已迁出）；
+5. 把 `source.c` / `source.cpp` 复制到 `CideFlutter/assets/templates/<key>.c/.cpp`（历史资产，已迁出）。
+
+**切割后失效的部分**：第 4、5 项随 `CideFlutter/` 迁出而失去目的（`index.json` 已不存在）；第 1~3 项是**后端仍需的能力**，但目前**没有替代实现**。
+
+**缺口与影响**：
+
+- `native/tests/cases_template_generated/` 现有 83 个文件（82 个 `.c` + 1 个 `E2E_FAILURES.md`）为**静态留存**，模板源改动不会自动流入防线用例；
+- 实测确认：仓库中**没有任何脚本读取 `templates/` 源目录**；`cases_template_generated/` 目前仅被 `native/tests/cide_e2e.rs`、`native/tests/shadow_verification/shadow_verify.py`、`scripts/extract_shadow_cases.py` 三处消费；
+- **重新实现渲染脚本（恢复 templates → 生成用例 → Golden 的后端闭环）是尚未排期的缺口**，如实记录，不粉饰。
+
+**历史实现骨架（已删除，仅保留算法要点供恢复参照）**：
 
 ```python
-#!/usr/bin/env python3
-"""
-职责：
-1. 渲染模板 source.c → cases_template_generated/*.c（替换 /*__PARAM_*/）
-2. 用 Clang 运行生成 Golden .out → cases_golden/
-3. 生成 Flutter JSON Index → CideFlutter/assets/templates/index.json
-"""
+# ⚠️ 历史资产，已迁出：本代码块为已删除脚本的实现骨架，勿直接使用
+PARAM_RE = re.compile(r'/\*__PARAM_(\w+)__\*/\s*(\S+)')   # 占位符正则
 
-import re
-import yaml
-import subprocess
-from pathlib import Path
-
-PARAM_RE = re.compile(r'/\*__PARAM_(\w+)__\*/\s*(\S+)')
-
-def render_template(source: str, args: dict) -> str:
-    def repl(m):
-        key = m.group(1)
-        return args.get(key, m.group(2))
-    return PARAM_RE.sub(repl, source)
-
-def scan_tutorial_anchors(source: str) -> dict:
-    """扫描 // @tutorial-anchor: name，返回 {name: line_number}"""
-    anchors = {}
-    for i, line in enumerate(source.splitlines(), 1):
-        m = re.search(r'@tutorial-anchor:\s*(\w+)', line)
-        if m:
-            anchors[m.group(1)] = i
-    return anchors
-
+def render_template(source, args):
+    # 用 args 覆盖占位符；args 中缺失的 key 保留源码中的默认值
+    ...
+def scan_tutorial_anchors(source):
+    # 扫描 // @tutorial-anchor: <name>，返回 {name: line_number}
+    ...
 def sync():
-    tpl_dir = Path("templates")
-    gen_dir = Path("native/tests/cases_template_generated")
-    golden_dir = Path("native/tests/cases_golden")
-    flutter_dir = Path("CideFlutter/assets/templates")
-    
-    gen_dir.mkdir(parents=True, exist_ok=True)
-    golden_dir.mkdir(parents=True, exist_ok=True)
-    flutter_dir.mkdir(parents=True, exist_ok=True)
-    
-    index = {"templates": []}
-    
-    for d in tpl_dir.iterdir():
-        if not d.is_dir():
-            continue
-        
-        source_c = (d / "source.c").read_text()
-        meta = yaml.safe_load((d / "meta.yaml").read_text())
-        anchors = scan_tutorial_anchors(source_c)
-        
-        # 生成 Flutter JSON Index
-        index["templates"].append({
-            "key": meta["key"],
-            "name": meta["name"],
-            "category": meta["category"],
-            "params": meta.get("params", {}),
-            "tutorialAnchors": anchors,
-            "knowledgeNodes": meta.get("knowledge_nodes", []),
-        })
-        
-        # 复制源码到 Flutter assets（按需加载）
-        (flutter_dir / f"{meta['key']}.c").write_text(source_c)
-        
-        # 生成 shadow 用例 + Golden
-        for sc in meta.get("shadow_cases", []):
-            rendered = render_template(source_c, sc["args"])
-            case_name = f"{meta['key']}_{sc['name']}"
-            
-            # 写入生成的 .c
-            c_path = gen_dir / f"{case_name}.c"
-            lines = [f"// @category: {sc.get('category', 'baseline')}"]
-            lines.append(rendered)
-            c_path.write_text("\n".join(lines))
-            
-            # 生成/更新 Golden .out（仅当 .out 不存在时）
-            out_path = golden_dir / f"{case_name}.out"
-            if not out_path.exists():
-                out = run_with_clang(rendered)  # 调用 Clang 编译运行
-                out_path.write_text(out.stdout)
-                print(f"[NEW GOLDEN] {out_path}")
-    
-    # 写入 Flutter Index
-    (flutter_dir / "index.json").write_text(
-        json.dumps(index, ensure_ascii=False, indent=2)
-    )
-    
-    print(f"Synced {len(index['templates'])} templates")
-
-def run_with_clang(source: str) -> subprocess.CompletedProcess:
-    ...  # 复用 shadow_verify.py 中的 clang 运行逻辑
-
-if __name__ == "__main__":
-    sync()
+    # 1) 渲染 templates/<key>/source.c → cases_template_generated/<key>_<case>.c（首行补 // @category:）
+    # 2) 仅当 cases_golden/<key>_<case>.out 不存在时，用 Clang 运行并写入 Golden
+    # 3) 汇总 meta.yaml + 锚点 → CideFlutter/assets/templates/index.json（已随前端迁出）
+    # 4) 复制 source.c/source.cpp → CideFlutter/assets/templates/<key>.c/.cpp（已随前端迁出）
+    ...
 ```
 
 ### 5.2 Rust e2e 集成测试
@@ -467,34 +410,32 @@ SHADOW_CASES = load_case_files()
 # analyze_diff、classify_compile_error、generate_report 完全保留原有逻辑
 ```
 
-### 5.4 Flutter 前端
+### 5.4 前端加载链路（⚠️ 已随 2026-09-11 前端切割迁出 · 现状说明）
 
-运行时加载 `assets/templates/index.json` + 按需加载 `assets/templates/<key>.c`：
+**现状**：`CideFlutter/` 整目录、`assets/templates/index.json` 与 Dart 加载器（`TemplateRepository` / `CodeTemplate` / `TemplateBar` 等，均为历史资产，已迁出）**均不在本仓库中**。本仓库不再产出 `index.json`，也不再提供任何运行时模板加载实现。
 
-```dart
-class TemplateRepository {
-  static Future<List<CodeTemplate>> loadAll() async {
-    final idx = await rootBundle.loadString('assets/templates/index.json');
-    final data = jsonDecode(idx);
-    // 解析 params, tutorialAnchors, knowledgeNodes
-  }
-  
-  static Future<String> loadSource(String key) async {
-    return rootBundle.loadString('assets/templates/$key.c');
-  }
-}
-```
+**仍有效的后端契约（社区前端接入时应遵守）**：
 
-**高亮逻辑**：`source.c` 中的 `// @tutorial-anchor: outer_loop` 注释位置即高亮行号，无需额外维护。
+| 契约 | 形式 |
+|------|------|
+| 模板源位置 | `templates/<key>/source.c` 或 `source.cpp`（二选一）+ `meta.yaml` |
+| 参数占位符 | `/*__PARAM_<key>__*/ <默认值>`（合法 C 注释，可被 Clang/Cide 直接编译） |
+| 教程锚点 | 源码中的 `// @tutorial-anchor: <name>`，其行号即高亮行号，无需额外维护 |
+| 元数据 | `meta.yaml` 的 `key` / `name` / `category` / `params` / `tutorial.steps` / `knowledge_nodes` |
+| 生成用例（可作对照素材） | `native/tests/cases_template_generated/<key>_default.c` 与 `native/tests/cases_golden/<key>_default.out` |
+
+**历史实现（已迁出，供参照）**：原 Dart 侧从 `assets/templates/index.json` 读取模板清单，再按需 `rootBundle.loadString('assets/templates/<key>.c')` 加载源码；`ext` 字段决定加载 `.c` 还是 `.cpp`。该实现见标签 `before-frontend-split`。
 
 ---
 
-## 六、特性矩阵生成（可选增值）
+## 六、特性矩阵生成（可选增值 · 未实现）
+
+> **现状核实（2026-09-11）**：`scripts/feature_matrix.py` **不存在**，`shadow_verify.py` 也**不解析** `// @features:` 注释（`ShadowCase` 无 `features` 字段）。本节为规划草案，下例为伪代码。
 
 从 `// @features:` 注释自动生成特性支持矩阵：
 
 ```python
-# scripts/feature_matrix.py
+# scripts/feature_matrix.py（规划中，文件尚不存在）
 from collections import defaultdict
 
 features = defaultdict(lambda: {"cases": 0, "match": 0})
@@ -521,14 +462,16 @@ for case in load_case_files():
 4. ✅ `shadow_verify.py` 改为 `load_case_files()` 扫描目录
 5. ✅ 验证：跑一次 `python shadow_verify.py`，match 率不下降
 
-### Phase 2：模板文件化 + sync 脚本 ✅
+### Phase 2：模板文件化 + sync 脚本 ✅（脚本已于 2026-09-11 随前端切割删除）
 
 1. ✅ 创建 `templates/<key>/source.c`（合法 C + `/*__PARAM__*/`）+ `meta.yaml`
-2. ✅ 实现 `scripts/sync_templates.py`：
+2. ✅ 实现 `scripts/sync_templates.py`（历史资产，已迁出）：
    - 渲染 `/*__PARAM__*/` → `cases_template_generated/*.c`
    - Clang 运行生成 `cases_golden/*.out`
-   - 生成 `CideFlutter/assets/templates/index.json`
+   - 生成 `CideFlutter/assets/templates/index.json`（历史资产，已迁出）
 3. ✅ 验证 Rust e2e 和 Python 影子都能加载新生成的模板用例
+
+> **现状（2026-09-11 补记，不改动上述历史条目）**：该脚本已不在仓库中；`cases_template_generated/` 的 82 个 `.c` 成为静态留存，模板源与防线用例之间的自动闭环失效（缺口详情见 §1.1 与 §5.1）。
 
 ### Phase 3：Rust e2e 集成测试 ✅
 
@@ -537,14 +480,16 @@ for case in load_case_files():
 3. ✅ 实现 `load_golden_cases()` 扫描 `cases_template_generated/` + `cases_golden/`
 4. ✅ `cargo test --test cide_e2e` 跑通全部 baseline + 模板用例
 
-### Phase 4：Flutter 运行时加载 + 删除旧框架 ✅
+### Phase 4：Flutter 运行时加载 + 删除旧框架 ✅（前端链路已随 2026-09-11 切割整体迁出）
 
 1. ✅ `pubspec.yaml` 注册 `assets/templates/`
 2. ✅ `TemplateBar` / `TemplateParamDialog` / `TemplateTutorialPanel` 改为消费 JSON Index + `.c` 文件
-3. ✅ 删除 `CideFlutter/lib/models/templates/*.dart` 硬编码模板文件（11 个 Dart 文件已移除）
-4. ✅ `template_registry.dart` 清理：移除 `allTemplates` fallback 及全部旧 import
-5. ✅ `code_template.dart` 移除旧语法 `{{key:defaultValue}}` 支持，仅保留 `/*__PARAM__*/`
+3. ✅ 删除 `CideFlutter/lib/models/templates/*.dart` 硬编码模板文件（11 个 Dart 文件已移除；历史资产，已迁出）
+4. ✅ `template_registry.dart` 清理：移除 `allTemplates` fallback 及全部旧 import（历史资产，已迁出）
+5. ✅ `code_template.dart` 移除旧语法 `{{key:defaultValue}}` 支持，仅保留 `/*__PARAM__*/`（历史资产，已迁出）
 6. ✅ `@tutorial-anchor` 扫描驱动高亮
+
+> **现状（2026-09-11 补记，不改动上述历史条目）**：`CideFlutter/` 整目录（含 `assets/templates/` 与 `index.json`）已移出本仓库，上述 1、2、4、5、6 项作为历史实现保留在标签 `before-frontend-split`。**后端仍然有效的只是数据约定**：模板源为合法 C/C++、占位符为 `/*__PARAM_x__*/`、锚点为 `// @tutorial-anchor: <name>`。运行时加载与渲染属社区前端职责。
 
 ---
 
@@ -555,9 +500,10 @@ for case in load_case_files():
 | `shadow_verify.py` 报告格式 | 无 | `analyze_diff` / `generate_report` 逻辑不变 |
 | `SHADOW_CASES` 硬编码列表 | 删除 | 改为 `load_case_files()` 扫描 `.c` |
 | Rust 单元测试（分层） | 无 | `lexer/tests.rs` / `parser/tests.rs` 等保持原样 |
-| `CodeTemplate` Dart API | 微调 | 数据字段不变，加载来源从代码变为文件 |
-| `template_registry.dart` | 删除 | 改为运行时加载 JSON Index |
-| 教程高亮 | 增强 | 从行号绑定升级为 `@tutorial-anchor` 源码标记 |
+| ~~`CodeTemplate` Dart API~~ | 已迁出 | 随 `CideFlutter/` 于 2026-09-11 移出仓库（历史资产，已迁出） |
+| ~~`template_registry.dart`~~ | 已迁出 | 同上（历史资产，已迁出） |
+| 教程高亮 | 契约保留、实现移出 | 契约从"行号绑定"升级为 `@tutorial-anchor` 源码标记（后端数据约定仍有效，渲染由社区前端实现） |
+| `templates/` 源目录 | **闭环失效** | 无脚本消费（缺口，见 §5.1）；生成用例为静态留存 |
 
 ---
 
@@ -565,10 +511,11 @@ for case in load_case_files():
 
 | 风险 | 缓解措施 |
 |------|---------|
-| `/*__PARAM_n__*/` 默认值与替换值类型不匹配 | `sync_templates.py` 渲染后先调 Clang 编译，失败则阻断 |
-| Golden `.out` 首次生成错误 | 必须人工 Review 后提交锁定，CI 检查 `.out` 变更需审批 |
-| `@tutorial-anchor` 注释遗漏 | `sync_templates.py` 校验 meta.yaml 中的 anchor 必须在 source.c 中存在 |
-| Flutter 运行时加载性能 | Index JSON 仅几 KB，`.c` 文件按需加载，无性能问题 |
+| `/*__PARAM_n__*/` 默认值与替换值类型不匹配 | 原由同步脚本在渲染后先调 Clang 编译、失败则阻断；**脚本已删**，现靠人工流程（`TEMPLATE_GUIDE.md` §4.3）第 2、4 步的 Clang 预检 |
+| Golden `.out` 首次生成错误 | 必须人工 Review 后提交锁定；CI 对 `.out` 变更保持敏感 |
+| `@tutorial-anchor` 注释遗漏 | 原由同步脚本校验"meta.yaml 的 anchor 必须存在于 source.c"；**脚本已删 → 该校验当前缺失**（缺口） |
+| 模板源与生成用例漂移 | **当前无自动缓解**：`templates/` 无消费者，改动不会进入防线（缺口，见 §5.1） |
+| ~~Flutter 运行时加载性能~~ | 已随前端迁出，属社区前端自评范围（历史资产，已迁出） |
 | Windows 无 Clang | Python 影子标记为可选 CI 步骤；Rust e2e 为必过项 |
 
 ---
@@ -576,3 +523,5 @@ for case in load_case_files():
 ## 十、总结
 
 > **算法模板是合法 C 代码（`/*__PARAM__*/` 注释占位），作者可直接用 Clang 验证；模板自身断言正确性（`expected[]` 自验证），输出稳定 `"OK\n"`，Golden 文件由 Clang 生成并锁定；同一份 `.c` 文件，Rust e2e 以 Golden 为参照验证 Cide 自洽性，Python 影子以 Clang 实时输出为参照验证标准一致性——双重独立，交叉验证，Python 不降级。**
+
+> **2026-09-11 补记（切割后现状）**：上述设计原则**全部保留且不因前端切割改变**——模板即合法 C、Golden 只能来自 Clang、双重参照交叉验证仍是后端防线的基础。发生变化的只有"谁来消费模板"：Dart 前端与同步脚本已迁出，模板的运行时展示移交社区前端，而 `templates/` → `cases_template_generated/` → Shadow/E2E 的后端生成链路目前**缺少生成器脚本**（已知缺口，详见 §5.1），现存 82 个生成用例为静态留存。

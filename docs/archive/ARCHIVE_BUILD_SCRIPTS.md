@@ -1,5 +1,9 @@
 # C IDE 构建与测试脚本指南
 
+> **已归档（2026-09-11）**：所描述的 Python 前端构建脚本（build_flutter.py / build_release.py / test_mobile.py / build_utils.py）已随前端切割全部移除，纯后端仓改用 cargo 命令。
+> 本文件仅作历史追溯保留，内容不再维护；当前有效文档见 `docs/current/`。
+
+
 本文档说明项目中所有 Python 构建脚本的使用方法、参数和常见问题排查。
 
 > **技术栈**：后端 Rust/Cargo，前端 Flutter，构建脚本 Python 3。

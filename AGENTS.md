@@ -20,6 +20,7 @@
 - **必须中文输出思考以及回答问题**
 - **未经允许禁止git提交**
 - **诚实记录**：本项目作为教学c/cpp子集，以clang为标准，任何本项目与标准不符合的，都要进行记录
+- **文档体系**：新文档进 `docs/current/`；被取代或对象已迁出的移入 `docs/archive/`（加 `ARCHIVE_` 前缀与归档横幅），并同步 `docs/README.md` 索引；英文文档只保留根目录 `AGENTS_EN.md`（其余已删除，翻译后续再议）
 ## 技术栈
 
 | 层级 | 技术 |
@@ -49,7 +50,9 @@ native/src/session_api/ 会话语义中立层（capi 与 serve 共用，出口�
 native/src/flutter_bridge.rs 历史会话包装层（cide_cli 当前消费；名称待后续重构收敛）(Rust)
 native/src/diagnostics/ 结构化诊断、自动修复建议、知识图谱、教学推理 (Rust)
 templates/              算法模板源（source.c + meta.yaml；前端资产源，暂保留待社区前端认领）
-docs/                   设计文档、事故报告
+docs/current/           当前有效文档：规范 / 设计 / 活跃计划 / 测试防线
+docs/spec/              语言中立协议 schema（对外承诺的 wire format）
+docs/archive/           历史归档（ARCHIVE_ 前缀 + 归档横幅；仅供追溯，不再维护）
 ```
 
 > 历史前端 `CideFlutter/` 与 FRB 桥接已迁出（标签 `before-frontend-split`）。
@@ -269,6 +272,8 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
   - ⚠️ **与 Clang 的行为差异**：Cide 当前按精确类型匹配（含数组退化）选择分支，未实现 C11 完整的类型兼容规则（如 `int` 与 `signed int` 的兼容、qualifier 忽略等）。教学场景通常使用明显不同的类型（`int` / `double` / `char*`）做分发，此差异可接受。
 - **复合字面量（C99/C11）** — **已支持（2026-06-28）**。`(struct S){1,2}`、`(int[]){10,20,30}`、`(int){5}` 全链路支持，可用于变量初始化、取地址、直接成员访问。新增 `baseline/compound_literal.c` 回归用例，Shadow Verification 与 Clang 输出一致（`1 5 20 7`）。
   - ⚠️ **与 Clang 的行为差异**：复合字面量生命周期简化为当前块结束，教学场景不跨块/函数使用；`int[]` 等未指定大小数组的复合字面量通过初始化列表长度推断大小；复杂嵌套/多级 designated initializer 暂按教学子集处理。
+- **全局/静态数据段与堆区共享线性内存（潜在静默损坏，2026-09-11 记录）** — 全局变量、静态变量与字符串字面量自 `GLOBAL_START`（`0x1000`）向上分配，堆区自 `HEAP_START`（`0x5000` = 20 KB）开始，两者共用同一块 1 MB 线性内存，而**编译期不校验两者是否重叠**（`gen_string_literal` 的越界判据是 `MEM_SIZE / 16` = 64 KB，全局变量分配处无同类检查）。因此"全局/静态数据超过约 19 KB **且**程序使用 `malloc`"会静默压坏堆数据。教学场景常见写法（数 KB 的数组/字符串）不受影响；已知 `lc_22` / `lc_977` 等回归用例的全局区会越过 `HEAP_START`，但因不使用堆而行为正确（收紧上限会误伤它们，故保持现状并如实记录）。
+  - 此风险与 2026-09-11 修复的 `BYTECODE_LIBC_GLOBALS_RESERVED` 自我递增漂移**同源**：该漂移曾把用户全局区压缩到不足 1 KB，使 `lc_67` 的 `static char res[1000]` 直接溢出到堆区并打印出错乱内容（详见 `CHANGELOG.md [Unreleased] Fixed`）。
 
 > 历史特性详情和 Bug 修复记录见 [`CHANGELOG.md`](CHANGELOG.md) 和 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。
 

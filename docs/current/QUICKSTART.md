@@ -1,10 +1,11 @@
-# Cide 快速入门指南
+# Cide 快速入门
 
-> [English Version](QUICKSTART_EN.md)
+> 最后核对：2026-09-11（前端切割后重写为纯后端视角）
 
-本指南帮助你在 10 分钟内跑通 Cide 的最常用路径：命令行调试与桌面端 IDE。
+本指南帮助你在 10 分钟内跑通 Cide 的三条主路径：**命令行调试**、**JSON-lines 会话**、**wasm32 出口**。
 
-> 如果你是贡献者或需要深度构建配置，请参阅 [`BUILD.md`](BUILD.md) 和 [`FLUTTER_BUILD_MANUAL.md`](FLUTTER_BUILD_MANUAL.md)。
+> 需要深度构建配置与防线细节，请参阅 [`BUILD.md`](BUILD.md)；
+> 前端（Flutter / Android / Web）已于 2026-09-11 迁出本仓库，见 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)。
 
 ---
 
@@ -12,24 +13,21 @@
 
 | 工具 | 版本 | 用途 |
 |:---|:---|:---|
-| Rust | 1.95.0+ | 编译 Rust 后端 |
-| Cargo | 随 Rust 安装 | Rust 包管理 |
-| Flutter | 3.24+ | 桌面端 / Android 前端 |
-| Python | 3.8+ | 运行构建脚本 |
-| Visual Studio 2022+ | 含 C++ 桌面开发 | Windows 桌面构建 |
-
-快速检查：
+| Rust | 1.95.0+ | 编译引擎核心与 CLI（必需） |
+| Cargo | 随 Rust 安装 | 包管理（必需） |
+| Python | 3.8+ | 跑测试防线与工具脚本（可选） |
+| Clang / Clang++ | 近期版本 | Shadow Verification 的 Golden（跑防线 1 必需） |
 
 ```bash
 rustc --version        # >= 1.95.0
-flutter doctor         # Windows 工具链无异常
+clang --version        # 跑 Shadow 防线时需要
 ```
 
 ---
 
-## 一分钟上手：命令行工具（无需 Flutter）
+## 一分钟上手：命令行工具
 
-`cide_cli` 是最快的体验方式，可以直接编译、运行、单步调试 C/C++ 代码。
+`cide_cli` 是无前端依赖的第一入口，可直接编译、运行、单步调试与时间旅行回放 C/C++ 代码。
 
 ### 1. 构建 CLI
 
@@ -38,21 +36,18 @@ cd native
 cargo build --release --bin cide_cli
 ```
 
-Windows 产物：`native/target/release/cide_cli.exe`
+Windows 产物：`native/target/release/cide_cli.exe`。
 
 ### 2. 直接运行代码片段
 
-无需创建文件，使用 `-` 从标准输入读取代码：
+使用 `-` 作为文件名即从标准输入读源码：
 
 ```bash
 # 管道方式
 echo '#include <stdio.h>
 int main() { printf("hello, cide\n"); return 0; }' | cargo run --release --bin cide_cli -- run -
-```
 
-或使用 here-document：
-
-```bash
+# here-document 方式
 cargo run --release --bin cide_cli -- run - <<'EOF'
 #include <stdio.h>
 int main() {
@@ -62,108 +57,107 @@ int main() {
     return 0;
 }
 EOF
-# 然后输入两个整数并按回车
 ```
 
-### 3. 单步调试一个文件
+### 3. 编译并查看诊断
+
+```bash
+cargo run --release --bin cide_cli -- compile tests/cases/baseline/hello_world.c
+```
+
+输出包含中文诊断（错误码 + 位置 + 修复建议）与识别到的算法。编译失败时退出码为 `1`。
+
+### 4. 单步调试
 
 ```bash
 cargo run --release --bin cide_cli -- step tests/cases/baseline/hello_world.c
 ```
 
-进入交互后：
-
-| 命令 | 说明 |
+| 交互命令 | 说明 |
 |:---|:---|
 | `Enter` | 执行下一步 |
-| `p` | 打印当前局部变量 |
-| `o` | 打印当前程序输出 |
-| `r` | 全速运行到结束 |
-| `q` | 退出 |
+| `p` / `print` | 打印当前局部变量 |
+| `o` / `output` | 打印当前程序输出 |
+| `r` / `run` | 全速运行到结束 |
+| `q` / `quit` | 退出 |
 
-> 完整 CLI 用法见 [`CIDE_CLI.md`](CIDE_CLI.md)。
+### 5. 统一模式（时间旅行引擎）
+
+```bash
+cargo run --release --bin cide_cli -- unified tests/cases/baseline/hello_world.c
+cargo run --release --bin cide_cli -- unified long_sort.c --max-steps 500000
+```
+
+> 完整命令与选项见 [`CIDE_CLI.md`](CIDE_CLI.md)。
 
 ---
 
-## 五分钟上手：桌面端 IDE
+## 五分钟上手：JSON-lines 会话（headless 出口）
 
-### 1. 构建并运行
-
-在项目根目录执行：
+长寿命会话进程：**stdin 每行一个 JSON 请求，stdout 每行一个 JSON 响应**（NDJSON）。
+供 IDE 后端、判分服务、自动化脚本以任意语言消费，无需 ctypes 或 FFI。
 
 ```bash
-# 桌面端 Debug 构建并运行
-python scripts/build_flutter.py --run
+cd native && cargo build --release --bin cide_cli
+./target/release/cide_cli serve <<'EOF'
+{"id":1,"method":"compile","params":{"source":"#include <stdio.h>\nint main(){ printf(\"%d\", 1+2); return 0; }\n"}}
+{"id":2,"method":"run"}
+{"id":3,"method":"output.delta","params":{"cursor":0,"stream":"stdout"}}
+{"id":4,"method":"shutdown"}
+EOF
 ```
 
-首次构建会：
-1. 编译 Rust 后端为 `cide_native.dll`
-2. 获取 Flutter 依赖
-3. 构建 Windows 桌面端
-4. 启动应用
+响应形如：
 
-### 2. 创建并运行你的第一个程序
-
-启动 IDE 后：
-
-1. 新建文件或打开示例
-2. 输入 C/C++ 教学子集代码，例如：
-
-```c
-#include <stdio.h>
-
-int main() {
-    int n = 5;
-    int sum = 0;
-    for (int i = 1; i <= n; i++) {
-        sum += i;
-    }
-    printf("sum = %d\n", sum);
-    return 0;
-}
+```json
+{"id":1,"ok":true,"result":{"diagnostics":[],"ok":true}}
+{"id":2,"ok":true,"result":{"ok":true,"return_value":0,"status":"finished","steps_executed":13,"trap":"","waiting_input":false}}
+{"id":3,"ok":true,"result":{"cursor":1,"delta":"3","stream":"stdout","total":1}}
+{"id":4,"ok":true,"result":{"shutdown":true}}
 ```
 
-3. 点击**运行**按钮，查看输出
-4. 点击**单步调试**按钮，观察变量 `i`、`sum` 的变化
-5. 在右侧**可视化面板**查看数组、指针或算法执行过程
+三条关键契约：
+
+- **id 关联**：请求可带 `id`，响应原样回填（异步/乱序对账）；
+- **帧同构**：成功帧 `{"ok":true,"result":{…}}`、错误帧 `{"ok":false,"error":{…}}`，解析路径统一；
+- **输出分通道**：`stream` 取 `display`（默认，含引擎附注）/ `stdout`（纯程序输出，判分与 Clang Golden 比对用）/ `stderr` / `note`。
+
+> 方法一览（编译 / 运行 / 单步 / seek / 断点 / 内存区域 / 配置）见 [`CIDE_CLI.md`](CIDE_CLI.md) §6；
+> StepPayload 的字段语义见 [`../spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)。
 
 ---
 
-## 常用命令速查
+## 五分钟上手：wasm32 出口
 
 ```bash
-# 桌面端 Debug 构建（默认）
-python scripts/build_flutter.py
-
-# 桌面端 Release 构建并运行
-python scripts/build_flutter.py -c Release --run
-
-# Android APK 构建
-python scripts/build_flutter.py -t Android
-
-# 清理构建产物
-python scripts/build_flutter.py --clean
-
-# 离线构建
-python scripts/build_flutter.py --offline
-
-# 移动端完整流水线：构建 + 安装 + 启动 + 日志
-python scripts/test_mobile.py --install --run --logcat
+rustup target add wasm32-unknown-unknown
+cd native
+cargo build --target wasm32-unknown-unknown --release
 ```
+
+产物：`native/target/wasm32-unknown-unknown/release/cide_native.wasm`（**约 3.75 MB**）。
+
+2026-09-11 冒烟实证（Node 环境）：实例化 → `cide_session_create` → `cide_compile_unit` / `cide_compile_all` → `cide_run` → `cide_get_program_output*` 全链路可用，E3070 栈溢出教学诊断（含变量名与容量）完整输出。
+
+> **诚实记录**：本次冒烟使用的 Node 驱动脚本当时存放于临时目录，**尚未固化进仓库**——
+> Phase 2a 计划中的 `scripts/wasm_smoke/`（含进 CI）与 JS/TS 绑定包仍未落地；
+> 在那之前，wasm 出口需按上述 C API 序列自行驱动。计划见
+> [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §4 与 §6。
 
 ---
 
 ## 验证项目是否健康
 
 ```bash
-# Rust 后端测试（750+ 用例）
-cd native && cargo test --workspace --all-features
+cd native && cargo test --workspace --all-features        # 全量测试（2026-09-11 基线：845 passed / 0 failed）
+cd native && cargo clippy --workspace --all-targets --all-features -- -D warnings
 
-# C Shadow Verification（与 Clang 对比 stdout）
-python native/tests/shadow_verification/shadow_verify.py
-
-# C++ Shadow Verification
+# Shadow Verification（与 Clang / Clang++ 对照 stdout）
+python native/tests/shadow_verification/shadow_verify.py --jobs 8
 python scripts/shadow_verify_cpp.py
+
+# serve 协议冒烟
+python scripts/serve_smoke.py
 ```
 
 ---
@@ -172,46 +166,28 @@ python scripts/shadow_verify_cpp.py
 
 ### `cargo` 命令未找到
 
-安装 Rust 并确保 `~/.cargo/bin` 在 PATH 中：
+安装 Rust（<https://rustup.rs>）并确保 `~/.cargo/bin` 在 PATH 中。
 
-```bash
-https://rustup.rs
-```
+### Shadow 防线报 "clang not found"
 
-### `flutter` 命令未找到
+防线 1 以 Clang 为唯一 Golden 来源，缺失时会**故意 fail fast**（exit 2），而不是静默跳过。安装 LLVM/Clang 并加入 PATH。
 
-将 Flutter SDK 的 `bin` 目录加入 PATH：
+### 程序等待输入（`waiting_input`）
 
-```powershell
-$env:PATH += ";D:\flutter\bin"
-```
+`run` 返回 `waiting_input: true` 时，可通过 `-i <file>`（CLI）或 `run.input` / `batch_input`（serve）提供标准输入。
 
-### 桌面端构建报错 "Unable to find suitable Visual Studio"
+### 想看图形界面
 
-打开 Visual Studio Installer，安装 **"使用 C++ 的桌面开发"** 工作负载。
-
-### Android 构建报错 "ANDROID_NDK_HOME not set"
-
-```powershell
-$env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.1.12297006"
-```
-
-或安装 `cargo-ndk`：
-
-```bash
-cargo install cargo-ndk
-```
-
-### 运行时崩溃 "Failed to load dynamic library"
-
-通常是 `cide_native.dll` 未复制到 Flutter 输出目录。使用构建脚本 `scripts/build_flutter.py` 可自动处理；手动模式见 [`FLUTTER_BUILD_MANUAL.md`](FLUTTER_BUILD_MANUAL.md)。
+本仓库不含任何前端。图形界面由社区前端基于三个出口自行实现；历史 Flutter 前端见标签 `before-frontend-split`。
 
 ---
 
 ## 下一步
 
-- 了解支持的 C 子集：[`C_SUBSET_SPEC.md`](C_SUBSET_SPEC.md)
-- 了解支持的 C++ 子集：[`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)
-- 了解测试防线：[`SHADOW_VERIFICATION_FRAMEWORK.md`](SHADOW_VERIFICATION_FRAMEWORK.md)
-- 了解架构设计：[`DESIGN.md`](DESIGN.md)
-- 查看 CLI 完整手册：[`CIDE_CLI.md`](CIDE_CLI.md)
+- 支持的 C 子集：[`C_SUBSET_SPEC.md`](C_SUBSET_SPEC.md)
+- 支持的 C++ 子集：[`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)
+- 架构设计：[`DESIGN.md`](DESIGN.md)
+- CLI 手册：[`CIDE_CLI.md`](CIDE_CLI.md)
+- 构建与防线：[`BUILD.md`](BUILD.md)
+- 后端定位与路线：[`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)
+- 协议 schema：[`../spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)

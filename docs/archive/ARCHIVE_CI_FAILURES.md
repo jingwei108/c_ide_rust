@@ -1,5 +1,9 @@
 # CI 失败记录
 
+> **已归档（2026-09-11）**：两条失败记录（FRB codegen 缺 Flutter 工具链、Android Gradle SSL）的载体 job 已随 CI 收缩为纯后端而消失。
+> 本文件仅作历史追溯保留，内容不再维护；当前有效文档见 `docs/current/`。
+
+
 > 记录原则：诚实记录 CI 运行中的失败，不粉饰数据。
 > 覆盖范围：GitHub Actions、本地构建脚本、CI 相关工具链问题。
 

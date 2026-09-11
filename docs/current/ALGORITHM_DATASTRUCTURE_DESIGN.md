@@ -4,6 +4,10 @@
 > 1. 算法层面的错误如何修复？
 > 2. 如何逐步扩展 C 子集？
 > 3. 如何支持数据结构教学？
+>
+> 最后核对日期：2026-09-11
+> 阶段完成状态：Phase 1 / Phase 2 / Phase 3 已完成、Phase 4 部分完成（OCR 项已随前端切割作废，OJ 项保留待做）；前端切割后本仓库只做后端，算法验证/可视化能力以"后端能力 + 三出口载荷"形态保留。
+> 修订说明（2026-09-11）：去前端化——清除前端桥接实现位置与前端集成段落，改为语言中立后端能力与三出口（capi / wasm32 / `cide_cli serve`）载荷；Phase 4 的 OCR 项标注作废；带日期的历史条目保持原样。
 
 ---
 
@@ -186,11 +190,19 @@ private:
 └──────────────────────────────────────────────┘
 ```
 
-### 1.4 Level 2: 运行时验证（✅ 已实现）
+### 1.4 Level 2: 运行时验证（⚠️ 实现载体已随前端切割迁出，后端待重建）
 
 #### 1.4.1 Property-based Testing 实现
 
-**实现位置**：`native/src/engine/algorithm_validator.rs`（Rust 后端）+ Flutter 前端
+**实现位置（2026-09-11 核对修正）**：本层的属性用例与判定逻辑原实现于**前端载体**（Dart 侧算法验证模型：`AlgorithmTestCase` / `AlgorithmValidationResult` + 手写用例），已随 2026-09-11 前端切割迁出，属**历史资产**（见标签 `before-frontend-split`）。原文所记 Rust 路径 `native/src/engine/algorithm_validator.rs` 与 `validate_algorithm()` **在本仓库中不存在**（`native/src/engine/` 现仅有 `compile_pipeline.rs` / `session_ops.rs` / `completion/`），此处按"诚实记录"更正。
+
+**后端现状（本仓库内已核实）**：
+
+- 算法**检测**：`native/src/compiler/algorithm_detector/`（`detect_algorithms`，由 `native/src/engine/compile_pipeline.rs` 写入会话）+ `AlgorithmMatch`（`native/src/session.rs`：`name` / `display_name` / `func_name` / `confidence` / `suggestion` / `line` / `vis_events`）；
+- 模板**运行正确性**回归：`native/tests/cases_template_generated/`（模板生成用例，与 Clang golden 对照，属防线 1/2）——这是当前可用的替代验证路径；
+- **剩余缺口（诚实记录）**：替换学生 `main()` 的测试桩生成、属性判定（长度守恒 / 非递减 / 元素守恒等）与失败用例明细，**当前在本仓库没有实现**；Level 2 能力随前端迁出，待社区前端或 wasm 出口认领，或按三出口载荷形状在后端重建。
+
+**原设计接口（示意，未在本仓库落地）**：
 
 ```rust
 pub fn validate_algorithm(source: &str, match_info: &AlgorithmMatch) -> ValidationResult {
@@ -227,13 +239,23 @@ int main() {
 | **BFS/DFS** | 访问节点数正确 | 无重复访问 | - |
 | **链表操作** | 链表不断裂 | 头指针不为 NULL | - |
 
-#### 1.4.2 前端集成
+#### 1.4.2 出口集成（后端能力 + 三出口载荷）
 
-**Flutter** (`AlgorithmTab`)：
-- 算法 Tab 中每个检测到的算法卡片显示 "🔍 验证算法" 按钮
-- 点击后通过 FRB 调用 Rust `validate_algorithm()`
-- 结果以 BottomSheet 展示：绿色（通过）/ 红色（失败）
-- 失败时显示具体用例、输入数组、实际输出与预期输出对比
+**后端能力（本仓库已核实，语言中立层）**：
+
+- 算法匹配与检测结果：`native/src/compiler/algorithm_detector/` + `AlgorithmMatch`（`native/src/session.rs`），随编译诊断与运行结果一并返回；
+- 模板运行正确性回归：`native/tests/cases_template_generated/`（Clang golden 对照）；
+- **不含**属性验证（见 §1.4.1 剩余缺口）——切割前该能力由前端载体提供，已迁出。
+
+**三出口载荷**（消费方自行渲染，本仓库不再提供前端）：
+
+| 出口 | 消费方式 |
+|---|---|
+| capi（C ABI） | `cide_compile_json` / `cide_run_json` 等 JSON 字符串入口；复杂结构过边界一律 JSON（rust-alloc 所有权，`cide_free_string` 释放） |
+| wasm32 | 同一 C ABI 在浏览器/白盒形态下复用（冒烟已实证：零修改构建 + C API 全链路） |
+| `cide_cli serve` | JSON-lines（NDJSON）会话：`compile` / `run` / `step.*` / `payload.get`，见 [`CIDE_CLI.md`](CIDE_CLI.md) §6 |
+
+> 历史记录：切割前算法 Tab 的"🔍 验证算法"按钮与结果 BottomSheet（绿色通过 / 红色失败 + 用例对比）由前端载体实现，已迁出（见标签 `before-frontend-split`）；其判定逻辑属上述剩余缺口的一部分。
 
 #### 1.4.3 关键依赖：`func_name` 字段
 
@@ -629,10 +651,12 @@ void preorder(struct TreeNode* root) {
 - 阶乘、递归斐波那契、汉诺塔
 
 每个模板均支持：
-- **参数化占位符**：`{{n:5}}`、`{{target:3}}` 等，加载时弹出 `TemplateParamDialog` 收集
-- **交互式教程**：`TemplateTutorialPanel` 逐步高亮代码行，关键行带 💡 `ExpansionTile` 可展开中文解释
+- **参数化占位符**：`{{n:5}}`、`{{target:3}}` 等（参数收集 UI 属前端载体）
+- **交互式教程**：逐步骤高亮代码行，关键行可展开中文解释（教程渲染属前端载体）
 - **自动编译运行**：教程最后一步自动插入生成代码、编译并启动统一模式
 - **算法步骤语义标注**：运行时根据源码行特征和变量值推断当前阶段，生成中文教学描述
+
+> 载体说明（2026-09-11）：切割前上述"参数收集弹窗 / 教程面板 / 自动编译运行"由前端组件实现，已随前端切割迁出（历史资产，见标签 `before-frontend-split`）。本仓库现只保留模板源 `templates/<key>/`（`source.c` + `meta.yaml`）与后端语义标注能力；模板源的归属见 [`CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased]` Removed 段（暂保留待社区前端或 wasm 出口认领）。
 
 ---
 
@@ -689,10 +713,10 @@ void preorder(struct TreeNode* root) {
 ### Phase 2：算法修复 + 数据结构基础（✅ 已完成）
 - [x] 算法模式识别系统（17+ 种算法/数据结构检测）
 - [x] 算法步骤语义标注（27 种算法/数据结构操作预定义步骤模板）
-- [x] 运行时验证（Property-based Testing）
+- [x] 运行时验证（Property-based Testing）— ⚠️ **载体为前端，已随前端切割迁出**（后端无对应模块，见 §1.4.1 诚实记录）
 - [x] 执行轨迹分析（TraceAnalyzer -> RootCauseHint）
-- [x] 代码模板参数化 + 交互式教程（57 个模板）
-- [x] 链表、栈、队列、二叉树可视化（CustomPainter）
+- [x] 代码模板参数化 + 交互式教程（57 个模板）— 模板源现保留在 `templates/<key>/`，教程渲染属前端载体（已迁出）
+- [x] 链表、栈、队列、二叉树可视化（CustomPainter）— ⚠️ **渲染层为前端载体，已迁出**；后端保留可视化事件载荷（`vis_events`）
 - [x] 数据结构专用诊断（断链检测、泄漏检测、Use-After-Free/Double-Free 运行时检测）
 
 ### Phase 3：进阶扩展（✅ 已完成 / 🔄 进行中）
@@ -700,7 +724,7 @@ void preorder(struct TreeNode* root) {
 - [x] 图算法模板（BFS、DFS）
 - [x] 多维数组
 - [x] 知识图谱系统（24 概念节点 + 30+ 关系边）
-- [x] 用户学习进度追踪（LearningProgress + SharedPreferences 持久化）
+- [x] 用户学习进度追踪（LearningProgress + SharedPreferences 持久化）— ⚠️ **进度状态与持久化均为前端载体，已随前端切割迁出**；后端保留推荐引擎 `native/src/diagnostics/learning_path.rs`（`LearningPath` / `PathStep` / `recommend_learning_paths`），进度状态需由消费方自行持有
 - [x] 认知推理 P0~P3（根因分析 -> 教学推理 -> 知识图谱 -> 代码理解/意图推断）
 - [x] 语义智能补全 v2（5 种上下文感知补全）
 - [x] 模板 JIT 加速（Trace-based Loop Accelerator）
@@ -711,8 +735,8 @@ void preorder(struct TreeNode* root) {
 - [x] 字符串操作（strlen, strcpy, strcmp, strcat）
 - [x] 文件 I/O（fopen, fclose, fgets, fputs, fread, fwrite）
 - [x] 更多标准库函数（qsort, fprintf, atoi, putchar, srand/rand, memset）
-- [ ] OCR 照片导入
-- [ ] 在线判题（OJ）集成
+- [ ] ~~OCR 照片导入~~ — **已随前端切割作废**（相机/图库权限与图像输入属前端能力，本仓库为纯后端且已放弃原生移动端）
+- [ ] 在线判题（OJ）集成 — **保留**（headless 判分可由三出口承载：capi / `cide_cli serve` / wasm32）
 
 ---
 
@@ -749,3 +773,24 @@ void preorder(struct TreeNode* root) {
 - Phase 2 解锁 break/continue 后支持更复杂的链表操作
 - Phase 3 解锁多维数组后支持图的邻接矩阵
 - 每个新特性都有明确的学习路径和解锁条件
+
+---
+
+## 7. 本次翻新发现的实现缺口（2026-09-11）
+
+> 本节为 2026-09-11 文档翻新（去前端化 + 失效引用修复）过程中核实到的**文档与实现不一致**项，按"诚实记录"原则集中列出。结论均有本仓库实际代码 / git 证据支撑；本次翻新**只做文档记录，不新增或修改任何 `.rs` 代码**。
+
+| # | 缺口 | 原文（翻新前）表述 | 核实结果 | 证据 |
+|---|---|---|---|---|
+| 1 | **运行时算法属性验证（Level 2）** | §1.4 记"✅ 已实现"，实现位置 `native/src/engine/algorithm_validator.rs`（Rust 后端）+ 前端 | **Rust 后端无实现**：`validate_algorithm()` / `ValidationResult` 在 `native/` 下无任何定义（整目录检索零命中）；`native/src/engine/` 现仅有 `compile_pipeline.rs` / `session_ops.rs` / `completion/`。实际载体是前端侧算法验证模型（`AlgorithmTestCase` / `AlgorithmValidationResult` + 手写属性用例），已随前端切割迁出 | `git log --all -S "validate_algorithm"` **仅 1 个提交 `a29a056`**；历史中唯一相关路径为 `CideFlutter/lib/models/algorithm_validation.dart`（**历史资产，已迁出**）——标签 `before-frontend-split` 中存在，HEAD 已无 |
+| 2 | **学习进度追踪** | Phase 3 记"用户学习进度追踪（`LearningProgress` + SharedPreferences 持久化）"已实现 | **后端无 `LearningProgress`**（`native/src` 零命中）；后端只提供推荐引擎 `native/src/diagnostics/learning_path.rs`（`LearningPath` / `PathStep` / `recommend_learning_paths`）。进度状态与持久化原为前端载体，已迁出（历史资产，已迁出） | `native/src` 检索 `LearningProgress` 零命中；`learning_path.rs` 实际导出如上 |
+| 3 | **`AlgorithmMatch` 的归属（澄清，非缺口）** | §1.4.1 / §1.4.3 将该结构体与"验证"绑定 | `AlgorithmMatch` 在 Rust **确实存在**（`native/src/session.rs`），但它是**算法检测结果**（`name` / `display_name` / `func_name` / `confidence` / `suggestion` / `line` / `vis_events`），不含任何验证逻辑；检测实现为 `native/src/compiler/algorithm_detector/`，经 `compile_pipeline` 写入会话 | 见 §1.4.1 / §1.4.2 已更正的正文 |
+| 4 | **模板参数替换与教程渲染 API** | 本文 §3.4 与 `DATASTRUCTURE_TEMPLATE_ROADMAP.md` §7 记 `buildCode()` / `focusLines` / `LineExplanation` 为验收项 | 均为前端载体 API，已迁出；本仓库现只保留模板源 `templates/<key>/`（`source.c` + `meta.yaml`），加载 / 参数替换 / 教程渲染代码、以及 `scripts/sync_templates.py`、`scripts/test_templates.py` 均已移除 | [`CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased]` Removed 段 |
+
+**当前可用的替代验证路径（后端，已核实）**：
+
+- 算法**检测**：`native/src/compiler/algorithm_detector/`（`detect_algorithms`，由 `native/src/engine/compile_pipeline.rs` 调用）；
+- 模板**运行正确性**：`native/tests/cases_template_generated/` 的模板生成用例（与 Clang golden 对照，属 Shadow 防线）；
+- 算法**步骤语义标注**：`native/crates/cide_algorithm_steps/`（27 种算法预定义步骤模板）。
+
+**结论**：缺口 1、2 属"能力原本只在前端载体、后端从未落地"，前端切割后在本仓库为**无实现**状态；需由维护者决策是后端重建（按三出口 JSON 载荷形状）还是随模板源一并交社区前端认领。

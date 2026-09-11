@@ -2,6 +2,10 @@
 
 > **核心理念**：自研 VM 的优势不是省内存，而是做通用 IDE/可视化工具做不出来的教学体验。  
 > **性能原则**：中端手机 50MB 内存换零延迟交互，完全可接受。拒绝为省 47.5MB 做过度工程化。
+>
+> **2026-09-11 前端切割后现状**：教学体验的载体已从 Dart widget 转为**协议载荷 + 三出口 API**。本仓库负责在后端产出这些能力（快照/检查点/热力图/语义标注/变量历史/变量级高亮），经 C ABI、wasm32、`cide_cli serve` 交付；渲染与交互由社区前端实现。载荷字段以 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) 为准。
+>
+> **最后核对日期**：2026-09-11（修订：实现位置表中的 Dart widget 改为后端能力 + 三出口载荷；修正正文中的旧模块路径，并如实记录 `unified/checkpoint.rs` 已不存在等现状差异）
 
 ---
 
@@ -57,42 +61,29 @@
 
 ### 1.3 技术实现
 
+后端（Rust）在 VM 执行时收集行号计数，并把**截至本步**的累计值放进协议载荷：
+
 ```rust
-// VM 层：step_next 中收集
+// 后端：行号 → 执行次数
+// 结构定义：native/crates/cide_runtime/src/runtime_state.rs 的 ExecutionHeatmap
+// 收集与投递：native/src/unified/collector.rs + native/src/unified/types.rs
 pub struct ExecutionHeatmap {
     pub line_counts: HashMap<i32, u64>,      // 行号 → 执行次数
     pub line_total_ms: HashMap<i32, u64>,    // 行号 → 总耗时（可选扩展）
 }
-
-impl CideVM {
-    pub fn step_next(&mut self) {
-        let instr = &self.instructions[self.pc];
-        let line = instr.loc.line;
-        *self.heatmap.line_counts.entry(line).or_insert(0) += 1;
-        // ... 执行指令 ...
-    }
-}
 ```
 
-```dart
-// Flutter 层：CideEditor 侧边栏渲染
-class HeatmapGutter extends LeafRenderObjectWidget {
-  final Map<int, int> lineCounts;   // 来自 Rust
-  final int maxCount;               // 用于归一化颜色
-  
-  @override
-  void paint(PaintingContext context, Offset offset) {
-    for (final entry in lineCounts.entries) {
-      final intensity = entry.value / maxCount;
-      final color = Color.lerp(Colors.grey[300], Colors.red[700], intensity)!;
-      // 在对应行号位置绘制彩色条带
-      context.canvas.drawRect(rect, Paint()..color = color);
-      // 绘制执行次数
-      context.canvas.drawText('${entry.value}', textOffset, textStyle);
-    }
-  }
-}
-```
+载荷字段（消费方据此自行渲染侧边栏，本仓库不再提供渲染代码）：
+
+| 字段 | 含义 |
+|------|------|
+| `heatmap_line` | 热力图行号（当前实现恒等于 `code_line`） |
+| `heatmap_count` | 该行**截至本步**的累计执行次数（单调不减） |
+| 归一化/配色/悬浮提示 | **消费方职责**（社区前端 / Web / headless 各自实现） |
+
+> **口径保证（后端已完成）**：heatmap 只统计用户源码行（`SourceLoc.file_id == 0 && line > 0`），标准库/预编译字节码行号不会混入，消费方**不需要**再按总行数做过滤（见 `TEMPLATE_GUIDE.md` §6.3）。
+>
+> 历史实现（已迁出）：原 Dart 侧 `HeatmapGutter extends LeafRenderObjectWidget` 在编辑器侧边栏绘制彩色条带，该代码随 `CideFlutter/` 移出仓库（历史资产，已迁出）。
 
 ### 1.4 与统一模式的结合
 
@@ -118,7 +109,10 @@ class HeatmapGutter extends LeafRenderObjectWidget {
 
 ### 2.2 技术实现
 
+> **现状（2026-09-11 核实）**：`StepMeta` **真实存在**于 `native/src/unified/types.rs`，但字段比下例精简——实际为 `{code_line, func_name, loop_depth, semantic_label}`；下例中的 `step_index` / `loop_iters` / `is_loop_boundary` / `is_func_call` / `is_swap` **未实现**。语义标签的推断实现在 `native/src/unified/collector.rs` 的 `infer_semantic_label()`，文本经载荷 `semantic_label` 交付（schema §1），进度条吸附由消费方按标签边界实现。
+
 ```rust
+// 历史设计稿（部分字段未实现）
 pub struct StepMeta {
     pub step_index: i32,
     pub code_line: i32,
@@ -169,14 +163,19 @@ fn infer_semantic_label(meta: &StepMeta) -> String {
 
 ### 3.2 技术实现
 
+> **现状（2026-09-11 核实）**：`VarHistory` 结构体与 `collect_var_history()` **在仓库中不存在**。变量变化历史现在的实现方式是**由载荷窗口推导**：每步 `StepPayload.local_vars` 已含 `name` / 值 / `ty_name`，消费方按 `step_index` 纵向拼接即可得到趋势；`seek` 到第 N 步时各视图统一以第 N 步快照为准（schema §4 的一致性契约），无需后端额外存历史。
+>
+> **未完成缺口**：后端没有"变化点索引"（即没有把 `changes: Vec<(step_index, value)>` 物化），消费方要画趋势图必须自行缓存/扫描载荷窗口。若未来需要 O(1) 趋势查询，应作为 payload 的增量能力落地，而不是复活 `VarHistory` 专用类型。
+
 ```rust
+// 历史设计稿（仓库中不存在）
 pub struct VarHistory {
     pub name: String,
     pub ty: Type,
     pub changes: Vec<(i32, String)>,   // (step_index, display_value)
 }
 
-// 执行过程中自动收集
+// 执行过程中自动收集（历史设计稿，仓库中不存在）
 fn collect_var_history(vm: &CideVM, step: i32) -> Vec<VarHistory> {
     vm.symbols.iter()
         .filter(|s| s.scope == Scope::Local)
@@ -309,7 +308,9 @@ pub fn get_variable_highlights(&self) -> Vec<VariableHighlight> {
 }
 ```
 
-Flutter 侧 `CideEditor` 支持在特定文本范围绘制下划线/边框/底色。
+消费方在编辑器中按 `line` / `column` / `length` 绘制下划线、边框或底色——**渲染属消费方职责**（社区前端自行实现，原 Dart `CideEditor.spanBuilder` 已随 `CideFlutter/` 迁出，历史资产，已迁出）。后端需保证的是：每步能给出"这一步访问了哪些变量、以何种方式访问"。
+
+> **已落地的等价载荷（口径需对齐）**：`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md` 的 `accessed_vars[]`（`AccessedVar`）目前只有两个字段：`name` 与 `access_type`（枚举仅 `"Read"` / `"Write"`，见 schema §2.3、§3.2，大小写敏感，无第三种取值）。上例的 `VariableHighlight`（含 `line` / `column` / `length` / `Declare` / `Compare`）在仓库中**不存在**：**精确到列范围的高亮与"声明/比较"语义属未完成缺口**，消费方目前只能按"变量名 + 读写类型"高亮。
 
 ---
 
@@ -327,37 +328,54 @@ Flutter 侧 `CideEditor` 支持在特定文本范围绘制下划线/边框/底�
 
 ### 7.2 三件套元数据
 
-除了全量 VM 快照，每步保存轻量级元数据：
+除了全量 VM 快照，每步保存轻量级元数据。
+
+**实际结构（`native/src/unified/types.rs`，2026-09-11 核实）**：
 
 ```rust
 pub struct StepPayload {
-    // ① 动画数据（用于可视化面板）
-    pub vis_state: VisState,
-    
-    // ② 语义元数据（用于进度条）
-    pub meta: StepMeta,
-    
-    // ③ 调试摘要（用于悬浮球零延迟）
-    pub debug_summary: DebugSummary,
-}
-
-pub struct DebugSummary {
-    pub local_vars: Vec<(String, String, Type)>,  // 名、值、类型
-    pub call_stack: Vec<FrameInfo>,               // 函数名、返回地址
-    pub memory_summary: MemorySummary,            // 栈顶、堆顶、全局区
+    pub step_index: i32,
+    pub code_line: i32,
+    pub func_name: String,
+    pub semantic_label: String,                     // ① 语义元数据（进度条 / 教学标注）
+    pub algorithm_step: Option<AlgorithmStepSnapshot>,
+    pub local_vars: Vec<ApiVariableSnapshot>,       // ③ 调试摘要（变量面板零延迟）
+    pub call_stack: Vec<ApiFrameInfo>,
+    pub vis_events: Vec<VisEvent>,                  // ① 动画数据（可视化事件）
+    pub heatmap_line: i32,                          // 热力图（截至本步）
+    pub heatmap_count: u64,
+    pub accessed_vars: Vec<AccessedVar>,            // 变量级高亮（Read/Write）
+    pub array_snapshots: Vec<ArraySnapshot>,
+    pub pointer_snapshots: Vec<PointerSnapshot>,    // 指针四状态
+    pub root_cause_hint: Option<RootCauseHint>,     // 异常根因提示
 }
 ```
 
-每步 `StepPayload` 大小：
-- `vis_state`：几百字节到几 KB（取决于数据结构复杂度）
-- `meta`：~50 字节
-- `debug_summary`：~1KB（20 个局部变量 + 5 层调用栈）
+设计稿把三者包装成一个 `StepPayload`，实际并非如此（2026-09-11 核实）：
 
-1000 步 ≈ 2~5MB。前端内存完全无压力。
+| 设计稿类型 | 实际状态 |
+|:---|:---|
+| `vis_state: VisState` | **不存在**（`VisState` / `VisArrayState` / `VisStructureState` 等系列类型在 Rust 源码中均无定义，见 `ZERO_INTRUSIVE_VISUALIZATION.md` §3.1） |
+| `meta: StepMeta` | **存在**于 `native/src/unified/types.rs`，字段为 `{code_line, func_name, loop_depth, semantic_label}`（设计稿中的 `step_index` / `loop_iters` / `is_loop_boundary` / `is_func_call` / `is_swap` **未实现**）；用途是进度条标签与智能检查点，不是 `StepPayload` 的字段 |
+| `debug_summary: DebugSummary` | **存在**于同一文件，字段为 `{local_vars, call_stack, output_len}`（设计稿中的 `memory_summary` **未实现**） |
+
+实际载荷是上表的扁平字段，**字段级口径以 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) 为准**（该 schema 是对外承诺的 wire format）。
+
+> **命名债（诚实记录）**：`native/src/unified/types.rs` 中仍有 "传输到 Flutter 前端作为 FrameCache"、"FRB 友好的变量快照" 等注释（所述 Flutter 前端与 FRB 桥接均为历史资产，已迁出），以及 `ApiVariableSnapshot` 等 `Api*` 前缀命名——这些属切割前的遗留措辞，代码本身已是语言中立 Rust 层，**名称待后续重构收敛**（本次文档翻新不改 `.rs` 代码）。
+
+每步 `StepPayload` 大小：
+- `vis_events` / `array_snapshots` / `pointer_snapshots`：几百字节到几 KB（取决于数据结构复杂度）
+- `semantic_label`：~50 字节
+- `local_vars` + `call_stack`：~1KB（20 个局部变量 + 5 层调用栈）
+
+1000 步 ≈ 2~5MB。进一步压缩手段已落地：`StepPayloadDelta` 字段级差分 + 符号表索引化（`native/src/unified/stream.rs`，schema §5）。
 
 ### 7.3 检查点管理
 
+> **现状（2026-09-11 核实）**：`CheckpointManager` **确实存在**，但位于 `native/crates/cide_vm/src/snapshot.rs`（不是设计稿暗示的 `unified/checkpoint.rs`——**该文件不存在**），且实际 API 比下例更丰富：`new(interval)`、`should_checkpoint(step, semantic_label)`（**语义感知**，非机械的 `step % interval`）、`save`、`nearest(target)`、`seek` 重放，并支持 `MemoryImage::Full` 与增量内存映像的链式重建。下例为历史设计稿，仅示意思路。
+
 ```rust
+// 历史设计稿（实际实现在 native/crates/cide_vm/src/snapshot.rs）
 pub struct CheckpointManager {
     pub checkpoints: Vec<(i32, VMSnapshot)>,  // (step_index, snapshot)
     pub interval: i32,                        // 20 步
@@ -390,41 +408,43 @@ impl CheckpointManager {
 用户点击"运行"
     ↓
 [自动执行模式] VM 连续执行
-    ├── 每步：构造 VisState → FRB 推送 → 前端缓存
-    ├── 每步：更新 Heatmap（行号侧边栏颜色实时变化）
-    ├── 每步：收集 StepMeta（语义标签）
-    ├── 每步：收集 VarHistory（变量变化历史）
-    ├── 每 20 步：保存 VM 全量快照（检查点）
-    └── 遇 Trap：自动回退到检查点 + 显示诊断
+    ├── 每步：构造 StepPayload → 三出口（capi / serve / wasm）→ 消费方缓存
+    ├── 每步：更新 Heatmap（heatmap_line / heatmap_count，截至本步）
+    ├── 每步：产出 semantic_label（语义标签）/ algorithm_step
+    ├── 每步：产出 accessed_vars + local_vars（变量历史由消费方按窗口推导）
+    ├── 每 20 步（且语义边界命中）：保存 VM 快照（智能检查点）
+    └── 遇 Trap：自动回退到检查点 + 产出 root_cause_hint
     ↓
 执行结束 / 用户暂停
     ↓
 [统一模式] 用户自由探索
-    ├── 拖动进度条 → O(1) 切换 VisState（动画零延迟）
-    ├── 悬浮球 → O(1) 读取 VarHistory（变量零延迟）
-    ├── 代码编辑器 → 实时显示 VariableHighlight（变量级高亮）
+    ├── 拖动进度条 → seek 到第 N 步，各视图以第 N 步快照为准（schema §4）
+    ├── 变量面板 → 读取 local_vars（零延迟）
+    ├── 代码编辑器 → 按 accessed_vars 高亮被读/被写变量
     ├── 侧边栏 → Heatmap 显示累计执行次数
     └── 点击"继续执行" → 从当前步恢复 VM 并继续
 ```
 
-**用户完全不需要区分"调试模式"和"回放模式"。只有一个模式：写代码 → 运行 → 自由探索。**
+**用户完全不需要区分"调试模式"和"回放模式"。只有一个模式：写代码 → 运行 → 自由探索。**（渲染与交互由社区前端实现；本仓库保证载荷语义一致。）
 
 ---
 
 ## 9. 实施优先级
 
-| 优先级 | 功能 | 状态 | 实际文件 |
-|:---|:---|:---|:---|
-| P0 | VM 全量快照/恢复 + 检查点管理 | ✅ 已实现 | `vm/snapshot.rs` + `unified/checkpoint.rs` |
-| P0 | 自动执行模式（收集 StepPayload + StepMeta） | ✅ 已实现 | `unified/engine.rs` `run_batch()` |
-| P1 | 执行路径热力图（Heatmap） | ✅ 已实现 | `session.rs` heatmap + Flutter 覆盖率显示 |
-| P1 | 排序动画 MVP + 语义进度条 | ✅ 已实现 | `widgets/array_vis_tab.dart` + `ExecutionControlPanel` |
-| P1 | 变量变化历史（悬浮球零延迟） | ✅ 已实现 | `widgets/var_history_tab.dart` 迷你趋势图 |
-| P2 | 运行时异常自动回退 | ✅ 已实现 | `unified/engine.rs` `pre_step_snap` + Trap 回退 |
-| P2 | 变量级高亮 | ✅ 已实现 | 自研 `CideEditor` `spanBuilder` 集成：被读变量淡蓝底色、被写变量淡橙底色 |
-| P3 | 链表/树可视化增强 | ✅ 已实现 | `LinkedListVisualizer` / `TreeVisualizer` CustomPainter + 时间旅行集成 |
+> **2026-09-11 现状对齐**：表中"实际文件"一列原写的是 Dart widget 路径，那些文件已随 `CideFlutter/` 迁出（历史资产，已迁出）。下表改为**后端能力 + 交付出口/载荷**口径；渲染侧一律属消费方职责。
 
-**实际用时：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）。**
+| 优先级 | 功能 | 状态 | 后端实现位置 / 交付载荷 |
+|:---|:---|:---|:---|
+| P0 | VM 全量快照/恢复 + 检查点管理 | ✅ 已实现 | `native/crates/cide_vm/src/snapshot.rs`（`VMSnapshot` / `CheckpointManager`）+ `native/src/unified/engine.rs`（seek 重放） |
+| P0 | 自动执行模式（收集 StepPayload） | ✅ 已实现 | `native/src/unified/engine.rs` `run_batch()` + `native/src/unified/collector.rs` |
+| P1 | 执行路径热力图（Heatmap） | ✅ 已实现 | `native/crates/cide_runtime/src/runtime_state.rs`（`ExecutionHeatmap`）+ 载荷 `heatmap_line` / `heatmap_count`（渲染属消费方） |
+| P1 | 排序动画 MVP + 语义进度条 | ✅ 后端载荷已实现 | `vis_events[]`（`AlgorithmStepSnapshot` + `VisEvent`）+ `semantic_label`（动画渲染属消费方） |
+| P1 | 变量变化历史 | ⚠️ 部分 | 载荷 `local_vars` 已按步给出；**变化点索引未物化**（缺口，见 §3.2），趋势图由消费方按窗口自行推导 |
+| P2 | 运行时异常自动回退 | ✅ 已实现 | `native/src/unified/engine.rs` `pre_step_snap` + `root_cause_hint` 载荷 |
+| P2 | 变量级高亮 | ⚠️ 部分 | 载荷 `accessed_vars[]`（`Read` / `Write`）已落地；**列范围（`column`/`length`）与 `Declare`/`Compare` 语义未落地**（缺口，见 §6.2） |
+| P3 | 链表/树可视化增强 | ⚠️ 未落地 | `ArraySnapshot` / `PointerSnapshot`（四状态）已落地；**链表/树节点遍历载荷依赖数据结构检测器，该检测器不存在**（缺口，见 `ZERO_INTRUSIVE_VISUALIZATION.md` §4） |
+
+**实际用时：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）。**（原统计口径含已迁出的前端工作；当前后端侧剩余缺口见上表 ⚠️ 项。）
 
 ---
 

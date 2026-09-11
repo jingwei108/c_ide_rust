@@ -1,6 +1,12 @@
 <!-- From: d:\code\c_ide_rust\AGENTS.md -->
 # Cide Project Agent Guide
 
+> **Maintenance note (2026-09-11)**: This is the only English document kept in the repository.
+> It reflects the 2026-09-11 backend-only state and may lag behind the Chinese
+> [`AGENTS.md`](AGENTS.md), which is the authoritative version (the docs overhaul of 2026-09-11 —
+> archiving stale docs, rewriting core docs, dropping all other English documents —
+> is recorded there). Translation of the Chinese docs is deferred; when in doubt, follow `AGENTS.md`.
+
 ## Project Overview
 
 > **Repositioning (2026-09-11)**: Cide has transitioned from a "cross-platform C IDE" into a **teaching C/C++ subset reference execution engine (white-box)** — this repository is backend-only (MIT license); the frontend is split out to the community and native mobile is dropped. See [`docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md).

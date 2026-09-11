@@ -1,5 +1,9 @@
 # Phase 28：K&R C 经典例题 + LeetCode 简单题测试覆盖计划
 
+> **已归档（2026-09-11）**：计划已达成并超出（K&R 69 绿、LeetCode 138 通过、计入 636 例 Shadow 口径）。
+> 本文件仅作历史追溯保留，内容不再维护；当前有效文档见 `docs/current/`。
+
+
 > **核心原则**：测试不是为了标榜通过率，而是为了诚实地发现自己可能存在的问题。Cide 的错误会误导学生，所以我们宁可数据难看，也不扭曲代码去迎合编译器。
 >
 > ** motto**: *All in. Record don't hide. Fix real bugs, not test cases.*

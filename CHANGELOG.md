@@ -7,6 +7,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (CI 门禁失效 + Bytecode Libc 产物漂移 / 不可重现 / 全局区越界)
+
+起因：CI 在 `python scripts/precompile_bytecode_libc.py --check` 步骤失败。
+逐层排查后发现该失败同时暴露了三个真实缺陷，均已修复。
+
+- **`--check` 在干净检出下必然误报（门禁失效）**：旧实现用文件 **mtime** 判断产物是否过期，
+  而 `actions/checkout` 不保留 mtime、且按路径顺序写文件（`native/crates/...` 先于
+  `native/runtime_libc/...`），使源文件 mtime 普遍晚于产物 → 检查在 CI 中必然失败（本地因
+  改过源码才重新生成，反而看不出问题）。现改为**源文件内容摘要**（SHA-256，含相对路径，
+  并**规范化行尾**以消除 `core.autocrlf` 带来的平台差异），产物新增 `source_digest` 字段。
+  实测：只改 mtime 不改内容 → 通过；改一个字节内容 → 正确拦截。
+- **产物确实已过期**：仓库中的 `bytecode_libc_data.json` 是 2026-06-28 生成的，此后编译器演进
+  （`SourceLoc.file_id`、字节码生成变化）已使其与当前编译器不同步（`code_len` 3387 → 3485）。
+  已用当前编译器重新生成（一次性 diff 较大，同时包含键序重排与布局变化）。
+- **`BYTECODE_LIBC_GLOBALS_RESERVED` 自我递增漂移（严重）**：library mode 下预编译 libc 的全局/字符串
+  数据也从 `BYTECODE_LIBC_GLOBALS_RESERVED` 开始分配，于是
+  `globals_size = reserved + 数据大小`，脚本再算出
+  `reserved' = ceil(globals_size / 1024) * 1024 = reserved + 1024` —— **每重新生成一次产物就膨胀 1 KB**，
+  最终把用户全局区压缩到不足 1 KB 并**溢出到堆区**（`HEAP_START = 0x5000`）。
+  修复：library mode 下 `next_global_offset` 从 0 开始（产物记录的地址本就是相对 `GLOBAL_START`
+  的偏移，用户侧仍从 `reserved` 之后分配）。实测 `globals_size` 14340 → **4**、
+  `BYTECODE_LIBC_GLOBALS_RESERVED` 15360 → **1024**（稳定不再漂移）。
+- **编译输出不可重现**：`generate_implicit_move_ctors` 遍历 `HashSet<String>`，
+  隐式移动构造函数的生成顺序随进程随机种子变化 → 同一份源码的字节码布局每次不同；
+  产物 JSON 又直接序列化 Rust 侧 `HashMap`，键序同样随机。修复：按类名排序后遍历 +
+  生成脚本 `json.dump(..., sort_keys=True)`。实测连续 3 次生成的产物**字节级完全一致**。
+- **全局/字符串数据段上限越过堆区（记录为已知限制，未改行为）**：`gen_string_literal` 的越界判据是
+  `MEM_SIZE / 16`（64 KB），而堆区从 `HEAP_START`（20 KB）开始，两者共享同一块线性内存且编译期
+  不校验是否重叠 → "全局/静态数据超过约 19 KB **且**程序使用 `malloc`"会静默压坏堆数据。
+  **尝试把上限收紧为 `HEAP_START` 后发现会误伤 `lc_22` / `lc_977` 等现有用例**
+  （它们的全局区本就越过 20 KB，只因不使用堆而行为正确），故**回滚该改动**，
+  并如实记入 `AGENTS.md` 的已知限制而非擅自改变行为。
+- **回归表现与验证**：上述第 3 项使 `test_cide_e2e_leetcode` 的 `lc_67` / `lc_76` 失败
+  （`lc_67` 的 `static char res[1000]` 溢出到堆区，`printf` 打出被压坏的内存内容，
+  实际输出 `100 / o / world / 1 2 3 4 5`）。修复后
+  `cargo test --workspace --all-features` 全量 **0 failed**。
+
+### Docs (文档体系翻新：归档旧文档 + 重写核心文档 + 英文下线)
+
+前端切割（2026-09-11）后对文档体系做整体收口：
+
+- **归档 17 份旧文档**至 `docs/archive/`（统一 `ARCHIVE_` 前缀 + 归档横幅，索引见 `docs/README.md`）：
+  前端耦合的构建/部署文档（`BUILD_SCRIPTS` / `CI_FAILURES` / 两份 `WEB_DEPLOYMENT` /
+  `IMAGE_INPUT_INTEGRATION_PLAN` / `LOCAL_PERSISTENCE_PLAN` / `PANEL_DRAG_GESTURE_DESIGN`）、
+  已完成的计划（`DATASTRUCTURE_SYNTAX_ROADMAP` / `POINTER_COMPOUND_ASSIGN_PLAN` /
+  `PHASE_KR_LEETCODE_TEST_PLAN` / `CPP_BUILTIN_LAYOUT_DECOUPLING_PLAN` / `RECURSIVE_TYPE_SYSTEM_REFACTOR`）、
+  被取代的评估与报告（`code_review_report.md`(2026-06-13/14) / `M7_BETA_READINESS` /
+  `S6_READINESS_ASSESSMENT` / `SHADOW_VS_CI`）、定位被取代的 `CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN`。
+- **重写核心文档**：根 `README.md`（纯后端定位 + 三出口一核心 + 实测状态）、`docs/README.md`（索引）、
+  `docs/current/{DESIGN,ROADMAP,BUILD,QUICKSTART}.md`；其中 `ROADMAP.md` 新增「已知缺口」诚实记录表。
+- **保留文档去前端化**：清除 `CideFlutter` / FRB / Dart 残留与失效引用，修正 crate 路径沉降
+  （`native/src/vm/*` → `native/crates/cide_{vm,runtime}/src/*`、`compiler/cpp_frontend/` → `crates/cide_cpp_frontend/`、
+  `unified/checkpoint.rs` → `cide_vm::snapshot`），更新过时统计与日期口径；历史日志条目一律保持原样。
+- **英文文档下线**：删除 `README_EN.md`、`docs/current/{BUILD_EN,CIDE_CLI_EN,QUICKSTART_EN}.md`、
+  `native/third_party/README.md`（目录随之移除）与归档中的英文占位文件；仓库仅保留 `AGENTS_EN.md`（翻译后续再议）。
+- **`AGENTS.md`**：新增「文档体系」纪律（新文档进 `current/`、被取代者带 `ARCHIVE_` 前缀入 `archive/`、
+  英文只留 `AGENTS_EN.md`）与 `docs/{current,spec,archive}` 目录说明。
+- **新如实记录的缺口**：①模板 → 用例生成器 `scripts/sync_templates.py` 随前端切割消失，
+  `native/tests/cases_template_generated/` 83 个用例成为静态留存（链路断裂，见
+  `SHADOW_VERIFICATION_FRAMEWORK.md` §6 与 `ROADMAP.md` G1）；②算法运行时属性验证
+  （`validate_algorithm()` / `ValidationResult`）在 Rust 后端**从未落地**，
+  原载体为 `CideFlutter/lib/models/algorithm_validation.dart`（见 `ROADMAP.md` G9；
+  注：`AlgorithmMatch` 结构体在 `native/src/session.rs` 确实存在，缺的是"验证"环节）。
+
 ### Removed (前端切割：仓库转型为纯后端)
 - **执行主计划的前端切割决议**（[`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)）：
   本仓库只保留教学 C/C++ 子集参考执行引擎（白箱后端），前端迁出给社区，原生移动端放弃。

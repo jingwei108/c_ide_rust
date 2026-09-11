@@ -1,267 +1,140 @@
-# C IDE 项目路线图（2026-05-14 修订版）
+# Cide 路线图
 
-> **核心原则**：不急着发布，不把时间浪费在"能用"上。每一行代码都指向一个竞品没有的功能亮点。
-> **当前状态**：Rust 后端全链路稳定，Flutter 前端已接棒 MAUI 与 `re_editor`，自研 `CideEditor` 已落地，算法可视化 + 诊断修复系统全部就绪，**统一模式 / 时间旅行 已实现**，C++ 扩展 M7 Beta Readiness 已就绪。
-
----
-
-## 一、技术架构（当前）
-
-```
-+-----------------------------------------------------------------------------+
-|                     Flutter 前端 (Android / Desktop Windows)                 |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-|  | CodeEditor  |  | MemoryView  |  | KnowledgeCard / QuickFixPanel       |  |
-|  | CideEditor  |  |  内存映射    |  | 知识卡片 / 一键修复面板               |  |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-|  | PointerView |  | ErrorPanel  |  | ConsoleOutput / AlgoCanvas          |  |
-|  |  指针视图    |  |  诊断面板    |  | 输出控制台 / 算法动画画布             |  |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-+-----------------------------------------------------------------------------+
-                                    |
-                                    v flutter_rust_bridge v2 (SSE codec)
-+-----------------------------------------------------------------------------+
-|                        Rust 后端 (Native DLL / .so)                          |
-|                                                                             |
-|  +---------------------------------------------------------------------+    |
-|  | ① C 子集编译器                                                       |    |
-|  |   用户 C 代码 → Lexer → Parser → AST → TypeChecker → BytecodeGen    |    |
-|  |   输出：自定义字节码指令序列 + 符号表 + 字符串数据段                   |    |
-|  +---------------------------------------------------------------------+    |
-|                                    |                                        |
-|  +---------------------------------------------------------------------+    |
-|  | ② CideVM 教学虚拟机（自研）                                          |    |
-|  |   加载字节码 → 解释执行 → 捕获 trap → StepEvent 单步暂停             |    |
-|  |   提供内存视图、指针追踪、执行步进、中文错误映射                        |    |
-|  +---------------------------------------------------------------------+    |
-|                                    |                                        |
-|  +---------------------------------------------------------------------+    |
-|  | ③ 诊断与可视化引擎                                                   |    |
-|  |   源码位置映射 / 内存布局元数据 / 指针追踪表 / 中文错误消息             |    |
-|  |   算法模式识别 / 运行时验证 / 执行轨迹分析                             |    |
-|  +---------------------------------------------------------------------+    |
-+-----------------------------------------------------------------------------+
-```
-
-### 目录结构
-
-```
-native/
-├── Cargo.toml
-├── include/
-│   └── cide_capi.h              # C API 头文件
-├── src/
-│   ├── compiler/                 # Lexer / Parser / AST / TypeChecker / BytecodeGen
-│   │   ├── lexer.rs
-│   │   ├── parser.rs
-│   │   ├── ast.rs
-│   │   ├── type_checker.rs
-│   │   └── bytecode_gen.rs
-│   ├── vm/                       # CideVM 字节码解释器
-│   │   ├── vm.rs
-│   │   ├── opcode.rs
-│   │   ├── instruction.rs
-│   │   ├── host_funcs.rs
-│   │   ├── host_func_id.rs        # 宿主函数 ID 统一常量
-│   │   └── snapshot.rs            # VM 全量快照（时间旅行）
-│   ├── diagnostics/              # 结构化诊断与自动修复
-│   │   ├── error_codes.rs
-│   │   └── error_catalog.rs
-│   ├── unified/                   # 统一模式 / 时间旅行引擎
-│   │   ├── engine.rs              # UnifiedEngine
-│   │   ├── checkpoint.rs          # 检查点管理器
-│   │   ├── collector.rs           # StepCollector
-│   │   └── types.rs               # StepPayload 等 FRB 类型
-│   ├── engine/                    # 编译管线与工具
-│   │   └── compile_pipeline.rs    # 统一编译管线
-│   ├── capi/                     # C API 服务层（Shadow Verification / CLI）
-│   ├── api/                      # flutter_rust_bridge API
-│   ├── flutter_bridge.rs          # FRB 业务包装层（Session 管理）
-│   └── session.rs                # Session 状态管理
-└── tests/                        # Rust 集成测试
-CideFlutter/                      # Flutter 前端（Android + Desktop）
-├── lib/
-│   ├── src/
-│   │   ├── rust/                 # FRB 桥接代码
-│   │   ├── screens/              # 页面
-│   │   ├── widgets/              # 自定义组件
-│   │   ├── providers/            # Riverpod 状态管理
-│   │   └── services/             # 业务逻辑
-│   └── assets/                   # 知识卡片等资源
-```
+> 最后核对：2026-09-11（前端切割后重写）
+>
+> **核心原则**：不急着发布，不把时间浪费在"能用"上；每一分投入都指向教学场景真正需要、而通用工具链不提供的能力。
+> **当前定位**：教学 C/C++ 子集参考执行引擎（白箱后端，MIT）。前端已切割给社区，原生移动端放弃。
 
 ---
 
-## 二、竞品分析 & 差异化壁垒
+## 一、当前状态（2026-09-11）
 
-### 现有竞品
-
-| 产品 | 类型 | 核心能力 | 致命短板 |
-|:---|:---|:---|:---|
-| **C语言编译器IDE** (Android) | 移动端IDE | 能编译运行C | 英文错误、无调试、无可视化 |
-| **Cxxdroid** | 移动端IDE | GCC编译、终端输出 | 无教学引导、无内存视图 |
-| **OnlineGDB** | Web IDE | GDB调试 | 网页端、不适合手机、学习曲线陡 |
-| **Scratch/Blockly** | 图形编程 | 可视化动画 | **不是真实代码**，无法过渡到工业编程 |
-| **Educoder/头歌** | OJ平台 | 在线评测 | 无实时调试、无可视化、无诊断 |
-
-### 四大壁垒
-
-#### 壁垒 1：运行时中文诊断（唯一）
-
-学生写：
-```c
-for (int i = 0; i <= 5; i++) { arr[i] = i; }
-```
-
-其他工具只能说：
-- GDB: `Program received signal SIGSEGV`
-- OnlineGDB: `Runtime Error`
-
-**我们的目标**：
-```
-🚫 数组越界：你访问了 arr[5]，但数组只有 5 个元素，有效索引是 0~4。
-
-📍 发生在第 3 行：arr[i] = i;
-💡 原因：循环条件写成了 i <= 5，应该改成 i < 5。
-🔍 当前 i = 5，arr 声明于第 1 行，大小为 5。
-
-✅ 一键修复：将 <= 改为 <
-```
-
-#### 壁垒 2：零侵入算法可视化（唯一）
-
-学生写纯 C 冒泡排序，系统自动识别并播放排序动画。不需要写任何 `vis_array()` 额外代码。
-
-#### 壁垒 3：内存动画（唯一）
-
-- ✅ **指针追踪动画**：`int* p = &a;` 实时画出指针箭头，`free(p)` 后箭头变灰/虚线，NULL 指针显示为空箭头接地符号；统一模式每步自动收集 `PointerSnapshot`，支持时间旅行回溯查看任意历史时刻的指针状态
-- 写 `p = malloc(4);`，屏幕显示堆区分配动画
-- 写 `free(p);`，指针箭头变灰，标记为已释放
-
-#### 壁垒 4：单步变量追踪（差异化）
-
-每走一步，侧边栏显示所有变量的当前值。指针变量的值显示为箭头指向目标地址，数组显示为带索引的格子。
-
----
-
-## 三、开发阶段（已完成的里程碑）
-
-### Stage 0: 基础编译器（✅ 已完成）
-- Lexer → Parser → AST → TypeChecker
-- 支持变量、数组、指针、struct、if/for/while/do-while、函数、malloc/free
-- 支持 break/continue/switch/typedef/enum/unsigned
-
-### Stage 1: 自研 VM（✅ 已完成）
-- **Bytecode 定义**：`opcode.rs` + `instruction.rs`
-- **BytecodeGen**：将 AST 编译为自定义字节码
-- **CideVM 核心**：106 条指令的解释器，线性内存管理
-- **C API 迁移**：`cide_run` / `cide_step_next` 驱动 VM
-- **安全加固**：边界检查、除零捕获、步数熔断、NULL 区陷阱
-
-### Stage 2: 运行时中文诊断（✅ 已完成）
-- 符号表导出 + 数组越界精确诊断
-- 除零精确诊断 + 空指针精确诊断
-- 死循环变量分析
-- 56+ 错误码中文元数据 + 结构化自动修复
-
-### Stage 3: 单步调试 + 内存可视化（✅ 已完成）
-- 指令级单步：`vm.Step()` 精确到每条字节码指令
-- 变量面板 + 内存视图 + 指针追踪
-- 内存映射 Canvas（1MB 256×4KB 网格彩色编码）
-
-### Stage 4: 零侵入可视化（✅ 已完成）
-- AST 模式识别骨架 + 8 种核心算法检测（冒泡/选择/插入/快排/归并/二分/链表）
-- VM 运行时精确事件：`VisEvent::Compare` / `Swap` / `Update`
-- 数组实时可视化 Canvas + 交换闪烁动画
-- 算法运行时验证（Property-based Testing）
-
-### Stage 5: 诊断与修复系统（✅ 已完成）
-- L1/L2/L3 三级信息架构
-- QuickFix：补分号、改 `=` 为 `==`、改 `<=` 为 `<`
-- 结构化 Auto-Fix：`InsertText` / `ReplaceText` 精确修复
-- 知识卡片系统（JSON + 内存动画描述）
-- 隐式转换提示系统（warning + hint 分级）
-
-### Stage 6: 前端迁移与体验优化（✅ 已完成）
-- Flutter 前端从零搭建：IDE 界面 + 自研 `CideEditor` 编辑器 + 调试面板
-- 内存映射 Canvas + 算法可视化事件 FRB 集成
-- VS-style Enter 格式化、Touch swipe tabs、Execution speed slider
-- 教程引导 overlay (`IntroOverlay`)
-- 学习进度追踪系统（5 维度 + 本地持久化）
-
-### Stage 7: C 子集拓展（✅ 已完成）
-- `float` 类型全管线支持（Lexer→Parser→TypeChecker→BytecodeGen→VM）
-- 位运算符 `& | ^ ~ << >>`
-- 三目运算符 `? :`
-- 指针算术（`p++` / `p+i` / `p-q`，自动步长缩放）
-- `const` 语义、`NULL` 关键字、块注释 `/* */`
-- 复合赋值扩展到数组索引/指针解引用/结构体成员
-- 新增宿主函数：`getchar`/`putchar`/`rand`/`srand`/`memset`/`exit`/`strcat`/`atoi`
-- `fprintf`/`realloc`/`qsort`
-- 函数指针基础支持（用于 `qsort` 回调）
-
-### Stage 8: 统一模式 / 时间旅行（✅ 已实现）
-
-**核心能力**：学生写完代码点击"运行"后，程序自动逐条语句执行，前端实时收集每一步的状态快照。用户可以随时暂停、单步前进、拖动进度条回退到任意历史时刻，系统从最近的检查点恢复 VM 状态并正向重放。
-
-**Rust 后端**：
-- `VMSnapshot` 全量快照（1MB 内存 + 运行时状态 + 内存管理状态）
-- `CheckpointManager` 检查点管理器（固定间隔 20 步保存快照）
-- `UnifiedEngine` 批量自动执行引擎（`run_batch` + `seek_to` + Trap 自动回退）
-- `StepCollector` 每步数据收集（变量快照、调用栈、可视化事件、语义标签、热力图）
-- FRB API：`compileAndRun`、`runAutoSteps`、`seekToStep`、`stepNextUnified`、`pause/resume`、`getHeatmap`
-
-**Flutter 前端**：
-- `UnifiedState` + `ExecutionPhase`（idle / compiling / collecting / paused / playback / seeking / stepMode / error）
-- `UnifiedNotifier`（自动收集循环、播放控制、Seek、单步、播放速度）
-- `ExecutionControlPanel`（播放/暂停/单步/进度条/语义标签/速度调节/覆盖率显示/异常提示条/算法检测条）
-- `VarHistoryTab` 变量历史趋势图（从 `frame_cache` 提取变化轨迹）
-- `VariablesTab` 实时变量面板 + `ArrayVisTab` 数组可视化
-
-**教学价值**：
-- 学生第一次看到"程序不是黑箱"——每一行代码的执行都留下可追溯的痕迹
-- 拖动进度条即可"时间旅行"，观察变量如何随时间变化
-- 运行时异常自动回退到上一步，配合知识卡片即时诊断
-
----
-
-## 四、当前状态 & 下一步
-
-### 已完成（保留资产）
-- ✅ Rust 后端全链路：Lexer / Parser / AST / TypeChecker / BytecodeGen / VM
-- ✅ C 子集语法扩展（float/double/char/位运算/三目/指针算术/const/NULL）
-- ✅ flutter_rust_bridge v2 桥接（SSE codec）
-- ✅ 基础运行验证（递归、循环、指针、struct、printf/scanf/float）
-- ✅ P0 安全修复（VM 栈-堆碰撞、u32 溢出、移位越界、trap 边界）
-- ✅ Flutter 前端端到端可用（编辑器 + 编译 + 运行 + 调试 + 可视化）
-- ✅ 学习进度追踪 + 知识卡片系统
-- ✅ **统一模式 / 时间旅行**（VM 快照 + 检查点 + Seek + 自动执行 + 异常回退）
-
-### 当前重点
-- 🔄 Phase 42：P0 语法/标准库拓展 + 代码审查报告收尾 + 性能优化（[Unreleased]）
-
-### 已完成（已同步）
-- ✅ 函数指针完整支持（声明/赋值/调用/参数传递/数组/typedef/返回指针）
-- ✅ 全局/字符串内存区隔离修复
-- ✅ `main(int argc, char *argv[])` 支持
-- ✅ VFS 沙盒文件 I/O
-
-### 下一步
-- 社区贡献算法模板
-- iOS 目标支持评估
-- 文档持续同步（DESIGN.md / C_SUBSET_SPEC.md / CPP_SUBSET_SPEC.md）
-
----
-
-## 五、历史文档备份
-
-以下文档已归档至 `docs/archive/`，保留原始内容：
-
-| 原始文档 | 备份文件名 |
+| 维度 | 状态 |
 |:---|:---|
-| `PHASE3_CODE_REVIEW_AND_PLAN.md` | `ARCHIVE_PHASE3_CODE_REVIEW_AND_PLAN_20260427.md` |
-| `CUSTOM_VM_DESIGN.md` | `ARCHIVE_CUSTOM_VM_DESIGN_20260427.md` |
-| `OCR_IMPORT_DESIGN.md` | `ARCHIVE_OCR_IMPORT_DESIGN.md` |
+| 引擎核心 | Rust workspace（10 个子 crate），编译管线 Lexer → Parser → TypeChecker → BytecodeGen → CideVM 全链路自研 |
+| 出口 1 · C ABI | ✅ 可用；第一批 13 个入口全部落地，`cide_abi_version()` = 1.1.0 |
+| 出口 2 · wasm32 | ✅ 冒烟实证（零修改构建 3.75MB，C API 全链路 + E3070 工作）；绑定包与 CI 固化待 Phase 2a |
+| 出口 3 · serve | ✅ `cide_cli serve` JSON-lines 落地（id 关联 / 错误帧同构 / `session.reset` / 与 capi 共用 `session_api`） |
+| 协议 | ✅ StepPayload schema v0.1 发布（[`../spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)），待对端回放校验签字 |
+| 测试防线 | ✅ 五层防线全绿：C Shadow 636 用例、C++ Shadow 100 用例、`cargo test` 845 passed / 0 failed、clippy 0 warning |
+| C 子集 | ✅ 教学子集 + C99/C11 扩展（VLA / `_Generic` / 复合字面量 / 变参 / VFS 文件 I/O 等） |
+| C++ 子集 | 🚧 Phase 42 进行中（Stage 0~6 已完成：类与继承、模板单态化、RAII、引用、移动构造、`unique_ptr`、内置容器） |
+| 统一模式 | ✅ 快照 / 检查点 / Seek / 异常回退 / 逐语义标签 / 热力图，全链路可用 |
+| 前端 | ⛔ 已迁出（标签 `before-frontend-split`） |
 
-本文件 `ROADMAP.md` 为最新主文档，后续所有计划更新以此为准。
+---
+
+## 二、已完成里程碑
+
+### 引擎与语言（Stage 0~8）
+
+| 阶段 | 内容 | 状态 |
+|:---|:---|:---|
+| Stage 0 | 基础编译器（Lexer → Parser → AST → TypeChecker） | ✅ |
+| Stage 1 | 自研 CideVM（字节码定义 + 解释器 + C API 接线 + 安全加固） | ✅ |
+| Stage 2 | 运行时中文诊断（符号表导出 / 越界 / 除零 / 空指针 / 死循环分析） | ✅ |
+| Stage 3 | 指令级单步 + 内存视图 + 指针追踪 | ✅ |
+| Stage 4 | 零侵入可视化（算法识别骨架 + VM 运行时教学事件 + 运行时验证） | ✅ |
+| Stage 5 | 诊断与修复系统（三级信息架构 + 结构化自动修复 + 知识卡片） | ✅ |
+| Stage 6 | ~~前端搭建（Flutter + 自研编辑器）~~ → **已随前端切割迁出** | ⛔ |
+| Stage 7 | C 子集拓展（`float`/位运算/三目/指针算术/`const`/`NULL`/函数指针等） | ✅ |
+| Stage 8 | 统一模式 / 时间旅行（快照 + 检查点 + Seek + 自动执行 + 异常回退） | ✅ |
+
+### 工程化（Phase 0~42，逐项记录见 [`AGENTS.md`](../../AGENTS.md) 与 [`CHANGELOG.md`](../../CHANGELOG.md)）
+
+- **Phase 18~26**：地毯式审阅（P0 soundness 修复、VM 优化、clippy 0 警告）、UAF/Double-Free 检测、认知推理 P0~P3（轨迹根因 / 误区模式 / 知识图谱 / 意图推断）、语义补全 v2、模板 JIT
+- **Phase 27~30**：数据结构语法拓展（数组退化 / `unsigned` / `const` / `extern` / VLA）、CLI 工具、Bytecode Libc 产品化、语法拓展（逗号运算符 / Designated Initializer / `offsetof`）
+- **Phase 31~42**：C++ 教学子集（类/继承/模板单态化 → RAII → `new[]`·`delete[]` → 引用 → 隐式移动构造 → `unique_ptr` → 内置容器收口与布局解耦 → M6 测试防线 → **Phase 42 进行中**）
+- **2026-09-06**：全面代码审阅（137 条发现）+ 四批修复；Shadow 与 CI 门禁"带牙齿"
+- **2026-09-11**：**前端切割**（仓库转型纯后端）；capi 第一批；`cide_cli serve`；StepPayload schema v0.1；堆内存 bump + 有界隔离决议；Shadow 提速（103.6s → 1.1s 缓存命中）与 stdin 注入
+
+---
+
+## 三、进行中与下一步
+
+阶段编排以 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §6 为准，此处为执行视图。
+
+### Phase 0 · 切割准备 ✅ 已完成（2026-09-11）
+
+仓库拆分（`CideFlutter/`、FRB 桥接、web 部署、Flutter 构建脚本迁出）、CI 收缩为纯后端、
+AGENTS/README 重写、MIT 化、模板用例静态化。
+
+### Phase 1 · 边界补全 🚧 收尾中
+
+| 项 | 状态 |
+|:---|:---|
+| 语言中立层（`native/src/session_api.rs`） | ✅ capi 与 serve 共用同一入口语义 |
+| capi 第一批 13 项（版本/JSON 编译运行/断点/单步/输出游标/保险丝配置/`cide_free_string`） | ✅ 全部落地 |
+| `cide_cli serve`（id 关联 / 帧同构 / `session.reset`） | ✅ 落地并进 CI 冒烟（26 项断言） |
+| StepPayload schema v0.1 | ✅ 文档发布 + 字段冻结测试；⏳ **对端（SharpTutor）三组回放场景待执行** |
+| Issue A/B（scanf 空白指令、lambda 调用缺陷） | ✅ 已修并进回归防线 |
+| 隔离预算会话配置（capi + serve 双出口） | ✅ |
+
+### Phase 2a / 2b · 并行（下一步）
+
+**2a · wasm 白箱**：JS/TS 绑定包、`scripts/wasm_smoke/` 固化并进 CI、浏览器最小 demo、体积优化（3.75MB → 2MB 内评估）。
+
+**2b · capi 第二批**：`cide_get_memory_regions_json`（`kind: global|stack|heap` + `status`）、`cide_read_memory_bytes_json`、`cide_get_heap_stats_json`、`cide_get_struct_fields_json`、错误码表机器可读导出（含"超出教学子集"E4001~E4031 段与已知差异清单）。
+
+### Phase 3 · 时间旅行完整面
+
+capi 第三批（`run_auto_steps` / `seek_to_step` / `get_vis_events` / `get_heatmap` / `cide_demangle`）、
+时间旅行 CoW（消除每步 1MB memcpy 的 O(n²)）、快照边界完整化（VFS / `local_sym_map` / step 派生伪时钟）。
+
+### 持续项
+
+- **Phase 42 · C++ 子集**：按教学需求继续拓展（当前边界见 [`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)）；
+- **文档同步**：实现变更必须同步 `C_SUBSET_SPEC.md` / `CPP_SUBSET_SPEC.md` / `CHANGELOG.md` / `AGENTS.md`；
+- **防线维护**：`*_FAILURES.md` 双向对账（转绿未更新文档即 CI 失败）。
+
+---
+
+## 四、已知缺口（诚实记录）
+
+| # | 缺口 | 影响 | 处置 |
+|:---|:---|:---|:---|
+| G1 | **模板 → 用例生成器缺失**：`scripts/sync_templates.py` 随前端切割移除，`native/tests/cases_template_generated/` 83 个用例目前是静态留存（仅被 `cide_e2e.rs`、`shadow_verify.py`、`extract_shadow_cases.py` 读取） | 改 `templates/` 后无法再生成用例，链路断裂 | 待认领：随 wasm 出口或社区前端一并恢复生成器（此前未被 AGENTS.md 记录，本次如实补记） |
+| G2 | wasm 冒烟脚本未固化（临时目录） | wasm 出口缺 CI 守护 | Phase 2a：`scripts/wasm_smoke/` |
+| G3 | wasm 下统一模式无 `catch_unwind`（panic → abort） | 与原生出口行为有差异 | 已记录，评估中 |
+| G4 | `time()` / `clock()` 使用真实墙钟，破坏重放确定性 | 时间旅行回放可能不一致 | Phase 3 伪时钟 |
+| G5 | `fprintf` 到自定义 `FILE*` 不落盘（写入被当作 stdout） | 与 Clang 不一致 | 已记录；教学场景请用 `fputs`/`fwrite`/`fputc` |
+| G6 | `native/src/flutter_bridge.rs` 命名与定位残留 | 历史包装层，命名易误解 | 待重构收敛（与语言中立层合并或改名） |
+| G7 | StepPayload schema v0.1 尚未完成对端回放校验 | 协议冻结未闭环 | Phase 1 收尾项 |
+| G8 | 通用解释器路径仍有性能优化空间（时间旅行每步全量快照） | 10 万步级程序 seek 延迟 | Phase 3 CoW |
+| G9 | **算法属性验证能力在后端从未落地**：`validate_algorithm()` / `ValidationResult` 在 `native/` 全目录零命中（原 `native/src/engine/algorithm_validator.rs` 不存在），原载体 `CideFlutter/lib/models/algorithm_validation.dart` 已随前端迁出；`LearningProgress` 进度追踪同理（后端仅有 `learning_path.rs` 的 `LearningPath`）。**澄清**：`AlgorithmMatch`（算法检测结果结构体）在 `native/src/session.rs` 确实存在，缺的是"运行时验证"环节本身 | 零侵入可视化的"运行时验证"维度缺后端支撑 | 待评估重建（2026-09-11 翻新时由文档核对发现，详见 [`ALGORITHM_DATASTRUCTURE_DESIGN.md`](ALGORITHM_DATASTRUCTURE_DESIGN.md) §7） |
+| G10 | **C++ E2E 用例口径不一致**：`native/tests/CPP_FAILURES.md` 记 74 个，而 `native/tests/cases/cpp/` 实际 78 个 `.cpp`（`cide_e2e.rs::load_cpp_cases` 全量加载） | 文档数字与实际断言不一致 | 待对账（2026-09-11 翻新时发现，已记入 [`MAINTENANCE_PLAN.md`](MAINTENANCE_PLAN.md) 任务 D） |
+| G11 | **工程债务回升**：生产代码 `unwrap/expect` 3 处（`crates/cide_typeck/src/decl.rs`，即 D14）、`scripts/engineering_health.py` 仍带前端时代口径且未进 CI（D15）、`decl.rs` 871 非空行超标（D16） | 与"生产代码 0 unwrap"的历史验收标准不符 | 见 [`MAINTENANCE_PLAN.md`](MAINTENANCE_PLAN.md) §二 债务清单（D14~D16） |
+| G12 | **模板失败计数存在三套口径**：`AGENTS.md` 记"82 个，78 绿，**4 已知失败**"；`native/tests/cases_template_generated/E2E_FAILURES.md` 列 3 条（含 `infixEvaluation_default`）；`cide_e2e.rs::KNOWN_TEMPLATE_FAILURES` 与 `shadow_verify.py::KNOWN_FAILURE_CASES` **只列 2 条** —— `infixEvaluation_default` 未进入任一常量 | CI 双向对账存在盲点（该用例失败不会被门禁拦下） | 待防线负责人统一口径（2026-09-11 文档翻新时发现，见 [`TEMPLATE_GUIDE.md`](TEMPLATE_GUIDE.md)） |
+| G13 | **两条 C++ 活约束未记入 `CPP_SUBSET_SPEC.md`**：同一模板类不可跨文件重复定义、`T()` 值初始化不支持（实测该规范中检索不到） | 学生可见的语言/工具链边界缺少权威记录 | 待转交该规范负责人（见 [`STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md`](STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md) §2.1/§2.2） |
+
+> 其它已知语言子集差异见 [`C_SUBSET_SPEC.md`](C_SUBSET_SPEC.md) / [`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)，
+> 测试差异见 `native/tests/*_FAILURES.md`。
+
+---
+
+## 五、差异化能力（相对通用工具链）
+
+1. **运行时中文教学诊断**：GDB 只说 `SIGSEGV`，OnlineGDB 只说 `Runtime Error`；Cide 说"你访问了 `arr[5]`，但数组只有 5 个元素，有效索引 0~4；发生在第 3 行；当前 `i = 5`"，并给出一键修复。
+2. **零侵入算法可视化**：写纯 C 冒泡排序，引擎自动识别并给出每一步的比较/交换语义与数组快照，无需任何可视化 API。
+3. **内存与指针白箱**：值级变量快照、指针四状态（Valid / Freed / Null / Dangling）、堆区域与泄漏报告、隔离区可视化。
+4. **时间旅行回放**：任意回退、异常自动回退到上一步并给根因卡片——这是"程序不是黑箱"的直接教学载体。
+5. **协议化交付**：三出口 + 语言中立 schema，任何前端/IDE/判分服务都能接入，而不必绑定某一种 UI 技术栈。
+
+> 单步/回放体验的设计论证见 [`VM_EXPERIENCE_ADVANTAGE.md`](VM_EXPERIENCE_ADVANTAGE.md)。
+
+---
+
+## 六、文档地图
+
+| 想知道什么 | 看哪里 |
+|:---|:---|
+| 后端定位与切割决策 | [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) |
+| 架构总纲 | [`DESIGN.md`](DESIGN.md) |
+| 构建与测试防线 | [`BUILD.md`](BUILD.md)、[`QUICKSTART.md`](QUICKSTART.md) |
+| CLI 命令 | [`CIDE_CLI.md`](CIDE_CLI.md) |
+| 语言子集契约 | [`C_SUBSET_SPEC.md`](C_SUBSET_SPEC.md)、[`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md) |
+| 标准库支持矩阵 | [`SUPPORTED_LIBC.md`](SUPPORTED_LIBC.md) |
+| 协议 schema | [`../spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) |
+| 审查与修复追踪 | [`code_review_report_2026-09-06.md`](code_review_report_2026-09-06.md)、[`code_review_report_2026-09-11.md`](code_review_report_2026-09-11.md) |
+| 工程维护 | [`MAINTENANCE_PLAN.md`](MAINTENANCE_PLAN.md) |
+| 历史文档 | [`../archive/`](../archive/)（仅供追溯，可能严重过时） |

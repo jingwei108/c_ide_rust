@@ -1,9 +1,21 @@
 # Cide C++14 教学子集拓展实施计划
 
-**版本**: 2.8  
-**日期**: 2026-06-13  
-**状态**: **M7 Beta Readiness 已就绪**：M6 + Stage 2b 已完成，`native/tests/cases/cpp/` 61 个 C++ E2E 用例全部通过，C++ Shadow Verification 83/83 一致、0 gap；全量 `cargo test` 719 passed、clippy 0 警告；`scripts/ci_three_tier_check.py` 误报已修复；同参数个数不同类型的构造函数重载已报告 `E4031` 而不是静默错误。已新增 5 个 C++ 教学模板（`cpp_hello` / `cpp_class_basic` / `cpp_vector_int` / `cpp_unique_ptr` / `cpp_range_for`）与学生版 `CPP_SUBSET_SPEC.md`。内置容器已全面迁移为 `runtime_libc/cide/*.cpp` 标准模板实现。详见 `docs/current/M7_BETA_READINESS.md`。**当前目标：启动内部试用并收集反馈。**  
+**版本**: 2.9（2026-09-11 现状对齐；正文 Stage 章节与历史记录保持原样）  
+**日期**: 2026-09-11  
+**状态**: **Phase 34~41 已完成，Phase 42 进行中**。C++ 容器收口（Phase 34）、栈对象 RAII（35）、`new[]/delete[]`（36）、引用语义（37）、隐式移动构造（38）、`unique_ptr<T>` dogfooding（39）、M6 测试防线收尾（40）、内置容器布局解耦（41）均已落地；**Phase 42（P0 语法/标准库拓展 + 代码审查报告推进 + 性能优化 + `cide_vec<T>` 类类型模板实参支持）🚧 进行中**，其中 lambda 相关批次（批次 H：lambda 返回类型推断、文件作用域 lambda 变量）已修复并有回归测试 `native/tests/cpp_lambda_test.rs`，详见 [`code_review_report_2026-09-11.md`](code_review_report_2026-09-11.md) §批次 H。  
+**可核实指标（2026-09-11 实测）**: `native/tests/cases/cpp/` **78 个 `.cpp` 文件**；C++ Shadow Verification **100 个用例**（98 个与 Clang++ 一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器，无法被 Clang++ 直接编译）——口径以 `AGENTS.md` 防线 1 为准；C 侧模板生成用例 82 个（`native/tests/cases_template_generated/*.c`，按 `AGENTS.md` 防线 2 口径 78 绿 / 4 已知失败；`cide_e2e.rs` 的 `KNOWN_TEMPLATE_FAILURES` 常量当前列 2 项：`bTree_default` / `spfa_default`——两者口径差异见 §对上述历史条目的更正第 3 点）。  
 **前置依赖**: `C_SUBSET_SPEC.md` P0/P1 阶段完成、Phase 31~33 C++ Parser/TypeChecker/BytecodeGen 完成
+
+> **历史状态（v2.8 / 2026-06-13，原文保留）**: **M7 Beta Readiness 已就绪**：M6 + Stage 2b 已完成，`native/tests/cases/cpp/` 61 个 C++ E2E 用例全部通过，C++ Shadow Verification 83/83 一致、0 gap；全量 `cargo test` 719 passed、clippy 0 警告；`scripts/ci_three_tier_check.py` 误报已修复；同参数个数不同类型的构造函数重载已报告 `E4031` 而不是静默错误。已新增 5 个 C++ 教学模板（`cpp_hello` / `cpp_class_basic` / `cpp_vector_int` / `cpp_unique_ptr` / `cpp_range_for`）与学生版 `CPP_SUBSET_SPEC.md`。内置容器已全面迁移为 `runtime_libc/cide/*.cpp` 标准模板实现。详见 `docs/current/M7_BETA_READINESS.md`。**当前目标：启动内部试用并收集反馈。**
+>
+> **对上述历史条目的三点现状更正（2026-09-11，不改动原文）**:
+> 1. **统计口径已过时**：61 个 C++ E2E / 83 个 Shadow 已被 Phase 34~42 的用例扩充取代，当前口径见上方"可核实指标"。
+> 2. **引用链接状态**：`docs/current/M7_BETA_READINESS.md` 已于 2026-09-11 归档为 [`../archive/ARCHIVE_M7_BETA_READINESS.md`](../archive/ARCHIVE_M7_BETA_READINESS.md)；指向旧路径的引用已在 `CPP_SUBSET_SPEC.md` 等处更新（`docs/README.md` 亦已按归档清单登记）。C++ 教学模板现存 **6 个**（历史条目中的 5 个 + 后续新增的 `cpp_vector_struct`）。
+> 3. **模板失败计数存在三套不一致口径（诚实记录，2026-09-11 核实）**：
+>    - `AGENTS.md` 防线 2 记 "82 个，78 绿，**4 已知失败**"（未列出是哪 4 个）；
+>    - `native/tests/cases_template_generated/E2E_FAILURES.md` 当前列 **3** 条 `KNOWN_DIVERGENCE`：`bTree_default` / `infixEvaluation_default` / `spfa_default`；
+>    - 代码常量只列 **2** 条：`native/tests/cide_e2e.rs::KNOWN_TEMPLATE_FAILURES` 与 `native/tests/shadow_verification/shadow_verify.py::KNOWN_FAILURE_CASES` 均为 `bTree_default` / `spfa_default`——**`infixEvaluation_default` 未进入任一常量**（CI 双向对账因此存在盲点）。
+>    本文件不擅自统一这三套口径，仅如实记录差异；精确对账机制见 `AGENTS.md` 防线 5。
 
 ---
 

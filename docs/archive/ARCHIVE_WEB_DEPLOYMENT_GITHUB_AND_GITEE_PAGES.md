@@ -1,5 +1,9 @@
 # Cide Web 部署方案 D：GitHub Pages + Gitee Pages 双部署
 
+> **已归档（2026-09-11）**：双 Pages 镜像部署围绕已移除的 Flutter Web 产物与 deploy_web.yml 构建。
+> 本文件仅作历史追溯保留，内容不再维护；当前有效文档见 `docs/current/`。
+
+
 > 适用于：国内用户为主、零预算、计划 MIT 开源、不追求快速上线的项目阶段。
 >
 > 核心策略：**GitHub Pages 作为主站（海外/CI 原生），Gitee Pages 作为国内镜像。**

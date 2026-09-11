@@ -1,8 +1,12 @@
 # Cide 统一模式设计文档
 
 > **版本**：2026-05-17  
-> **状态**：✅ 已实现（Rust 后端 + Flutter 前端）  
-> **核心原则**：用户不区分"调试模式"和"回放模式"。写代码 → 编译 → 运行 → 自由探索，一个流程走到底。
+> **状态**：✅ 已实现（Rust 后端全链路；对外的框架无关协议见 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)；前端实现已于 2026-09-11 随前端切割迁出）  
+> **核心原则**：用户不区分"调试模式"和"回放模式"。写代码 → 编译 → 运行 → 自由探索，一个流程走到底。  
+> **最后核对**：2026-09-11（前端切割后文档翻新）  
+> **修订记录**：
+> - 2026-09-11：前端切割后翻新——§5.4 由"FRB API"改写为**三出口 API 对照**（capi / `cide_cli serve` / wasm 共用 `session_api`）；§6 由"Flutter 前端"整章压缩改写为**前端消费方契约**（删除 Dart/Riverpod/widget 实现细节，保留状态机阶段、seek 联动一致性、frameCache 窗口、播放/暂停/单步/异常回退等对任何前端都成立的语义要求）；§7 时序图与 §9 集成示例改为语言中立出口调用；§10 路线图路径修正（`cide_vm::snapshot`）并把已迁出的 Dart 资产集中标注；E-P1-5 输出通道更新（§5.1）保留。
+> - 2026-05-17：初版（统一模式设计）。
 
 ---
 
@@ -16,13 +20,14 @@
   - [5.1 VM 快照/恢复](#51-vm-快照恢复)
   - [5.2 检查点管理器](#52-检查点管理器)
   - [5.3 自动执行引擎](#53-自动执行引擎)
-  - [5.4 FRB API](#54-frb-api)
-- [6. Flutter 前端](#6-flutter-前端)
-  - [6.1 状态管理](#61-状态管理)
-  - [6.2 执行控制面板](#62-执行控制面板)
-  - [6.3 进度条](#63-进度条)
-  - [6.4 可视化面板](#64-可视化面板)
-  - [6.5 代码编辑器集成](#65-代码编辑器集成)
+  - [5.4 出口 API（capi 第一批 / `cide_cli serve` / wasm）](#54-出口-apicapi-第一批--cide_cli-serve--wasm)
+- [6. 前端消费方契约（已迁出，见 spec）](#6-前端消费方契约已迁出见-spec)
+  - [6.1 执行阶段划分](#61-执行阶段划分)
+  - [6.2 执行控制契约（播放 / 暂停 / 继续 / 单步）](#62-执行控制契约播放--暂停--继续--单步)
+  - [6.3 进度条与 seek 契约](#63-进度条与-seek-契约)
+  - [6.4 可视化面板一致性契约](#64-可视化面板一致性契约)
+  - [6.5 代码编辑器集成契约](#65-代码编辑器集成契约)
+  - [6.6 异常回退与等待输入的消费方语义](#66-异常回退与等待输入的消费方语义)
 - [7. 数据流](#7-数据流)
 - [8. 边界情况](#8-边界情况)
 - [9. 与现有功能集成](#9-与现有功能集成)
@@ -75,9 +80,15 @@
 
 | 缓存层 | 存储位置 | 数据内容 | 用途 | 大小（1000步） |
 |:---|:---|:---|:---|:---|
-| **Frame Cache** | Flutter 前端 | `List<StepPayload>` | 动画渲染、变量面板、进度条拖动 | 2~5MB |
-| **Checkpoint** | Rust 后端 | `List<(i32, VMSnapshot)>` | VM 状态恢复（继续执行、查看内存） | 50MB |
+| **Frame Cache** | Rust 后端（`UnifiedEngine` 滑动窗口，2000 帧）+ 消费方本地视图缓存 | `Vec<StepPayload>` | 动画渲染、变量面板、进度条拖动 | 2~5MB |
+| **Checkpoint** | Rust 后端（`cide_vm::snapshot::CheckpointManager`） | `Vec<(i32, VMSnapshot)>`（全量 + 增量混合） | VM 状态恢复（继续执行、查看内存） | 全量口径 50MB；增量快照后实测约 5~10MB |
 | **Active VM** | Rust 后端 | `CideVM` 实例 | 当前可执行的 VM 状态 | 1MB |
+
+> **实现更新（2026-09-11 核对）**：Frame Cache 的**权威副本在引擎内**（滑动窗口语义见
+> [`STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) §4），消费方通过
+> `cide_get_step_payloads_json` / serve `payload.get` 取用，**不得**假设窗口外的历史 payload 仍可查询。
+> 检查点管理器已下沉到 `crates/cide_vm/src/snapshot.rs`（原 `native/src/unified/checkpoint.rs` 已不存在），
+> 采用"每 `full_every` 个检查点一次全量 + 其余仅存脏页"的混合模式，检查点数量上限 50。
 
 **设计原则**：
 - 90% 的用户操作（拖动进度条、查看变量）只访问 **Frame Cache**，零延迟
@@ -97,7 +108,7 @@ pub struct StepPayload {
     /// ② 语义元数据（进度条标签）
     pub meta: StepMeta,
     
-    /// ③ 调试摘要（悬浮球零延迟）
+    /// ③ 调试摘要（零延迟：变量 / 调用栈 / 内存概览）
     pub debug_summary: DebugSummary,
     
     /// ④ 执行热力图数据（该行被执行次数的增量）
@@ -135,33 +146,43 @@ pub struct HeatmapDelta {
 }
 ```
 
+> **实现更新（2026-09-11 核对）**：上面的分层结构（`vis_state` / `meta` / `debug_summary` / `heatmap_delta`）
+> 是**早期设计示意**。落地类型在 `native/src/unified/types.rs`，且对外形状是**扁平字段**——
+> 权威定义与字段语义以语言中立协议 [`STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)
+> 为准（`code_line` / `func_name` / `semantic_label` / `algorithm_step` / `local_vars` / `call_stack` /
+> `vis_events` / `heatmap_line` / `heatmap_count` / `accessed_vars` / `array_snapshots` /
+> `pointer_snapshots` / `root_cause_hint`）。消费方**不应**依赖本文片段里的 Rust 结构体形状。
+
 ### 2.3 Seek 策略
 
 用户拖动进度条到第 `target` 步时，系统根据 `target` 与当前状态的关系选择策略：
 
 ```
-if target <= max_collected_step {
-    // 目标步已在前端缓存中
-    // 策略 A：O(1) 直接切换 Frame
-    render_frame(frame_cache[target]);
+if target 在当前 frameCache 窗口内 {          // payload.get / cide_get_step_payloads_json
+    // 策略 A：O(1) 直接取该步 payload 重绘
+    payload = frame_cache[target];
 } else {
-    // 目标步尚未收集（用户拖动到了"未来"）
-    // 策略 B：从最近 Checkpoint 恢复 VM + 正向执行到 target
-    checkpoint = find_nearest_checkpoint(target);
-    vm.restore(checkpoint);
-    for _ in checkpoint_step..target {
+    // 策略 B（越窗 seek）：引擎内部执行，顺序契约见 spec §4.2
+    checkpoint = checkpoints.nearest(target);
+    vm.restore(checkpoint);                   // 增量快照在此重建为全量
+    for _ in checkpoint_step..target {        // 正向重放
         vm.step_next();
         frame_cache.push(collect_step_payload());
     }
-    render_frame(frame_cache[target]);
+    reset_window(target);                     // frame_cache_start_step = max(0, target - 1999)
+    payload = frame_cache[target];
 }
 ```
 
-**懒加载调试信息**：
-- 拖动时：只切换 `Frame Cache` 中的动画和变量摘要（O(1)）
-- 停止拖动 500ms 后：如果用户停留在该步，从 Checkpoint 恢复 VM 到该步（用于查看内存/调用栈的完整信息）
-- 悬浮球的"局部变量"和"调用栈"面板从 `DebugSummary` 读取，不需要恢复 VM
-- 悬浮球的"内存区域"详细查看需要恢复 VM，显示 loading 指示器
+**懒加载调试信息**（消费方行为）：
+- 拖动过程中：只重绘窗口内已有的 payload（O(1)），**不**触发 VM 恢复
+- 停止拖动 500ms 后用户仍停留在该步：发起一次 seek（serve `seek`；capi 侧属第三批 `seek_to_step`），把 Active VM 恢复到该步
+- 变量面板与调用栈面板直接读 payload 的 `local_vars` / `call_stack`，**不需要** VM 恢复
+- 内存区域等需要真实 VM 的视图，在 seek 返回前显示 loading 指示器
+
+> **一致性契约**（权威表述见 [`STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) §4.3）：
+> seek 到第 N 步后，`local_vars` / `call_stack` / `array_snapshots` / `pointer_snapshots` / `heatmap_count`
+> 一律以**第 N 步的快照**为准（而非"当前最新状态"），消费方据此整体重绘，不需要自行回退状态。
 
 ---
 
@@ -169,7 +190,7 @@ if target <= max_collected_step {
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                         Flutter 前端                                 │
+│              消费方前端（社区实现；本仓库不含前端）                 │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐  │
 │  │ CodeEditor   │  │ ExecControl  │  │ AlgoCanvas / VisPanel    │  │
 │  │ + Heatmap    │  │ Panel        │  │ + VarPanel + MemoryPanel │  │
@@ -178,19 +199,22 @@ if target <= max_collected_step {
 │  └──────┬───────┘  └──────┬───────┘  └────────────┬─────────────┘  │
 │         │                 │                       │                │
 │  ┌──────┴─────────────────┴───────────────────────┴────────────┐  │
-│  │              ExecutionController (Riverpod)                  │  │
-│  │  - FrameCache: List<StepPayload>                             │  │
+│  │        消费方执行控制器（阶段机 + 本地视图缓存）              │  │
+│  │  - FrameCache（窗口内 payload 的本地副本，可选）              │  │
 │  │  - StateMachine: Idle/Collecting/Paused/Playback/Seeking     │  │
 │  │  - CurrentStep: int                                          │  │
 │  └────────────────────────────┬─────────────────────────────────┘  │
 └───────────────────────────────┼─────────────────────────────────────┘
-                                │ FRB v2 (SSE Codec)
+                                │ 出口：capi JSON / serve JSON-lines / wasm 绑定
 ┌───────────────────────────────┼─────────────────────────────────────┐
 │                         Rust 后端                                    │
 │  ┌────────────────────────────┴─────────────────────────────────┐  │
-│  │              UnifiedModeEngine                                │  │
+│  │        session_api（语言中立会话语义层，三出口共用）         │  │
+│  └────────────────────────────┬─────────────────────────────────┘  │
+│  ┌────────────────────────────┴─────────────────────────────────┐  │
+│  │              UnifiedEngine                                    │  │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │  │
-│  │  │ AutoExecutor │  │ CheckpointMgr│  │ VM (Active)      │   │  │
+│  │  │ run_batch    │  │ CheckpointMgr│  │ VM (Active)      │   │  │
 │  │  │              │  │              │  │                  │   │  │
 │  │  │ - step_loop  │  │ - checkpoints│  │ - memory 1MB     │   │  │
 │  │  │ - collect    │  │ - seek()     │  │ - value_stack    │   │  │
@@ -199,12 +223,16 @@ if target <= max_collected_step {
 │  │  ┌──────┴─────────────────┴───────────────────┴──────────┐   │  │
 │  │  │                    CideVM                              │   │  │
 │  │  │  - step_next()                                         │   │  │
-│  │  │  - snapshot() / restore()                              │   │  │
+│  │  │  - snapshot() / restore()（crates/cide_vm/src/core）   │   │  │
 │  │  │  - read_memory(addr)                                   │   │  │
 │  │  └────────────────────────────────────────────────────────┘   │  │
 │  └───────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
 ```
+
+> 说明：`CheckpointMgr` 的实现在 `crates/cide_vm/src/snapshot.rs`（`CheckpointManager`），
+> `UnifiedEngine` 位于 `native/src/unified/engine.rs`；出口层（capi / serve / wasm）只做薄包装，
+> 语义一律取自 `native/src/session_api.rs`。
 
 ---
 
@@ -254,23 +282,24 @@ if target <= max_collected_step {
 
 **Collecting → Paused**：
 - 触发：用户点击暂停按钮
-- 动作：停止 `AutoExecutor` 的 step_loop
+- 动作：停止 `UnifiedEngine` 的批量推进（`pause()`；早期设计中的 `AutoExecutor` 已并入该引擎，见 §5.3）
 - 结果：VM 停在当前步，用户可单步或拖动
 
 **Playback → Seeking → Playback**：
 - 触发：用户拖动进度条
 - 动作：
-  1. 立即渲染 `FrameCache[target]` 的动画（O(1)）
-  2. 如果 target > max_collected_step，后台线程从 Checkpoint 恢复 VM + 正向执行到 target
-  3. 完成后更新 `FrameCache` 和 `Active VM`
+  1. 立即用窗口内 payload 重绘（O(1)，不碰后端）
+  2. 目标步越窗时：引擎从最近 Checkpoint 恢复 VM + 正向重放到 target（**同步执行、由调用方触发**，非后台线程，见 §5.3）
+  3. 完成后窗口重置（`frame_cache_start_step = max(0, target-1999)`）并更新 `Active VM`
 
 **Playback → Collecting（继续执行）**：
 - 触发：用户在 Playback 状态点击"继续执行"
 - 动作：
   1. 从最近 Checkpoint 恢复 VM
   2. 正向重放到当前步
-  3. 继续 `AutoExecutor` 的 step_loop
-- 注意：如果用户从第 50 步继续执行，output_lines 需要截断到第 50 步的长度
+  3. 继续 `UnifiedEngine` 的批量推进
+- 注意：从第 50 步继续执行时，输出必须回到"第 50 步所见"的状态——当前实现由 `RuntimeSnapshot.output_chunks`
+  整段还原（含通道标记），而**不是**按长度截断（见 §5.1 的 E-P1-5 说明）
 
 **StepMode → Collecting（自动播放）**：
 - 触发：用户在单步调试时点击"自动播放"
@@ -285,6 +314,11 @@ if target <= max_collected_step {
 ## 5. Rust 后端
 
 ### 5.1 VM 快照/恢复
+
+> **实现更新（2026-09-11 核对）**：下面是早期设计的字段形状；落地 `VMSnapshot` 见
+> `crates/cide_vm/src/snapshot.rs`（字段为 `memory: MemoryImage` / `stack: Vec<u64>` / `ip` /
+> `runtime: RuntimeSnapshot` / `memory_state: MemorySnapshot`，另含 `breakpoints`、`freed_logs`、
+> `vis_event_queue` 等），`CideVM::snapshot()` / `restore()` 实现在 `crates/cide_vm/src/core/snapshot.rs`。
 
 ```rust
 /// VM 全量快照（约 1MB + 少量元数据）
@@ -359,6 +393,16 @@ pub fn restore_with_output_truncate(
 ```
 
 ### 5.2 检查点管理器
+
+> **实现更新（2026-09-11 核对）**：`CheckpointManager` 已下沉到
+> **`crates/cide_vm/src/snapshot.rs`**（`cide_vm::snapshot::CheckpointManager`；原 `native/src/unified/checkpoint.rs`
+> 已随下沉删除）。落地版本在下面这份早期设计之上增加了：
+> - **全量 + 增量混合快照**：每 `full_every` 个检查点保存一次完整 1MB 内存，其余仅保存被修改的 4KB 页；
+> - **检查点数量上限 `max_checkpoints`（50）**，防止长程序内存无限增长；
+> - 快照内容按 `crates/cide_vm/src/snapshot.rs` 的 `VMSnapshot` 字段为准（含 `runtime` / `memory_state`，
+>   其中隔离区 `quarantine` 必须随快照往返，否则时间旅行回退后 UAF 检测出现假阴性）。
+>
+> 下面代码块中的 `restore_with_output_truncate` 属早期设计，**当前不按长度截断**，见 §5.1 的 E-P1-5 说明。
 
 ```rust
 pub struct CheckpointManager {
@@ -435,20 +479,21 @@ impl CheckpointManager {
 
 ### 5.3 统一模式引擎（`UnifiedEngine`）
 
-实际实现中，`AutoExecutor` 与 `CheckpointManager` 已合并为 `UnifiedEngine`，采用**批量轮询**而非后台线程，以兼容 FRB 的同步调用模型。
+实际实现中，`AutoExecutor` 的职责并入 `UnifiedEngine`（`native/src/unified/engine.rs`），检查点管理器独立在 `cide_vm::snapshot`。引擎采用**批量轮询**而非后台线程：三个出口（capi / `cide_cli serve` / wasm）都是调用方驱动的同步模型，引擎只在被调用时推进一批——该设计最初是为兼容 FRB 桥接的同步调用模型，前端切割后依然成立（出口侧无法让后端线程反向推送）。
 
 ```rust
 pub struct UnifiedEngine {
     pub checkpoints: CheckpointManager,
     pub frame_cache: Vec<StepPayload>,
-    pub max_steps: i32,          // 防止无限循环（默认 10000）
+    pub max_steps: i32,          // 防止无限循环（默认 100_000，会话级可覆盖）
     pub is_paused: bool,
     pub is_cancelled: bool,
 }
 
 impl UnifiedEngine {
     /// 批量自动执行，返回收集到的 StepPayload 列表。
-    /// 前端通过 Timer 周期性调用（如每 50ms 调用一次，batch_size=5）。
+    /// 调用方按固定节奏批量拉取（历史前端为每 50ms 一次、batch_size=5；
+    /// serve 侧对应 `step.next`，capi 侧为 `cide_step_next_json`）。
     pub fn run_batch(
         &mut self,
         vm: &mut CideVM,
@@ -508,507 +553,169 @@ impl UnifiedEngine {
 ```
 
 **关键实现细节**：
-- **Trap 自动回退**：每步执行前保存 `pre_step_snap`，若发生 Trap 立即 `vm.restore()`，保证用户看到的始终是安全状态
-- **批量轮询**：前端 `Timer.periodic` 每 50ms 调用 `runAutoSteps(batchSize: 5)`，兼顾流畅度与 UI 响应
-- **Output 截断**：`seek_to` 时 `frame_cache.truncate()` 丢弃目标步之后的旧数据，保证时间线一致性
+- **Trap 自动回退**：每步执行前保存 `pre_step_snap`，若发生 Trap 立即 `vm.restore()`，保证消费方看到的始终是安全状态
+- **批量轮询**：历史前端每 50ms 调用一次 `run_auto_steps(batch_size)`；capi/serve 侧由消费方自己决定拉取节奏，语义一致（一批 = 最多 `batch_size` 步）
+- **Output 截断**：`seek_to` 时 `frame_cache.truncate()` 丢弃目标步之后的旧数据，保证时间线一致性（窗口起点同步为 `frame_cache_start_step`，见 spec §4.2）
 
-### 5.4 FRB API
+### 5.4 出口 API（capi 第一批 / `cide_cli serve` / wasm）
 
-```rust
-// ========== 统一模式核心 API ==========
+统一模式的**会话语义只有一份**：`native/src/session_api.rs`。三个出口都只是薄包装，
+消费方按自己所在的边界选一列即可，**不应**依赖 Rust 内部函数形状。
 
-/// 编译并启动自动收集
-/// 
-/// 返回 RunResult，包含初始状态
-pub fn compile_and_run(source: String) -> RunResult {
-    let mut session = current_session();
-    
-    // 编译
-    let result = run_compile_pipeline(&mut session, &source);
-    if let Err(e) = result {
-        return RunResult {
-            success: false,
-            error: Some(e),
-            max_steps: 0,
-            initial_payload: None,
-        };
-    }
-    
-    // 启动自动执行
-    // 注意：这里不阻塞，启动后台线程执行
-    start_auto_executor(session);
-    
-    RunResult {
-        success: true,
-        error: None,
-        max_steps: 0,  // 异步，初始为 0
-        initial_payload: None,
-    }
-}
+| 语义（`session_api`） | 出口 1：capi（C ABI，`native/src/capi/`） | 出口 3：`cide_cli serve`（JSON-lines） | 出口 2：wasm（`wasm32-unknown-unknown`） |
+|:---|:---|:---|:---|
+| `compile` | `cide_compile_json(session)` | `compile` | 经 C ABI 直接可用（绑定层未定型） |
+| `run` | `cide_run_json(session)` | `run` | 同上 |
+| `output_delta` / `output_delta_on` | `cide_get_output_delta`（展示视图）/ `cide_get_program_output_delta`（纯 stdout，E-P1-5） | `output.delta`（`stream: display\|stdout\|stderr\|note`） | 同上 |
+| `step_begin` | `cide_step_begin(session)` | `step.begin` | 同上 |
+| `step_next` | `cide_step_next_json(session)` | `step.next` | 同上 |
+| `payloads` | `cide_get_step_payloads_json(session, start, end)` | `payload.get` | 同上 |
+| `seek` | **第三批**（`seek_to_step`，尚未落地） | `seek`（已可用，过渡形态） | 同 capi |
+| `set_breakpoints` | `cide_set_breakpoints(session, lines_json)` | `breakpoints.set` | 同 capi |
+| `memory_regions` | **第二批**（`cide_get_memory_regions_json`，尚未落地） | `memory.regions`（过渡形态，字段待第二批对齐） | 同 capi |
+| 会话级配置（`max_steps` / 调用栈深度 / 判分确定性 / 隔离预算） | `cide_set_max_steps` / `cide_set_call_depth_limit` / `cide_set_deterministic` / `cide_set_quarantine_budget` | `config.get` / `config.set` | 同 capi |
 
-/// 暂停自动执行
-pub fn pause_execution() {
-    if let Some(executor) = get_auto_executor() {
-        executor.pause();
-    }
-}
+**消费方必须遵守的语义要点**（与出口无关）：
 
-/// 继续自动执行
-pub fn resume_execution() {
-    if let Some(executor) = get_auto_executor() {
-        executor.resume();
-    }
-}
+- **编译与统一模式初始化是两步**：`compile` 成功后才可 `step_begin`（未编译时 capi 返回 `-2` / serve 返回 `state` 错误帧）；
+- **断点须在 `step_begin` 之后设置**：`step_begin` 会重建 VM 并清空断点；命中断点时 `step_next` 返回 `paused: true`；
+- **越窗取 payload 静默裁剪**：`payload.get` 只返回窗口内子集，配合响应里的 `cache_start_step` / `max_collected_step` 判断；
+- **窗口外定位走 seek**：恢复检查点 + 正向重放，属耗时操作，消费方应先给 loading 反馈（见 §6.3）；
+- **复杂结构过边界一律 JSON 字符串**，rust-alloc 所有权（capi 侧须 `cide_free_string` 释放）；
+- **Session 句柄非线程安全**，跨线程调用需调用方自行同步。
 
-/// 获取指定步的 StepPayload（前端 Frame Cache 的 fallback）
-pub fn get_step_payload(step: i32) -> Option<StepPayload> {
-    // 优先从 Frame Cache 读取
-    if let Some(payload) = get_frame_cache().get(step as usize) {
-        return Some(payload.clone());
-    }
-    
-    // 如果不在缓存中，从 Checkpoint 恢复 + 重放
-    // 这是一个耗时操作，建议前端先显示 loading
-    seek_and_collect(step).ok()
-}
-
-/// Seek 到指定步并恢复 VM 状态
-/// 
-/// 用于：继续执行、查看内存、查看完整调用栈
-pub fn seek_to_step(target: i32) -> Result<SeekResult, String> {
-    let mut session = current_session();
-    let mut vm = get_active_vm();
-    let checkpoint_mgr = get_checkpoint_mgr();
-    
-    checkpoint_mgr.seek_to(target, &mut vm, &mut session, &mut |step, payload| {
-        push_to_frame_cache(step, payload);
-    })?;
-    
-    // 更新 Active VM
-    set_active_vm(vm);
-    
-    Ok(SeekResult {
-        target_step: target,
-        vm_restored: true,
-    })
-}
-
-/// 从当前步继续执行（Playback → Collecting）
-pub fn continue_from_current() -> Result<RunResult, String> {
-    let current_step = get_current_step();
-    
-    // 确保 VM 已恢复到当前步
-    seek_to_step(current_step)?;
-    
-    // 启动自动执行
-    resume_execution();
-    
-    Ok(RunResult {
-        success: true,
-        ..Default::default()
-    })
-}
-
-/// 单步执行（StepMode）
-pub fn step_next() -> Result<StepPayload, String> {
-    let mut session = current_session();
-    let mut vm = get_active_vm();
-    
-    vm.step_next()?;
-    let step = vm.get_step_count();
-    let payload = collect_step_payload(&vm, &session, step);
-    
-    set_active_vm(vm);
-    push_to_frame_cache(step, payload.clone());
-    
-    Ok(payload)
-}
-
-/// 获取执行热力图
-pub fn get_heatmap() -> HeatmapData {
-    let session = current_session();
-    HeatmapData {
-        line_counts: session.runtime.heatmap.line_counts.clone(),
-        max_count: session.runtime.heatmap.max_count(),
-    }
-}
-
-/// 获取变量历史
-pub fn get_var_history(var_name: String) -> Option<VarHistory> {
-    get_var_history_cache().get(&var_name).cloned()
-}
-
-/// 读取内存（需要 Active VM 已恢复）
-pub fn read_memory(addr: u32, count: i32) -> Vec<i32> {
-    let vm = get_active_vm();
-    vm.read_memory_range(addr, count)
-}
-```
+> 出口细节：capi 函数签名、状态码与所有权契约见 [`CIDE_CAPI_REVIEW_RESPONSE.md`](CIDE_CAPI_REVIEW_RESPONSE.md)（§10.1 第一批逐项状态）；
+> serve 的 id 关联、错误帧同构、方法一览与实测样例见 [`CIDE_CLI.md`](CIDE_CLI.md) §6（serve：JSON-lines 会话模式）。
+> wasm 出口当前以 C ABI 全链路直接可用（2026-09-11 冒烟实证），薄 JS/TS 绑定包属 Phase 2a 计划——
+> 绑定层同样只允许调用上表入口，**禁止**另建语义（三出口漂移是本项目明令禁止的架构反模式）。
 
 ---
 
-## 6. Flutter 前端
+## 6. 前端消费方契约（已迁出，见 spec）
 
-### 6.1 状态管理
+> **本章说明（2026-09-11）**：前端实现（`CideFlutter/`，含全部 Dart 代码与 FRB 桥接）已于 2026-09-11
+> 随"前端切割"迁出本仓库，切割前最后完整状态由标签 `before-frontend-split` 保留
+> （`git checkout before-frontend-split -- CideFlutter` 可取回）。
+> 本章因此**不再是"本仓库的前端设计"**，而是**任何消费方都必须遵守的契约**——社区前端、SharpTutor 类
+> 教学 IDE、脚本化工具、Web 白箱形态都适用：状态机阶段划分、seek 时各视图的联动一致性、
+> frameCache 窗口语义、播放/暂停/单步/异常回退的语义要求，这些对任何前端都成立。
+>
+> 字段级权威定义在 [`STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)；
+> 出口调用方式见 §5.4；**具体实现（语言、框架、组件形态）随社区前端，本文不作约束**。
 
-使用 `flutter_riverpod` 管理统一模式的复杂状态。
+### 6.1 执行阶段划分
 
-```dart
-/// 执行状态枚举
-enum ExecutionPhase {
-  idle,           // 空闲，可编辑代码
-  compiling,      // 编译中
-  collecting,     // 自动收集（播放中）
-  paused,         // 暂停
-  playback,       // 回放（执行结束或用户暂停后）
-  seeking,        // 寻址中（拖动进度条）
-  stepMode,       // 单步模式
-  error,          // 编译错误或运行时错误
-}
+消费方需要自己维护一个执行阶段机。它与 §4 的后端六状态一一对应，另加两个**纯消费方本地**阶段：
 
-/// 统一状态对象
-@freezed
-class ExecutionState with _$ExecutionState {
-  const factory ExecutionState({
-    required ExecutionPhase phase,
-    @Default(0) int currentStep,
-    @Default(0) int maxCollectedStep,
-    @Default(0) int totalSteps,
-    StepPayload? currentPayload,
-    @Default([]) List<StepPayload> frameCache,
-    @Default(false) bool isPlaying,
-    @Default(1.0) double playbackSpeed,
-    String? errorMessage,
-    @Default(false) bool isVmRestored,  // Active VM 是否已恢复
-  }) = _ExecutionState;
-}
+| 消费方阶段 | 对应 §4 状态 | 触发 | 该阶段允许的交互 |
+|:---|:---|:---|:---|
+| `idle` | Idle | 初始 / 代码修改后重置 | 编辑代码、发起编译运行 |
+| `compiling` | （本地） | 已发出 `compile` 请求 | 等待诊断返回；可取消 |
+| `collecting` | Collecting | 编译成功且 `step.begin` 完成，正在批量拉取 `step.next` | 暂停、拖动进度条、修改代码（提示将重置） |
+| `paused` | Paused | 用户暂停，或**命中断点**（`paused: true`） | 继续、单步、拖动进度条、修改代码 |
+| `playback` | Playback | 执行结束（`finished: true`） | 拖动进度条、从当前步继续执行、修改代码 |
+| `seeking` | Seeking | 拖动进度条 / 发起 seek | 等待 seek 返回；期间不重复发起 |
+| `step_mode` | StepMode | 用户点单步 | 单步、自动播放、拖动进度条 |
+| `error` | （本地） | 编译失败，或运行时 trap | 查看诊断、重置回 `idle` |
 
-/// 核心控制器
-@riverpod
-class ExecutionController extends _$ExecutionController {
-  Timer? _playbackTimer;
-  
-  @override
-  ExecutionState build() => const ExecutionState(phase: ExecutionPhase.idle);
-  
-  /// 编译并运行
-  Future<void> compileAndRun(String source) async {
-    state = state.copyWith(phase: ExecutionPhase.compiling);
-    
-    final result = await rust.compileAndRun(source: source);
-    
-    if (!result.success) {
-      state = state.copyWith(
-        phase: ExecutionPhase.error,
-        errorMessage: result.error,
-      );
-      return;
-    }
-    
-    state = state.copyWith(phase: ExecutionPhase.collecting);
-    _startFrameCollection();
-  }
-  
-  /// 启动帧收集监听（异步接收 FRB 推送的 StepPayload）
-  void _startFrameCollection() {
-    rust.stepPayloadStream.listen((payload) {
-      final newCache = [...state.frameCache, payload];
-      state = state.copyWith(
-        frameCache: newCache,
-        maxCollectedStep: payload.stepIndex,
-        currentStep: payload.stepIndex,
-        currentPayload: payload,
-      );
-    });
-  }
-  
-  /// 暂停
-  void pause() {
-    rust.pauseExecution();
-    _playbackTimer?.cancel();
-    state = state.copyWith(
-      phase: ExecutionPhase.paused,
-      isPlaying: false,
-    );
-  }
-  
-  /// 继续（从 Collecting 或 StepMode）
-  void resume() {
-    if (state.phase == ExecutionPhase.playback) {
-      // 从 Playback 继续需要先恢复 VM
-      _continueFromPlayback();
-      return;
-    }
-    
-    rust.resumeExecution();
-    state = state.copyWith(
-      phase: ExecutionPhase.collecting,
-      isPlaying: true,
-    );
-  }
-  
-  /// 从 Playback 状态恢复 VM 并继续执行
-  Future<void> _continueFromPlayback() async {
-    state = state.copyWith(phase: ExecutionPhase.seeking);
-    await rust.seekToStep(target: state.currentStep);
-    state = state.copyWith(isVmRestored: true);
-    resume();
-  }
-  
-  /// 拖动进度条
-  Future<void> seekTo(int targetStep) async {
-    // 即时响应：如果目标步已在缓存中，O(1) 切换
-    if (targetStep <= state.maxCollectedStep && targetStep < state.frameCache.length) {
-      state = state.copyWith(
-        currentStep: targetStep,
-        currentPayload: state.frameCache[targetStep],
-        phase: ExecutionPhase.playback,
-      );
-      return;
-    }
-    
-    // 需要后台恢复 VM
-    state = state.copyWith(phase: ExecutionPhase.seeking);
-    final result = await rust.seekToStep(target: targetStep);
-    
-    if (result.vmRestored) {
-      state = state.copyWith(
-        currentStep: targetStep,
-        isVmRestored: true,
-        phase: ExecutionPhase.playback,
-      );
-      // 从 FrameCache 或重新获取 payload
-      _updateCurrentPayload(targetStep);
-    }
-  }
-  
-  /// 单步下一步
-  Future<void> stepNext() async {
-    state = state.copyWith(phase: ExecutionPhase.stepMode);
-    final payload = await rust.stepNext();
-    
-    final newCache = [...state.frameCache];
-    if (payload.stepIndex < newCache.length) {
-      newCache[payload.stepIndex] = payload;
-    } else {
-      newCache.add(payload);
-    }
-    
-    state = state.copyWith(
-      frameCache: newCache,
-      currentStep: payload.stepIndex,
-      currentPayload: payload,
-      maxCollectedStep: math.max(state.maxCollectedStep, payload.stepIndex),
-      isVmRestored: true,
-    );
-  }
-  
-  /// 自动播放动画（Playback 状态下）
-  void startPlaybackAnimation() {
-    _playbackTimer?.cancel();
-    _playbackTimer = Timer.periodic(
-      Duration(milliseconds: (1000 / state.playbackSpeed).round()),
-      (_) {
-        if (state.currentStep < state.maxCollectedStep) {
-          seekTo(state.currentStep + 1);
-        } else {
-          _playbackTimer?.cancel();
-        }
-      },
-    );
-  }
-  
-  /// 修改代码后重置
-  void onCodeChanged() {
-    _playbackTimer?.cancel();
-    rust.cancelExecution();
-    state = const ExecutionState(phase: ExecutionPhase.idle);
-  }
-}
-```
+契约要点：
 
-### 6.2 执行控制面板
+- **阶段是消费方本地状态**，后端不推送。后端能给出的只有 `finished` / `trapped` / `waiting_input` / `paused`
+  四个标志与 `payloads`；
+- `paused: true` 表示**命中断点**（断点在 VM 层判定），消费方应进入 `paused` 而不是 `finished`；
+- 任何阶段收到 `trapped: true` + `trap_message`，都必须切到 `error`，并按 §6.6 处理回退后的状态；
+- **代码修改 = 回到 `idle`**：执行过程中检测到源码变更必须提示（"代码已修改，是否重新编译？"），
+  确认后清空本地视图缓存并重新 `compile` + `step.begin`。
 
-```dart
-class ExecutionControlPanel extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(executionControllerProvider);
-    final controller = ref.read(executionControllerProvider.notifier);
-    
-    return Row(
-      children: [
-        // 运行/暂停/继续按钮
-        _buildPlayPauseButton(state, controller),
-        
-        // 单步按钮（仅在 Paused 或 StepMode 显示）
-        if (state.phase == ExecutionPhase.paused || 
-            state.phase == ExecutionPhase.stepMode)
-          IconButton(
-            icon: const Icon(Icons.skip_next),
-            onPressed: controller.stepNext,
-          ),
-        
-        // 进度条
-        Expanded(
-          child: ExecutionSlider(
-            max: state.maxCollectedStep,
-            value: state.currentStep.toDouble(),
-            onChangeStart: controller.pause,
-            onChanged: (v) => controller.seekTo(v.round()),
-          ),
-        ),
-        
-        // 播放速度
-        PlaybackSpeedButton(
-          speed: state.playbackSpeed,
-          onChanged: (s) => state = state.copyWith(playbackSpeed: s),
-        ),
-      ],
-    );
-  }
-  
-  Widget _buildPlayPauseButton(ExecutionState state, ExecutionController ctrl) {
-    switch (state.phase) {
-      case ExecutionPhase.idle:
-        return IconButton(
-          icon: const Icon(Icons.play_arrow),
-          onPressed: () => ctrl.compileAndRun(getCurrentSource()),
-        );
-      case ExecutionPhase.collecting:
-        return IconButton(
-          icon: const Icon(Icons.pause),
-          onPressed: ctrl.pause,
-        );
-      case ExecutionPhase.paused:
-      case ExecutionPhase.stepMode:
-        return IconButton(
-          icon: const Icon(Icons.play_arrow),
-          onPressed: ctrl.resume,
-        );
-      case ExecutionPhase.playback:
-        return IconButton(
-          icon: const Icon(Icons.play_arrow),
-          tooltip: '从当前步继续执行',
-          onPressed: ctrl.resume,
-        );
-      default:
-        return const SizedBox.shrink();
-    }
-  }
-}
-```
+### 6.2 执行控制契约（播放 / 暂停 / 继续 / 单步）
 
-### 6.3 进度条
+控制面板（运行 / 暂停 / 单步 / 进度条 / 速度）是消费方的主要交互面，语义要求如下：
 
-```dart
-class ExecutionSlider extends StatelessWidget {
-  final int max;
-  final double value;
-  final VoidCallback onChangeStart;
-  final ValueChanged<double> onChanged;
-  
-  @override
-  Widget build(BuildContext context) {
-    return Slider(
-      min: 0,
-      max: max.toDouble(),
-      value: value,
-      divisions: max > 0 ? max : null,
-      label: _buildLabel(value.round()),
-      onChangeStart: (_) => onChangeStart(),
-      onChanged: onChanged,
-    );
-  }
-  
-  String _buildLabel(int step) {
-    // 显示语义标签而非步数
-    final payload = getFrameCache().getFrame(step);
-    if (payload != null) {
-      return payload.meta.semanticLabel;
-    }
-    return '第 $step 步';
-  }
-}
-```
+| 控件 | 可用阶段 | 语义 |
+|:---|:---|:---|
+| 运行 | `idle` | `compile` → `step.begin` → 进入 `collecting` |
+| 暂停 | `collecting` | 停止继续拉取 `step.next`；**不销毁会话**，Active VM 停在当前步 |
+| 继续 | `paused` / `step_mode` | 从当前步继续批量拉取（回到 `collecting`） |
+| 继续执行 | `playback` | **必须先 seek 回当前步**（恢复 Active VM）再继续拉取 |
+| 单步 | `paused` / `step_mode` | 推进一步并更新当前步与各视图；`payloads` 固定 1 个元素 |
+| 自动播放 | `step_mode` | 消费方按速度定时器逐帧推进；**优先复用窗口内 payload**，不必每帧打后端 |
+| 播放速度 | `playback` / `step_mode` | 纯消费方行为（改变定时器间隔），不影响后端语义 |
 
-### 6.4 可视化面板
+> **"继续执行"的正确姿势**：从 `playback` 继续时，先用 `seek(current_step)` 把 Active VM 恢复到当前步，
+> 再继续拉取。**不要**假设 VM 仍停在用户看到的那一步——用户可能刚拖动过进度条
+> （§4.2 "Playback → Collecting" 已写明该前置步骤）。
 
-```dart
-class UnifiedVisPanel extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(executionControllerProvider);
-    final payload = state.currentPayload;
-    
-    if (payload == null) {
-      return const Center(child: Text('点击运行开始'));
-    }
-    
-    return Column(
-      children: [
-        // 算法动画（排序/链表/树）
-        AlgoCanvas(visState: payload.vis_state),
-        
-        // 变量面板
-        VariablePanel(vars: payload.debug_summary.local_vars),
-        
-        // 调用栈
-        CallStackPanel(frames: payload.debug_summary.call_stack),
-      ],
-    );
-  }
-}
-```
+### 6.3 进度条与 seek 契约
 
-### 6.5 代码编辑器集成
+进度条既是"时间轴"也是"当前步指示器"，语义来自 §4.2 的状态转换与 spec §4 的窗口语义：
 
-```dart
-class UnifiedCodeEditor extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(executionControllerProvider);
-    final heatmap = ref.watch(heatmapProvider);
-    
-    return ReEditor(
-      // 当前高亮行
-      highlightedLine: state.currentPayload?.code_line,
-      
-      // 变量级高亮
-      variableHighlights: _buildVariableHighlights(state.currentPayload),
-      
-      // 执行路径热力图（侧边栏）
-      gutter: HeatmapGutter(
-        lineCounts: heatmap.lineCounts,
-        maxCount: heatmap.maxCount,
-      ),
-      
-      // 代码修改监听
-      onChanged: (code) {
-        if (state.phase != ExecutionPhase.idle) {
-          // 提示用户代码已修改，是否重新运行
-          showRestartDialog(context, () {
-            ref.read(executionControllerProvider.notifier).onCodeChanged();
-          });
-        }
-      },
-    );
-  }
-  
-  List<VariableHighlight> _buildVariableHighlights(StepPayload? payload) {
-    if (payload == null) return [];
-    
-    return payload.debug_summary.local_vars.map((var) {
-      return VariableHighlight(
-        line: var.decl_line,
-        column: var.decl_column,
-        length: var.name.length,
-        color: _highlightColor(var.access_type),
-      );
-    }).toList();
-  }
-}
-```
+1. **拖动中：窗口内 O(1) 切换**。目标步在窗口内时直接取该步 payload 重绘（不触发 VM 恢复），保证拖动跟手；
+2. **停手 500ms 后再 seek**。用户停在该步不动时才发起 `seek`（serve `seek`；capi 侧属第三批 `seek_to_step`），
+   避免拖动过程中把重放请求打满；
+3. **越窗 seek 是懒重算**：后端取最近检查点 → 恢复 → 正向重放到目标步 → 窗口重置为 `[target-1999, target]`
+   （顺序契约见 spec §4.2）。期间消费方显示 loading，并**应丢弃"目标步之后"的本地帧**，否则时间线前后不一致；
+4. **seek 失败必须可见**：后端可能返回 `success: false` + `error`（无可用检查点、重放中命中 trap 等）。
+   消费方要把失败态显示出来，不得静默停在旧位置；
+5. **进度条标签用语义而非裸步号**：`semantic_label`（如"循环 i=0, j=1"）比"第 150 步"更利于教学；
+   标签为空时退回步号显示。
+
+> **一致性契约**（权威表述见 spec §4.3）：seek 到第 N 步后，`local_vars` / `call_stack` /
+> `array_snapshots` / `pointer_snapshots` / `heatmap_count` 一律以**第 N 步的快照**为准，
+> 消费方据此整体重绘，不需要自行回退状态。
+
+### 6.4 可视化面板一致性契约
+
+同一步的**所有视图必须来自同一个 `StepPayload`**——这是时间旅行体验成立的前提。
+
+| 视图 | 数据来源 | 契约 |
+|:---|:---|:---|
+| 算法动画（数组 / 链表 / 树） | `array_snapshots` / `pointer_snapshots` / `vis_events` | 以当前步快照重绘；`vis_events` 是**取走式**的，同一步不会重复投递 |
+| 变量面板 | `local_vars` | 当前作用域变量；变量消失由差分层 `removed_var_name_indices` 表达 |
+| 值变化提示 | `accessed_vars`（`Read` / `Write`） | 高亮"本步读写"的变量，而不是"值与前一步不同"的变量 |
+| 调用栈 | `call_stack` | **自底向上**，末元素为当前帧；`return_line` 当前恒为 0（spec §8 #1），不要据此画返回行 |
+| 代码行高亮 | `code_line` | 1 起；`0` = 当前步无源码行（库函数内部），此时不要高亮任何行 |
+| 热力图 | `heatmap_line` / `heatmap_count` | 计数单调不减，可增量累加；seek 后必须以当前步的快照为准重算 |
+| 指针状态 | `pointer_snapshots[].status` | `Valid` / `Freed` / `Null` / `Dangling`；直接使用后端判定，**不要**自行推导（优先级见 spec §3.1） |
+| 内存区域 | serve `memory.regions`（过渡形态；capi 第二批定型） | 需要 Active VM 已恢复；未恢复时显示 loading，而不是伪造数据 |
+| 异常卡片 | `root_cause_hint` | 仅陷阱路径填充，常规步为 `null`；字段分层见 spec §2.8 |
+
+契约要点：
+
+- **seek 后整体重绘**，不要"只更新动画、不更新变量面板"——这正是 spec §4.3 要防的不一致；
+- **不要跨帧拼状态**：`local_vars` 是当前作用域快照而非增量；差分层中 `null`（沿用上一步）与 `[]`（本步为空）
+  语义不同，必须区分（spec §5.2）；
+- **快照字段缺失 ≠ 空数组**：字段缺省时保持面板稳定，不要显示成"数组为空"。
+
+### 6.5 代码编辑器集成契约
+
+编辑器属消费方自研/选型范围（本仓库不提供），但统一模式对它有五条契约：
+
+- **当前行高亮**跟随 `code_line`；`code_line == 0` 时不改变已有高亮；
+- **变量级高亮**由 `accessed_vars` 驱动：`Read` 与 `Write` 用可区分的底色，且不应破坏语法高亮；
+- **热力图侧栏**由 `heatmap_line` / `heatmap_count` 绘制行级执行频度；执行结束后保留，直到用户重新运行或修改代码；
+- **修改即失效**：执行中检测到源码变更 → 非阻断提示"代码已修改，重新编译以更新执行结果" →
+  用户确认后取消当前会话、清空缓存、回到 `idle`（见 §8.4）；
+- **多文件行号**：`code_line` 是**合并源码的全局行号**，payload 暂未携带文件名（spec §8 #9），
+  消费方目前无法从 payload 反查"哪个文件的第几行"；v0.2 计划增加 `code_file` 字段，届时按"只增不改"演进。
+
+### 6.6 异常回退与等待输入的消费方语义
+
+- **trap 自动回退由后端完成**：每步执行前保存快照，命中 trap 时自动 `restore` 回上一步状态，并返回
+  `trapped: true` + `trap_message` + `root_cause_hint`。消费方看到的**永远是安全状态**：
+  不要自行再回退一次，也不要继续拉取 `step.next`；
+- **异常卡片分层**：现象（`trap_message`）→ 原因（`root_cause_hint.one_liner`）→ 解法
+  （`suggested_fix_desc`，配合 `related_lines` 可点击跳转）；`suggested_fix_kind == "None"` 时不显示修复按钮；
+- **等待输入**：`waiting_input: true` 表示程序阻塞在 `scanf` 等输入点。消费方弹出输入框，
+  把用户输入作为一次性输入继续（capi `cide_provide_input_line` / `cide_set_input`；serve 侧为 `run` 的
+  `input`，会话级批量模式为 `batch_input`），**从同一位置继续**，不得从头重跑；
+- **步数上限**：达到会话级 `max_steps` 时后端以教学 trap 返回（而非无限等待）。消费方按 trap 处理，
+  展示"可能存在无限循环"的提示，并提供"调高上限重跑"的入口（capi `cide_set_max_steps` / serve `config.set`）；
+- **中断与重置**：消费方可随时停止拉取（等价于 paused，不需要销毁会话）；`session.reset` 只清空编译/运行状态，
+  **保留会话级配置**（隔离预算、判分确定性、argv）。
+
+> **历史实现细节不在此保留**：Dart 组件命名与层级、Riverpod / Notifier 状态管理、
+> `setState` / `notifyListeners` 用法等均属已迁出的前端资产；需要对照时用
+> `git checkout before-frontend-split -- CideFlutter` 取回，本文不再复述。
 
 ---
 
@@ -1017,55 +724,53 @@ class UnifiedCodeEditor extends ConsumerWidget {
 ### 7.1 正常执行流
 
 ```
-[Flutter] 用户点击"运行"
-    ↓ FRB: compileAndRun(source)
-[Rust] 编译 → 启动 AutoExecutor 后台线程
-    ↓ 每步
-[Rust] step_next() → collect StepPayload
-    ↓ FRB Stream
-[Flutter] 收到 StepPayload → 追加到 FrameCache
+[消费方] 用户点击"运行"
+    ↓ capi: cide_compile_json → cide_step_begin（serve: compile → step.begin）
+[后端] 编译 → 初始化统一模式会话（装载 VM + 建首个检查点）
+    ↓ 消费方按批轮询
+[后端] step_next（内部 run_batch）→ 收集 StepPayload
+    ↓ capi JSON / serve JSON-lines
+[消费方] 收到 StepPayload → 追加到本地视图缓存（窗口外由 payload.get 补取）
     ↓
-[Flutter] 更新 ExecutionState → 重绘 UI
-    ├── CodeEditor: 高亮当前行
-    ├── AlgoCanvas: 渲染 VisState
-    ├── VarPanel: 显示局部变量
-    └── Slider: 进度条前进
+[消费方] 更新执行阶段 → 按同一步 payload 重绘全部视图
+    ├── 编辑器: 高亮 code_line + 热力图着色
+    ├── 算法画布: 渲染 array_snapshots / vis_events
+    ├── 变量面板: 显示 local_vars / call_stack
+    └── 进度条: 前进到 step_index
 ```
 
 ### 7.2 拖动进度条流
 
 ```
-[Flutter] 用户拖动 Slider 到 step 150
+[消费方] 用户拖动进度条到 step 150
     ↓
-[Flutter] 立即显示 FrameCache[150] 的动画（O(1)）
+[消费方] 立即用窗口内 payload[150] 重绘全部视图（O(1)，不碰后端）
     ↓ 500ms 后用户未继续拖动
-[Flutter] 调用 rust.seekToStep(target: 150)
-    ↓ FRB
-[Rust] CheckpointMgr.nearest(150) → 找到检查点 140
+[消费方] 发起 seek(150)（serve: seek；capi: 第三批 seek_to_step）
     ↓
-[Rust] vm.restore(checkpoint_140) → 正向重放 10 步
+[后端] CheckpointMgr.nearest(150) → 找到检查点 140
     ↓
-[Rust] 更新 Active VM → 返回 SeekResult
-    ↓ FRB
-[Flutter] 更新 isVmRestored = true
+[后端] vm.restore(checkpoint_140) → 正向重放 10 步 → 窗口重置为 [target-1999, target]
     ↓
-[Flutter] 悬浮球"内存区域"面板现在可以读取真实 VM 内存
+[后端] 更新 Active VM → 返回 seek 结果
+    ↓ capi JSON / serve JSON-lines
+[消费方] 标记 Active VM 已恢复
+    ↓
+[消费方] 内存区域等需要真实 VM 的面板现在可以读取
 ```
 
 ### 7.3 继续执行流
 
 ```
-[Flutter] 用户在 Playback step 150 点击"继续执行"
-    ↓ FRB: seekToStep(150)
-[Rust] 恢复 VM 到 step 150（同上）
+[消费方] 用户在 Playback step 150 点击"继续执行"
+    ↓ seek(150)
+[后端] 恢复 VM 到 step 150（同上）
     ↓
-[Flutter] 调用 rust.resumeExecution()
+[消费方] 继续批量拉取 step_next
     ↓
-[Rust] AutoExecutor 继续 step_loop
-    ↓
-[Rust] 从 step 150 继续收集 StepPayload
-    ↓ FRB Stream
-[Flutter] 追加到 FrameCache，进度条继续前进
+[后端] 从 step 150 继续收集 StepPayload
+    ↓ capi JSON / serve JSON-lines
+[消费方] 追加到本地视图缓存，进度条继续前进
 ```
 
 ---
@@ -1075,18 +780,22 @@ class UnifiedCodeEditor extends ConsumerWidget {
 ### 8.1 无限循环
 
 ```rust
-// AutoExecutor 设置最大步数限制
-const MAX_STEPS: i32 = 10_000;
-
-if step >= MAX_STEPS {
-    return Err("执行步数超过限制（10,000 步），可能存在无限循环。".to_string());
+// UnifiedEngine 设置最大步数上限（会话级可覆盖）
+// 默认 UnifiedEngine::new() = with_max_steps(100_000)
+if step >= self.max_steps {
+    return Err("执行步数超过限制，可能存在无限循环。".to_string());
 }
 ```
 
-前端显示：
+> **数字核对（2026-09-11）**：统一模式默认上限为 **100,000 步**（`native/src/unified/engine.rs`
+> `UnifiedEngine::new()`）；会话可通过 capi `cide_set_max_steps` / serve `config.set` 调低或调高，
+> 教学内容建议"可控地撞上限并拿到教学 trap"，而不是无限等待（见 §6.6）。
+
+消费方显示：
+
 ```
 ⚠️ 执行已暂停
-程序已执行 10,000 步，可能包含无限循环。
+程序已执行 100,000 步，可能包含无限循环。
 
 当前代码位置：第 7 行 while (1) {
 建议：检查循环终止条件。
@@ -1109,20 +818,20 @@ try {
 }
 ```
 
-前端显示异常面板（见 5.5 运行时异常自动回退）。
+消费方显示异常面板（回退语义与卡片分层见 §6.6）。
 
 ### 8.3 scanf 等待输入
 
 ```rust
-// host_scanf 中检测到 input_index >= input_lines.len()
+// host_scanf 中检测到输入已耗尽
 if session.runtime.input_index >= session.runtime.input_lines.len() {
     session.runtime.waiting_input = true;
-    // 返回特殊状态，前端弹出输入框
+    // 返回特殊状态，消费方弹出输入框
     return StepResult::WaitingInput;
 }
 ```
 
-前端显示：
+消费方显示：
 ```
 ⏸️ 程序等待输入
 scanf("%d", &x);
@@ -1131,33 +840,29 @@ scanf("%d", &x);
 [________] [确认]
 ```
 
-用户输入后，input_lines 追加新值，继续执行。
+用户输入后，input_lines 追加新值，从同一位置继续执行（不得从头重跑，见 §6.6）。
 
 ### 8.4 代码修改后重置
 
 用户在执行过程中修改代码：
-1. 前端检测到代码变化
+1. 消费方检测到代码变化
 2. 显示非阻断提示："代码已修改，重新编译以更新执行结果"
 3. 用户点击"重新运行" → 取消当前执行 → 清空所有缓存 → 回到 Idle
 
 ### 8.5 内存不足（FrameCache 过大）
 
-如果程序执行了 100,000 步：
-- FrameCache：100,000 × 2KB = 200MB（可能过大）
-- 解决方案：FrameCache 设置上限（如 50MB），超过时丢弃最早的 20% 帧
-- 被丢弃的帧可以从 Checkpoint 重新收集（懒加载）
+如果程序执行了 100,000 步，全量保留每步 payload 会占用过大内存（早期前端估算：100,000 × 2KB ≈ 200MB）。
 
-```dart
-const MAX_FRAME_CACHE_SIZE = 50 * 1024 * 1024; // 50MB
+**当前实现已经内建边界**（权威语义见 [`STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) §4）：
 
-void _enforceFrameCacheLimit() {
-  while (_estimateSize(frameCache) > MAX_FRAME_CACHE_SIZE) {
-    // 丢弃最早的 20% 帧
-    final discardCount = frameCache.length ~/ 5;
-    frameCache.removeRange(0, discardCount);
-  }
-}
-```
+- 引擎持有**滑动窗口 `frame_cache`，上限 2000 帧**；超限时丢弃**最早**的 `ceil(len × 20%)` 帧；
+- 窗口起点由 `frame_cache_start_step` 表达，随窗口滑动同步前移（`reset()` 后为 0）；
+- 越窗 step 的帧不从窗口"消失"到不可恢复：需要时由 **seek 懒重算**（最近检查点恢复 + 正向重放）重新收集；
+- 消费方**不应**假设窗口外的历史 payload 仍可查询（`payload.get` 对越窗区间静默返回子集），
+  需要长期留存的帧必须由消费方自行落地持久化。
+
+> 历史口径：前端曾用"50MB 上限 + 丢最早 20%"的本地缓存策略；该策略在切割前已由引擎侧窗口统一取代，
+> 前端本地缓存现在只是窗口内 payload 的可选副本。
 
 ---
 
@@ -1172,94 +877,112 @@ void _enforceFrameCacheLimit() {
 
 ### 9.2 与学习进度系统集成
 
-```dart
-// 用户完成一次完整的"运行 → 拖动 → 理解"流程
-LearningProgress.recordVisExploration(
-  algorithm: detectedAlgorithm,
-  stepsExplored: stepsDragged,
-  timeSpent: duration,
-);
-```
+"运行 → 拖动 → 理解"这条探索路径所需的数据**全部可从出口拿到**，进度记录本身属消费方职责：
+
+- 探索范围：当前步 `step_index` 与已收集到的最大步（`max_collected_step`）；
+- 算法识别：payload 的 `algorithm_step.algorithm_name` / `display_name`；
+- 停留时长、拖动次数：消费方本地统计（后端不采集用户行为）；
+- 陷阱学习：`root_cause_hint.category` 可作为"今天修复了哪类错误"的归类依据。
+
+> 后端只负责**执行与协议**，不做用户行为埋点；学习进度、成就、报告属消费方（或上层教学产品）能力。
 
 ### 9.3 与持久化系统集成
 
-```dart
-// 自动保存当前代码 + 执行状态
-Future<void> autoSave() async {
-  await prefs.setString('last_source_code', editor.code);
-  await prefs.setInt('last_execution_step', state.currentStep);
-  await prefs.setStringList('input_lines', session.runtime.inputLines);
-}
+统一模式**不做隐式持久化**，会话状态由消费方按需保存与恢复：
 
-// 恢复时
-Future<void> restoreSession() async {
-  final code = prefs.getString('last_source_code');
-  final step = prefs.getInt('last_execution_step') ?? 0;
-  // 自动编译 + seek 到上次步骤
-}
-```
+| 需要保存的内容 | 获取方式 | 恢复方式 |
+|:---|:---|:---|
+| 源码 | 消费方自己的编辑器 | `compile`（serve 支持 `files:[{filename,source}]` 多文件） |
+| 当前步 | 最近一次 payload 的 `step_index` | `step.begin` → `seek(step)`（越窗时触发检查点恢复 + 重放） |
+| 输入（`scanf` 数据） | 消费方自行收集 | serve `run` 的 `input` / 批量模式 `batch_input`；capi `cide_set_input` / `cide_set_input_mode` |
+| 断点行 | 消费方自己的编辑器 | `breakpoints.set`（**须在 `step.begin` 之后**） |
+| 输出游标 | `output.delta` 返回的 `cursor`（字节游标，UTF-8 边界安全） | 传回同一 `cursor` 继续增量取 |
+
+> 注意：后端**不保存**"上次执行到第几步"——`session.reset` 只清空编译/运行状态并保留会话级配置；
+> 恢复历史位置依靠 `seek` 重放而非快照落盘，这是有意的设计边界（见 spec §8 #6：窗口外 payload 不可查询，
+> 消费方须自行持久化）。
 
 ---
 
 ## 10. 实施路线图
 
-> **状态总览**：Rust 后端全部完成，Flutter 前端核心链路完成。以下标记为 ✅ 的已在代码库中实现并可用。
+> **状态总览**：Rust 后端全部完成（快照 / 检查点 / 引擎 / 收集器 / 类型链 → capi 第一批 + `cide_cli serve`）；
+> 前端实现已于 2026-09-11 随前端切割迁出，本节只保留**本仓库的交付物**，历史 Dart 资产集中列在 §10.1
+> （标签 `before-frontend-split`）。以下标记为 ✅ 的已在代码库中实现并可用。
 
 ### Phase 0：VM 快照/恢复 ✅
-- [x] `VMSnapshot` 数据结构（`vm/snapshot.rs`：内存、栈、调用栈、运行时状态、内存管理状态）
-- [x] `CideVM::snapshot()` / `restore()`（`vm/vm.rs`）
-- [x] `output_lines` 截断处理（`seek_to` 中 `frame_cache.truncate`）
+- [x] `VMSnapshot` 数据结构（`crates/cide_vm/src/snapshot.rs`：内存镜像、栈、调用栈、运行时状态、内存管理状态）
+- [x] `CideVM::snapshot()` / `restore()`（`crates/cide_vm/src/core/snapshot.rs`；另有 `snapshot_incremental` / `snapshot_into`）
+- [x] 输出分段随快照整体往返（`RuntimeSnapshot.output_chunks`，E-P1-5 口径，取代早期"按长度截断"，见 §5.1）
 - [x] 单元测试：快照 → 恢复 → 状态一致
 
 ### Phase 1：检查点管理器 + 自动执行引擎 ✅
-- [x] `CheckpointManager`（`unified/checkpoint.rs`：固定间隔 20 步，智能模式骨架）
-- [x] `UnifiedEngine`（`unified/engine.rs`：批量轮询 + 步数限制 + 暂停/继续 + Trap 回退）
-- [x] 集成到 `flutter_bridge.rs`：`runAutoSteps`、`seekToStep`、`stepNextUnified`
+- [x] `CheckpointManager`（`crates/cide_vm/src/snapshot.rs`：固定间隔 20 步 + 智能模式 + 全量/增量混合 + 上限 50）
+- [x] `UnifiedEngine`（`native/src/unified/engine.rs`：批量轮询 + 步数上限 + 暂停/继续 + Trap 回退 + frameCache 窗口）
+- [x] 会话包装层接线（`native/src/flutter_bridge.rs`，**历史命名**：`run_auto_steps` / `seek_to_step` / `step_next_unified`；
+      该文件仍被 `cide_cli` 的 compile/run/step 路径消费，名称待后续重构收敛）
+- [x] 三出口语义统一：`native/src/session_api.rs`（capi 第一批与 `cide_cli serve` 共用同一入口语义）
 
-### Phase 2：FRB API + Flutter 状态管理 ✅
-- [x] FRB API：`StepPayload`、`AutoStepResult`、`SeekResult`、`HeatmapData`（`unified/types.rs`）
-- [x] `UnifiedNotifier`（`providers/unified_notifier.dart`：Riverpod + 六状态机）
-- [x] `UnifiedState`（`models/unified_state.dart`）
-- [x] 执行控制面板（`widgets/execution_control_panel.dart`：Play/Pause/Step/Slider/速度/覆盖率）
+### Phase 2：统一模式 API + 消费方状态契约 ✅
+- [x] 类型链：`StepPayload`、`AutoStepResult`、`SeekResult`、`HeatmapData`（`native/src/unified/types.rs`，全链路 `serde::Serialize`）
+- [x] 协议定稿：[`STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)（字段冻结由 `native/tests/step_payload_schema_v0_1_test.rs` 机械保证）
+- [x] 消费方状态契约（阶段机 / seek 一致性 / 播放暂停单步 / 异常回退）→ 本文 §6（框架无关）
+- [x] 历史前端：`UnifiedNotifier`（Riverpod + 六状态机）、`UnifiedState`、执行控制面板 → 见 §10.1
 
 ### Phase 3：执行路径热力图 ✅
 - [x] VM 层：`heatmap.line_counts` 收集（`session.rs`）
-- [x] FRB API：`getHeatmap()`（`flutter_bridge.rs`）
-- [x] Flutter：覆盖率百分比显示（`ExecutionControlPanel` 右上角）
+- [x] 出口：payload 的 `heatmap_line` / `heatmap_count` 已随 `step.next` / `payload.get` 携带
+- [x] 历史前端：覆盖率百分比显示（`ExecutionControlPanel`）→ 见 §10.1
 
 ### Phase 4：排序动画 MVP + 语义进度条 ✅
-- [x] `StepPayload.vis_events`：数组比较/交换/更新事件
-- [x] `StepMeta` 语义标签生成（`unified/collector.rs`：`infer_semantic_label`，支持循环/交换/递归/函数调用/IO/内存分配）
-- [x] `AlgoCanvas` 柱状图 + 交换动画（`widgets/array_vis_tab.dart`）
-- [x] 进度条语义标签显示（`ExecutionControlPanel._buildSliderLabel`）
-- [x] 算法检测信息条（`ExecutionControlPanel` 顶部显示检测到的算法名称）
-- [x] **ArrayVisualizer 动画增强**：高亮脉冲（缩放+发光）、交换金色光晕、值变化弹性弹跳（`widgets/array_visualizer.dart`）
-- [x] **Swap 事件解析**：`ArrayVisTab` 从语义标签提取交换索引，驱动金色交换动画
+- [x] `StepPayload.vis_events`：数组比较事件（当前唯一产出类型码 `1`，见 spec §3.3）
+- [x] 语义标签生成（`native/src/unified/collector.rs`：`infer_semantic_label`，支持循环/交换/递归/函数调用/IO/内存分配）
+- [x] 历史前端：柱状图 + 交换动画、进度条语义标签、算法检测信息条 → 见 §10.1
 
 ### Phase 5：变量变化历史 + 零延迟面板 ✅
-- [x] `VarHistoryTab`（`widgets/var_history_tab.dart`：从 `frame_cache` 提取变量历史，绘制迷你趋势图）
-- [x] `VariablesTab`（`widgets/variables_tab.dart`：每步局部变量实时面板）
-- [x] `CallStackPanel`：调用栈显示
+- [x] 数据面：payload 的 `local_vars`（当前作用域）/ `call_stack`（自底向上）/ `accessed_vars`（Read/Write）
+- [x] 变量历史可由 payload 窗口派生（`payload.get` 区间查询；窗口外经 seek 重算）
+- [x] 历史前端：`VarHistoryTab`、`VariablesTab`、`CallStackPanel` → 见 §10.1
 
 ### Phase 6：运行时异常自动回退 ✅
-- [x] `pre_step_snap` + Trap 回退（`unified/engine.rs`）
-- [x] 异常诊断匹配 + 知识卡片（`ExecutionControlPanel` Trap 提示条 + "查看帮助" BottomSheet）
-- [x] 自动回退 UI 面板（红色异常条，显示 `trap_message`，提供重置按钮）
+- [x] `pre_step_snap` + Trap 回退（`native/src/unified/engine.rs`）
+- [x] 根因推断与知识卡片数据（`native/src/unified/root_cause.rs` + `unified/trace_analyzer/`，出口字段 `root_cause_hint`）
+- [x] 历史前端：Trap 提示条 / "查看帮助" 面板 / 自动回退 UI → 见 §10.1
 
 ### Phase 7：变量级高亮 ✅
-- [x] `accessed_vars` 已收集（`StepPayload.accessed_vars`：Read/Write 标记）
-- [x] `VariablesTab` 值变化背景闪烁动画（琥珀色渐变，600ms）
-- [x] `CideEditor` 集成：`spanBuilder` 精确变量名底色高亮（Read=淡蓝，Write=淡橙，保留语法高亮）
-- [x] 行号 gutter R/W 标记保留（`EditorPanel._buildGutter`）
+- [x] `accessed_vars` 已收集并进入协议（`StepPayload.accessed_vars`：Read/Write 标记）
+- [x] 历史前端：值变化闪烁、编辑器变量底色高亮、行号 gutter R/W 标记 → 见 §10.1
 
 ### Phase 8：链表/树可视化增强 ✅
-- [x] `LinkedListVisualizer` 渐进式入场动画（节点依次滑入+淡入，箭头渐进绘制）
-- [x] `LinkedListVisTab` 集成到统一模式：从 `StepPayload.localVars` 读取链表头指针，`frameCache` 驱动时间旅行；复用 `LinkedListVisualizer` 渲染
-- [x] `TreeVisualizer` 二叉树可视化 + `TreeVisTab` 统一模式集成（满二叉树位置层级布局，节点滑入+连线渐进动画，最大深度 6 限制）
-- [ ] `LinkedListSnapshot` / `TreeSnapshot` 序列化到 `StepPayload`（后端预遍历，消除拖动时 VM 未恢复的不一致风险）— **低优先级**
-- [x] 复用统一模式的所有基础设施（`frameCache` + `localVars` + `visEvents`）
+- [x] 数据面：`pointer_snapshots` 四状态（Valid/Freed/Null/Dangling）已进协议，可驱动链表/树视图
+- [ ] `LinkedListSnapshot` / `TreeSnapshot` 序列化到 `StepPayload`（后端预遍历，消除拖动时 VM 未恢复的不一致风险）— **低优先级**（属协议增量，需走 spec 版本化流程）
+- [x] 历史前端：`LinkedListVisualizer` / `TreeVisualizer` 及对应 Tab → 见 §10.1
 
-**实际用时**：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天）
+**实际用时**：约 2 周（后端 5 天 + 前端 5 天 + 联调 4 天；切割前口径）
+
+### 10.1 历史前端资产（已迁出，标签 `before-frontend-split`）
+
+以下条目由切割前的 Flutter 前端实现，**2026-09-11 随 `CideFlutter/` 迁出本仓库**，不再属于本仓库交付物。
+其中的交互语义已按 §6 抽象为框架无关契约，具体实现随社区前端。需要取回参考时：
+
+```bash
+git checkout before-frontend-split -- CideFlutter
+```
+
+| 资产 | 切割前位置（Dart，已迁出） | 对应的契约条款 |
+|:---|:---|:---|
+| 统一模式状态管理（Riverpod + 六状态机） | `providers/unified_notifier.dart` | §6.1 执行阶段划分 |
+| 统一状态对象 | `models/unified_state.dart` | §6.1 / §6.2 |
+| 执行控制面板（Play/Pause/Step/Slider/速度/覆盖率） | `widgets/execution_control_panel.dart` | §6.2 / §6.3 |
+| 排序动画（柱状图 + 交换动画） | `widgets/array_vis_tab.dart` | §6.4 |
+| 数组可视化动画增强（脉冲 / 光晕 / 弹跳） | `widgets/array_visualizer.dart` | §6.4 |
+| 变量历史趋势图 | `widgets/var_history_tab.dart` | §6.4 / Phase 5 |
+| 每步局部变量面板 | `widgets/variables_tab.dart` | §6.4 |
+| 调用栈面板、链表 / 树可视化 Tab | `CallStackPanel` / `LinkedListVisTab` / `TreeVisTab` 等组件 | §6.4 |
+
+> 该标签同时保留切割前的 FRB 桥接（`native/src/api/`、`frb_generated.rs`）与全部 Flutter 构建脚本；
+> 本仓库现有的 `native/src/flutter_bridge.rs` **不在迁出范围内**——它是历史命名的会话包装层，
+> 仍被 `cide_cli` 消费（见 Phase 1 说明），待后续重构收敛命名。
 
 ---
 

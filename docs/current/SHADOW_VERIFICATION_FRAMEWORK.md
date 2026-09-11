@@ -1,6 +1,12 @@
 # Cide 影子验证框架（Shadow Verification）
 
 > 目的：用 Clang 作为"影子"编译器，数据驱动自研编译器扩展决策。
+> 最后核对：2026-09-11（前端切割后文档翻新）
+>
+> **当前地位**：自 2026-09-06 起为 **CI 硬门禁**——Clang 预检缺失即 fail fast（exit 2），
+> 存在非预期差异（compile_gap / runtime_gap / output_gap）即 exit 1；match / known_issue / cide_better 视为通过。
+> 当前规模：C 侧 **636 个用例**（完全匹配 617 + cide_better 16 + known_issue 3，0 非预期差异），
+> C++ 侧 **100 个用例**（98 一致 + 2 个已记录的 `clang_compile_fail`）。
 
 ---
 
@@ -29,17 +35,42 @@ CI 流水线
 ### 2.1 运行验证
 
 ```bash
-cd native/tests/shadow_verification
-python shadow_verify.py
+# 在仓库根目录执行
+python native/tests/shadow_verification/shadow_verify.py --jobs 8
 ```
 
+| 选项 | 说明 |
+|:---|:---|
+| `--jobs N` | 并行度；`0` = 自动，`1` = 串行 |
+| `--refresh-clang` | 强制全量重算 Clang Golden（CI 夜间使用） |
+| `--rebuild` | release DLL 比引擎源码旧时自动重建 |
+| `--report <path>` / `--json <path>` | 自定义报告 / 机器可读数据输出路径 |
+| `--limit N` | 仅跑前 N 个用例（调试用） |
+| `--shard-worker <path>` | 分片 worker 模式（并行调度的内部接口） |
+
 **前置条件**：
-- `clang` 已安装并在 PATH 中
-- `native/target/release/cide_native.dll` 已编译：`cd native && cargo build --release`
+- `clang` 已安装并在 PATH 中（缺失时框架**故意 fail fast**，不静默跳过）
+- `native/target/release/cide_native.dll` 已编译：`cd native && cargo build --release`（或用 `--rebuild` 自动处理）
 
 **输出**：
 - `reports/shadow_report_YYYYMMDD_HHMMSS.md`：人类可读报告
 - `reports/shadow_data_YYYYMMDD_HHMMSS.json`：机器可读数据
+
+**提速设施（2026-09-11）**：Clang Golden 缓存（key = 源码 + stdin + clang 版本 + 参数 + 预设文件）+ 并行执行。
+632 用例实测 **103.6s → 1.1s（缓存命中）/ 20.4s（冷启动全量）**。
+缓存与 worker 运行目录为 `.clang_cache/` / `.shadow_tmp/`（已 gitignore）——**改动用例后无需手动清缓存**（源码哈希变化自动失效）。
+
+**标准输入注入（2026-09-11）**：用例可自带同名 `.in` 文件，Clang 与 Cide 喂**同一份字节**（缓存 key 纳入真实 stdin）。
+此前防线一律批量运行且不喂 stdin，K&R 目录里 29 个 `.in` 从未被使用 —— "两侧都无输入"造成的**虚假 match**；
+启用后立即暴露"输入注入丢换行"缺陷（`getchar()` 读不到 `'\n'`，19 例 `output_gap`），已随 `RuntimeState::split_stdin` 统一修复。
+
+**输出口径（E-P1-5，2026-09-11）**：比对读的是引擎的**纯程序 stdout 通道**（capi `cide_get_program_output*`，ABI 1.1.0）——
+引擎附注（"程序运行完成，返回值：N"、内存泄漏报告、教学警告）与 stderr 各有独立通道。
+**驱动侧不得再对输出做正则清洗**：此前十余处清洗规则语义互不一致，且在教学程序自己打印同类文本时会误删真实输出
+（假阳性 `output_gap`）。读取入口统一在 `native/tests/shadow_verification/cide_output.py`；DLL 缺新符号时 fail fast，不退回旧清洗。
+
+> ⚠️ **并行化对顺序敏感**：用例加载与分片分发必须确定性（`sorted(glob)` + 按 name 对账），
+> 否则会出现"结果错配但门禁仍绿"的静默失败。
 
 ### 2.2 添加新用例
 
@@ -52,7 +83,7 @@ native/tests/cases/baseline/<name>.c
 # gap 用例（Cide 暂不支持）
 native/tests/cases/gap/<name>.c
 
-# 模板生成的用例（从 templates/ 自动同步）
+# 模板生成的用例（2026-09-11 前端切割后为**静态留存**，生成器脚本已缺失——见 §6.5）
 native/tests/cases_template_generated/<name>.c
 ```
 
@@ -70,13 +101,19 @@ int main() { ... }
 
 ### 2.3 解读报告
 
-报告输出三个关键指标：
+报告按差异类型分类：
 
-| 指标 | 含义 |
-|------|------|
-| **完全匹配** | Clang ≡ Cide，该特性已完整支持 |
-| **编译缺口** | Clang 编译通过，Cide 编译失败 → **缺失特性或 Bug** |
-| **输出差异** | 两者都编译运行，但 stdout 不同 → **语义偏差** |
+| 分类 | 含义 | 门禁判定 |
+|------|------|---------|
+| **match** | Clang ≡ Cide（stdout 逐字节一致） | 通过 |
+| **cide_better** | Cide 给出更完整的教学诊断/行为（已记录理由） | 通过 |
+| **known_issue** | 已记录在案的存量差异（`KNOWN_FAILURE_CASES`） | 通过 |
+| **compile_gap** | Clang 编译通过，Cide 编译失败 → **缺失特性或 Bug** | **exit 1** |
+| **runtime_gap** | 两者都编译，但一方运行失败 | **exit 1** |
+| **output_gap** | 两者都跑通，但 stdout 不同 → **语义偏差** | **exit 1** |
+
+`KNOWN_FAILURE_CASES` 与 E2E 防线的 `KNOWN_TEMPLATE_FAILURES` 常量**双向对齐**：
+任一防线转绿而文档未更新，CI 即失败。
 
 **缺失特性频率排序**按影响用例数从高到低排列，直接指导扩展优先级。
 
@@ -176,7 +213,9 @@ ShadowCase("string_reverse",
 '...while (str[len] != \'\0\')...'
 ```
 
-**验证方法**：用 `python check_escapes.py`（已内置在仓库）扫描全部用例，确保没有包含 NUL / 换行 / Tab 的异常解析。
+**验证方法**：早期仓库内置 `check_escapes.py` 扫描全部用例中的异常解析；
+**该脚本当前已不在仓库中**（如实记录），新增用例时需人工核对双反斜杠写法——
+用例已文件化（`cases/**/*.c`）后此类陷阱主要出现在仍以 Python 字符串内联的用例列表中。
 
 ### 5.3 已修复的历史事故
 
@@ -187,10 +226,15 @@ ShadowCase("string_reverse",
 
 ## 六、已知限制
 
-1. **测试用例维度**：当前 274 个用例覆盖有限，需扩展至 300+ 才能更准确反映学生代码模式
+1. **用例规模**：C 侧 636 个用例、C++ 侧 100 个用例（2026-09-11）；虽然已远超早期 274 个的规模，但相对真实学生代码模式仍是抽样
 2. **分类精度**：`classify_compile_error` 基于错误消息关键词匹配，可能存在误分类
-3. **平台依赖**：框架依赖本地 Clang，Windows 上需 MSVC 运行时；Android/iOS 无法直接运行
-4. **输出对比**：仅对比 stdout，不对比 stderr、返回值、内存状态
+3. **平台依赖**：框架依赖本地 Clang（Windows 上需 MSVC 运行时以跑 Clang 产物）；三条出口均为桌面/服务端形态，移动端不适用
+4. **输出对比范围**：只比对**纯程序 stdout** 与 stdin 注入；stderr、返回值、内存状态虽各有独立通道但未纳入比对——
+   例如 `fprintf(fp, ...)` 不落盘这类差异不会被 Shadow 防线捕获（已在 AGENTS.md 诚实记录）
+5. **模板用例生成链断裂（2026-09-11 起）**：`native/tests/cases_template_generated/`（83 个用例）当前只有读取方
+   （`cide_e2e.rs`、`shadow_verify.py`、`extract_shadow_cases.py`），生成器脚本 `scripts/sync_templates.py`
+   已随前端切割移除 —— 修改 `templates/` 后无法再自动生成用例，属**真实缺口**，待随 wasm 出口或社区前端恢复
+6. **转义自检脚本缺失**：`check_escapes.py` 已不在仓库（见 §5.2）
 
 ---
 
@@ -210,6 +254,7 @@ ShadowCase("string_reverse",
 | 2026-06-06 | 295 | 285 (97%) | 5 (1%) | **修复影子验证发现的 2 个真实问题**：(1) Lexer 按 C 标准实现整数常量类型推导 — 支持 `U`/`u` 后缀、八进制/十六进制超出有符号 int 范围自动提升为 `unsigned int`（`0xFFFFFFFF` → `UnsignedLiteral`）；(2) Parser 修复 `extern int foo(int);` 纯原型声明不消费分号导致后续解析失败的 bug；`unsigned_cmp_wrap`/`unsigned_lshr`/`extern_func` 3 个用例从 gap 移回 baseline；剩余 5 个编译缺口均为明确不支持的特性（`goto`/`static_assert`/`typeof`/`designated_initializer`/`inline_asm`） |
 | 2026-06-07 | 295 | 286 (97%) | 4 (1%) | **P0 语法拓展**：通用逗号运算符 `a, b`、Designated Initializer `.field = val` / `[i] = val`、`offsetof(struct S, field)` 全管线实现；`designated_init.c` 从 gap 移回 baseline；修复 Parser `extra_vars`/`for-init` 错误调用 `parse_expression()`（会解析逗号运算符）导致多变量声明失败的问题；剩余 4 个编译缺口（`goto`/`static_assert`/`typeof`/`inline_asm`） |
 | 2026-06-07 | 449 | 396 (88%) | 14 (3%) | **运行完整影子验证（baseline + gap + template + K&R 全量）**：新增 `comma_operator.c`/`offsetof_struct.c` baseline 用例，`designated_init.c` 从 gap 移回 baseline；编译缺口降至 14（`unknown`×10 / `goto`×1 / `inline_asm`×1 / `static_assert`×1 / `typeof`×1），`designated_initializer` 已彻底从缺口列表中移除；运行时缺口 27 个（主要为 K&R `getchar` 交互式输入差异 + 模板已知失败） |
+| 2026-09-11 | 636（C）/ 100（C++） | 617 match + 16 cide_better + 3 known_issue / 98 一致 | 0 非预期差异 | **防线提速与口径收口**：Clang Golden 缓存 + 并行执行（103.6s → 1.1s 缓存命中 / 20.4s 冷启动全量）；启用用例自带 `.in` 的 stdin 注入（暴露并修复"输入注入丢换行"，19 例 `output_gap` 转绿）；输出改读**纯程序 stdout 通道**（E-P1-5），废除驱动侧全部正则清洗；新增 3 个用例（`scanf` 返回值 / 格式串字面匹配 / 负向不匹配）；C++ 侧新增 lambda、向上转型等回归 |
 
 ---
 

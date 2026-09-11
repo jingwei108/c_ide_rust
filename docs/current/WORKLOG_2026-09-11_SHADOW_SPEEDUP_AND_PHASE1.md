@@ -1,7 +1,7 @@
 # 工作记录：Shadow 提速 + Phase 1 三项收口（2026-09-11）
 
 > 范围：本轮四项工作 —— ①Shadow 验证提速（方案 A/B + release DLL 陈旧检测）②`cide_set_quarantine_budget` ③StepPayload schema v0.1 文档化 ④`cide_cli serve` JSON-lines 会话模式。
-> 状态：**代码与验证全部完成，未提交**（按用户要求「不提交」）。
+> 状态：**代码与验证全部完成**。~~未提交~~（记录时按用户要求「不提交」）；现已随 2026-09-11 后续提交合入（对应 [`CHANGELOG.md`](../../CHANGELOG.md) [Unreleased] 的 Shadow 提速 / Phase 1 出口 / schema / 隔离预算条目）。
 > 关联文档：[`CHANGELOG.md`](../../CHANGELOG.md) [Unreleased]、[`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)、[`CIDE_CLI.md`](CIDE_CLI.md) §6、[`CIDE_HEAP_QUARANTINE_DECISION.md`](CIDE_HEAP_QUARANTINE_DECISION.md) §6、主计划 §6 实现进度。
 
 ---

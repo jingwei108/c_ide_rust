@@ -1,6 +1,8 @@
 # Cide 模板系统规范与提示规划
 
-> 本文档面向模板维护者与前端开发者，定义模板目录结构、占位符语法、测试防线及未来改进方向。
+> 本文档面向**模板维护者**，定义模板目录结构、占位符语法、生成用例防线及未来改进方向。模板的展示形态（模板栏、参数对话框、教程面板、可视化组件）已随 2026-09-11 前端切割移交社区前端，本文档只描述本仓库（纯后端）可维护的部分。
+>
+> **最后核对日期**：2026-09-11（修订：移除 `CideFlutter/`（历史资产，已迁出）、`sync_templates.py`（历史资产，已迁出）、`test_templates.py`（历史资产，已迁出）、`index.json`、Dart 测试相关引用；如实补记"生成器脚本已消失、83 个生成用例为静态留存"缺口）
 
 ## 1. 目录结构
 
@@ -14,7 +16,9 @@ templates/
     source.cpp    # C++ 模板源码（二选一）
 ```
 
-`source.c` 与 `source.cpp` 只能存在一个，由 `sync_templates.py` 自动识别并写入 `index.json` 的 `ext` 字段。
+`source.c` 与 `source.cpp` 只能存在一个。**当前仓库已无自动识别脚本**：原 `scripts/sync_templates.py`（历史资产，已迁出）负责识别扩展名并写入 `index.json` 的 `ext` 字段，该脚本与 `index.json` 产物均已随 2026-09-11 前端切割移除，现在只能由维护者人工遵守并人工核对（见 §4）。
+
+> 实测（2026-09-11）：`templates/` 下 88 个模板目录 = 82 个 `source.c` + 6 个 `source.cpp`；`native/tests/cases_template_generated/` 下 83 个文件 = 82 个 `.c` + 1 个 `E2E_FAILURES.md`。
 
 ## 2. meta.yaml 字段
 
@@ -53,57 +57,79 @@ int n = /*__PARAM_n__*/ 5;
 - 占位符后的第一个非空标记为默认值。
 - 当前支持的默认值字符集：`[^\s\[\]();,]+`，可覆盖数组大小、变量初始化、函数参数等场景。
 
-## 4. 同步机制
+## 4. 生成用例链路（现状）
 
-运行 `python scripts/sync_templates.py` 会：
+### 4.1 既有链路（仍然有效）
 
-1. 扫描 `templates/` 下所有模板。
-2. 用默认参数渲染生成 `native/tests/cases_template_generated/<key>_default.c`。
-3. 用 Clang 编译运行生成 golden `.out`（仅 C 模板）。
-4. 生成/更新 `CideFlutter/assets/templates/index.json`。
-5. 复制 `source.c/source.cpp` 到 `CideFlutter/assets/templates/<key>.c/.cpp`。
+```
+templates/<key>/source.c                     模板源（合法 C，人类维护）
+        ↓  历史上由 scripts/sync_templates.py 用默认参数渲染；该脚本已删（历史资产，已迁出；见 4.2）
+native/tests/cases_template_generated/<key>_default.c     静态留存 82 个 .c
+        ↓
+├─ 防线 1 Shadow Verification：用例目录由 shadow_verify.py 的 load_case_files() 扫描
+│    （src_dir = "template"，Golden 来自 Clang 实时输出）
+│    python native/tests/shadow_verification/shadow_verify.py
+└─ Rust E2E：native/tests/cide_e2e.rs 的模板用例，断言
+     native/tests/cases_golden/<key>_default.out（Clang 生成并锁定，共 82 个 .out）
+```
 
-**每次修改模板源码或 meta.yaml 后，必须重新运行 `sync_templates.py`**。
+### 4.2 ⚠️ 已知缺口：生成器脚本已消失，83 个生成用例为静态留存
+
+- 唯一的生成器脚本 `scripts/sync_templates.py` 已随 2026-09-11 前端切割**从仓库移除**（历史资产，已迁出）。它原本承担四件事：渲染 `/*__PARAM_x__*/` → `cases_template_generated/*.c`；用 Clang 生成 `cases_golden/*.out`；生成 `CideFlutter/assets/templates/index.json`；把模板源码拷贝进 Flutter assets。静态一致性校验脚本 `scripts/test_templates.py` 同样已不存在（历史资产，已迁出）。
+- 因此 `native/tests/cases_template_generated/` 里的 83 个文件（82 个 `.c` + `E2E_FAILURES.md`）是切割前的**静态留存**，不再是"每次改模板后重新生成"的产物。
+- 直接后果：**修改 `templates/<key>/` 不会自动反映到防线用例**。模板源与生成用例之间已无自动化闭环，二者可能静默漂移；Golden `.out` 与模板源码也可能不再对应。
+- 目前仍在读 `native/tests/cases_template_generated/` 的只有三处：`native/tests/cide_e2e.rs`、`native/tests/shadow_verification/shadow_verify.py`、`scripts/extract_shadow_cases.py`。**仓库中没有任何脚本读取 `templates/` 源目录**——即模板源当前只是"资产源 + 人类可读参考"，不参与任何自动防线。
+- 重新实现渲染/同步脚本（恢复后端闭环）是一项**尚未排期的缺口**，本文档如实记录，不粉饰。
+
+### 4.3 缺口期的人工流程（临时约定）
+
+1. 修改 `templates/<key>/source.c`（或 `source.cpp`）与 `meta.yaml`。
+2. 直接用 Clang 编译运行模板源确认合法、输出稳定（模板本身即合法 C/C++，这是本设计的关键红利）。
+3. **人工**同步 `native/tests/cases_template_generated/<key>_default.c`：用默认参数替换 `/*__PARAM_x__*/` 占位符，并在首行补 `// @category: ...` 标记。
+4. 用 Clang 重新生成 `native/tests/cases_golden/<key>_default.out`，人工 Review 后提交锁定。
+5. 在 `native/` 目录下跑 `cargo test --test cide_e2e`，并跑一次防线 1（见 §5.3），确认没有新增差异。
+6. 若确有不一致必须记为已知失败，同步 `native/tests/cide_e2e.rs` 的 `KNOWN_TEMPLATE_FAILURES` 常量与 `native/tests/E2E_FAILURES.md`（CI 双向对账要求两者一致）。
 
 ## 5. 测试防线
 
-### 5.1 静态一致性测试
+### 5.1 静态一致性核对（当前无自动化脚本）
 
-```bash
-python scripts/test_templates.py
-```
+原命令 `python scripts/test_templates.py` **已失效**（脚本已随前端切割删除，不在仓库中；历史资产，已迁出）。缺口期只能人工核对下列条目：
 
-校验内容：
-- 每个模板目录包含 `meta.yaml` 和 `source.c/source.cpp`。
+- 每个模板目录包含 `meta.yaml` 和 `source.c`/`source.cpp` 之一。（2026-09-11 实测：88 个目录、88 个 `meta.yaml`，此项无缺）
 - `meta.yaml` 中 `key/name/category` 存在且 `key` 与目录名一致。
-- `meta.yaml` 中声明的 params 与源码中的占位符一一对应。
+- `meta.yaml` 中声明的 params 与源码中的占位符一一对应（⚠️ 2026-09-11 实测：现存 **88 个模板的 `params:` 全部为空**，而占位符仍散落在 `source.c` 中——即这条校验在当前数据上已失去约束力，须逐个人工比对）。
 - 每个 param 都有 `default` 值。
-- `CideFlutter/assets/templates/index.json` 与 `templates/` 同步。
-- assets 中源码文件与源码目录内容一致。
+- `native/tests/cases_template_generated/<key>_default.c` 与模板源保持同步（**无法自动校验**，见 §4.2）。
+- `native/tests/cases_golden/<key>_default.out` 与生成用例一一对应。
 
-### 5.2 Dart 单元/Widget 测试
+> **缺口记录**：以上第 5、6 条在切割前由 `sync_templates.py` + `test_templates.py` 自动保证（两者均为历史资产，已迁出），现在完全依赖人工纪律。这是已知缺口，不是"已完成"状态。
 
-```bash
-cd CideFlutter
-flutter test test/models/template_loader_test.dart
-flutter test test/widgets/template_bar_test.dart
-flutter test test/widgets/ide_template_bar_test.dart
-flutter test test/providers/ide_notifier_test.dart
-```
+### 5.2 出口冒烟（替代原 Dart 单元/Widget 测试）
 
-覆盖点：
-- `TemplateLoader` 正确加载 C/C++ 模板及 `ext` 字段。
-- 源码缺失时抛出 `TemplateLoadException`。
-- `CodeTemplate.buildCode` 替换占位符。
-- `completeTutorial` 根据模板扩展名切换 `main.c` / `main.cpp`。
+原 Dart 测试（`flutter test test/models/template_loader_test.dart`、`test/widgets/template_bar_test.dart`、`test/widgets/ide_template_bar_test.dart`、`test/providers/ide_notifier_test.dart`，历史资产，已迁出）已随前端切割整体移出仓库（`CideFlutter/` 见标签 `before-frontend-split`）。模板相关行为现在只能通过三个后端出口验证：
 
-### 5.3 Shadow Verification
+| 出口 | 验证方式 |
+|------|---------|
+| C ABI / `cide_cli` | `cide_cli run native/tests/cases_template_generated/<key>_default.c`（或 `step` / `unified`）与 `cases_golden/<key>_default.out` 比对 |
+| wasm32 | 由社区前端接入后自行冒烟；本仓库不含 wasm 侧用例驱动 |
+| `cide_cli serve` | JSON-lines 会话帧冒烟：`python scripts/serve_smoke.py` |
 
-模板生成的 `cases_template_generated/<key>_default.c` 会被纳入 Shadow Verification，Golden 来自 Clang。
+原 Dart 测试覆盖的语义点（模板加载、`ext` 字段、占位符替换、教程模式下切 `main.c`/`main.cpp`）现在属于**社区前端职责**，本仓库不再提供对应测试。
 
-## 6. 本次修复的诚实记录
+### 5.3 Shadow Verification（防线 1）与 Rust E2E
 
-### 6.1 C++ 模板无法加载
+模板生成的 `native/tests/cases_template_generated/<key>_default.c` 会被纳入 Shadow Verification，Golden 来自 Clang 实时输出（不能来自 Cide 自己）。
+
+- 驱动：`python native/tests/shadow_verification/shadow_verify.py`（`--jobs N` 并行，`--refresh-clang` 强制全量重算，`--rebuild` 在 release DLL 陈旧时重建）
+- Rust E2E：`native/tests/cide_e2e.rs` 以 `native/tests/cases_golden/<key>_default.out` 为锁定 Golden 做断言
+- 已知失败必须双向登记：`KNOWN_TEMPLATE_FAILURES`（`cide_e2e.rs`）与 `native/tests/E2E_FAILURES.md`，任一防线转绿需同步移除（CI 硬检查）
+
+## 6. 历史修复记录（6.1~6.3 已归档，6.4 仍有效）
+
+> **归档说明（2026-09-11）**：§6.1~§6.3 记录的是**已被移出仓库的前端代码**（`CideFlutter/` 下的 `TemplateLoader`、`IdeState`、`ide_screen.dart`、`ExecutionControlPanel`）的缺陷与修复过程，作为历史资产保留在本文档，不再具备可执行性；相关代码见标签 `before-frontend-split`。§6.4 记录的是模板源自身的缺陷，与前端无关，**仍然有效**。
+
+### 6.1 C++ 模板无法加载（历史归档 · 前端已迁出）
 **现象**：`CideFlutter/assets/templates/` 中存在 `cpp_*.cpp`，但 `TemplateLoader.load()` 只尝试加载 `.c`，导致 C++ 模板被静默跳过。
 
 **修复**：
@@ -111,7 +137,7 @@ flutter test test/providers/ide_notifier_test.dart
 - `CodeTemplate` 增加 `ext` 字段。
 - `completeTutorial` 根据 `ext` 将当前文件切换为 `main.c` 或 `main.cpp`，确保 Rust 后端按正确语言模式编译。
 
-### 6.2 教程无法退出 / 运行状态混乱
+### 6.2 教程无法退出 / 运行状态混乱（历史归档 · 前端已迁出）
 **现象**：点击模板进入教程后，点击“跳过”或“运行代码”，底部教程面板理论上应消失，但顶部的 `ExecutionControlPanel` 仍显示上一段运行的进度条/覆盖率，造成“还在模板里”的错觉。
 
 **根因**：
@@ -121,9 +147,11 @@ flutter test test/providers/ide_notifier_test.dart
 **修复**：
 - `IdeState.copyWith` 增加 `clearActiveTutorial` 标志。
 - `completeTutorial` 使用 `clearActiveTutorial: true` 正确退出教程。
-- `ide_screen.dart` 在 `activeTutorial != null` 时隐藏 `ExecutionControlPanel`。
+- `ide_screen.dart` 在 `activeTutorial != null` 时隐藏 `ExecutionControlPanel`。（上述 Dart 文件均为历史资产，已迁出）
 
-### 6.3 覆盖率显示超过 100%
+### 6.3 覆盖率显示超过 100%（历史归档 · 后端修复部分仍有效）
+
+> 本条前半段的**前端**绕过逻辑（`ExecutionControlPanel`）已随前端迁出；后半段的**后端修复**（`SourceLoc.file_id` 过滤 heatmap 行号）仍在仓库中生效，是本条最有价值的部分。
 **现象**：执行控制面板显示“覆盖率 633.3%”。
 
 **根因**：VM 执行热力图会记录标准库/预编译字节码的行号，导致 `lineCounts` 中出现远超当前源码行号的条目。
@@ -146,9 +174,11 @@ flutter test test/providers/ide_notifier_test.dart
 
 ## 7. 未来改进规划
 
-### 7.1 模板提示增强（P1）
+### 7.1 模板提示增强（P1 · 已移交社区前端）
+> 以下三项均属**社区前端职责**，本仓库不再实现；后端只保证模板目录结构、`meta.yaml` 与占位符语法稳定可用。
+
 - **参数输入提示**：在 `TemplateParam` 中增加 `hint` 字段，参数对话框展示填写示例与取值范围。
-- **模板选择提示**：`TemplateBar` 支持长按/悬停显示模板简短说明。
+- **模板选择提示**：模板栏（`TemplateBar`）支持长按/悬停显示模板简短说明。
 - **搜索与分类**：模板数量增加后，增加分类下拉与关键字搜索。
 
 ### 7.2 占位符能力扩展（P2）
@@ -156,24 +186,36 @@ flutter test test/providers/ide_notifier_test.dart
 - 支持同一参数在源码中出现多次（当前已支持，正则会全部替换）。
 - 支持条件占位符，如 `/*__PARAM_lang__==cpp*/ ... /*__PARAM_END__*/`。
 
-### 7.3 教程系统升级（P2）
-- `meta.yaml` 支持 `explanations` 完整写入，不再依赖 Dart 硬编码。
-- 教程步骤支持高亮多行与变量提示。
-- 教程结束时自动打开 Output 面板，避免学生看不到运行结果。
+### 7.3 教程系统升级（P2 · 已移交社区前端）
+> 教程渲染（步骤高亮、变量提示、面板切换）属**社区前端职责**。本仓库只负责在协议载荷中提供语义标注字段（见 `docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md` 的 `semantic_label` / `algorithm_step`）。
 
-### 7.4 后端热图过滤（P3）
-- 当前覆盖率过滤在前端完成；长期应在 Rust VM 记录 heatmap 时区分用户代码与标准库行号，只记录用户源码范围。
+- `meta.yaml` 支持 `explanations` 完整写入，不再依赖前端硬编码。
+- 教程步骤支持高亮多行与变量提示。
+- 教程结束时自动展示运行输出，避免学生看不到运行结果。
+
+### 7.4 后端热图过滤（P3 · ✅ 已完成后端部分）
+- 后端已完成：`cide_shared::SourceLoc` 的 `file_id` 字段 + Bytecode Libc 加载器把 libc 指令标记为外部文件 + VM 记录 heatmap 时只统计 `file_id == 0 && line > 0`（见 §6.3）。
+- 协议侧口径：`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md` 的 `heatmap_line` / `heatmap_count` 已是纯用户源码行号，消费方不需要再自行过滤。
 
 ## 8. 相关命令速查
 
 ```bash
-# 校验模板静态一致性
-python scripts/test_templates.py
+# 防线 1：Shadow Verification（含模板生成用例，Golden 来自 Clang）
+python native/tests/shadow_verification/shadow_verify.py --jobs 8
 
-# 同步模板到 Flutter assets 并生成 golden
-python scripts/sync_templates.py
+# Rust E2E：模板用例对 cases_golden/*.out 断言（工作目录 native/）
+cd native && cargo test --test cide_e2e
 
-# 运行模板相关 Dart 测试
-cd CideFlutter
-flutter test test/models/template_loader_test.dart test/widgets/ide_template_bar_test.dart test/providers/ide_notifier_test.dart
+# 单条模板用例人工冒烟（三出口之一：CLI）
+cd native && cargo run --release --bin cide_cli -- run tests/cases_template_generated/<key>_default.c
+
+# serve 出口冒烟
+python scripts/serve_smoke.py
+
+# ⚠️ 以下历史命令已失效（脚本随前端切割删除，历史资产，已迁出）：
+#   python scripts/test_templates.py     # 校验模板静态一致性
+#   python scripts/sync_templates.py     # 渲染模板 + 生成 golden + 生成 Flutter index.json
+#   cd CideFlutter && flutter test ...   # Dart 单元/Widget 测试
 ```
+
+> 模板维护的当前人工流程见 §4.3；生成器脚本缺失缺口见 §4.2。

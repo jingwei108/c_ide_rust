@@ -1,10 +1,9 @@
-# C IDE 构建指南
+# Cide 构建指南
 
-> [English Version](BUILD_EN.md)
-
-本文档说明项目的构建流程、脚本用法和环境要求。
-
-> **迁移说明**：前端已从 .NET MAUI 迁移至 Flutter。旧版 MAUI 构建文档见 [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md)（已归档）。
+> 最后核对：2026-09-11（前端切割后重写为纯后端视角）
+>
+> 历史前端构建（Flutter / Android / iOS / web 部署）已随 2026-09-11 前端切割迁出本仓库，
+> 对应脚本见标签 `before-frontend-split`；本节只描述**后端引擎与三个出口**的构建。
 
 ---
 
@@ -12,282 +11,198 @@
 
 | 组件 | 版本 | 用途 |
 |:---|:---|:---|
-| Rust | 1.95.0+ | Native 后端（`cide_native`） |
-| Cargo | 随 Rust 安装 | Rust 包管理 |
-| cargo-ndk | 最新 | Android `.so` 交叉编译 |
-| Flutter SDK | 3.24+ | 跨平台前端 |
-| Android NDK | 27+ | Android Native 后端交叉编译（可选） |
-| adb | 随 Android SDK | Android 设备安装调试（可选） |
+| Rust | 1.95.0+ | 引擎核心与三出口（必需） |
+| Cargo | 随 Rust 安装 | Rust 包管理（必需） |
+| Python | 3.8+ | 测试防线与工具脚本（跑防线时需要） |
+| Clang / Clang++ | 任意近期版本 | Shadow Verification 的 Golden 生成（防线 1 硬门禁，缺失即 fail fast） |
+| wasm32 target | `rustup target add wasm32-unknown-unknown` | 出口 2 的 wasm 构建（可选） |
 
-### 安装 cargo-ndk
-
-```powershell
-cargo install cargo-ndk
-```
-
-### Android NDK 环境变量
-
-```powershell
-# 临时设置（当前会话）
-$env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
-
-# 永久设置
-[Environment]::SetEnvironmentVariable("ANDROID_NDK_HOME", "C:\Your\Path\To\ndk\27.0.1", "User")
-```
-
----
-
-## 脚本清单
-
-| 脚本 | 功能 | 适用场景 |
-|:---|:---|:---|
-| [`scripts/build_flutter.py`](../../scripts/build_flutter.py) | 构建 Native 后端 + Flutter 前端 | 日常开发编译 |
-| [`scripts/build_release.py`](../../scripts/build_release.py) | Release 构建（Desktop + Android） | 发布打包 |
-| [`scripts/test_mobile.py`](../../scripts/test_mobile.py) | 移动端完整流水线：构建 → 安装 → 启动 → 日志 | Flutter Android 真机/模拟器测试 |
-
-> 旧版 MAUI 构建脚本已归档至 [`docs/archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md`](../archive/ARCHIVE_MAUI_BUILD_SCRIPTS.md)。
-
----
-
-## `scripts/build_flutter.py` — 日常构建
-
-### 功能
-
-1. **Native 后端（Rust）**：`cargo build [--release]` 编译 `cide_native.dll` / `.so`
-2. **桌面端前端（Flutter Windows）**：`flutter build windows` + 自动复制 DLL
-3. **移动端前端（Flutter Android）**：`flutter build apk`（自动集成 `.so`）
-4. **FRB 代码生成**：必要时运行 `flutter_rust_bridge_codegen generate`
-
-### 参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|:---|:---|:---|:---|
-| `-c`, `--configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
-| `-t`, `--target` | `Desktop` / `Android` / `All` | `Desktop` | 构建目标平台 |
-| `--clean` | flag | 关闭 | 清理所有构建产物 |
-| `--run` | flag | 关闭 | 构建完成后运行桌面端应用（仅 Desktop） |
-| `--offline` | flag | 关闭 | 离线构建（不下载 pub 依赖） |
-
-### 使用示例
+快速检查：
 
 ```bash
-# 桌面端 Debug 构建（默认）
-python scripts/build_flutter.py
-
-# 桌面端 Release 构建，构建完成后直接运行
-python scripts/build_flutter.py -c Release --run
-
-# 清理并重新构建桌面端
-python scripts/build_flutter.py --clean -t Desktop
-
-# Android 端完整构建（NDK .so + APK）
-python scripts/build_flutter.py -t Android
-
-# 离线构建（无网络环境）
-python scripts/build_flutter.py --offline
+rustc --version                 # >= 1.95.0
+clang --version                 # 需要能直接调用
+python --version                # >= 3.8
 ```
 
 ---
 
-## `scripts/build_release.py` — 发布构建
+## 构建
 
-### 功能
-
-- **Desktop**：Rust Release + Flutter Windows Release
-- **Android**：Rust Release NDK 交叉编译 + Flutter APK Release
-
-### 参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|:---|:---|:---|:---|
-| `-t`, `--target` | `Desktop` / `Android` / `All` | `All` | 构建目标平台 |
-| `--clean` | flag | 关闭 | 清理所有构建产物 |
-
-### 使用示例
+### 1. 引擎核心（cdylib / staticlib / rlib）
 
 ```bash
-# 构建桌面端和 Android 端 Release
-python scripts/build_release.py
-
-# 仅构建桌面端
-python scripts/build_release.py -t Desktop
-
-# 清理后构建
-python scripts/build_release.py --clean
+cd native
+cargo build                     # Debug
+cargo build --release           # Release
 ```
 
----
+产物：
 
-## `scripts/test_mobile.py` — 移动端测试流水线
-
-### 功能
-
-专注于 **Flutter Android** 真机/模拟器的快速测试循环：
-
-```
-Native .so 编译 → Flutter APK 打包 → 设备安装 → 应用启动 → Logcat 日志抓取
-```
-
-### 参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|:---|:---|:---|:---|
-| `-c`, `--configuration` | `Debug` / `Release` | `Debug` | 构建配置 |
-| `--skip-native-build` | flag | 关闭 | 跳过 NDK `.so` 编译，仅重新打包 APK |
-| `--install` | flag | 关闭 | APK 构建完成后自动安装到设备 |
-| `--run` | flag | 关闭 | 安装后自动启动应用 |
-| `--logcat` | flag | 关闭 | 启动后实时抓取应用日志（`Ctrl+C` 停止） |
-
-### 使用示例
-
-```bash
-# 仅构建 APK（含 Native .so）
-python scripts/test_mobile.py
-
-# 快速重新打包（前端代码改动后，跳过 .so 编译）
-python scripts/test_mobile.py --skip-native-build --install --run
-
-# 构建 + 安装 + 启动 + 实时日志（完整测试流水线）
-python scripts/test_mobile.py --install --run --logcat
-
-# Release 模式构建并安装
-python scripts/test_mobile.py -c Release --install --run
-```
-
-### 自动检测
-
-| 组件 | 检测逻辑 |
+| 平台 | 路径 |
 |:---|:---|
-| Android NDK | 先查 `ANDROID_NDK_HOME` / `ANDROID_NDK_ROOT`，再探测 VS 默认路径 |
-| adb | 先查 PATH 中的 `adb`，再探测 VS Android SDK `platform-tools` |
+| Windows | `native/target/release/cide_native.dll` |
+| Linux | `native/target/release/libcide_native.so` |
+| macOS | `native/target/release/libcide_native.dylib` |
 
-VS 默认探测路径：
+> 这是出口 1（C ABI）的物理形态，头文件在 `native/include/cide_capi.h`；
+> ABI 版本通过 `cide_abi_version()` 查询（当前 `1.1.0`）。
+
+### 2. CLI 调试工具（出口 3 的入口之一）
+
+```bash
+cd native
+cargo build --release --bin cide_cli
 ```
-D:\Program Files (x86)\Microsoft Visual Studio\Shared\Android\AndroidNDK\android-ndk-r27c
-D:\Program Files (x86)\Microsoft Visual Studio\Shared\Android\android-sdk\platform-tools\adb.exe
+
+产物：`native/target/release/cide_cli.exe`（Windows）/ `cide_cli`（Linux/macOS）。
+命令手册见 [`CIDE_CLI.md`](CIDE_CLI.md)。
+
+### 3. wasm32 出口（出口 2）
+
+```bash
+rustup target add wasm32-unknown-unknown
+cd native
+cargo build --target wasm32-unknown-unknown --release
 ```
 
-### 设备连接稳定性
+产物：`native/target/wasm32-unknown-unknown/release/cide_native.wasm`（**约 3.75 MB**，2026-09-11 冒烟实测：零代码修改即可构建，Node 下 C API 全链路 + E3070 教学诊断均工作）。
 
-脚本内置 **3 次自动重试** 机制：
-1. 检测到 `offline` 设备 → 自动 `adb kill-server` / `start-server` → 重试
-2. 未检测到设备 → 等待 3 秒 → 重试
-3. 第 3 次仍失败 → 报错退出
+体积优化（可选、后置）：`wasm-opt -O --strip-debug`、`opt-level = "z"`、LTO 等；教学场景一次加载后缓存，体积非首要矛盾。
+
+> 已知差异：wasm 下统一模式入口没有 `catch_unwind` 保护，panic 走 abort（详见 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §7）。
 
 ---
 
-## 手动构建
+## 测试与静态检查
 
-如果脚本因环境问题无法使用，可手动执行：
-
-### 桌面端
-
-```powershell
-# 1. Native 后端（Rust）
+```bash
 cd native
-cargo build --release          # Release
-cargo build                    # Debug
-
-# DLL 输出路径
-# Release: native/target/release/cide_native.dll
-# Debug:   native/target/debug/cide_native.dll
-
-# 2. 复制 DLL 到 Flutter 项目
-Copy-Item native/target/release/cide_native.dll CideFlutter/rust_builder/windows/ -Force
-
-# 3. 前端（Flutter）
-cd CideFlutter
-flutter pub get --offline
-flutter build windows --debug
-
-# 4. 运行
-flutter run -d windows
+cargo test --workspace --all-features
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo fmt --check
 ```
 
-### Android 端
+或使用封装的 lint 脚本（clippy + fmt + TODO/FIXME 统计）：
 
-```powershell
-# 1. Native 后端（Rust NDK 交叉编译）
-cd native
-
-# arm64-v8a
-cargo ndk -t aarch64-linux-android -o target/android build --release
-
-# armeabi-v7a
-cargo ndk -t armv7-linux-androideabi -o target/android build --release
-
-# .so 输出路径
-# native/target/android/arm64-v8a/libcide_native.so
-# native/target/android/armeabi-v7a/libcide_native.so
-
-# 2. 前端（Flutter）
-cd CideFlutter
-flutter pub get --offline
-flutter build apk --release
-
-# 3. 安装并启动
-adb install -r "build/app/outputs/flutter-apk/app-release.apk"
-adb shell monkey -p com.cide.app -c android.intent.category.LAUNCHER 1
-
-# 4. 查看日志
-adb logcat --pid=$(adb shell pidof com.cide.app)
+```bash
+bash scripts/lint_check.sh
 ```
 
-### 运行测试
+基线（2026-09-11 实测）：`845 passed / 0 failed`（60 个测试套件），clippy 0 warning。
+
+---
+
+## 测试防线
+
+### 防线 1：Shadow Verification（C，与 Clang 对照 stdout）
+
+```bash
+python native/tests/shadow_verification/shadow_verify.py --jobs 8
+```
+
+| 选项 | 说明 |
+|:---|:---|
+| `--jobs N` | 并行度；`0` = 自动，`1` = 串行 |
+| `--refresh-clang` | 强制全量重算 Clang Golden（CI 夜间使用） |
+| `--rebuild` | release DLL 比引擎源码旧时自动重建 |
+
+**门禁语义（自 2026-09-06 起为 CI 硬门禁）**：Clang 预检缺失 → fail fast（exit 2）；存在非预期差异（compile_gap / runtime_gap / output_gap）→ exit 1；match / known_issue / cide_better 视为通过。
+
+**提速设施**：Clang Golden 缓存（key = 源码 + stdin + clang 版本 + 参数 + 预设文件）+ 并行执行。632 用例实测 **103.6s → 1.1s（缓存命中）/ 20.4s（冷启动全量）**。缓存与 worker 目录为 `.clang_cache/` / `.shadow_tmp/`（已 gitignore）——**改动用例后无需手动清缓存**（源码哈希变化自动失效）。
+
+**标准输入**：用例可自带同名 `.in` 文件，Clang 与 Cide 喂**同一份字节**（缓存 key 纳入真实 stdin）。
+
+> ⚠️ 并行化对顺序敏感：用例加载与分片分发必须确定性（`sorted(glob)` + 按 name 对账），否则会出现"结果错配但门禁仍绿"的静默失败。
+
+### 防线 1'：Shadow Verification（C++）
+
+```bash
+python scripts/shadow_verify_cpp.py
+```
+
+### 出口 3 冒烟：serve 协议
+
+```bash
+python scripts/serve_smoke.py
+```
+
+覆盖 id 关联 / 帧同构 / 会话生命周期 / 配置一致性的 26 项断言（CI 已纳入）。
+
+### 防线 5：CI 三层一致性检查
+
+```bash
+python scripts/ci_three_tier_check.py
+```
+
+对账 `*_FAILURES.md` 与真实测试结果：已知失败全部转绿 → CI 失败（提示更新文档）；失败记录文件缺失 → CI 失败；测试失败但文档无记录 → WARN。
+
+### 工程健康度看板
+
+```bash
+python scripts/engineering_health.py     # 生成 reports/engineering_health.md
+```
+
+统计超大文件、TODO/FIXME/HACK、unwrap/expect、活跃失败记录、Shadow 匹配率。
+
+### 内存安全预检（可选）
 
 ```powershell
-# Rust 后端测试
-cd native
-cargo test
-cargo clippy
-
-# Flutter 前端测试
-cd CideFlutter
-flutter test
+pwsh scripts/check-memory-safety.ps1
 ```
+
+扫描 Rust 源码中的常见内存安全反模式；可作为 git pre-commit 钩子安装。
+
+---
+
+## 脚本清单（`scripts/`）
+
+| 脚本 | 功能 |
+|:---|:---|
+| [`shadow_verify_cpp.py`](../../scripts/shadow_verify_cpp.py) | C++ Shadow Verification 驱动（与 Clang++ 对照） |
+| [`serve_smoke.py`](../../scripts/serve_smoke.py) | `cide_cli serve` JSON-lines 协议冒烟（26 项断言） |
+| [`ci_three_tier_check.py`](../../scripts/ci_three_tier_check.py) | CI 三层一致性检查（失败记录 ↔ 测试结果双向对账） |
+| [`engineering_health.py`](../../scripts/engineering_health.py) | 工程健康度看板 |
+| [`precompile_bytecode_libc.py`](../../scripts/precompile_bytecode_libc.py) | Bytecode Libc 构建期预编译（生成固定索引段数据） |
+| [`extract_cpp_builtin_layout.py`](../../scripts/extract_cpp_builtin_layout.py) | 从 `.cpp` 接口声明提取内置 C++ 容器布局 JSON |
+| [`extract_shadow_cases.py`](../../scripts/extract_shadow_cases.py) | Shadow 用例提取 |
+| [`unified_perf_baseline.py`](../../scripts/unified_perf_baseline.py) | 统一模式（时间旅行）性能基线 |
+| [`check-memory-safety.ps1`](../../scripts/check-memory-safety.ps1) | 内存安全静态预检 |
+| [`lint_check.sh`](../../scripts/lint_check.sh) | clippy + fmt + TODO 统计封装 |
 
 ---
 
 ## 常见问题
 
-### Q1: `cargo ndk` 命令未找到
+### Q1: Shadow Verification 报 "clang not found"
 
-```powershell
-cargo install cargo-ndk
+防线 1 以 Clang 为唯一 Golden 来源，**缺失时故意 fail fast（exit 2）而不是静默跳过**。
+安装 LLVM/Clang 并确保 `clang`（C++ 用例还需 `clang++`）在 PATH 中。
+
+### Q2: wasm 构建报 "target may not be installed"
+
+```bash
+rustup target add wasm32-unknown-unknown
 ```
 
-### Q2: Android 构建报错 "ANDROID_NDK_HOME not set"
+### Q3: 构建失败提示 DLL 被占用（Windows）
 
-```powershell
-$env:ANDROID_NDK_HOME = "C:\Your\Path\To\ndk\27.0.1"
+`cide_native.dll` 正被 `cide_cli` 或外部消费者加载。关闭对应进程后重新构建。
+
+### Q4: 改了测试用例但 Shadow 结果没变
+
+缓存按源码哈希自动失效，正常无需干预；若怀疑缓存异常，用 `--refresh-clang` 强制全量重算。
+
+### Q5: 前端（Flutter / Android / iOS / Web）怎么构建？
+
+前端已于 2026-09-11 整体迁出本仓库，本仓库只做后端。
+切割前最后完整状态见标签 `before-frontend-split`：
+
+```bash
+git checkout before-frontend-split -- CideFlutter
 ```
 
-或通过 Visual Studio 安装器添加 "Android 开发" 工作负载，脚本会自动探测默认路径。
+### Q6: `cargo test` 与 CI 结果不一致
 
-### Q3: `adb devices` 检测不到设备
-
-```powershell
-adb devices
-```
-
-| 输出 | 状态 | 解决 |
-|:---|:---|:---|
-| `xxxxxxxx    device` | ✅ 正常 | 可直接运行脚本 |
-| `xxxxxxxx    offline` | ⚠️ 掉线 | `adb kill-server && adb start-server`，保持手机亮屏 |
-| `xxxxxxxx    unauthorized` | ❌ 未授权 | 手机屏幕点击"允许 USB 调试" |
-| 空白 | ❌ 未识别 | 换数据线、换 USB 口、开启开发者选项和 USB 调试 |
-
-### Q4: 安装 APK 时提示"禁止安装未知来源应用"
-
-各厂商设置路径：
-- **小米/Redmi**：设置 → 隐私保护 → 特殊权限设置 → 安装未知应用
-- **华为/荣耀**：设置 → 安全 → 更多安全设置 → 外部来源应用下载
-- **OPPO/一加/realme**：设置 → 密码与安全 → 系统安全 → 外部来源应用
-- **vivo/iQOO**：设置 → 安全与隐私 → 更多安全设置 → 安装未知应用
-
-### Q5: Flutter 构建报错 "Unable to find suitable Visual Studio"
-
-确保安装了 "Desktop development with C++" 工作负载，或设置：
-```powershell
-$env:FLUTTER_ROOT = "C:\Your\Path\To\flutter"
-```
+CI 在 Push/PR 时跑全部防线并执行一致性检查；本地请用同一条命令：
+`cargo test --workspace --all-features`，并确认工作目录为 `native/`。

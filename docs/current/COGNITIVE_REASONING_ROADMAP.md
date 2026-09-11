@@ -2,7 +2,10 @@
 
 > **范围**：P0 ~ P3，排除自然语言对话层（P4）  
 > **目标**：将系统从"被动报错"升级为"主动理解代码意图、推断错误根因、关联知识概念"的认知教学助手  
-> **文档日期**：2026-06-04
+> **文档日期**：2026-06-04  
+> **最后核对日期**：2026-09-11  
+> **实现状态（2026-09-11 核对）**：**P0 / P1 / P2 / P3 全部已实现**，分别对应 `AGENTS.md` 的 **Phase 20 / 21 / 22 / 23**（各章开头附状态行）  
+> **修订说明（2026-09-11）**：去前端化——补 P0~P3 已实现标记与 Phase 对应关系；前端载体（学习路径面板 / 概念图谱视图 / 认知推理状态管理）统一标注"已迁出"；原桥接传输段落改为三出口（capi / wasm32 / `cide_cli serve`）JSON 载荷口径。`文档日期 2026-06-04` 与方案正文保持原样。
 
 ---
 
@@ -17,6 +20,8 @@
 ---
 
 ## P0: 运行时推理层（根因分析）
+
+> **状态（2026-09-11 核对）：✅ 已实现** —— 对应 `AGENTS.md` **Phase 20**：`TraceAnalyzer` 轨迹切片 + 5 类 Trap 根因推断、`RootCauseHint`。
 
 ### 目标
 当程序在统一模式中发生 Trap 或异常时，系统不仅报告表面错误，还能基于最近执行历史推断**根因**，并用一句自然语言解释"为什么会这样"。
@@ -68,7 +73,7 @@ pub enum BoundsRootCause {
 ```
 
 #### 1.2 根因生成器（Root Cause Generator）
-将推断结果映射为结构化解释数据，供 Flutter 前端渲染。
+将推断结果映射为结构化解释数据，供消费方渲染（三出口的 JSON 载荷，任意前端自行渲染；本仓库不再提供前端）。
 
 **数据结构设计**：扩展 `StepPayload`
 ```rust
@@ -106,11 +111,13 @@ pub struct RootCauseHint {
 
 ## P1: 教学推理层（错误模式聚类 + 学习路径）
 
+> **状态（2026-09-11 核对）：✅ 已实现** —— 对应 `AGENTS.md` **Phase 21**：`MisconceptionPattern` 6 种模式检测 + `LearningPath` 推荐引擎（后端 `native/src/diagnostics/misconception_patterns.rs` / `learning_path.rs`）。
+
 ### 目标
 基于学生历史编译/运行数据，识别其**稳定犯错模式**（misconceptions），并推送针对性练习，实现因材施教。
 
 ### 现有基础
-- `LearningProgress`：编译次数、成功率、错误码统计、知识卡片阅读记录
+- `LearningProgress`（**前端载体，已迁出**）：编译次数、成功率、错误码统计、知识卡片阅读记录；后端保留 `native/src/diagnostics/` 的错误码目录与推荐引擎，进度状态现由消费方自行持有
 - 错误码体系：E1xxx（词法）、E2xxx（语法）、E3xxx（语义）、W305x（警告）
 - 16 个代码模板：冒泡/选择/插入/快速/归并/二分/线性查找/链表/栈/二叉树等
 
@@ -179,8 +186,11 @@ pub enum PathStep {
 }
 ```
 
-#### 2.3 Flutter 前端：学习路径面板
-新增 `LearningPathPanel` 组件：
+#### 2.3 前端载体：学习路径面板（**已迁出**）
+
+> **载体说明（2026-09-11）**：本小节的 `LearningPathPanel` 组件属前端载体，已随 2026-09-11 前端切割迁出（历史资产，取回见标签 `before-frontend-split`）。后端交付物是 `LearningPath` / `PathStep` 数据（`native/src/diagnostics/learning_path.rs`），经三出口（capi / wasm32 / `cide_cli serve`）以 JSON 载荷提供，由消费方自行渲染。
+
+原组件设计：
 - 顶部显示当前检测到的误解模式（如"你最近 5 次编译中有 3 次数组越界"）
 - 中部为推荐步骤列表，每步带进度勾选
 - 底部"开始练习"按钮，点击后自动加载对应模板并高亮关键行
@@ -194,11 +204,13 @@ pub enum PathStep {
 
 ## P2: 知识图谱层（概念关联网络）
 
+> **状态（2026-09-11 核对）：✅ 已实现** —— 对应 `AGENTS.md` **Phase 22**：`KnowledgeGraph` 24 概念节点 + 30+ 关系边（后端 `native/src/diagnostics/knowledge_graph.rs`）；图谱视图组件属前端载体，已迁出（见 §3.3）。
+
 ### 目标
 将 C 语言的离散知识点建模为**概念图**，当学生遇到错误或浏览代码时，动态激活相关概念子图，展示知识间的关联。
 
 ### 现有基础
-- 知识卡片系统：`assets/knowledge_cards/` 下的 JSON 资源文件
+- 知识卡片系统：切割前为前端载体（卡片模型 / 卡片项 / 卡片页组件），已随前端切割迁出（历史资产，见标签 `before-frontend-split`）；本仓库保留的是模板 `meta.yaml` 的 `knowledge_nodes` 标注与 `error_catalog.rs` 的错误码解释
 - `error_catalog.rs`：错误码到中文解释的映射
 - 算法检测器：7 种算法的 AST 模式识别
 
@@ -295,8 +307,11 @@ impl KnowledgeGraph {
 }
 ```
 
-#### 3.3 Flutter 前端：概念图谱视图
-新增 `ConceptGraphView` 组件：
+#### 3.3 前端载体：概念图谱视图（**已迁出**）
+
+> **载体说明（2026-09-11）**：本小节的 `ConceptGraphView` 组件属前端载体，已随 2026-09-11 前端切割迁出（历史资产，取回见标签 `before-frontend-split`）。后端交付物是概念节点/边与激活接口（`KnowledgeGraph::activate_from_error` / `activate_from_ast` / `find_prerequisite_path`），由消费方自行渲染。
+
+原组件设计：
 - **力导向图布局**：概念为节点，关联为边，用 `CustomPainter` 或 `graphview` 包绘制
 - **动态高亮**：当前激活的概念显示为亮色，前置依赖为橙色，延伸概念为蓝色
 - **点击展开**：点击节点弹出 BottomSheet，展示概念解释 + 关联知识卡片 + 推荐模板
@@ -306,8 +321,8 @@ impl KnowledgeGraph {
 | 现有系统 | 集成方式 |
 |:---|:---|
 | `error_catalog.rs` | 每个错误码增加 `related_concepts: Vec<String>` 字段 |
-| 知识卡片 JSON | 增加 `concept_id` 字段，建立卡片→概念的反向索引 |
-| `LearningProgress` | 记录"已激活/已阅读"的概念 ID 集合 |
+| 知识卡片（前端载体，已迁出） | 增加 `concept_id` 字段，建立卡片→概念的反向索引；现由模板 `meta.yaml` 的 `knowledge_nodes` 承担概念标注 |
+| `LearningProgress`（前端载体，已迁出） | 记录"已激活/已阅读"的概念 ID 集合（现由消费方自行持有） |
 | `algorithm_detector.rs` | 算法匹配成功后返回 `related_concepts` 列表 |
 
 #### 3.5 预期效果与验证
@@ -318,6 +333,8 @@ impl KnowledgeGraph {
 ---
 
 ## P3: 代码理解层（意图分析 + CFG）
+
+> **状态（2026-09-11 核对）：✅ 已实现** —— 对应 `AGENTS.md` **Phase 23**：`ControlFlowGraph` + `DataFlow` + `IntentInference` 代码意图推断（后端 `native/src/compiler/cfg.rs` / `data_flow.rs` / `intent.rs`）。
 
 ### 目标
 超越 AST 模式匹配，通过控制流图（CFG）和数据流分析，深入理解代码结构特征，提升算法检测准确率和诊断精度。
@@ -477,7 +494,7 @@ P0: 运行时推理（根因分析）
 P1: 教学推理（错误模式聚类）
   │
   ├── 依赖 P0 的 TraceAnalyzer 提供历史数据
-  ├── 复用现有：LearningProgress, 模板库
+  ├── 复用现有：LearningProgress（前端载体，已迁出）, 模板库
   │
   ▼
 P2: 知识图谱（概念网络）
@@ -498,44 +515,44 @@ P3: 代码理解（CFG + 数据流）
 
 | 周次 | 任务 | 产出 |
 |:---|:---|:---|
-| Week 1 | P0：TraceAnalyzer + RootCauseHint | `trace_analyzer.rs` + 前端根因提示组件 |
+| Week 1 | P0：TraceAnalyzer + RootCauseHint | `trace_analyzer`（原 `.rs`，已拆分为子模块）+ 前端根因提示组件 |
 | Week 2 | P1：MisconceptionPattern + LearningPath | `misconception_patterns.rs` + 学习路径面板 |
-| Week 3-4 | P2：KnowledgeGraph 核心 + 概念节点数据 | `knowledge_graph.rs` + 50+ 概念节点 JSON |
-| Week 4-5 | P2：Flutter 概念图谱视图 | `ConceptGraphView` CustomPainter |
+| Week 3-4 | P2：KnowledgeGraph 核心 + 概念节点数据 | `knowledge_graph.rs` + 概念节点/边数据 |
+| Week 4-5 | P2：概念图谱视图（前端载体，已迁出） | `ConceptGraphView` CustomPainter |
 | Week 5-6 | P3：CFG 构建 + 循环识别 | `cfg.rs` + 算法检测 CFG 增强 |
 | Week 6-7 | P3：数据流分析 + 意图推断 | `data_flow.rs` + `intent.rs` |
+
+> **结项核对（2026-09-11）**：上表 P0~P3 均已实现（`AGENTS.md` Phase 20~23），实际落地版本见附录；两处与计划口径的差异如实记录：
+> ① 概念节点实际为 **24** 个（+30 余条关系边），非计划中的"50+"；② 概念节点数据**未采用独立 JSON**，而是内联在 `knowledge_graph.rs::get_all_concept_nodes()`。
+> 表中"前端根因提示组件 / 学习路径面板 / 概念图谱视图"三项均为**前端载体，已随 2026-09-11 前端切割迁出**（历史资产，见标签 `before-frontend-split`），后端交付 JSON 载荷。
 
 ### 与现有架构的兼容性说明
 
 - **零破坏**：所有新增模块均为独立文件，通过 `Session` 或 `StepPayload` 的 `Option<T>` 字段扩展，不影响现有编译/运行链路
 - **渐进启用**：新增功能通过 feature flag 控制（如 `session.enable_root_cause = true`），可随时回退
-- **FRB 兼容**：新增数据结构均实现 `Serialize`/`Deserialize`，可直接通过 flutter_rust_bridge v2 传输
+- **三出口兼容**：新增数据结构均实现 `Serialize`/`Deserialize`（serde）；复杂结构过边界统一走 **JSON 字符串**，经三出口（capi / wasm32 / `cide_cli serve`）交付，消费方自行渲染（架构纪律见 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §2.2）
 
 ---
 
-## 附录：新增文件清单
+## 附录：新增文件清单（2026-09-11 按实际落地核对）
 
 ```
 native/src/
 ├── unified/
-│   ├── trace_analyzer.rs          # P0: 执行轨迹切片 + 根因推断
+│   ├── trace_analyzer/            # P0: 执行轨迹切片 + 根因推断（原 trace_analyzer.rs，已拆分为子模块）
 │   └── root_cause.rs              # P0: RootCauseHint 数据结构
 ├── diagnostics/
 │   ├── misconception_patterns.rs  # P1: 误解模式定义 + 检测
-│   ├── knowledge_graph.rs         # P2: 概念图谱核心
-│   └── concept_nodes.json         # P2: 概念节点与边数据（编译时嵌入）
+│   └── knowledge_graph.rs         # P2: 概念图谱核心（节点/边内联于 get_all_concept_nodes()，原计划独立 JSON 未采用）
 ├── compiler/
 │   ├── cfg.rs                     # P3: 控制流图构建
 │   ├── data_flow.rs               # P3: 数据流分析
 │   └── intent.rs                  # P3: 意图推断引擎
-└── api/
-    └── cide.rs                    # 扩展：新增 FRB 数据结构（RootCauseHint, LearningPath 等）
-
-CideFlutter/lib/
-├── widgets/
-│   ├── root_cause_banner.dart     # P0: 根因提示横幅
-│   ├── learning_path_panel.dart   # P1: 学习路径面板
-│   └── concept_graph_view.dart    # P2: 概念图谱 Canvas
-└── providers/
-    └── cognitive_provider.dart    # P0-P2: 认知推理状态管理
+└── session_api.rs                 # 出口中立层：认知推理数据结构经 serde JSON 由三出口交付
+                                   # （原桥接出口层 native/src/api/——桥接为历史资产，已迁出——已随前端切割移除）
 ```
+
+**前端载体（2026-09-11 前端切割后已迁出，历史资产，取回见标签 `before-frontend-split`）**：
+
+- 根因提示横幅（P0）、学习路径面板（P1）、概念图谱 Canvas（P2）、认知推理状态管理（P0-P2）四个组件已不在本仓库；
+- 后端能力与 JSON 载荷形状不受影响（见正文各章状态行）。

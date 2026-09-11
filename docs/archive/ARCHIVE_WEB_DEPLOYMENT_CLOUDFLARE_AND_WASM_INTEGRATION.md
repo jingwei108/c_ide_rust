@@ -1,5 +1,9 @@
 # Cide Web 部署方案 C：Cloudflare Pages + Rust WASM 引入方案
 
+> **已归档（2026-09-11）**：Cloudflare Pages + Flutter Web 部署路径作废；wasm32 出口改由 docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md §4 与 BUILD.md 定义。
+> 本文件仅作历史追溯保留，内容不再维护；当前有效文档见 `docs/current/`。
+
+
 > 本文档说明如何将 Cide 的 Flutter Web 前端部署到 Cloudflare Pages，以及如何在 Web 环境中引入 Rust 后端 WASM。
 
 ---

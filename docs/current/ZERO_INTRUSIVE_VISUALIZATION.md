@@ -1,8 +1,9 @@
 # Cide 数据结构可视化计划文档
 
-> 版本：2026-05-17  
-> 状态：数组排序/链表/二叉树可视化 MVP ✅ 已实现；图/哈希表等复杂结构 ⏳ 待实现  
-> 设计原则：**零侵入（不写 vis_*()） + 人机协作（分层确认兜底） + 按需反推（不预录帧）**
+> 版本：2026-05-17（设计稿）  
+> 状态：数组排序/链表/二叉树可视化 MVP ✅ 已在**当时的前端**实现；图/哈希表等复杂结构 ⏳ 待实现。**2026-09-11 前端切割后**：渲染与交互层（`*_visualizer.dart` 等）已随 `CideFlutter/` 移出仓库，本仓库只承载**数据结构检测/运行时反推的数据载荷**，经三出口（C ABI / wasm32 / `cide_cli serve`）交付给消费方。  
+> 设计原则：**零侵入（不写 vis_*()） + 人机协作（分层确认兜底） + 按需反推（不预录帧）**（设计原则不因切割改变）  
+> **最后核对日期**：2026-09-11（修订：Dart widget 引用改为三出口数据载荷；如实补记 §4 的 `data_structure_detector.rs` 在仓库中不存在、Phase 0/1 检测器未实施这一缺口）
 
 ---
 
@@ -93,14 +94,14 @@ Rust 后端检测
     ↓
 VM 执行到下一个 StepEvent（第 42 行）
     ↓
-Flutter 请求当前可视化状态
+出口消费方请求当前可视化状态（capi / serve JSON-lines / wasm）
     ↓
-Rust 读取 VM 内存 → 构造 VisState → 返回
+Rust 读取 VM 内存 → 构造 VisState 载荷 → 返回
     ↓
-Flutter 本地缓存 → 插值动画 → 渲染
+消费方本地缓存 → 插值动画 → 渲染
 ```
 
-**优势**：无内存爆炸、实时交互、前后端解耦。
+**优势**：无内存爆炸、实时交互、核心与出口解耦。
 
 ---
 
@@ -108,33 +109,30 @@ Flutter 本地缓存 → 插值动画 → 渲染
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    Flutter 前端（表现+交互层）                  │
+│        出口消费方（表现+交互层：社区前端 / Web / headless）     │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  交互层（Dart）                                      │   │
+│  │  交互层（消费方自行实现）                              │   │
 │  │  - 分层提示条（全自动 / 多选切换 / 手动配置）          │   │
 │  │  - 手动配置面板：类型选择 + 字段 offset 映射           │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  帧缓存与动画层（Dart）                               │   │
-│  │  - VisFrameBuffer：缓存最近 N 个 VisState              │   │
-│  │  - AnimationController 驱动帧间插值                   │   │
+│  │  帧缓存与动画层（消费方自行实现）                      │   │
+│  │  - 帧缓存：按 StepPayload 窗口语义（schema §4）        │   │
+│  │  - 由消费方的动画/插值机制驱动帧间过渡                 │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  布局引擎（Dart）—— 各平台独立实现                     │   │
+│  │  布局引擎（各消费方独立实现）                          │   │
 │  │  - 数组：柱状图坐标分配                                │   │
 │  │  - 树：递归宽度计算 / Reingold-Tilford                 │   │
 │  │  - 链表：水平线性布局                                  │   │
 │  └─────────────────────────────────────────────────────┘   │
 │  ┌─────────────────────────────────────────────────────┐   │
-│  │  渲染组件（Flutter CustomPainter）                    │   │
-│  │  - SortingVisualizer（数组排序动画）                   │   │
-│  │  - LinkedListVisualizer（链表图）                      │   │
-│  │  - TreeVisualizer（二叉树图）                          │   │
-│  │  - VariablePanel（变量值面板）                         │   │
+│  │  渲染组件（消费方自行实现）                            │   │
+│  │  - 数组排序动画 / 链表图 / 二叉树图 / 变量值面板        │   │
 │  └─────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                               ↑
-                    flutter_rust_bridge v2
+        三出口：C ABI（capi）/ wasm32 / cide_cli serve（JSON-lines）
                               ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                Rust 后端（数据+执行层）                        │
@@ -168,8 +166,12 @@ Flutter 本地缓存 → 插值动画 → 渲染
 
 ### 3.1 Rust 后端：检测与运行时
 
+> **现状核实（2026-09-11）**：本节是 2026-05-17 的**类型草案**，其中的 `#[frb]` 标注属 FRB 桥接时代（该桥接与 `native/src/api/` 已随前端切割移出，历史资产，已迁出）。经 `grep` 核实（`native/**/*.rs`）：`DsKind` / `FieldOffsets` / `DataStructureMatch` / `SemanticEvent` / `VisArrayState` / `VisNodeState` / `VisStructureState` / `VisVariableState` / `VisState` / `VisStatus` / `VisResult` **在 Rust 源码中均不存在**——它们只出现在本文档与 `docs/archive/AUTO_VISUALIZATION_DETECTION_PLAN.md` 两份设计稿里，即本节的检测器与可视化载荷**尚未落地**（未完成缺口，见 §11 Phase 0/1）。
+>
+> **当前实际交付的可视化载荷**是 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)：`StepPayload`（含 `semantic_label` / `heatmap_line` / `heatmap_count`）、`ApiVariableSnapshot`、`ApiFrameInfo`、`AccessedVar`、`ArraySnapshot`、`PointerSnapshot`（四状态）、`AlgorithmStepSnapshot`、`VisEvent`、`RootCauseHint`。本文档的数据结构检测扩展（链表/树/栈/队列/堆）若落地，应作为**该 schema 的增量字段**通过三出口交付，而不是复活 FRB 专用类型（FRB 桥接为历史资产，已迁出）。
+
 ```rust
-// native/src/session.rs
+// 设计稿（文件路径为草案；native/src/session.rs 现仍存在，但以下类型未在其中定义）
 
 /// 数据结构种类
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -195,7 +197,7 @@ pub struct FieldOffsets {
 }
 
 /// 数据结构检测结果
-#[frb]
+// (历史) #[frb]  —— FRB 桥接已迁出，未来经三出口以 JSON 载荷交付
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DataStructureMatch {
     pub ds_kind: String,
@@ -263,8 +265,8 @@ pub struct VisState {
     pub semantic_event: Option<SemanticEvent>,
 }
 
-/// 可视化结果状态（新增：用于前端判断交互层级）
-#[frb]
+/// 可视化结果状态（用于消费方判断交互层级）
+// (历史) #[frb]  —— FRB 桥接已迁出
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum VisStatus {
     AutoDetected,
@@ -273,7 +275,7 @@ pub enum VisStatus {
     Failed(String),
 }
 
-#[frb]
+// (历史) #[frb]  —— FRB 桥接已迁出
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VisResult {
     pub status: VisStatus,
@@ -282,10 +284,12 @@ pub struct VisResult {
 }
 ```
 
-### 3.2 前端：配置持久化
+### 3.2 消费方：配置持久化（职责移交社区前端）
+
+> 下例为 2026-05-17 设计稿中的 Dart 实现，**已随 `CideFlutter/` 迁出**（历史资产，已迁出）。配置持久化（如浏览器 localStorage / 桌面端偏好存储）属**出口消费方职责**；后端只负责在载荷中返回检测结果（`root_var_name`、`field_offsets`、`confidence` 等，若按 §3.1 落地）。
 
 ```dart
-// lib/models/vis_config.dart
+// 历史设计稿（已迁出）：lib/models/vis_config.dart
 
 class VisConfig {
   final String dsKind;
@@ -297,19 +301,22 @@ class VisConfig {
   final ConfigSource source; // autoDetected / userConfirmed / manual
 }
 
-enum ConfigSource { autoDetected, userConfirmed, ma
-nual }
+enum ConfigSource { autoDetected, userConfirmed, manual }
 ```
 
-配置持久化到 `SharedPreferences`，用户下次打开同类型代码时直接复用。
+配置持久化到消费方本地存储，用户下次打开同类型代码时直接复用。
 
 ---
 
 ## 4. 后端：数据结构检测器
 
-文件：`native/src/compiler/data_structure_detector.rs`
-入口：`detect_data_structures(program: &ProgramNode) -> Vec<DataStructureMatch>`
-调用时机：`run_compile_pipeline` 成功后，与 `detect_algorithms` 并列调用。
+> **⚠️ 未完成缺口（2026-09-11 核实）**：文件 `native/src/compiler/data_structure_detector.rs` **在仓库中不存在**（`native/src/compiler/` 现有：`algorithm_detector/`、`ast.rs`、`cfg.rs`、`data_flow.rs`、`intent.rs`、`mod.rs`），入口函数 `detect_data_structures` 亦不存在。本章与 §11 的 Phase 0/1 是**尚未实施的计划项**，如实保留，不视为已完成。
+>
+> 未来的落点应遵循架构纪律：检测逻辑落语言中立 Rust 层（与 `algorithm_detector` 同级），经三出口以 JSON 载荷交付（见 §3.1 的现状说明）。
+
+文件（计划）：`native/src/compiler/data_structure_detector.rs`
+入口（计划）：`detect_data_structures(program: &ProgramNode) -> Vec<DataStructureMatch>`
+调用时机（计划）：`run_compile_pipeline` 成功后，与 `detect_algorithms` 并列调用。
 
 ### 4.1 类型拓扑分析
 
@@ -501,12 +508,14 @@ fn detect_heap_pattern(body: &Stmt, arr_name: &str) -> bool {
 
 ## 5. 后端：VM 运行时反推引擎
 
-当 VM 触发 `StepEvent` 时，后端**不预录帧**，而是**按需构造 VisState**。
+当 VM 触发 `StepEvent` 时，后端**不预录帧**，而是**按需反推**。
+
+> **现状（2026-09-11）**：下例中的 `native/src/api/cide.rs`（FRB 桥接层）**已随前端切割移出仓库**，`#[frb]` 标注与 `cide_get_vis_state()` 均不存在。当前已落地的"按需反推"能力走三出口：`cide_step_next_json` / `cide_get_step_payloads_json`（capi，见 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) §6）与 `cide_cli serve` 的同构帧。本节余下代码为设计稿（历史资产，已迁出）。
 
 ```rust
-// native/src/api/cide.rs
+// 历史设计稿（已迁出）：native/src/api/cide.rs
 
-#[frb]
+// (历史) #[frb]  —— FRB 桥接已迁出
 pub fn cide_get_vis_state(session: &mut Session) -> VisResult {
     let compile = &session.compile;
     let runtime = &session.runtime;
@@ -567,11 +576,14 @@ fn build_array_vis_result(session: &Session, ds_match: &DataStructureMatch) -> V
 
 ---
 
-## 6. 交互层：分层确认与兜底
+## 6. 交互层：分层确认与兜底（消费方职责）
+
+> **现状（2026-09-11）**：本节描述的分层交互（自动 / 多选 / 手动兜底）是**出口消费方**要实现的行为契约，随 `CideFlutter/` 迁出后不再由本仓库实现。后端需保证的是：检测结果带**置信度**与**多候选**，让消费方能自行分层。下例 Dart 为历史设计稿（历史资产，已迁出）。
 
 ### 6.1 编译后：检测结果到交互的映射
 
 ```dart
+// 历史设计稿（已迁出）
 class VisNotifier extends StateNotifier<VisUiState> {
   Future<void> onCompileSuccess(CompileResult result) async {
     final matches = result.dataStructureMatches;
@@ -623,9 +635,12 @@ class VisNotifier extends StateNotifier<VisUiState> {
 
 ---
 
-## 7. 前端：帧缓存与渲染
+## 7. 消费方：帧缓存与渲染（职责移交社区前端）
+
+> **现状（2026-09-11）**：帧缓存与渲染实现已随 `CideFlutter/` 迁出（历史资产，已迁出）。**后端已交付的对应契约**是 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md) §4 的 **frameCache 窗口语义**：`payload.get(start, end)`、越窗 seek 的懒重算、以及"seek 到第 N 步后各视图均以第 N 步快照为准"的一致性要求——消费方据此重绘，不需要自行回退状态。下例 Dart 为历史设计稿：
 
 ```dart
+// 历史设计稿（已迁出）
 class VisFrameBuffer {
   final List<VisState> _history = [];
   static const int maxHistory = 5;
@@ -640,15 +655,19 @@ class VisFrameBuffer {
 }
 ```
 
-布局算法由前端实现，遵循 `VIS_LAYOUT_STANDARD.md`（跨平台标准文档）。
+布局算法由消费方实现。⚠️ 设计稿中提到的 `VIS_LAYOUT_STANDARD.md` **在本仓库中不存在**（全仓无此文件），跨平台布局标准尚无正式文档——如实记为缺口。
 
 ---
 
-## 8. 各数据结构可视化方案
+## 8. 各数据结构可视化方案（渲染属消费方；后端提供数据）
 
-- **数组排序**：`SortingVisualizer` 柱状图 + 比较/交换动画
-- **链表**：`LinkedListVisualizer` 水平节点 + 箭头动画
-- **二叉树**：`TreeVisualizer` 递归布局 + 颜色/高度元数据
+| 结构 | 渲染（消费方） | 后端需提供的载荷 |
+|:---|:---|:---|
+| **数组排序** | 柱状图 + 比较/交换动画 | `ArraySnapshot`（值序列 + 高亮）、`VisEvent`（compare/swap）、`AlgorithmStepSnapshot` |
+| **链表** | 水平节点 + 箭头动画 | 节点遍历结果（地址/值/next）、`PointerSnapshot` 四状态（Valid/Freed/Null/Dangling） |
+| **二叉树** | 递归布局 + 颜色/高度元数据 | 节点遍历结果（地址/值/left/right）+ 颜色/高度字段偏移 |
+
+> 上表"后端需提供的载荷"中，`ArraySnapshot` / `VisEvent` / `PointerSnapshot` **已落地**（见 `docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`）；链表/树节点遍历结果依赖 §4 的检测器，**尚未落地**（缺口）。
 
 ---
 
@@ -668,24 +687,26 @@ class VisFrameBuffer {
 
 | 组件 | 复用策略 |
 |:---|:---|
-| CideVM + 编译器 | **直接复用**（Rust .so） |
-| 数据结构检测器 | **直接复用** |
-| 运行时反推引擎 | **直接复用** |
-| VisResult/VisState | **类型对齐** |
-| 布局算法 | **按标准文档重写** |
-| 渲染管线 | **独立实现** |
-| 交互组件 | **独立实现** |
+| CideVM + 编译器 | **直接复用**（Rust core，经三出口暴露） |
+| 数据结构检测器 | **直接复用**（⚠️ 尚未实现，见 §4） |
+| 运行时反推引擎 | **直接复用**（已落地部分：StepPayload 反推，见 `docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`） |
+| VisResult/VisState | **载荷对齐**（以 StepPayload schema 为准，而非 FRB Dart 类型——FRB 桥接为历史资产，已迁出） |
+| 布局算法 | **消费方独立实现**（⚠️ `VIS_LAYOUT_STANDARD.md` 不存在，暂无标准文档） |
+| 渲染管线 | **消费方独立实现** |
+| 交互组件 | **消费方独立实现** |
 
 ---
 
 ## 11. 实施路线图
 
-### Phase 0：数据模型（1 周）
-- [ ] `DataStructureMatch` / `FieldOffsets` / `VisResult` -> `session.rs`
-- [ ] FRB 重新生成 Dart 类型
-- [ ] 创建 `data_structure_detector.rs`
+> **现状（2026-09-11 核实）**：Phase 0/1 **未实施**（`data_structure_detector.rs` 不存在）；Phase 2 中仅"按需反推"的**载荷侧**部分落地（StepPayload 系列），其 FRB 与 Dart 部分已随切割作废；Phase 3/5 的前端实现已迁出（历史资产，已迁出）。下列清单保留原始规划项，未完成项一律保持未勾选，不以"前端已实现"冒充后端已完成。
 
-### Phase 1：检测器（1.5 周）
+### Phase 0：数据模型（1 周 · ⏳ 未实施）
+- [ ] `DataStructureMatch` / `FieldOffsets` / `VisResult` -> 语言中立 Rust 层（原计划落 `session.rs`；`native/src/session.rs` 仍存在，但这些类型**尚未定义**）
+- [ ] ~~FRB 重新生成 Dart 类型~~（作废：FRB 已随前端切割迁出；改为经三出口交付 JSON 载荷）
+- [ ] 创建 `data_structure_detector.rs`（**不存在**）
+
+### Phase 1：检测器（1.5 周 · ⏳ 未实施）
 - [ ] `StructProfile` / `FieldProfile` 类型拓扑分析
 - [ ] `match_struct_to_ds_kind`（链表/二叉树）
 - [ ] `infer_field_offsets`（字段名启发式 + 顺序兜底）
@@ -694,30 +715,31 @@ class VisFrameBuffer {
 - [ ] 单元测试：10-20 个典型样例
 
 ### Phase 2：反推与交互（1.5 周）
-- [ ] `cide_get_vis_state()` 按需反推 API
-- [ ] 链表/树 VM 内存扫描器
-- [ ] `VisResult` 状态分层返回
-- [ ] Flutter：`DetectionHintBar` / `ManualConfigPanel`
-- [ ] 配置持久化到 `SharedPreferences`
+- [ ] `cide_get_vis_state()` 按需反推 API（未实现；现有等价入口为 capi 的 `cide_step_next_json` / `cide_get_step_payloads_json` + `cide_cli serve` 同构帧）
+- [ ] 链表/树 VM 内存扫描器（未实现）
+- [ ] `VisResult` 状态分层返回（未实现；分层所需的置信度/多候选字段未落地）
+- [ ] ~~Flutter：`DetectionHintBar` / `ManualConfigPanel`~~（**移交社区前端**；后端只提供载荷）
+- [ ] ~~配置持久化到 `SharedPreferences`~~（**移交社区前端**）
 
-### Phase 3：数组排序动画 MVP（✅ 已实现）
-- [x] `ArrayVisualizer` 柱状图 + 比较/交换动画（`widgets/array_visualizer.dart`）
-- [x] 冒泡/选择/插入/快排/归并/二分排序动画 + 算法检测信息条
-- [x] VisEvent 比较事件高亮对应条形（琥珀色 + 发光阴影）
+### Phase 3：数组排序动画 MVP（✅ 当时前端已实现 · 现已迁出）
+- [x] `ArrayVisualizer` 柱状图 + 比较/交换动画（`widgets/array_visualizer.dart`，历史资产，已迁出）
+- [x] 冒泡/选择/插入/快排/归并/二分排序动画 + 算法检测信息条（历史资产，已迁出）
+- [x] VisEvent 比较事件高亮对应条形（琥珀色 + 发光阴影）（历史资产，已迁出）
+- 后端侧对应能力（`ArraySnapshot` / `VisEvent`）✅ 已落地，见 `docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`
 
-### Phase 4：链表与二叉树（2 周）
-- [ ] `LinkedListVisualizer` 创建/删除/重连动画
-- [ ] `TreeVisualizer` 递归布局 + 遍历高亮
+### Phase 4：链表与二叉树（2 周 · 未实施）
+- [ ] `LinkedListVisualizer` 创建/删除/重连动画（渲染移交社区前端；后端节点遍历载荷未落地）
+- [ ] `TreeVisualizer` 递归布局 + 遍历高亮（同上）
 
-### Phase 5：快排/归并/二分（✅ 已合并至 Phase 3）
-- [x] 快排（pivot 高亮 + partition 区间）
-- [x] 归并（双数组 + merge 区间）
-- [x] 二分查找（搜索区间收缩）
+### Phase 5：快排/归并/二分（✅ 已合并至 Phase 3 · 前端实现已迁出）
+- [x] 快排（pivot 高亮 + partition 区间）（历史资产，已迁出）
+- [x] 归并（双数组 + merge 区间）（历史资产，已迁出）
+- [x] 二分查找（搜索区间收缩）（历史资产，已迁出）
 
-### Phase 6：体验打磨（1 周）
+### Phase 6：体验打磨（1 周 · 移交社区前端）
 - [ ] 动画速度调节（0ms ~ 500ms）
 - [ ] 失败场景提示语全覆盖
 - [ ] 暗色/亮色主题适配
 - [ ] 端到端测试
 
-**总计：约 9 周，可分阶段交付。**
+**总计：约 9 周，可分阶段交付。**（原估算不含 2026-09-11 前端切割带来的"后端检测器从零补齐 + 载荷扩展"工作量）

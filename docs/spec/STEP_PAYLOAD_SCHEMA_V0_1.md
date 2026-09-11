@@ -5,6 +5,8 @@
 > 归属：主计划 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](../current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §3.2 协议层
 > 实现锚点：`native/src/unified/types.rs`（类型定义）、`native/src/unified/collector.rs`（字段来源）、`native/src/unified/engine.rs`（窗口与 seek）、`native/src/unified/stream.rs`（差分编码）、`native/src/capi/first_batch.rs`（出口序列化）
 > 消费者：capi 第一批（`cide_step_next_json` / `cide_get_step_payloads_json`）、`cide_cli serve`、wasm 绑定、任何第三方语言
+> 最后核对日期：2026-09-11
+> 修订说明（2026-09-11）：去前端化——§0 明示"语言中立、不依赖任何前端实现"；§7 回放输入的"Flutter frameCache"改为"原生前端 frameCache 消费序列（已切割的历史资产）"并指向 `cide_cli serve` 复现口径。字段定义与校验记录保持原样。
 
 本文档是**协议层**定义：任何语言按此即可解析 Cide 的步数据，无需了解 Rust 内部表示。引擎内部优化（CoW 快照等）不得改变本文档的字段语义。
 
@@ -23,6 +25,7 @@
 | 可空 | JSON `null`；消费方须同时容忍**字段缺省**（只增不改前提下新字段可能不出现在旧数据里） |
 | 版本化纪律 | **字段只增不改语义**；新增字段必须可空/有默认值；消费方必须忽略未知字段；废弃走双写过渡期 |
 | 版本获取 | `cide_abi_version()`（capi 契约版本）+ `cide_engine_version()`（引擎版本，含构建期 git hash） |
+| 语言中立 | **本 schema 语言中立，不依赖任何前端实现**：字段语义只由引擎与出口定义，任何前端（含已切割的历史前端资产）都只是消费方；回放校验以出口 JSON 为准（§7.1） |
 
 ---
 
@@ -314,11 +317,11 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 
 ## 7. 回放场景校验记录
 
-> 校验输入分两类：**我方（Cide）现有消费序列**（Flutter frameCache / StepStreamBatch 的真实调用序列）与**对端（SharpTutor）三组场景**（防抖编译流 / fixtures 判分流 / 单步+seek+内存查询交错流，见 `CIDE_CAPI_REVIEW_RESPONSE.md` §2 与 §8）。
+> 校验输入分两类：**我方（Cide）现有消费序列**（原生前端 frameCache 消费序列（**已切割的历史资产**，同形口径现由 `cide_cli serve` 复现）/ StepStreamBatch 的真实调用序列）与**对端（SharpTutor）三组场景**（防抖编译流 / fixtures 判分流 / 单步+seek+内存查询交错流，见 `CIDE_CAPI_REVIEW_RESPONSE.md` §2 与 §8）。
 
 | # | 场景 | 输入序列 | 期望（schema 断言） | 状态 |
 |---|---|---|---|---|
-| C1 | Flutter frameCache 消费序列 | `compile` → `step_begin` → `step_next` ×N → `get_step_payloads_json(窗口)` → 断点暂停 → 继续 | 顶层 14 字段齐全；`call_stack` 自底向上；`cache_start_step` 单调不减；窗口裁剪后 `payloads` 非空且步号连续 | ✅ 已实测（§7.2，由 `step_payload_schema_v0_1_test` 冻结） |
+| C1 | 原生前端 frameCache 消费序列（**已切割的历史资产**；现由 `cide_cli serve` 同形口径复现，见 C4） | `compile` → `step_begin` → `step_next` ×N → `get_step_payloads_json(窗口)` → 断点暂停 → 继续 | 顶层 14 字段齐全；`call_stack` 自底向上；`cache_start_step` 单调不减；窗口裁剪后 `payloads` 非空且步号连续 | ✅ 已实测（§7.2，由 `step_payload_schema_v0_1_test` 冻结） |
 | C2 | 差分往返 | 同一步序列的 `StepPayload[]` → `encode_payloads` → `decode` | 解码结果与原始 payload 逐字段等价；`null` 与 `[]` 语义区分正确 | ✅ 已有回归测试（`stream.rs::test_accessed_vars_and_vis_events_delta` 等） |
 | C3 | 窗口滑动与越窗 seek | 连续执行 >2000 步 → 查询窗口 → seek 回退到窗口外 → 再查询 | 窗口 2000 帧、丢最早 20%；越窗 seek 触发检查点恢复 + 正向重放；seek 后窗口为 `[target-1999, target]` | ✅ 已实测（`step_payload_schema_v0_1_test` + `unified_engine_window_test`） |
 | C4 | serve 出口形状一致性（新增） | `cide_cli serve`：`compile` → `run` → `output.delta` → `step.begin` → `step.next` → `payload.get` → `seek` → `session.reset` | 与 capi 同形：`payloads` 字段、`cache_start_step`、`status` 枚举、iso 帧（`id`/`ok`） | ✅ 已实测（`scripts/serve_smoke.py`，26 项断言） |

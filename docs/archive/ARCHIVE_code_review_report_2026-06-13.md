@@ -1,5 +1,9 @@
 # Cide 项目全面代码审阅报告（修订版）
 
+> **已归档（2026-09-11）**：审阅范围为 Rust 后端 + CideFlutter/lib，已被 code_review_report_2026-09-06.md 与 code_review_report_2026-09-11.md 取代。
+> 本文件仅作历史追溯保留，内容不再维护；当前有效文档见 `docs/current/`。
+
+
 > 审阅日期：2026-06-13  
 > 更新日期：2026-06-14（末轮更新）  
 > 审阅范围：D:\code\c_ide_rust 全部源码  

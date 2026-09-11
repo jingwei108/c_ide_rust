@@ -1,10 +1,25 @@
 # 代码审查报告 2026-09-11（外部 PR 清单复核与修复跟踪）
 
 > **来源**：外部审查 / PR 清单，共 12 项（6 条能力缺口 + 教学标注 P0-1~P0-4 + P1-5~P1-6 + P2-7 三项）。
-> **复核方式**：不复用清单结论——逐条读源码 + 用 `cide_cli` / `cide_cli serve`（JSON-lines）独立复现，
-> 探针脚本留存于 `tmp/pr_check/`（`probe_payload.py` / `probe_dup.py` / `probe_oob.py` / `probe_multi2.py`）。
+> **复核方式**：不复用清单结论——逐条读源码 + 用 `cide_cli` / `cide_cli serve`（JSON-lines）独立复现。
+> `tmp/pr_check/` 下的临时探针脚本（`probe_payload.py` / `probe_dup.py` / `probe_oob.py` / `probe_multi2.py`）**已随临时目录清理移除**；
+> 复现改走常设出口 `cide_cli serve`（响应字段见 [`CIDE_CLI.md`](CIDE_CLI.md) §6）：
+>
+> ```bash
+> cide_cli serve <<'EOF'
+> {"id":1,"method":"compile","params":{"source":"#include <stdio.h>\nint main(){ printf(\"%d\", 1+2); return 0; }\n"}}
+> {"id":2,"method":"run"}
+> {"id":3,"method":"output.delta","params":{"cursor":0}}
+> {"id":4,"method":"step.begin"}
+> {"id":5,"method":"step.next"}
+> {"id":6,"method":"shutdown"}
+> EOF
+> ```
+>
+> （2026-09-11 实测：以上 6 条请求逐条返回 `{"ok":true}`；响应字段与 [`CIDE_CLI.md`](CIDE_CLI.md) §6 实测记录一致。）
 > **复核结论（2026-09-11）**：**12 项全部成立**，其中 3 处表述需要修正（§2），并在复核过程中发现 2 项清单未提的同源问题（§3）。
 > **修复策略**：按优先级分批实施，每批完成后跑测试与防线，结果记入 §4 与 [`CHANGELOG.md`](../../CHANGELOG.md)。
+> 最后核对日期：2026-09-11（修订说明：探针脚本失效引用修复 + 可复现命令内联 + §4 补与 `CHANGELOG.md` 的双向引用；逐条复核结论与分批记录保持原样）。
 
 ---
 
@@ -34,7 +49,7 @@
 
 ### 2.1 P0-2：24 次越界描述落在"交换"模板，不是"比较"模板
 
-清单写"产生 24 步 **比较** arr[4] 与 arr[5]"。独立复现（`probe_oob.py`，5 元素冒泡）：
+清单写"产生 24 步 **比较** arr[4] 与 arr[5]"。独立复现（当时的临时探针脚本 `probe_oob.py`，5 元素冒泡；脚本已随 `tmp/pr_check/` 清理，同口径可用 `cide_cli serve` 的 `step.begin` / `step.next` / `payload.get` 重放）：
 
 ```
 含 'arr[5]' 的 desc 步数            = 24   ← 与清单数字一致
@@ -69,6 +84,10 @@ Cide 实际产出 `ErrorCode::W3053_ImplicitScalarConversion`（warning）。`(E
 ---
 
 ## 4. 分批修复记录
+
+> **与 `CHANGELOG.md` 的双向引用（2026-09-11 补记）**：本节每批修复在 [`CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased]` 中都有独立段落，
+> 标题形如 `### Fixed (… · 批次 X：…)`——批次 A~H 全部在列（如批次 G = "scanf 族与标准输入"、批次 H = "C++ lambda"、批次 F = "会话级保险丝"）；
+> `CHANGELOG` 的 `[Unreleased]` 段亦反向链接本文档（"复核与修复跟踪"一行），二者互为事实源，批次编号一致。
 
 ### 批次 A（2026-09-11）：P0-1 + P1-5 + 条目 6
 
@@ -141,8 +160,8 @@ Cide 实际产出 `ErrorCode::W3053_ImplicitScalarConversion`（warning）。`(E
 | 条目 4 | 新增 `ScanfItem::Literal(u8)`：普通字符指令与输入流精确比较，不匹配即**停止解析**；`%%` 展开为字面 `%` 参与匹配；`sscanf` 同族同修 | `scanf("a=%d", &x)` 读 `a=42` → Cide `x=42` = Clang；读 `b=42` → `x=-1 r=0` = Clang |
 
 **同批（由防线扩容暴露的真实缺陷）**：
-- **标准输入换行口径统一**：capi `cide_set_input` / FRB `set_input` / serve `run.input` / CLI `-i` 各自用
-  `str::lines()` 拆分，**丢掉行尾 `'\n'`**（E2E 防线用 `split_inclusive('\n')`）→ `getchar()` 永远读不到换行。
+- **标准输入换行口径统一**：capi `cide_set_input`（wasm32 出口共用同一 C ABI 入口）/ serve `run.input` / CLI `-i` 各自用
+  `str::lines()` 拆分（切割前还有 FRB `set_input`——历史资产，已迁出），**丢掉行尾 `'\n'`**（E2E 防线用 `split_inclusive('\n')`）→ `getchar()` 永远读不到换行。
   统一到 `RuntimeState::split_stdin` / `set_stdin`。
 - **Shadow 防线支持 `.in` 注入**：此前不喂 stdin，K&R 目录 29 个 `.in` 从未使用（两侧"都无输入"的虚假 match）。
   启用后首轮暴露 19 例 `output_gap`（`kr_1_8` 换行计数恒 0、`kr_4_3` 无输出等），修复换行口径后全部转绿。

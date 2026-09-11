@@ -1,6 +1,9 @@
 # Cide 工程债务偿还维护方案
 
+> 最后核对：2026-09-11（前端切割后文档翻新）
 > 本方案基于 2026-06-15 全面评估结果制定，目标是在不破坏现有功能的前提下，系统化偿还工程债务，提升项目长期可维护性。
+>
+> **2026-09-11 前端切割口径**：`CideFlutter/`、FRB 桥接（`native/src/api/` + `frb_generated`）、web 部署 workflow 与全部 Flutter 构建脚本已从仓库移除，本仓库转型为纯后端「三出口一核心」（核心 = Rust workspace，出口 = C ABI / wasm32 / `cide_cli serve`），决策见 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)。§二/§三/§四/§五/§六/§八 中凡涉及前端路径或前端任务的条目，均已改写为后端现状或标注「（前端资产，已迁出）」/「已随前端切割消解（2026-09-11）」；**§七「修订记录」及所有带日期的历史推进记录一律保持原样**，不改写历史。本文件继续承载 `TODO_CONVENTION.md` 依赖的 `#DXX` 债务编号体系：**编号不删除、不重排**，消解项保留编号并注明消解原因。
 
 ## 一、背景与目标
 
@@ -39,19 +42,22 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 | 编号 | 债务项 | 位置 | 当前状态 | 影响 | 优先级 |
 |------|--------|------|----------|------|--------|
-| D01 | 文档数据口径不一致 | README.md / CHANGELOG.md / 审阅报告 | 已统一为 566/569（2026-06-25 实测） | 外部信任损耗 | P0 |
-| D02 | FRB 生成文件仍被追踪 | `.gitignore` 已排除但文件可能仍被 git 追踪 | 174KB + 222KB 生成代码在版本库中 | 合并冲突、版本库体积 | P0 |
+| D01 | 文档数据口径不一致 | README.md / CHANGELOG.md / 审阅报告 | ✅ 已统一为 566/569（2026-06-25 实测）；**当前口径见 §8.1：C Shadow 636/636（2026-09-11）** | 外部信任损耗 | P0 |
+| D02 | FRB 生成文件仍被追踪 | ~~`.gitignore` 已排除但文件可能仍被 git 追踪~~ → 对象已随前端切割删除（`native/src/api/`、`native/src/frb_generated.rs`、`CideFlutter/lib/src/rust/frb_generated*.dart`；2026-09-11 复核均不存在） | ✅ 已随前端切割消解（2026-09-11） | 合并冲突、版本库体积 | P0 |
 | D03 | `codegen/expr.rs` 过大 | `crates/cide_codegen/src/expr.rs`（2047 行，已拆分为 8 个子模块并随 `cide_codegen` crate 迁移） | ✅ 已完成：2047 → 510 行 | 维护与审查成本高 | P1 |
-| D04 | `parser/mod.rs` 过大 | `crates/cide_parser/src/lib.rs`（原 `native/src/compiler/parser/mod.rs`，2633 行，已拆分并迁移） | 语法分析全堆在一个文件 | 维护与审查成本高 | P1 |
-| D05 | `host_funcs.rs` 过大 | `crates/cide_vm/src/host_funcs.rs`（2545 行，已拆分并随 `cide_vm` crate 迁移） | 96 个 host 函数集中 | 维护与审查成本高 | P1 |
-| D06 | `ide_screen.dart` 过大 | `CideFlutter/lib/screens/ide_screen.dart`（896 行） | 承载整个 IDE 布局 | 前端维护困难 | P1 |
-| D07 | 缺少项目级 clippy 配置 | 无 `clippy.toml` | 仅命令行控制 lint | 规则不一致 | P2 |
-| D08 | 代码内 TODO/FIXME 标记极少 | 全项目 | 已新增规范并标记 30+ 处 | 技术债务隐形化 | P2 |
-| D09 | 前端 CustomPainter 缺少缓存 | `editor_painter.dart` 等 | 每帧重建绘制对象 | 性能热点 | P2 |
-| D10 | C++ 扩展模块耦合度高 | Parser/TypeChecker/CodeGen | 类/模板/引用/RAII 大量交叉 | 回归风险高 | P3 |
-| D11 | 失败记录文件稀释 | `FUZZ_FAILURES.md` 等 | 已修复条目过多 | 活跃问题难定位 | P2 |
-| D12 | Mutex poison 静默恢复 | `flutter_bridge.rs` | 重置为默认值 | 可能掩盖 panic 根因 | P3 |
-| D13 | `docs/archive/` 噪音 | `docs/archive/` | 协作过程文本价值密度低 | 文档噪音 | P4 |
+| D04 | `parser/mod.rs` 过大 | `crates/cide_parser/src/lib.rs`（原 `native/src/compiler/parser/mod.rs`，2633 行，已拆分并迁移） | ✅ 已完成：2633 → 672 行（详见 §六 D04） | 维护与审查成本高 | P1 |
+| D05 | `host_funcs.rs` 过大 | `crates/cide_vm/src/host_funcs.rs`（2545 行，已拆分并随 `cide_vm` crate 迁移） | ✅ 已完成：2545 → 155 行（详见 §六 D05） | 维护与审查成本高 | P1 |
+| D06 | `ide_screen.dart` 过大 | `CideFlutter/lib/screens/ide_screen.dart`（896 行）（前端资产，已迁出） | ✅ 已随前端切割消解（2026-09-11） | 前端维护困难 | P1 |
+| D07 | 缺少项目级 clippy 配置 | 已落地：`native/Cargo.toml` 的 `[lints.clippy]` + `native/clippy.toml` + `scripts/lint_check.sh` | ✅ 已完成（详见 §六 D07） | 规则不一致 | P2 |
+| D08 | 代码内 TODO/FIXME 标记极少 | 全项目 | ✅ 已新增规范并标记 30+ 处；**2026-09-11 实测 Rust TODO/FIXME/HACK 共 10 处** | 技术债务隐形化 | P2 |
+| D09 | 前端 CustomPainter 缺少缓存 | `CideFlutter/lib/editor/editor_painter.dart` 等（前端资产，已迁出） | ✅ 已随前端切割消解（2026-09-11） | 性能热点 | P2 |
+| D10 | C++ 扩展模块耦合度高 | Parser/TypeChecker/CodeGen | ✅ 已完成：typeck/cpp/、codegen/cpp/、parser/cpp/ 边界已建立（详见 §六 D10） | 回归风险高 | P3 |
+| D11 | 失败记录文件稀释 | `FUZZ_FAILURES.md` 等 | ⏸️ 保留不动（按用户决策，暂不归档） | 活跃问题难定位 | P2 |
+| D12 | Mutex poison 静默恢复 | `native/src/flutter_bridge.rs`（**历史会话包装层，被 `cide_cli` 消费，名称待后续重构收敛**；无 FRB 依赖，故仍保留） | ✅ 已完成（详见 §六 D12） | 可能掩盖 panic 根因 | P3 |
+| D13 | `docs/archive/` 噪音 | `docs/archive/` | ⏸️ 保留不动（按用户决策，暂不清理） | 文档噪音 | P4 |
+| D14 | 生产代码 `unwrap/expect` 回升（任务 C 的「0 处」验收标准已不成立） | `native/crates/cide_typeck/src/decl.rs`（3 处：L44 / L65 `init.take().unwrap()`、L648 `default.clone().unwrap()`） | ⚠️ 3 处（2026-09-11 复核；曾于 2026-06-25 收敛至 0，后续批次修复期间回升） | 运行时 panic 风险回升 | P2 |
+| D15 | 工程健康度脚本仍带前端时代口径、且未纳入 CI | `scripts/engineering_health.py`（`frb_generated.*` 忽略名单、`#[cfg(test)]` 豁免注释中的 FRB 表述、「Rust/Dart」趋势文案仍在；`reports/engineering_health.md` 仅手工生成，无门禁） | ⚠️ 新记（2026-09-11 前端切割核查发现） | 统计口径漂移无人拦截 | P3 |
+| D16 | 单文件超 800 行阈值（任务 B 验收标准已不满足） | `native/crates/cide_typeck/src/decl.rs`（871 非空行；199 个 `.rs` 文件中唯一超标者） | ⚠️ 新记（2026-09-11 复核；批次 G/H 修复后增长） | 单文件认知负荷回升 | P2 |
 
 ---
 
@@ -77,24 +83,22 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 - **验收标准**：所有文档中 Shadow Verification 数字完全一致，CI 不因此报错。
 - **风险**：数字更新可能暴露新的未记录差异，需同步更新 `*_FAILURES.md`。
 
-#### 任务 1.2：将 FRB 生成文件彻底移出版本控制
+#### 任务 1.2：将 FRB 生成文件彻底移出版本控制 ✅ 已完成（2026-09-11 随前端切割整体消解）
 
-- **涉及文件**：
-  - `native/src/frb_generated.rs`
-  - `CideFlutter/lib/src/rust/frb_generated*.dart`
-  - `.gitignore`
-  - `.github/workflows/ci.yml`
-- **执行步骤**：
-  1. 确认 `.gitignore` 已包含相关文件（当前已包含）。
-  2. 如果文件仍被 git 追踪，执行 `git rm --cached` 移出索引（不删除工作区文件）。
-  3. 验证 CI 中 Rust job 与 Flutter job 均在构建前执行 `flutter_rust_bridge_codegen generate`。
-  4. 本地执行 `flutter_rust_bridge_codegen generate` 验证生成产物可正常重建。
-  5. 清理并重建桌面端与 Android 端，确保无编译错误。
-- **验收标准**：
-  - `git ls-files | grep frb_generated` 无输出。
-  - CI Rust job 与 Flutter job 均成功生成绑定并通过。
-  - 本地 `python scripts/build_flutter.py` 成功。
-- **风险**：不同机器上 FRB 生成器版本差异可能导致生成产物不一致，需严格锁定版本 `=2.12.0`。
+- **实际结果（2026-09-11 复核）**：原「移动出版本控制」的对象已不存在 —— FRB 出口层 `native/src/api/`、生成物 `native/src/frb_generated.rs` 已**删除**，`Cargo.toml` 移除 `flutter_rust_bridge` 依赖（`native/Cargo.lock` 亦无该包）；前端侧生成绑定随 `CideFlutter/` 一并迁出（标签 `before-frontend-split`）。因此**无需再执行** `git rm --cached`。
+- **核实记录**：
+  - `Test-Path native/src/api` / `native/src/frb_generated.rs` / `CideFlutter` → 均为 `False`；全仓 `.dart` 文件数为 **0**。
+  - `.github/workflows/` 仅剩 `ci.yml`，且只有 `rust` 一个 job；`deploy_web.yml` 已删除。
+- **CI 校验口径改写（纯后端三出口）**：
+  1. 出口 3（serve）：`python scripts/serve_smoke.py` —— **已在 CI**（`ci.yml`「cide_cli serve smoke (Exit 3 protocol contract)」步骤）。
+  2. 出口 1（C ABI）：Shadow Verification（C 636 用例 / C++ 100 用例）+ `scripts/ci_three_tier_check.py` 带牙齿一致性检查 —— **已在 CI**。
+  3. 出口 2（wasm32）：`cargo build --target wasm32-unknown-unknown --release` + Node 冒烟 —— **尚未进 CI**（计划见 `CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md` §4.2 / Phase 2a；`scripts/wasm_smoke/` 目录尚未建立，冒烟脚本目前仅以 `%TEMP%/wasm_smoke/` 手工验证过）。
+  - 原「CI Rust job 与 Flutter job 均执行 `flutter_rust_bridge_codegen generate`」的要求**作废**（无 Flutter job，无 FRB 依赖）。
+- **验收标准（改写后）**：
+  - `git ls-files | grep -i frb_generated` 无输出（生成物与依赖均已移除）。
+  - CI 的 `rust` job 全绿，含 serve 冒烟与 Shadow 门禁。
+  - wasm32 出口检查在 Phase 2a 进 CI 前，由维护者手工执行并在 `CHANGELOG.md` 记录结果。
+- **风险**：无（对象已删除）；历史产物可取回 —— 标签 `before-frontend-split`。
 
 #### 任务 1.3：归档或清理已修复的失败记录条目
 
@@ -107,21 +111,17 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 - **执行步骤**：
   1. 遍历各失败记录文件，识别标记为“已修复”的条目。
   2. 将已修复条目迁移至 `docs/archive/failures_archive_2026.md`，保留历史轨迹。
+     - ⚠️ **2026-09-11 核对：该归档文件至今不存在**（`docs/archive/` 下无 `failures_archive_2026.md`），
+       即本步骤尚未执行，各 `*_FAILURES.md` 仍同时承载历史与活跃条目——如实记录为此任务的未完成项。
   3. 在活跃失败记录文件中仅保留当前已知失败与边界说明。
   4. 更新 `scripts/ci_three_tier_check.py` 的解析逻辑，确保归档后仍能识别历史记录。
 - **验收标准**：活跃失败记录文件中至少 70% 条目为当前问题或边界说明；CI 一致性检查通过。
 - **风险**：归档过程可能误删仍有效的已知失败，需逐条人工复核。
 
-#### 任务 1.4：完成 `ROADMAP_2026_Q3.md` 迁移
+#### 任务 1.4：完成 `ROADMAP_2026_Q3.md` 迁移 ✅ 已完成
 
-- **涉及文件**：
-  - `docs/archive/ROADMAP_2026_Q3.md`
-  - `docs/current/ROADMAP_2026_Q3.md`（如被删除）
-- **执行步骤**：
-  1. 确认该文件当前状态（删除、未跟踪、修改）。
-  2. 决定最终存放位置（建议保留在 `docs/current/`）。
-  3. 提交迁移变更，保持 git 工作区干净。
-- **验收标准**：`git status` 不再显示该文件相关未提交状态。
+- **实际结果（2026-09-11 复核）**：文件现位于 `docs/archive/ROADMAP_2026_Q3.md`（`Test-Path` 为 `True`），`docs/current/ROADMAP_2026_Q3.md` 已不存在 —— 迁移已落地，无需再决定存放位置。
+- **验收标准（已满足）**：`git status` 不再显示该文件相关未提交状态。
 
 ---
 
@@ -192,7 +192,9 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
   - Host Contract 测试、Fuzz 测试、Shadow Verification 全绿。
 - **风险**：部分 host 函数共享全局状态（如 VFS、堆管理），拆分需保持状态访问路径一致。
 
-#### 任务 2.4：拆分 `CideFlutter/lib/screens/ide_screen.dart`
+#### 任务 2.4：拆分 `CideFlutter/lib/screens/ide_screen.dart`（前端资产，已迁出）✅ 已随前端切割消解（2026-09-11）
+
+> **本条关闭**：对象为前端资产，已随 `CideFlutter/` 整体迁出（标签 `before-frontend-split`）。历史成果：896 → 299 行、新增 6 个组件（见 §六 D06 备注）。以下策略与验收标准保留作历史参考，不再推进。
 
 - **拆分策略**：
   - 保留 `ide_screen.dart` 为页面骨架与布局组合。
@@ -250,12 +252,12 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 - **验收标准**：关键 workaround 与边界情况均有代码内标记；维护者可通过 grep 快速定位。
 - **风险**：过度标记会制造噪音，应聚焦真正需要跟踪的问题。
 
-#### 任务 3.3：前端 CustomPainter 绘制缓存优化
+#### 任务 3.3：前端 CustomPainter 绘制缓存优化（前端资产，已迁出）✅ 已随前端切割消解（2026-09-11）
 
-- **涉及文件**：
-  - `CideFlutter/lib/editor/editor_painter.dart`
-  - `CideFlutter/lib/widgets/floating_orb_widget.dart`
-  - `CideFlutter/lib/widgets/visualizers/*.dart`
+- **涉及文件**（均已随 `CideFlutter/` 迁出，标签 `before-frontend-split`）：
+  - `CideFlutter/lib/editor/editor_painter.dart`（前端资产，已迁出）
+  - `CideFlutter/lib/widgets/floating_orb_widget.dart`（前端资产，已迁出）
+  - `CideFlutter/lib/widgets/visualizers/*.dart`（前端资产，已迁出）
 - **执行步骤**：
   1. 对 `TextPainter`、`ParagraphBuilder`、`Gradient`、`Blur` 等对象实施缓存，仅在文本/数据变化时重建。
   2. 为动画组件添加 `RepaintBoundary` 隔离重绘区域。
@@ -268,17 +270,19 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 #### 任务 3.4：统一模式大状态传递优化
 
+> **2026-09-11 口径**：本条**后端侧仍有效**（`StepPayload` 字段瘦身、符号表/变量历史增量更新由 `cide_runtime` 与 `unified::stream` 承担）；Dart 侧条目已随前端切割迁出并冻结。
+
 - **涉及文件**：
-  - `native/src/api/cide.rs`
-  - `native/src/flutter_bridge.rs`
-  - `CideFlutter/lib/providers/unified_notifier.dart`
+  - `native/src/api/cide.rs`（**已随前端切割移除**，出口改由 `native/src/capi/` + `native/src/session_api.rs` 承担）
+  - `native/src/flutter_bridge.rs`（仍存在：历史会话包装层，被 `cide_cli` 消费，名称待后续重构收敛）
+  - `CideFlutter/lib/providers/unified_notifier.dart`（前端资产，已迁出）
 - **执行步骤**：
-  1. 评估当前 `StepPayload`/`StepPayloadDelta` 字段必要性，剔除冗余字段。
-  2. 对符号表、变量历史等大对象启用增量更新或分页。
-  3. 在 Dart 端使用 `compute` 或 isolate 处理大状态反序列化。
-  4. 增加状态大小日志，监控异常增长。
+  1. 评估当前 `StepPayload`/`StepPayloadDelta` 字段必要性，剔除冗余字段（后端，仍有效）。
+  2. 对符号表、变量历史等大对象启用增量更新或分页（后端，仍有效）。
+  3. ~~在 Dart 端使用 `compute` 或 isolate 处理大状态反序列化~~（前端资产，已迁出，条目关闭）。
+  4. 增加状态大小日志，监控异常增长（后端，仍有效）。
 - **验收标准**：
-  - 10 万步统一模式下前端仍保持流畅。
+  - 10 万步统一模式下后端吞吐与内存表现有界（原「前端仍保持流畅」为前端指标，随前端迁出不再由本仓验收）。
   - 内存占用无明显增长。
 - **风险**：增量更新逻辑复杂，可能引入状态不一致。
 
@@ -349,17 +353,17 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 - **执行步骤**：
   1. 新增 `scripts/engineering_health.py` 健康度看板脚本，统计以下指标：
-     - 各 Rust / Dart 源文件行数 Top 20
+     - 各 Rust 源文件行数 Top 20（**Dart 项随前端切割归零**：脚本现只扫描 `native/src` 与 `native/crates`，仓库内 `.dart` 文件数为 0）
      - TODO/FIXME/HACK 数量（按文件分布 Top 10）
      - `unwrap`/`expect` 使用数量（按文件分布 Top 10）
      - 失败记录文件中活跃问题数量
      - Shadow Verification 匹配率（C / C++）
-  2. 生成报告到 `reports/engineering_health.md`；排除 `frb_generated*` 生成文件。
+  2. 生成报告到 `reports/engineering_health.md`。**遗留问题（新记为 D15）**：脚本仍保留前端时代残留（`frb_generated.*` 忽略名单、豁免注释中的 FRB 表述、「Rust/Dart」趋势文案），且报告靠手工生成、未纳入 CI 门禁，待后续清理。
 - **验收标准**：维护者可定期查看工程健康度趋势。
 
 #### 任务 5.3：Mutex poison 处理增强
 
-- **涉及文件**：`native/src/flutter_bridge.rs`
+- **涉及文件**：`native/src/flutter_bridge.rs`（历史会话包装层，被 `cide_cli` 消费，名称待后续重构收敛；**仍存在于本仓**，非前端资产）
 - **执行步骤**：
   1. 在 poison 恢复路径增加日志记录。
   2. 评估是否需要 panic 而非恢复默认值。
@@ -372,9 +376,9 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 | 阶段 | 时间 | 里程碑 | 关键交付物 |
 |------|------|--------|------------|
-| 第一阶段 | 第 1 周 | 基线清理完成 | 文档数字一致、FRB 生成文件移出版本库、失败记录归档、工作区干净 |
-| 第二阶段 | 第 2~4 周 | 超大文件拆分完成 | `expr.rs`/`parser/mod.rs`/`host_funcs.rs`/`ide_screen.dart` 行数达标 |
-| 第三阶段 | 第 5~6 周 | 规范与性能加固完成 | 项目级 clippy 配置生效、TODO 规范落地、前端绘制性能优化 |
+| 第一阶段 | 第 1 周 | 基线清理完成 | 文档数字一致、FRB 生成物随前端切割移除（原「移出版本库」目标已升级为整体删除）、失败记录归档、工作区干净 |
+| 第二阶段 | 第 2~4 周 | 超大文件拆分完成 | `expr.rs`/`parser/mod.rs`/`host_funcs.rs` 行数达标；`ide_screen.dart` 一项已随前端切割消解（前端资产，已迁出） |
+| 第三阶段 | 第 5~6 周 | 规范与性能加固完成 | 项目级 clippy 配置生效、TODO 规范落地；前端绘制性能优化已随前端切割消解（前端资产，已迁出） |
 | 第四阶段 | 第 7~10 周 | C++ 扩展模块化完成 | C++ Parser/TypeChecker/CodeGen 边界清晰、容器布局流程固化 |
 | 第五阶段 | 持续 | 健康度维护常态化 | 季度 archive 清理、工程健康度看板 |
 
@@ -388,8 +392,8 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 2. **Lint**：`cargo clippy --all-targets -- -D warnings` 全绿。
 3. **格式化**：`cargo fmt --check` 通过。
 4. **Shadow Verification**：C/C++ Shadow Verification 无新增失败。
-5. **前端静态检查**：`flutter analyze` 0 issues。
-6. **前端测试**：`flutter test` 全绿。
+5. **出口 3 协议冒烟**：`python scripts/serve_smoke.py` 通过（CI 已执行）。
+6. **出口 2 构建**：`cargo build --target wasm32-unknown-unknown --release` 通过（Phase 2a 起进 CI）。
 7. **集成测试**：CI 全量 workflow 通过。
 
 ### 5.2 变更管理
@@ -402,7 +406,7 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 - 若拆分过程中发现功能回退，立即停止拆分，回滚到上一个稳定提交。
 - 若新增 lint 规则导致大量报错，先降级为 `warn`，分阶段修复。
-- 若 FRB 生成文件移出后 CI 失败，检查生成器版本与缓存配置。
+- 若 wasm32 出口构建失败，先确认目标已安装（`rustup target add wasm32-unknown-unknown`）与 `#[cfg(target_arch = "wasm32")]` 门控未被破坏；历史前端构建（Flutter/Android）的回退策略随前端迁出，需要时从标签 `before-frontend-split` 取回脚本。
 
 ---
 
@@ -411,18 +415,21 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 | 编号 | 债务项 | 阶段 | 状态 | 负责人（角色） | 备注 |
 |------|--------|------|------|----------------|------|
 | D01 | 文档数据口径不一致 | 一 | ✅ 已完成 | 文档维护者 | 2026-06-25 实测统一为 566/569 |
-| D02 | FRB 生成文件管理 | 一 | ✅ 已完成 | CI/构建维护者 | 提交 `ab39aaa` 已改为构建时生成；`.gitignore` 已配置 |
+| D02 | FRB 生成文件管理 | 一 | ✅ 已随前端切割消解（2026-09-11） | CI/构建维护者 | 对象已删除：`native/src/api/`、`native/src/frb_generated.rs`、`Cargo.toml` 的 `flutter_rust_bridge` 依赖；原「提交 `ab39aaa` 改为构建时生成」的方案随 FRB 一并作废；历史见标签 `before-frontend-split` |
 | D03 | `codegen/expr.rs` 过大 | 二 | ✅ 已完成 | 编译器维护者 | 2047 → 510 行；新增 8 个子模块；后续补充拆分 `cide_lexer/src/lib.rs` 1022 → 403 行 |
 | D04 | `parser/mod.rs` 过大 | 二 | ✅ 已完成 | 编译器维护者 | 2633 → 672 行；新增 5 个子模块 |
 | D05 | `host_funcs.rs` 过大 | 二 | ✅ 已完成 | VM 维护者 | 2545 → 155 行；新增 7 个子模块 |
-| D06 | `ide_screen.dart` 过大 | 二 | ✅ 已完成 | 前端维护者 | 896 → 299 行；新增 6 个组件 |
+| D06 | `ide_screen.dart` 过大 | 二 | ✅ 已随前端切割消解（2026-09-11） | 前端维护者 | 历史成果「896 → 299 行；新增 6 个组件」随 `CideFlutter/` 迁出（标签 `before-frontend-split`），本仓已无该文件 |
 | D07 | 缺少项目级 clippy 配置 | 三 | ✅ 已完成 | Rust 维护者 | 新增 `[lints.clippy]` + `clippy.toml` + `scripts/lint_check.sh` |
 | D08 | TODO/FIXME 标记极少 | 三 | ✅ 已完成 | 全团队 | 新增 `docs/current/TODO_CONVENTION.md`，源码标记 30+ 处 |
-| D09 | CustomPainter 缺少缓存 | 三 | ✅ 已完成 | 前端维护者 | Array/Tree/LinkedList Visualizer 缓存 parsed numbers 与 TextPainter；shouldRepaint 精确化；RepaintBoundary 隔离 |
+| D09 | CustomPainter 缺少缓存 | 三 | ✅ 已随前端切割消解（2026-09-11） | 前端维护者 | 历史成果「Array/Tree/LinkedList Visualizer 缓存 parsed numbers 与 TextPainter；shouldRepaint 精确化；RepaintBoundary 隔离」随前端迁出，本仓已无 `*_visualizer.dart` |
 | D10 | C++ 扩展模块耦合度高 | 四 | ✅ 已完成 | C++ 扩展维护者 | 已建立 typeck/cpp/、codegen/cpp/、parser/cpp/ 边界；class 构造/引用/RAII、RangeFor、template、类外方法/静态字段均已下沉 |
 | D11 | 失败记录文件稀释 | 一 | ⏸️ 保留不动 | 测试维护者 | 按用户决策，暂不归档 |
-| D12 | Mutex poison 静默恢复 | 五 | ✅ 已完成 | 桥接维护者 | 增加 #[track_caller]、全局 POISON_COUNT 计数、调用位置日志 |
+| D12 | Mutex poison 静默恢复 | 五 | ✅ 已完成 | 桥接维护者 | 增加 #[track_caller]、全局 POISON_COUNT 计数、调用位置日志；**对象仍在本仓** —— `native/src/flutter_bridge.rs` 为历史会话包装层（被 `cide_cli` 消费），名称待后续重构收敛 |
 | D13 | `docs/archive/` 噪音 | 五 | ⏸️ 保留不动 | 文档维护者 | 按用户决策，暂不清理 |
+| D14 | 生产代码 `unwrap/expect` 回升 | 三 | ⚠️ 待收敛（3 处） | Rust 维护者 | 2026-09-11 复核：仅 `native/crates/cide_typeck/src/decl.rs` 的 L44 / L65 / L648；任务 C 的「0 处」验收标准已不成立，需重新收敛并补 `SAFETY` 注释 |
+| D15 | 工程健康度脚本前端残留 + 无门禁 | 五 | ⚠️ 新记（2026-09-11） | 构建维护者 | `scripts/engineering_health.py` 的 `frb_generated.*` 忽略名单与「Rust/Dart」文案待清理；`reports/engineering_health.md` 手工生成、未进 CI |
+| D16 | 单文件超 800 行阈值（`decl.rs` 871 行） | 二 | ⚠️ 新记（2026-09-11） | 编译器维护者 | 任务 B 的「每个源文件 ≤800 行」验收标准已不满足：199 个 `.rs` 文件中仅 `native/crates/cide_typeck/src/decl.rs` 超标（871 非空行），需重新拆分或下调口径 |
 
 ---
 
@@ -518,24 +525,24 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 ### 8.1 评估结论摘要
 
-当前项目处于 **Phase 42 收尾期 / 质量加固期**，核心数据：
+当前项目处于 **Phase 42 收尾期 / 质量加固期**，并已于 2026-09-11 完成前端切割、转入纯后端「三出口一核心」阶段。下表口径 **as-of 2026-09-11**，已剔除前端项（数据来源：`reports/engineering_health.md`、`native/tests/shadow_verification/reports/shadow_report_latest.md`、`CPP_FAILURES.md`；未能核实者明确标注「待核实」）：
 
 | 维度 | 当前状态 |
 |------|----------|
-| C Shadow Verification | 616/620（99.4%，完全匹配 + cide_better + known_issue；剩余 3 运行时缺口 + 1 输出差异） |
-| C++ Shadow Verification | 93/95（97.9%，一致 93 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 因使用 Cide 内置容器无法被 Clang++ 直接编译） |
-| E2E 回归 | Baseline/K&R/LeetCode/C++ 全绿，Template 78/82（4 已知偏差）；LeetCode 扩展至 138 题，K&R 扩展至 81 题，C++ E2E 扩展至 73 题 |
+| C Shadow Verification | 636/636（完全匹配 617 = 97%，另 cide_better 16 + known_issue 3；0 编译缺口 / 0 运行时缺口 / 0 输出差异；2026-09-11 20:00 实测，jobs=8） |
+| C++ Shadow Verification | 98/100（2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 因使用 Cide 内置容器无法被 Clang++ 直接编译；2026-09-11 复测一致） |
+| E2E 回归 | Baseline 321 / K&R 81 / LeetCode 138 / gap 14 全绿；Template 82 例（4 个已知偏差，见 `E2E_FAILURES.md`）；C++ E2E 为 `native/tests/cases/cpp/` 下 **78** 个 `.cpp` 用例文件（2026-09-11 实测），`CPP_FAILURES.md` 正文仍记为 74 个 —— **口径待核实/同步** |
 | 三层契约 | Host/Bytecode/Differential 全绿 |
 | Fuzz | 5/5 通过 |
 | Clippy | 0 warning |
-| 生产代码 unwrap/expect | 0 处（全量 28 处，已区分生产/测试/生成代码；统计范围扩展至 `native/crates/`） |
-| TODO/FIXME | Rust 10 处、Dart 6 处 |
-| 活跃失败记录 | 14 条（口径已统一） |
-| 任务 B 超大文件拆分 | ✅ 已完成：`cide_typeck/src/builtin.rs`、`CideFlutter/lib/widgets/custom_keyboard.dart`、`cide_typeck/src/cpp_monomorph.rs`、`native/src/unified/trace_analyzer.rs` 已拆分；`cpp_monomorph.rs` 1443 → 18 行入口 + 7 个子模块（`func.rs` / `class.rs` / `replace.rs` / `synth.rs` / `builtin.rs` / `builtin_vec.rs` / `builtin_list.rs`），`trace_analyzer.rs` 838 → 55 行入口 + 7 个子模块（`bounds.rs` / `use_after_free.rs` / `double_free.rs` / `div_zero.rs` / `null_deref.rs` / `utils.rs` / `tests.rs`），所有子文件 <800 行 |
+| 生产代码 unwrap/expect | **3 处**（全量 27 处；`reports/engineering_health.md` 2026-09-11 口径）—— ⚠️ 相对任务 C 的「0 处」验收标准已回升，全部位于 `native/crates/cide_typeck/src/decl.rs`，**新记为 D14** |
+| TODO/FIXME | Rust 10 处（2026-09-11 实测）；Dart 6 处 → **随前端切割归零**（仓库内 `.dart` 文件数为 0） |
+| 活跃失败记录 | 12 条（`reports/engineering_health.md` 2026-09-11 口径，口径已统一） |
+| 任务 B 超大文件拆分 | ✅ 已完成（前端项已消解，**新增 1 处超标**）：`native/crates/cide_typeck/src/builtin.rs`、`native/crates/cide_typeck/src/cpp_monomorph/`（1443 → 18 行入口 + 7 个子模块）、`native/src/unified/trace_analyzer/`（838 → 55 行入口 + 7 个子模块）；`CideFlutter/lib/widgets/custom_keyboard.dart`（991 → 12 行 + 5 个 `keyboard/` 子文件）为**前端资产，已迁出**，该子项关闭；⚠️ 2026-09-11 复核：199 个 `.rs` 文件中 `native/crates/cide_typeck/src/decl.rs` 871 非空行**超出 800 行阈值**（**新记为 D16**），其余文件均达标 |
 | 已知限制修复 | H01 参数化宏调用后带分号 ✅ 已修复（扩展支持，与 Clang 存在差异）；H02 VLA 边界检查缺失 ✅ 已修复；H03 `#include` 非标准库路径 ✅ 已修复（支持 `#include "header.h"` 基于源文件目录加载）；H04 `va_list` / `va_start` / `va_arg` / `va_end` 自定义变参函数 ✅ 已修复；H05 全局 VLA ✅ 明确为标准限制（C99 禁止文件作用域 VLA，Clang 同样报错）无需修复；H06 复合副作用数组索引 ✅ 已修复；H07 函数返回 `double` 异常 ✅ 已修复；H08 `scanf` `%s` 不支持 ✅ 已修复；H09 `fputs(str, stdout)` 无输出 ✅ 已修复；H10 `fclose` 后 VFS `FILE*` 泄漏误报 ✅ 已修复；AGENTS.md 已知限制清单全部处理完毕 |
 | 任务 G 推进发现 | JIT 统计信息污染 stdout 已修复，新增 `cide_get_jit_stats` C API |
 
-主要短板：**Workspace 拆分已进入平台期（`cide_shared`/`cide_ast`/`cide_runtime`/`cide_vm`/`cide_lexer`/`cide_parser`/`cide_cpp_frontend`/`cide_typeck`/`cide_codegen`/`cide_algorithm_steps` 已独立；`unified/checkpoint.rs` 的 `CheckpointManager` 已下沉到 `cide_vm::snapshot`；剩余 `unified/types.rs`/`stream.rs`/`root_cause.rs`、`engine/`、`api/` 因 FRB 孤儿规则与 `Session` 耦合暂保留在 `cide_native` 内部）、编译管线三阶段镜像耦合、多入口 API 重复包装、`cide_diagnostics` 因 FRB 孤儿规则暂无法独立成 crate；AGENTS.md 已知限制清单（H01~H10、H04/H05）已全部处理或明确记录原因；H01 参数化宏分号已作为教学子集扩展支持但与 Clang 存在差异，H03 自定义头文件 include 已支持，均已诚实记录；Phase 42 进行中：`cide_vec<T>` / `cide_list<T>` 类类型模板实参均已支持，`const T&` 参数已支持绑定右值，`cpp_monomorph.rs` 已拆分为 18 行入口 + 7 个子模块，所有子文件 <800 行**。
+主要短板：**Workspace 拆分已进入平台期（`cide_shared`/`cide_ast`/`cide_runtime`/`cide_vm`/`cide_lexer`/`cide_parser`/`cide_cpp_frontend`/`cide_typeck`/`cide_codegen`/`cide_algorithm_steps` 已独立；`unified/checkpoint.rs` 的 `CheckpointManager` 已下沉到 `cide_vm::snapshot`；剩余 `unified/types.rs`/`stream.rs`/`root_cause.rs`、`engine/`、`diagnostics` 仍保留在 `cide_native` 内部，`native/src/api/` 已随前端切割删除）。**FRB 已移除，原有孤儿规则阻碍消失，`unified`/`diagnostics`/`engine` 的拆分可重新评估（尚未执行）**；`cide_api` 一项需按「C API / CLI 入口」重新界定（`native/src/capi/`、`native/src/bin/`、`native/src/flutter_bridge.rs`）。其余短板：编译管线三阶段镜像耦合、多入口 API 重复包装、生产代码 `unwrap/expect` 回升至 3 处（D14）、工程健康度脚本仍带前端时代口径且未门禁化（D15）、`native/crates/cide_typeck/src/decl.rs` 871 行超出任务 B 的 800 行阈值（D16）；AGENTS.md 已知限制清单（H01~H10）已全部处理或明确记录原因；H01 参数化宏分号已作为教学子集扩展支持但与 Clang 存在差异，H03 自定义头文件 include 已支持，均已诚实记录；Phase 42 进行中：`cide_vec<T>` / `cide_list<T>` 类类型模板实参均已支持，`const T&` 参数已支持绑定右值，`cpp_monomorph.rs` 已拆分为 18 行入口 + 7 个子模块，所有子文件 <800 行**。
 
 ### 8.2 下阶段重点任务
 
@@ -554,15 +561,15 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 | `cide_codegen` | 字节码生成 | `crates/cide_codegen/` | ✅ 已拆分 |
 | `cide_vm` | 虚拟机与 host 函数 | `crates/cide_vm/` | ✅ 已拆分 |
 | `cide_algorithm_steps` | 算法步骤语义标注 | `crates/cide_algorithm_steps/` | ✅ 已拆分 |
-| `cide_unified` | 统一模式 / 时间旅行 | `native/src/unified/` | ⚠️ 部分下沉（`algorithm_steps` 已独立，`CheckpointManager` 已下沉到 `cide_vm::snapshot`；`trace_analyzer.rs` 已拆分为 `trace_analyzer/` 子模块但仍保留在 `cide_native` 内部；`types.rs`/`stream.rs`/`root_cause.rs`/`engine.rs`/`collector.rs` 因 FRB/Session 耦合暂保留） |
-| `cide_diagnostics` | 诊断、知识图谱、自动修复 | `native/src/diagnostics/` | ⚠️ 因 FRB 孤儿规则暂保留在 `cide_native` 内部 |
-| `cide_engine` | 编译管线编排 | `native/src/engine/` | ⏳ 待拆分 |
-| `cide_api` | FRB / C API / CLI 入口 | `native/src/api/`、`native/src/capi/`、`native/src/bin/`、`native/src/flutter_bridge.rs` | ⏳ 待拆分 |
+| `cide_unified` | 统一模式 / 时间旅行 | `native/src/unified/` | ⚠️ 部分下沉（`algorithm_steps` 已独立，`CheckpointManager` 已下沉到 `cide_vm::snapshot`；`trace_analyzer.rs` 已拆分为 `trace_analyzer/` 子模块；`types.rs`/`stream.rs`/`root_cause.rs`/`engine.rs`/`collector.rs` 仍保留在 `cide_native` 内部 —— **FRB 已移除，原孤儿规则阻碍消失，可重新评估（尚未执行）**，剩余阻力是与 `Session` 的耦合） |
+| `cide_diagnostics` | 诊断、知识图谱、自动修复 | `native/src/diagnostics/` | ⚠️ 暂保留在 `cide_native` 内部；**FRB 已移除，原有孤儿规则阻碍消失，可重新评估（尚未执行）** |
+| `cide_engine` | 编译管线编排 | `native/src/engine/` | ⏳ 待拆分（阻力为 `Session` 耦合，非 FRB） |
+| `cide_api` | C API / CLI 入口（原含 FRB 出口） | `native/src/capi/`、`native/src/bin/`、`native/src/flutter_bridge.rs`（历史会话包装层，`cide_cli` 消费，名称待收敛）；~~`native/src/api/`~~ **已随前端切割删除** | ⏳ 待拆分（FRB 阻碍已消失，边界需重新界定） |
 
 **执行步骤**：
 
 1. ✅ 在 `native/Cargo.toml` 中建立 workspace，已迁移 `cide_shared`（SourceLoc）与 `cide_ast`（AST/类型系统）。
-2. ✅ 拆分 `cide_runtime`：下沉 `func_meta`/`symbol`/`type_utils`、`RuntimeState`/`MemoryState` 及依赖类型、内存布局常量、`unified_types` 基础数据；`session.rs` 改为带 `#[frb]` 类型的薄包装层 + re-export。
+2. ✅ 拆分 `cide_runtime`：下沉 `func_meta`/`symbol`/`type_utils`、`RuntimeState`/`MemoryState` 及依赖类型、内存布局常量、`unified_types` 基础数据；`session.rs` 改为带 `#[frb]` 类型的薄包装层 + re-export（`#[frb]` 标记已于 2026-09-11 前端切割时清除，`native/src/session.rs` 仍为本仓语言中立会话状态）。
 3. ✅ 拆分 `cide_vm`：将 `native/src/vm/` 完整迁移到 `crates/cide_vm`；引入 `VmContext` 替代 `Session` 上帝对象，打破 `vm` 与 `session` 的循环依赖；`cide_native` 通过 `pub use cide_vm as vm;` 保持路径兼容。
 4. ✅ 拆分 `cide_lexer`：将 `ErrorCode` 下沉到 `crates/cide_shared`；将 `native/src/compiler/lexer.rs` 与 `native/src/compiler/lexer/` 子模块完整迁移到 `crates/cide_lexer`；`cide_native` 通过 `pub use cide_lexer as lexer;` 保持路径兼容。
 5. ✅ 拆分 `cide_parser`：将 `native/src/compiler/parser/` 全部 10 个文件完整迁移到 `crates/cide_parser`；`cide_shared` 新增 `SourceLoc` re-export；`cide_native` 通过 `pub use cide_parser as parser;` 保持路径兼容。
@@ -571,14 +578,13 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 8. ✅ 拆分 `cide_codegen`：将 `native/src/compiler/codegen/` 全部 26 个文件完整迁移到 `crates/cide_codegen`；下沉 `cide_vm::opcode`/`cide_vm::instruction` 与内存布局常量到 `cide_runtime`，切断 `codegen` 对 `cide_vm` 的直接依赖。
 9. ✅ 拆分 `cide_algorithm_steps`：将 `native/src/unified/algorithm_steps/` 完整迁移为独立 crate；通过 `AlgorithmContext` trait 解耦对 `Session` 的依赖；`cide_native` 通过 `pub use cide_algorithm_steps as algorithm_steps;` 保持 `crate::unified::algorithm_steps` 路径兼容。
 10. ✅ 迁移 `CheckpointManager`：将 `native/src/unified/checkpoint.rs` 的 `CheckpointManager` 下沉到 `cide_vm::snapshot`；重构 `should_checkpoint` 接收 `semantic_label: &str`，`save` 接收 `&mut VmContext`，彻底去除对 `Session`/`StepMeta` 的依赖；更新 `unified/engine.rs`、`flutter_bridge.rs`、`bin/cide_cli.rs`、`tests/test_snapshot.rs` 调用点。
-11. ⚠️ 评估 `unified`/`engine`/`api` 拆分受阻，Workspace 拆分进入平台期：
-   - `unified/types.rs` 中 `StepPayload`/`AlgorithmStepSnapshot`/`PointerSnapshot` 等大量类型带 `#[frb]` 属性；若将 `unified` 拆为外部 crate，`cide_native` 为其实现 `IntoIntoDart` 会触发 Rust 孤儿规则（与 `cide_diagnostics` 同因）。
-   - `engine` 模块（`compile_pipeline.rs`/`session_ops.rs`）依赖 `crate::session::Session`，而 `Session` 与 `CompileState` 均含 `#[frb]` 类型；直接拆分会形成 `cide_engine → cide_native → cide_engine` 的循环依赖。
-   - `api` 模块是 FRB 入口，`api/cide.rs` 大量 `#[frb]` 函数与 `pub use` 直接定义在 `cide_native` 中；必须随 FRB 生成策略一起迁移。
-   - 结论：`unified`/`engine`/`api` 暂保留在 `cide_native` 内部。后续若需拆分，需先建立独立的 `cide_session`（非 FRB 核心状态）与专门的 FRB 绑定层 crate，工程量大且风险高，不在当前阶段强行推进。
-12. ⚠️ `cide_diagnostics` 与含 `#[frb]` 的类型暂保留在 `cide_native` 内部：若拆分为外部 crate 会触发 Rust 孤儿规则，待 FRB 跨 crate 绑定策略明确后再迁移。
+11. ⚠️ `unified`/`engine`/`api` 拆分受阻的原因**已于 2026-09-11 部分失效，如实更新**：
+   - **FRB 已移除，原有孤儿规则阻碍消失**：`unified/types.rs` 的 `StepPayload`/`AlgorithmStepSnapshot`/`PointerSnapshot` 等类型已不再带 `#[frb]` 属性，`cide_native` 也不再为其生成 `IntoIntoDart` 实现；`api` 模块（`native/src/api/`，原 FRB 出口）已整体删除。原「必须等 FRB 跨 crate 绑定策略明确」的前提不再成立。
+   - **剩余阻力只有 `Session` 耦合**：`engine`（`compile_pipeline.rs`/`session_ops.rs`）与 `unified` 仍依赖 `crate::session::Session`，直接拆分仍会形成 `cide_engine → cide_native → cide_engine` 的循环依赖，需先建立独立的 `cide_session`（语言中立核心状态）crate。
+   - 结论：**`unified`/`diagnostics`/`engine` 的拆分可重新评估（尚未执行）** —— 2026-09-11 复核时三者仍位于 `cide_native` 内部；后续按「先 `cide_session`、再 `unified`/`engine`/`diagnostics`」的顺序推进，工程量大，不在文档翻新范围内强制启动。
+12. ⚠️ `cide_diagnostics` 暂保留在 `cide_native` 内部：**FRB 已移除，原有孤儿规则阻碍已消失，可重新评估（尚未执行）**；当前主要阻力是其与 `Session`／诊断上下文的耦合。
 13. 每迁移一个 crate，执行 `cargo test --workspace --all-features` 与 Shadow Verification 验证无回归。
-14. 评估 `cide_engine` / `cide_api` 独立 crate（P6）：因二者深度依赖 `Session`/`CompileState` 等含 `#[frb]` 类型的状态对象，且 FRB 会在 `cide_native` 中为外部 crate 类型生成 `IntoIntoDart` 实现触发 Rust 孤儿规则，当前阶段不具备安全拆分条件。结论：暂缓拆分，待 FRB 跨 crate 绑定策略与 `cide_session` 非 FRB 核心状态 crate 建立后再推进。
+14. 评估 `cide_engine` / `cide_api` 独立 crate（P6）：**FRB 已移除，原「含 `#[frb]` 类型 + 孤儿规则」的阻碍消失**；当前唯一实质阻力是二者仍深度依赖 `crate::session::Session`/`CompileState`（语言中立但耦合度高）。结论：拆分**可重新评估（尚未执行）**，建议路径为先建立 `cide_session` 语言中立核心状态 crate，再依次迁移 `unified` → `engine` → `diagnostics`。`cide_api` 边界需按纯后端出口（capi / CLI / `flutter_bridge.rs`）重新界定。
 
 **验收标准**：
 
@@ -589,13 +595,15 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 **风险**：
 - Workspace 拆分会改变模块间可见性，需大量调整 `pub` 与 `use`；建议小步迁移，一次一个 crate。
-- 含 `#[frb]` 导出类型的模块（如 `diagnostics`）若拆分为独立 crate，FRB 会在 `cide_native` 中为其生成 `IntoIntoDart` 实现，触发 Rust 孤儿规则。此类模块需留在 `cide_native` 内部，或设计专门的 FRB 绑定 crate。
+- ~~含 `#[frb]` 导出类型的模块（如 `diagnostics`）拆分为独立 crate 会触发 FRB 孤儿规则~~ —— **该风险已随 2026-09-11 FRB 移除而消失**。当前拆分风险转为：`Session` 上帝对象耦合（需先抽 `cide_session`）、跨 crate 可见性调整（大量 `pub`/`use` 变更），仍建议小步迁移，一次一个 crate。
 
 ---
 
 #### 任务 B：超大单体文件继续拆分（P1，预计 2~3 周）✅ 已完成
 
 **目标**：将剩余超过 1000 行的核心文件拆分为职责清晰的子模块。
+
+> **路径说明（2026-09-11）**：下表部分路径为 crate 迁移前的历史路径，现已沉降为 —— `native/src/vm/` → `native/crates/cide_vm/src/`；`native/src/compiler/ast.rs` → `crates/cide_ast/src/`；`native/src/unified/algorithm_steps.rs` → `native/crates/cide_algorithm_steps/src/`；`native/src/compiler/algorithm_detector.rs` 的目录仍位于 `native/src/compiler/algorithm_detector/`。前端资产 `CideFlutter/lib/widgets/custom_keyboard.dart` 已随切割迁出，该子项关闭。
 
 **已完成拆分**：
 
@@ -623,42 +631,40 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 |------|--------|----------------|----------|
 | `native/src/diagnostics/error_catalog.rs` | 968 | 455 | 按错误码范围拆分为 `error_catalog/lexer.rs`（1000~1999）、`parser.rs`（2000~2999）、`semantic.rs`（3000~3999）、`cpp.rs`（4000~4999）；`generate_fix` 保留在入口文件 |
 | `native/crates/cide_typeck/src/builtin.rs` | 1034 | 336 | 按函数类别拆分为 `builtin/memory.rs`、`builtin/string.rs`、`builtin/io.rs`、`builtin/file.rs`、`builtin/math.rs`；`visit_call` 分派与格式字符串工具保留在入口文件 |
-| `CideFlutter/lib/widgets/custom_keyboard.dart` | 991 | 12 | 使用 Dart `part` 机制拆分为 `keyboard/layout.dart`（核心状态与 `build`）、`keyboard/letters.dart`（字母模式 extension）、`keyboard/numbers.dart`（数字模式 extension）、`keyboard/symbols.dart`（符号模式 extension）、`keyboard/gestures.dart`（`_KeyButton`/`_LetterKey`）；符号分类状态变更下沉为 `_CustomKeyboardState._setSymbolCategory` 以符合 `@protected` 规则 |
-| `native/crates/cide_typeck/src/cpp_monomorph.rs` | 1443 | 18 | 按职责拆分为 `cpp_monomorph/func.rs`（函数模板单态化）、`cpp_monomorph/class.rs`（类模板单态化）、`cpp_monomorph/replace.rs`（类型 / 语句 / 表达式模板参数替换）、`cpp_monomorph/synth.rs`（合成 AST 小工具）、`cpp_monomorph/builtin.rs`（内置容器分发入口）、`cpp_monomorph/builtin_vec.rs`（`cide_vec<T>` 类类型实参合成）、`cpp_monomorph/builtin_list.rs`（`cide_list<T>` 类类型实参合成） |
+| ~~`CideFlutter/lib/widgets/custom_keyboard.dart`~~（前端资产，已迁出） | 991 | 12 | ✅ 已随前端切割消解（2026-09-11）：使用 Dart `part` 机制拆分为 `keyboard/layout.dart`（核心状态与 `build`）、`keyboard/letters.dart`（字母模式 extension）、`keyboard/numbers.dart`（数字模式 extension）、`keyboard/symbols.dart`（符号模式 extension）、`keyboard/gestures.dart`（`_KeyButton`/`_LetterKey`）；成果随 `CideFlutter/` 迁出，本仓已无 `.dart` 文件 |
+| `native/crates/cide_typeck/src/cpp_monomorph/`（入口 `mod.rs`，2026-09-11 起为目录 + 子模块） | 1443 | 18 | 按职责拆分为 `cpp_monomorph/func.rs`（函数模板单态化）、`cpp_monomorph/class.rs`（类模板单态化）、`cpp_monomorph/replace.rs`（类型 / 语句 / 表达式模板参数替换）、`cpp_monomorph/synth.rs`（合成 AST 小工具）、`cpp_monomorph/builtin.rs`（内置容器分发入口）、`cpp_monomorph/builtin_vec.rs`（`cide_vec<T>` 类类型实参合成）、`cpp_monomorph/builtin_list.rs`（`cide_list<T>` 类类型实参合成） |
 | `native/src/unified/trace_analyzer.rs` | 838 | 55 | 按运行时陷阱类型拆分为 `trace_analyzer/bounds.rs`（数组越界 / BoundsCategory 推断）、`trace_analyzer/use_after_free.rs`、`trace_analyzer/double_free.rs`、`trace_analyzer/div_zero.rs`、`trace_analyzer/null_deref.rs`、`trace_analyzer/utils.rs`（共享工具 / LoopInfo）、`trace_analyzer/tests.rs`（单元测试） |
 
 **验收标准**：
 
-- 每个源文件行数降至 800 行以内。
+- ⚠️ 每个源文件行数降至 800 行以内 —— **2026-09-11 复核已不满足**：199 个 `.rs` 文件中 `native/crates/cide_typeck/src/decl.rs` 为 871 非空行（新记 **D16**），其余全部达标。
 - 所有 Rust 测试通过。
 - Shadow Verification 无新增失败。
-- 不引入新的 `unwrap/expect`。
+- 不引入新的 `unwrap/expect`（**注意**：该条亦已回升 3 处，见 D14）。
 
 ---
 
 #### 任务 C：生产代码 unwrap/expect 收敛（P2，预计 2 周）
 
-**目标**：将生产路径中的 43 处 `unwrap`/`expect` 逐步替换为显式错误处理，降低运行时 panic 风险。
+**目标**：将生产路径中的 `unwrap`/`expect` 逐步替换为显式错误处理，降低运行时 panic 风险（原始目标为当时实测的 43 处）。
 
-**重点文件**：
+**重点文件（2026-09-11 复核现状，对应 D14）**：
 
-- `native/src/compiler/cfg.rs`（9 处）
-- `native/src/vm/core/executor/mod.rs` / `executor/stack.rs` / `executor/memory.rs`（合计 7 处）
-- `native/src/api/cide.rs`（4 处）
-- `native/src/compiler/data_flow.rs`（4 处）
-- `crates/cide_codegen/src/expr/call.rs`（3 处）
+- `native/crates/cide_typeck/src/decl.rs`（**3 处，当前唯一残留生产代码 `unwrap`**：L44 / L65 `init.take().unwrap()`、L648 `default.clone().unwrap()`）。
+- 历史目标（已清零）：`native/src/compiler/cfg.rs`、`native/crates/cide_vm/src/core/executor/`（原 `native/src/vm/core/executor/`）、`native/src/compiler/data_flow.rs`、`native/crates/cide_codegen/src/expr/call.rs`、`native/src/compiler/intent.rs`——这些文件中现存的 `unwrap/expect` 均位于 `#[cfg(test)]` 测试代码内。
+- 已随前端切割移除：`native/src/api/cide.rs`（原 4 处）；其 `apply_fix` 本体已迁入语言中立的 `native/src/diagnostics/auto_fix.rs`。
 
 **执行步骤**：
 
 1. 对这些文件逐函数审计，区分"确实不可失败"与"可能失败"的调用点。
 2. "确实不可失败"的调用添加注释说明不变量，保留 `expect` 并补充 `#[allow(clippy::expect_used)]`。
 3. "可能失败"的调用改为 `match` / `if let` / `?` 传播，或转换为结构化诊断错误。
-4. 生产代码 `unwrap/expect` 已降至 0 处，`unwrap_used` 已提升为 `deny`；统计口径以 `engineering_health.py` 排除 `#[cfg(test)]` / `#[test]` / `frb_generated.rs` 后的结果为准。
+4. 生产代码 `unwrap/expect` 曾于 2026-06-25 降至 0 处（`unwrap_used` 已为 `deny`）；**2026-09-11 复核实测回升至 3 处**（`native/crates/cide_typeck/src/decl.rs`，已于 D14 登记），需重新收敛。统计口径以 `engineering_health.py` 排除 `#[cfg(test)]` / `#[test]` 后的结果为准（脚本中的 `frb_generated.rs` 豁免项为前端时代残留，见 D15）。
 
 **验收标准**：
 
-- ✅ 生产代码 `unwrap/expect` 已收敛至 0 处；`engineering_health.md` 与维护计划数字已对齐。
-- ✅ `cargo clippy --all-targets -- -D warnings` 全绿。
+- ⚠️ **当前不满足**：生产代码 `unwrap/expect` 实为 3 处（原「0 处」结论已过期）；重新收敛至 0 处后，`engineering_health.md` 与维护计划数字需再次对齐。
+- ✅ `cargo clippy --all-targets -- -D warnings` 全绿（`unwrap_used = deny` 生效中）。
 - 新增错误路径均有单元测试覆盖。
 
 ---
@@ -673,6 +679,7 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 2. 在 `KR_FAILURES.md` 顶部明确说明：当前 0 个活跃已知失败，文件主体为历史修复记录。
 3. 修正 `CPP_FAILURES.md` 中"60 个 E2E 实际用例"的笔误，统一为 61 个。
 4. 检查其他 `*_FAILURES.md` 是否也存在类似口径不一致，统一修正。
+5. **2026-09-11 新增口径问题（待同步）**：`CPP_FAILURES.md` 现记「C++ E2E 74 个用例」，而 `native/tests/cases/cpp/` 实际有 **78** 个 `.cpp` 文件（`cide_e2e.rs::load_cpp_cases` 加载目录下全部 `.cpp`）；两处数字需对账后统一。
 
 **验收标准**：
 
@@ -682,33 +689,27 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 ---
 
-#### 任务 E：CI 与构建系统加固（P2，预计 2~3 周）
+#### 任务 E：CI 与构建系统加固（P2）✅ 已完成（前端子项已随切割消解，wasm32 子项转入 Phase 2a）
 
 **目标**：降低 CI 对 Windows-only runner 与 Flutter 工具 patch 的依赖，提升构建鲁棒性。
 
-**执行步骤**：
+**执行步骤（2026-09-11 口径改写）**：
 
-1. **对齐本地与 CI 的测试/ lint 命令**：
-   - `scripts/build_flutter.py --test` 改为执行 `cargo test --workspace --all-features`，确保所有 workspace member crates 的测试都被运行。
-   - `scripts/build_flutter.py --test` 的 clippy 改为 `cargo clippy --workspace --all-targets --all-features -- -D warnings`。
-   - CI Rust job 同步使用 `cargo test --workspace --all-features` 与 `cargo clippy --workspace --all-targets --all-features -- -D warnings`。
-2. **Flutter generator 问题根治**：
-   - 调研是否可通过 `flutter config --enable-windows-vulkan` 或环境变量避免 patch `build_windows.dart`。
-   - 若必须 patch，将 patch 脚本化并加入版本控制，避免 CI 中内联 PowerShell 代码。
-3. **Android job 增加基础测试**：
-   - 构建完成后至少运行 `flutter test`（仅 Dart 层；默认按声明顺序执行，无需随机化种子参数）。
-   - 有条件时增加 Android 模拟器 smoke 测试。
-4. **依赖版本锁定**：
-   - 对 `serde`、`serde_json`、`libm` 等主依赖增加小版本锁定（如 `1.0.x`），避免行为漂移。
-5. **binaryen/wasm-opt 稳定性**：
+1. **对齐本地与 CI 的测试 / lint 命令** ✅：
+   - 原入口 `scripts/build_flutter.py --test` 已随前端切割删除；现行本地与 CI 统一命令为 `cargo test --workspace --all-features` 与 `cargo clippy --workspace --all-targets --all-features -- -D warnings`（`ci.yml` 的 `rust` job 已如此执行）。
+2. **Flutter generator 问题根治** ✅ 已随前端切割消解：`scripts/patch_flutter_windows_generator.py` 与相关 patch 需求随 Flutter 构建整体迁出（标签 `before-frontend-split`）。
+3. **Android job 增加基础测试** ✅ 已随前端切割消解：`ci.yml` 已无 android / ios / flutter job，CI 收缩为纯后端 `rust` job。
+4. **依赖版本锁定** ✅：`serde` / `serde_json` / `libm` 已做小版本锁定（现行写法为 `~1.0.228` / `~1.0.149` / `~0.2.16`）。
+5. **binaryen/wasm-opt 稳定性**（转入 wasm32 出口 Phase 2a，**尚未落地**）：
    - 将 binaryen 版本与 wasm-opt 参数文档化。
    - 考虑将 wasm-opt 步骤改为可选，避免阻塞主 CI。
+   - 现状：`wasm32-unknown-unknown` 已冒烟实证（零修改构建 3.75MB），但 CI 中**尚无 wasm job**，`scripts/wasm_smoke/` 亦未建立；计划见 `CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md` §4.2 / Phase 2a。
 
-**验收标准**：
+**验收标准（改写后）**：
 
-- CI 全绿且不依赖临时 patch。
-- 本地 `python scripts/build_flutter.py --test` 与 CI 行为一致。
-- Android job 至少运行 Dart 层测试。
+- ✅ CI 全绿且不依赖临时 patch（Flutter patch 需求已消失）。
+- ✅ 本地与 CI 使用同一套 `cargo test` / `cargo clippy` 命令（不再有 Flutter 构建脚本作为本地入口）。
+- ⏳ wasm32 出口检查进 CI（Phase 2a 待办）。
 
 ---
 
@@ -718,28 +719,29 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 **执行步骤**：
 
-1. **Dart Visualizer 缓存落地（已完成）**：
+1. **Dart Visualizer 缓存落地** ✅ 已随前端切割消解（前端资产，已迁出）：
    - ✅ `array_visualizer.dart` 缓存 parsed numbers。
    - ✅ `tree_visualizer.dart`、`linked_list_visualizer.dart` 将 `TextPainter` 创建上提到 State 并复用，通过 `saveLayer` 应用动态透明度。
    - ✅ `RepaintBoundary` 已在动画组件就位。
    - ✅ `shouldRepaint` 已基于 `nodes`/`isDark`/`progress` 精确判定。
-2. **统一模式差分编码落地（已完成）**：
+   - 以上成果随 `CideFlutter/` 迁出（标签 `before-frontend-split`），本仓无对应验收对象。
+2. **统一模式差分编码落地（已完成，后端侧仍有效）**：
    - ✅ 变量级差分（`var_deltas` / `new_vars` / `removed_var_name_indices`）已在位。
    - ✅ 符号表全局去重字符串池已在位。
-   - ✅ Dart 端大 batch（>50 units）切到 isolate 解码已在位。
+   - ✅ ~~Dart 端大 batch（>50 units）切到 isolate 解码~~（Dart 侧已迁出，条目关闭）。
    - ✅ `call_stack` / `vis_events` / `accessed_vars` 改为 `Option<Vec<T>>`：无变化时不再全量传输。
    - ✅ `array_snapshots` / `pointer_snapshots` 实现按名索引的新增/替换/删除差分（`removed_*_name_indices`）。
-   - 🚧 大对象（符号表、变量历史）分页或懒加载待进一步评估。
-3. **性能基线（已完成后端实测，前端待实测）**：
+   - 🚧 大对象（符号表、变量历史）分页或懒加载待进一步评估（后端侧）。
+3. **性能基线（后端已实测；前端项已随切割迁出）**：
    - ✅ 完成后端统一模式 10 万步基准实测：新增 `native/benches/unified_perf_baseline.c`（50 个逆序元素冒泡排序，约 10 万 VM 步）与 `scripts/unified_perf_baseline.py`，release 模式下后端吞吐约 **18,500 步/秒**，生成 `reports/unified_perf_baseline.md`。
    - ✅ 为支持长程序性能测试，`UnifiedEngine` 新增 `with_max_steps` 构造函数；`cide_cli unified` 新增 `--max-steps <n>` 选项（默认 100_000）。
-   - ✅ 前端 55fps 回放基线已在完整 Flutter 桌面端 Release 环境中实测通过：40 个元素冒泡排序统一模式回放 5 秒，平均总帧时间 1211.9 μs，等效 FPS 825.1，满足 ≥55fps 基线；报告见 `reports/frontend_fps_baseline.md`。
+   - 📦 前端 55fps 回放基线（Flutter 桌面端 Release 实测：40 元素冒泡排序回放 5 秒，等效 FPS 825.1；报告 `reports/frontend_fps_baseline.md`）为**前端资产历史成果，已迁出**，不再由本仓验收（报告文件仍留在 `reports/` 作为历史记录）。
 
-**验收标准**：
+**验收标准（改写后）**：
 
-- `flutter test` 与集成测试通过。
-- 复杂可视化场景帧率 ≥55fps。
-- 10 万步统一模式无明显卡顿与内存泄漏。
+- ✅ `cargo test --workspace --all-features` 与后端 Shadow 防线全绿（依据 2026-09-11 批次 H 记录：全量 0 failed、clippy 全绿、C Shadow 636 例 0 非预期差异、C++ Shadow 0 非预期差异、serve 冒烟通过）；原「`flutter test`」验收项随前端迁出，条目关闭。
+- 📦 复杂可视化场景帧率 ≥55fps —— **前端指标，已随前端切割迁出并冻结，不再由本仓验收**。
+- ✅ 10 万步统一模式后端无明显卡顿与内存泄漏（后端基线实测约 18,500 步/秒）。
 
 ---
 
@@ -749,9 +751,9 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 **执行步骤**：
 
-1. **LeetCode 逐步填充**：在 0~30 道中等题目标达成后，继续 all in 混合难度题目。✅ 2026-06-18 新增 15 道混合难度题（含 5 道困难题），当前 LeetCode 用例总数 92 道，均通过 Shadow Verification。
+1. **LeetCode 逐步填充**：在 0~30 道中等题目标达成后，继续 all in 混合难度题目。✅ 2026-06-18 新增 15 道混合难度题（含 5 道困难题），当时 LeetCode 用例总数 92 道，均通过 Shadow Verification（**截至 2026-09-11：`native/tests/cases/leetcode/` 共 138 道，全绿**）。
 2. **K&R 进阶章覆盖**：
-   - ✅ 第 7 章 7 个用例（kr_7_1~kr_7_7）已纳入，K&R 防线扩展至 76/76 全绿。
+   - ✅ 第 7 章 7 个用例（kr_7_1~kr_7_7）已纳入，当时 K&R 防线扩展至 76/76 全绿（**截至 2026-09-11：`native/tests/cases/knr/` 共 81 个用例，全绿**）。
    - ⚠️ 第 8 章（UNIX 系统接口）因 Cide 教学子集不支持 POSIX 系统调用（`read`/`write`/`open`/`close`/`unlink`/`lseek`/`opendir` 等），原始习题无法直接适配。可适配部分（如 8-7 自己实现 malloc/free）与 Cide 内置内存管理冲突，且失去教学对比意义。结论：第 8 章**暂不纳入**常规回归测试，作为文档中的已知限制保留；后续可考虑编写使用 Cide VFS 接口的变体用例，但不强求覆盖。
 3. **学生常见错误用例库扩展**：基于 `docs/current/STUDENT_ERROR_TEST_CASES.md` 持续补充。
 4. **诊断知识卡片扩展**：针对 C++ 常见错误（内存泄漏、悬垂引用、对象切片、浅拷贝双重释放、引用绑定临时对象）新增知识卡片。
@@ -957,13 +959,13 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 
 | 阶段 | 时间 | 里程碑 | 关键交付物 |
 |------|------|--------|------------|
-| 任务 A | 第 1~4 周 | ✅ Workspace 拆分进入平台期 | workspace 已建立；10 个核心 crate 已独立（含新增 `cide_algorithm_steps`）；`CheckpointManager` 已下沉到 `cide_vm::snapshot`；`unified`/`engine`/`api`/`diagnostics` 因 FRB 孤儿规则与 `Session` 耦合暂保留在 `cide_native` 内部；已诚实记录限制 |
-| 任务 B | 第 3~5 周 | ✅ 超大文件拆分完成 | 核心文件均 <800 行、测试全绿；`cpp_monomorph.rs` 1443 → 18 行入口 + 7 个子模块（`func.rs` / `class.rs` / `replace.rs` / `synth.rs` / `builtin.rs` / `builtin_vec.rs` / `builtin_list.rs`）；`trace_analyzer.rs` 838 → 55 行入口 + 7 个子模块（`bounds.rs` / `use_after_free.rs` / `double_free.rs` / `div_zero.rs` / `null_deref.rs` / `utils.rs` / `tests.rs`） |
-| 任务 C | 第 5~6 周 | ✅ unwrap/expect 收敛完成 | 生产路径 0 处、`unwrap_used` 已为 deny |
-| 任务 D | 第 5 周 | ✅ 失败记录口径统一 | `engineering_health.md` 数字口径一致、文档修正 |
-| 任务 E | 第 6~8 周 | ✅ CI 与构建加固完成 | 本地/CI 命令对齐、Flutter patch 脚本化、Android 增加 Dart 测试、依赖锁定 |
-| 任务 F | 第 7~8 周 | ✅ 性能收尾完成 | Visualizer 缓存已完成；array/pointer/call_stack/accessed_vars/vis_events 全字段差分已完成；后端 10 万步基线已实测（约 18,500 步/秒）；前端 55fps 回放基线已在 Flutter 桌面端 Release 环境实测通过（FPS 825.1） |
-| 任务 G | 第 9 周起持续 | ✅ 教学场景扩展推进 | LeetCode 扩展至 138 道（新增 lc_16 / lc_17 / lc_22 / lc_24 / lc_29 / lc_38 / lc_40 / lc_50 / lc_54 / lc_168 / lc_242 / lc_509 / lc_704 / lc_746 / lc_977 / lc_7 / lc_67 / lc_83 / lc_190 / lc_191 / lc_202 / lc_205 / lc_219 / lc_231 / lc_263 / lc_292 / lc_345 / lc_349 / lc_367 / lc_383 / lc_389 / lc_392 / lc_401 / lc_409 / lc_415 / lc_257 / lc_290 / lc_326 / lc_404 / lc_448 / lc_496 / lc_617 / lc_36 / lc_150 / lc_199）；K&R 扩展至 81 个用例（新增 kr_1_hello / kr_2_celsius / kr_4_atoi / kr_5_itoa / kr_6_getword）；C++ E2E 扩展至 73 个用例（新增 cpp_pair_template / cpp_template_func_multi / cpp_reference_member / cpp_template_array / cpp_template_stack / cpp_unique_ptr_reset / cpp_class_array / cpp_ctor_init_list / cpp_reference_param_chain / cpp_function_overload_template / cpp_cide_vec_class / cpp_cide_list_class）；C Shadow Verification 616/620，C++ Shadow Verification 93/95 |
+| 任务 A | 第 1~4 周 | ✅ Workspace 拆分进入平台期（FRB 阻碍已消失） | workspace 已建立；10 个核心 crate 已独立（含新增 `cide_algorithm_steps`）；`CheckpointManager` 已下沉到 `cide_vm::snapshot`；`unified`/`engine`/`diagnostics` 仍保留在 `cide_native` 内部（`native/src/api/` 已随前端切割删除）；**FRB 已移除，原孤儿规则阻碍消失，上述模块的拆分可重新评估（尚未执行）**，剩余阻力为 `Session` 耦合 |
+| 任务 B | 第 3~5 周 | ✅ 超大文件拆分完成（1 处超标，见 D16） | 核心文件均 ≤800 行、测试全绿（**例外**：`native/crates/cide_typeck/src/decl.rs` 871 非空行，2026-09-11 复核超标）；`cpp_monomorph/` 1443 → 18 行入口 + 7 个子模块（`func.rs` / `class.rs` / `replace.rs` / `synth.rs` / `builtin.rs` / `builtin_vec.rs` / `builtin_list.rs`）；`trace_analyzer.rs` 838 → 55 行入口 + 7 个子模块（`bounds.rs` / `use_after_free.rs` / `double_free.rs` / `div_zero.rs` / `null_deref.rs` / `utils.rs` / `tests.rs`） |
+| 任务 C | 第 5~6 周 | ⚠️ unwrap/expect 收敛**回升**（D14） | 生产路径曾于 2026-06-25 降至 0 处、`unwrap_used` 已为 deny；**2026-09-11 复核实测回升至 3 处**（`native/crates/cide_typeck/src/decl.rs`） |
+| 任务 D | 第 5 周 | ✅ 失败记录口径统一（新增 1 项待对账） | `engineering_health.md` 数字口径一致、文档修正；**遗留**：`CPP_FAILURES.md` 74 vs 实际 78 个 C++ E2E 用例待同步 |
+| 任务 E | 第 6~8 周 | ✅ CI 与构建加固完成（前端子项已消解） | 本地/CI 命令对齐（`cargo test`/`clippy`）、依赖锁定；Flutter patch 脚本化与 Android Dart 测试随前端切割消解；**wasm32 出口进 CI 转入 Phase 2a，尚未落地** |
+| 任务 F | 第 7~8 周 | ✅ 性能收尾完成（前端项已迁出） | 后端：array/pointer/call_stack/accessed_vars/vis_events 全字段差分完成，10 万步基线约 18,500 步/秒；前端 Visualizer 缓存与 55fps 回放基线（FPS 825.1）为**前端历史成果，已随切割迁出** |
+| 任务 G | 第 9 周起持续 | ✅ 教学场景扩展推进 | LeetCode 扩展至 138 道（新增 lc_16 / lc_17 / lc_22 / lc_24 / lc_29 / lc_38 / lc_40 / lc_50 / lc_54 / lc_168 / lc_242 / lc_509 / lc_704 / lc_746 / lc_977 / lc_7 / lc_67 / lc_83 / lc_190 / lc_191 / lc_202 / lc_205 / lc_219 / lc_231 / lc_263 / lc_292 / lc_345 / lc_349 / lc_367 / lc_383 / lc_389 / lc_392 / lc_401 / lc_409 / lc_415 / lc_257 / lc_290 / lc_326 / lc_404 / lc_448 / lc_496 / lc_617 / lc_36 / lc_150 / lc_199）；K&R 扩展至 81 个用例（新增 kr_1_hello / kr_2_celsius / kr_4_atoi / kr_5_itoa / kr_6_getword）；C++ E2E 新增 cpp_pair_template / cpp_template_func_multi / cpp_reference_member / cpp_template_array / cpp_template_stack / cpp_unique_ptr_reset / cpp_class_array / cpp_ctor_init_list / cpp_reference_param_chain / cpp_function_overload_template / cpp_cide_vec_class / cpp_cide_list_class（**2026-09-11 实测目录内共 78 个 `.cpp`，原记 73/74 待对账**）；**2026-09-11 复测：C Shadow Verification 636/636（完全匹配 617 + cide_better 16 + known_issue 3，0 非预期差异），C++ Shadow Verification 98/100（2 个已记录 `clang_compile_fail`）** |
 | 任务 H | 持续推进 | ✅ AGENTS.md 已知限制清单全部处理完毕 | H01 参数化宏分号（扩展支持）、H02 VLA 边界检查、H03 自定义头文件 `#include "..."`、H04 `va_list` 变参函数、H05 全局 VLA（标准限制无需修复）、H06 复合副作用数组索引、H07 函数返回 `double`、H08 `scanf` `%s`、H09 `fputs(stdout)`、H10 `fclose` FILE* 泄漏误报均已处理；无剩余待修复项 |
 
 ### 8.4 质量保证
@@ -974,8 +976,8 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 2. `cargo clippy --all-targets -- -D warnings` 全绿。
 3. `cargo fmt --check` 通过。
 4. C/C++ Shadow Verification 无新增失败。
-5. `flutter analyze` 0 issues。
-6. `flutter test` 全绿。
+5. **出口 3 协议冒烟**：`python scripts/serve_smoke.py` 通过（CI 已执行）。
+6. **出口 2 构建**：`cargo build --target wasm32-unknown-unknown --release` 通过（Phase 2a 起进 CI）。
 7. CI 全量 workflow 通过。
 
 ### 8.5 风险与回退策略
@@ -983,12 +985,12 @@ Cide 项目已完成 Phase 0 ~ Phase 41 的大规模功能建设，C/C++ 教学�
 | 风险 | 回退策略 |
 |------|----------|
 | Workspace 拆分导致编译失败 | 小步迁移，每次只迁一个 crate；失败时回滚该 crate |
-| FRB 导出类型跨 crate 触发孤儿规则 | 含 `#[frb]` 类型的模块暂保留在 `cide_native` 内部；待 FRB 绑定策略明确后再迁移 |
-| unwrap 收敛引发大量错误路径变更 | 先 `warn` 后 `deny`，分阶段提升；必要时使用 `#[allow]` 并附注释 |
-| CI patch 移除后 Flutter Windows 构建失败 | 保留脚本化 patch 作为备选，同时持续寻找根治方案 |
+| ~~FRB 导出类型跨 crate 触发孤儿规则~~ | **风险已消失（2026-09-11 FRB 移除）**；`unified`/`diagnostics`/`engine` 的拆分可重新评估（尚未执行），新风险为 `Session` 上帝对象耦合 —— 先抽 `cide_session` 再迁移 |
+| unwrap 收敛引发大量错误路径变更 | 先 `warn` 后 `deny`，分阶段提升；必要时使用 `#[allow]` 并附注释。**注意 D14**：生产代码 `unwrap/expect` 已回升至 3 处，需重新收敛 |
+| ~~CI patch 移除后 Flutter Windows 构建失败~~ | **已随前端切割消解**（Flutter 构建脚本与 patch 需求迁出，标签 `before-frontend-split`）；现行 CI 风险为 wasm32 出口尚未进 CI —— Phase 2a 落地时按「先手工冒烟、再进 CI」推进 |
 | 性能优化引入状态不一致 | 增加统一模式回归测试，对比全量状态与增量状态等价性 |
 | 教学用例扩展暴露新差异 | 诚实记录为 `KNOWN_*`，禁止修改 golden 粉饰数据 |
 
 ---
 
-> 本方案应与 `AGENTS.md`、`CHANGELOG.md`、`CODE_REVIEW_REPORT.md` 共同维护，任何新发现的工程债务应及时追加到本方案中。
+> 本方案应与 `AGENTS.md`、`CHANGELOG.md`、[`code_review_report_2026-09-06.md`](code_review_report_2026-09-06.md)（修复进度的权威追踪）共同维护，任何新发现的工程债务应及时追加到本方案中（编号延续 `#DXX`，不重排）。

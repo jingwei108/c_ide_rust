@@ -1,8 +1,10 @@
 # Stage 2b 内置 C++ 容器模板化迁移笔记
 
 **日期**: 2026-06-13  
+**状态**: ✅ **迁移已完成**（Phase 34 容器收口 + Phase 41 容器布局解耦），本文档转为**参考笔记**保留  
 **范围**: `native/runtime_libc/cide/*.cpp` 内置容器实现，从 `class cide_vec_int { ... }` 改回标准模板写法 `template <class T> class cide_vec { ... };`，配合 `template class cide_vec<int>;` 显式实例化。  
-**目标**: 学生代码和标准库实现都写标准 C++，所有妥协通过修复工具链解决，不再用 force-instantiate 桩来绕过编译器。
+**目标**: 学生代码和标准库实现都写标准 C++，所有妥协通过修复工具链解决，不再用 force-instantiate 桩来绕过编译器。  
+**最后核对日期**: 2026-09-11（修订：标注迁移完成与涉及路径现状；把两条活约束（同模板类不可跨文件重复定义、`T()` 值初始化不支持）显式关联到 `CPP_SUBSET_SPEC.md`，并如实记录该规范中检索不到这两条约束的缺口；`native/runtime_libc/cide/` 现为 4 个文件：`vector.cpp` / `list.cpp` / `string.cpp` / `sort_int.cpp`）
 
 ---
 
@@ -35,9 +37,13 @@ Cide 的 Bytecode Libc 预编译把所有 `runtime_libc/cide/*.cpp` 作为一个
 - `list<int>` 同理合并到 `list.cpp`。
 - `string` 虽然只有 `char` 一种特化，也统一写成 `template <class T> class cide_string<T>`，保持与其他容器风格一致。
 
+> **⚠️ 约束归属缺口（2026-09-11 核实）**：上述约束是**用户可见的语言/工具链约束**（学生自己写模板类时也可能撞上），理应写入面向学生的 [`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)。但实测在该规范中**检索不到**"同一模板类不可跨文件重复定义"这一条（`grep 跨文件` / `重复定义` 均无命中；该文档 §2.7 只覆盖模板支持范围与显式实例化）。**如实记为缺口，本文件不越权修改 `CPP_SUBSET_SPEC.md`**（该文件由他人负责同步）。
+
 ### 2.2 编译器暂不支持 `T()` 值初始化
 
 当前 Cide C++ 前端会把 `T()` 解析为"对非函数指针的调用"，导致类型错误。
+
+> **⚠️ 约束归属缺口（2026-09-11 核实）**：与 §2.1 同理，`T()` 值初始化不支持属**面向学生的边界**，但实测在 [`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md) 中**检索不到**该条（该文档 §2.7 未列此项）。**如实记为缺口**，不在本文件中越权修改那份规范。
 
 **推荐写法**：
 
@@ -156,9 +162,10 @@ cargo test --release                                    全绿
 
 ## 4. 相关文件
 
-- 容器源码：`native/runtime_libc/cide/vector.cpp`、`list.cpp`、`string.cpp`
+- 容器源码（现状：**4 个文件**）：`native/runtime_libc/cide/vector.cpp`、`list.cpp`、`string.cpp`、`sort_int.cpp`
 - 布局脚本：`scripts/extract_cpp_builtin_layout.py`
 - 预编译脚本：`scripts/precompile_bytecode_libc.py`
-- 产物：`native/src/compiler/cpp_frontend/builtin_layout_data.json`
-- 产物：`native/src/vm/bytecode_libc_data.json`
-- 产物：`native/src/vm/bytecode_libc_index.rs`
+- 产物：`native/crates/cide_cpp_frontend/src/builtin_layout_data.json`（原路径 `native/src/compiler/cpp_frontend/builtin_layout_data.json`，已随 crate 化迁移）
+- 产物：`native/crates/cide_vm/src/bytecode_libc_data.json`（原路径 `native/src/vm/bytecode_libc_data.json`）
+- 产物：`native/crates/cide_runtime/src/bytecode_libc_index.rs`（原路径 `native/src/vm/bytecode_libc_index.rs`）
+- 相关阶段：Phase 34（容器收口：`list<int>` / `vector<char>` / `sort_int`；C++ 三 tier 纳入 CI）、Phase 41（容器布局解耦：`.cpp` 接口声明作为唯一真相来源 + JSON 加载器，零 Rust 硬编码）——见 `AGENTS.md` 的迁移进度表

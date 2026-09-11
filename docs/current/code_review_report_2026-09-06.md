@@ -1,8 +1,9 @@
 # Cide 项目全面代码审阅报告（2026-09-06）
 
-> 审阅范围：全仓库 — Rust 编译器管线（10 个子 crate）、CideVM 运行时、统一模式/时间旅行引擎、FRB/C API 桥接层、诊断系统、Flutter 前端（107 个 Dart 文件）、工程体系（CI/脚本/测试防线/文档）
+> 审阅范围：全仓库 — Rust 编译器管线（10 个子 crate）、CideVM 运行时、统一模式/时间旅行引擎、FRB/C API 桥接层、诊断系统、Flutter 前端（107 个 Dart 文件）〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕、工程体系（CI/脚本/测试防线/文档）
 > 审阅方法：5 路并行深度代码审阅（逐文件精读 + Grep 模式定位）+ 基线验证（cargo clippy / dart analyze / cargo test --workspace --lib / cargo tree）。**所有标注「实测」的问题均用 release 版 `cide_cli` 或独立 Rust 程序复现确认，非推测。**
 > 说明：本报告承接 2026-06-13 的《code_review_report.md》，覆盖其后新增的 Phase 30~42 代码。约 137 条有 `file:line` 证据的发现：P0 × 25、P1 × 56、P2 × 56。
+> **2026-09-11 翻新口径（前端切割后）**：本报告仍是**修复进度的权威追踪**（主计划 §8 指定），**不归档**。前端切割（`CideFlutter/`、FRB 桥接、全部 Flutter 构建脚本与 web 部署 workflow 迁出，标签 `before-frontend-split`）后，**所有 Flutter/Dart 侧条目（U-P0-*、U-P1-*、前端 P2 条目、`dart analyze` 基线）一律冻结：条目原文与编号全部保留、追踪表不删行，仅追加「前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进」标注**。**Rust 侧未关闭条目（V-P0-3 后端侧、typeck/codegen 剩余项、临时槽位分配器重构、V-P1-* 等）不受影响，继续按第 6 节路线追踪。**
 
 ---
 
@@ -23,7 +24,7 @@
 
 实测补充发现：`MAX_PARSE_DEPTH` 初值 256 下 300 层括号仍栈溢出（防护触发前栈已耗尽），据此下调至 64 —— 每层括号嵌套的完整优先级解析链消耗 ~3KB 栈，远超预期。
 
-**下一批待推进**：第二批（CI 门禁 4 条：E-P0-1~P0-4）→ 第三批（codegen soundness 8 条 + 顺带 T-P1-1/P1-2）→ 第四批（Flutter 编辑器与状态）。
+**下一批待推进**：第二批（CI 门禁 4 条：E-P0-1~P0-4）→ 第三批（codegen soundness 8 条 + 顺带 T-P1-1/P1-2）→ 第四批（Flutter 编辑器与状态）〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕。
 
 **✅ 第二批（CI 门禁）已全部完成**（2026-09-06 同日）：
 
@@ -47,9 +48,9 @@
 2. **`infixEvaluation_default` 真因是编译器缺陷而非模板缺陷**（自增/自减作数组索引），此前被误记为"模板栈下溢"；第三批修复后 E2E 转绿，防线 5 双向监控（KNOWN 常量 + 测试断言）首次实战拦截。
 3. float 在 VM 中两种表示并存：局部/全局槽按 f64 位（StoreLocalD），**内存元素按 4 字节 f32 位**（LoadMem/StoreMem + CastF2D/CastD2F 转换链）——自增路径已按此语义对齐。
 
-**下一批待推进**：第四批（Flutter 编辑器与状态：U-P0-1~5、U-P1 优先项、E-P1-1/2）+ 建议提前的 V-P1-6（栈缓冲区溢出检测）/ V-P1-12（无效 free 诊断）/ V-P1-13（scanf 字符流化）。
+**下一批待推进**：第四批（Flutter 编辑器与状态：U-P0-1~5、U-P1 优先项）〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕+ **E-P1-1/2（后端侧，落点 `native/src/flutter_bridge.rs`，仍在追踪）** + 建议提前的 V-P1-6（栈缓冲区溢出检测）/ V-P1-12（无效 free 诊断）/ V-P1-13（scanf 字符流化）。
 
-**✅ "提前插入"项（V-P1-6/12/13）+ 第四批 Flutter 首批已完成**（2026-09-06 同日）：
+**✅ "提前插入"项（V-P1-6/12/13）+ 第四批 Flutter 首批已完成**（2026-09-06 同日）〔其中 Flutter 子项：前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕：
 
 | # | 项 | 修复方式 | 验证 |
 |---|---|---|---|
@@ -57,12 +58,12 @@
 | V-P1-12 | 无效 free 诊断 | 三场景（活跃块内部/已释放块内部/无效地址）教学 trap；realloc(p,0) 同构 | 实测 free(p+1)/free(&x) 分场景诊断 |
 | V-P1-13 | scanf 字符流化 | 虚拟字节流 + 映射表游标（与 getchar 共享），行间补逻辑 \n | 实测 "1 2\n3 4" 两次 %d 读出 1 2 |
 | — | delete[] nullptr 判空 | V-P1-12 暴露的存量缺陷（cide_vec 空容器析构 ptr-4 wrap） | C++ E2E 2 个失败用例转绿 |
-| U-P0-1 | WatchTab controller 泄漏 | 迁移 ConsumerStatefulWidget | dart analyze 全绿 |
-| U-P1-9/10 | Timer 生命周期 | dispose 补 _cancelLongPress / AutocompleteController 补 dispose+safeNotify | dart analyze 全绿 |
+| U-P0-1 | WatchTab controller 泄漏 | 迁移 ConsumerStatefulWidget | dart analyze 全绿〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕 |
+| U-P1-9/10 | Timer 生命周期 | dispose 补 _cancelLongPress / AutocompleteController 补 dispose+safeNotify | dart analyze 全绿〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕 |
 
 实现要点：strcpy/strcat 的栈检测需 Host 路径——Bytecode Libc 版逐字节 StoreMem 无法做整体容量校验，用户侧分发切回 Host（libc 索引表与预编译产物不变）；`local_buffers` 经 codegen → session.compile → VM register_function 三级透传（最初遗漏后两级导致检测不触发，已修复）。
 
-**第四批剩余待推进**：U-P0-2~5（编辑器渲染管线重构：TextPainter 缓存/gutter/shouldRepaint）、U-P1-1/3/4（IdeState 拆分/防重入/copyWith）、E-P1-1/2（run_auto_steps_stream 防重入/Session 上限）。
+**第四批剩余待推进**：U-P0-2~5（编辑器渲染管线重构：TextPainter 缓存/gutter/shouldRepaint）、U-P1-1/3/4（IdeState 拆分/防重入/copyWith）〔均属前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕；**E-P1-1/2（run_auto_steps_stream 防重入 / Session 上限）属后端侧，仍在追踪队列**（落点 `native/src/flutter_bridge.rs`）。
 
 ---
 
@@ -73,10 +74,10 @@
 1. **CI 防线存在"只报告不拦截"缺口**（工程 P0-1~P0-4）：C 版 Shadow Verification 脚本无退出码，任何回归恒绿；三层对账不进退出码；clang 缺失静默降级为"全量 cide_better"。
 2. **编译器 codegen 存在 8 个实测复现的 soundness bug**（typeck/codegen P0-1~P0-8）：全局 `double g = 1` 得 0、`long long` 全局数组初始化错误、`double d++` 无效、struct char 成员赋值破坏相邻内存、同名 static 跨函数共享槽位等——全部漏过现有五层防线，因为 shadow 用例未覆盖这些边角组合。
 3. **两类可崩掉整个 IDE 的输入**：深嵌套/长注释/多星号导致编译器**栈溢出**（前端 P0-1，4 处实测 SIGSEGV，无法被 catch_unwind 捕获）；自含 struct 导致 TypeChecker 无限递归崩溃（typeck P0-8）。
-4. **VM 算术溢出 panic 击穿 FFI**（VM P0-1~P0-5）：`INT_MIN % -1` 在 release 下恒 panic；统一模式（时间旅行）API 无 catch_unwind，panic 直接穿越 FRB 边界导致 Flutter 进程 abort（FFI panic 为 UB）。
-5. **Flutter 编辑器渲染管线有结构性缓存缺陷**（前端 P0-2~P0-5）：静态无界 TextPainter 缓存进程级泄漏、高亮层每帧重新 layout、gutter 不随滚动更新、shouldRepaint 比较失效；巨型 IdeState + 全工程 0 处 `select` 导致每敲一个字符全树重建。
+4. **VM 算术溢出 panic 击穿 FFI**（VM P0-1~P0-5）：`INT_MIN % -1` 在 release 下恒 panic；统一模式（时间旅行）API 无 catch_unwind，panic 直接穿越 FRB 边界导致 Flutter 进程 abort（FFI panic 为 UB）。〔**FRB 边界已于 2026-09-11 随前端切割移除**；本条后端侧 catch_unwind 已于第一批完成，见 §0〕
+5. **Flutter 编辑器渲染管线有结构性缓存缺陷**（前端 P0-2~P0-5）：静态无界 TextPainter 缓存进程级泄漏、高亮层每帧重新 layout、gutter 不随滚动更新、shouldRepaint 比较失效；巨型 IdeState + 全工程 0 处 `select` 导致每敲一个字符全树重建。〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕
 
-**修复优先级总路线**：P0 全部 25 条建议分四批落地（详见第 6 节）：①崩溃类（栈溢出防护、catch_unwind、算术溢出）→ ②CI 门禁（4 条）→ ③codegen 8 条 soundness → ④Flutter 编辑器缓存重构。P1 中与教学检测目标直接冲突的漏报路径（栈缓冲区溢出零检测、无效 free 漏报、scanf 行式消费）建议提前。
+**修复优先级总路线**：P0 全部 25 条建议分四批落地（详见第 6 节）：①崩溃类（栈溢出防护、catch_unwind、算术溢出）→ ②CI 门禁（4 条）→ ③codegen 8 条 soundness → ④Flutter 编辑器缓存重构〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕。P1 中与教学检测目标直接冲突的漏报路径（栈缓冲区溢出零检测、无效 free 漏报、scanf 行式消费）建议提前。
 
 ---
 
@@ -85,7 +86,7 @@
 | 检查项 | 结果 |
 |---|---|
 | `cargo clippy --workspace --all-targets` | ✅ 全绿，0 警告（与 AGENTS.md 声明一致） |
-| `dart analyze`（CideFlutter） | ✅ No issues found |
+| ~~`dart analyze`（CideFlutter）~~〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕 | ✅ No issues found（2026-09-06 当时实测，前端代码已迁出） |
 | `cargo test --workspace --lib` | ✅ 全部通过（约 79 个 lib 单元测试） |
 | `cargo tree -d` 重复依赖 | ✅ 零重复；直接依赖 18 个 |
 | 仓库体积 | 28MB，可接受；`native/src/vm/`（旧路径）与 MAUI 文件仅存于 git 历史 |
@@ -122,11 +123,11 @@
 |---|---|---|---|
 | V-P0-1 | **`OpCode::Mod` 缺 `INT_MIN % -1` 防护，直接 panic** | `cide_vm/src/core/executor/arithmetic.rs:73-81`（Div 有防护 line 57-58，Mod 只查 b==0） | 实测：release 下 `attempt to calculate the remainder with overflow` panic（Rust `%` 溢出检查不受 debug/release 影响） |
 | V-P0-2 | **`DivQ`/`ModQ` 缺 `i64::MIN / -1` 防护** | `cide_vm/src/core/executor/float.rs:201-217`（`NegQ` line 219-222 的 i64::MIN 取负同） | 实测：release panic `attempt to divide with overflow` |
-| V-P0-3 | **统一模式（时间旅行）API 无 catch_unwind，panic 击穿 FFI** | `native/src/flutter_bridge.rs:602-629`（run_auto_steps）、`:632-643`（seek_to_step）、`:646-681`（step_next_unified） | `execute_run` 有防护（`engine/session_ops.rs:114-115`），统一模式三入口直接裸调。V-P0-1/2 的 panic 穿越 FRB 边界 → Flutter 进程 abort（FFI panic 为 UB） |
+| V-P0-3 | **统一模式（时间旅行）API 无 catch_unwind，panic 击穿 FFI** | `native/src/flutter_bridge.rs:602-629`（run_auto_steps；该文件为历史会话包装层，现由 `cide_cli` 消费，名称待收敛）、`:632-643`（seek_to_step）、`:646-681`（step_next_unified） | `execute_run` 有防护（`engine/session_ops.rs:114-115`），统一模式三入口直接裸调。V-P0-1/2 的 panic 穿越 FRB 边界 → Flutter 进程 abort（FFI panic 为 UB）〔**FRB 边界已于 2026-09-11 随前端切割移除；本条后端侧 catch_unwind 已于第一批完成，见 §0**〕 |
 | V-P0-4 | **JIT 模板 `tpl_div`/`tpl_mod` 复刻同样 panic 路径** | `cide_vm/src/jit_templates.rs:264-284`（只查 b==0）；热点循环 JIT_THRESHOLD=100 后命中 | 解释器路径的溢出 trap 在 JIT 路径变 panic |
 | V-P0-5 | **`host_qsort`/`host_bsearch` 的 `nmemb * size` usize 乘法溢出** | `cide_vm/src/host/misc.rs:172,178,253`；VFS `fread/fwrite` 同类（`vfs.rs:227,300`） | `qsort(base, 2^32, 2^32, cmp)`：乘积 wrap 为 0 → 边界检查通过 → `(0..2^32).collect()` 分配 ~32GB → OOM abort；debug 构建乘法直接 panic |
 
-### 3.4 Flutter 前端 — 5 条
+### 3.4 Flutter 前端 — 5 条〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕
 
 | # | 问题 | 位置 | 证据摘要 |
 |---|---|---|---|
@@ -195,7 +196,7 @@
 13. **scanf 每次"按行消费"与 C 流式语义不一致**：`"1 2\n3 4"` 输入下第二次 `scanf("%d")` 读到 3（clang 应读 2）；`%c` 读不到换行 — `host/io.rs:44-46`（getchar 已有字符流游标机制 `io.rs:163-198`，scanf 未复用）。
 14. **JIT bulk 步数统计双倍计入**（`jit_stats.steps_accelerated` 虚高一倍）— `jit_templates.rs:735,738`。
 
-### 4.4 Flutter 前端（13 条）
+### 4.4 Flutter 前端（13 条）〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕
 
 1. **巨型 IdeState 单状态 + 全工程 0 处 `select`**：每敲一个字符 → 全树重建（IdeScreen/Toolbar/BottomPanel 全部 Tab/EditorPanelV2/悬浮球 Overlay）— `models/ide_state.dart:60-121`、`providers/notifiers/file_notifier.dart:5-14` 等 5 个大消费点；TODO#D09 自知。
 2. **统一模式收集期通知风暴**：每批（100 步）2 次 state 写入 + 4 次 FFI 内存拉取（收集期对 UI 无意义的 memoryRegions 也每批拉）— `providers/unified_notifier.dart:115-124,136-153`。
@@ -218,7 +219,7 @@
 3. **E2E golden 缺失时测试静默通过**（读不到 .out 返回 None 直接 Ok），防线 2 可退化为 smoke test — `cide_e2e.rs:151-161,214-218`。
 4. **测试统计四处口径互相矛盾**：E2E_FAILURES.md 统计表 78+4 vs 正文 3 条 vs KNOWN 常量 3 个；LEETCODE_FAILURES.md「68 题」vs 实际 138 题；AGENTS.md 内部 314/69 vs 316/81 自相矛盾 — 多文件多处。
 5. ~~**Shadow「完全匹配」建立在对 Cide stdout 的正则清洗之上，且清洗逻辑三处重复**（Python 两份 + Rust 一份）；教学程序自己打印"程序运行完成"文本会被误清洗 — `shadow_verify.py:220-224`、`shadow_verify_cpp.py:455-460`、`cide_e2e.rs:100-113`。~~ **✅ 已修复（E-P1-5，2026-09-11）**：根因是 `RuntimeState::output_lines` 一条字节流同时承担"程序 stdout / 程序 stderr / 引擎附注"三种语义（且附注可在流中间插入，如堆耗尽提示）。现改为带 `OutputKind` 的分段输出（`output_chunks` + `stdout()`/`stderr()`/`notes()`/`display()` 投影），新增 capi 出口 `cide_get_program_output*` / `cide_get_engine_notes*` / `cide_get_program_output_delta`（ABI 1.0.0 → 1.1.0，加函数=minor），serve 的 `output.delta` 增加 `stream` 参数。**十余处清洗规则全部删除**——实际数量远超本条记录的"三处"：`bytecode_libc_consistency.rs`、`test_utils.rs`、`bytecode_gen_cpp_unit_test.rs`、`end_to_end_extra_test.rs`、`qsort_test.rs`、`test_more.py`、`test_massive.py` 等。回归用例 `native/tests/cases/baseline/engine_note_lookalike.c`（程序打印与引擎附注逐字相同的文本 + 走一次 stderr + 无尾换行收尾）已纳入 Shadow 与 E2E 防线。
-6. **`apply_fix` 按字节列切片字符串，含中文的行 panic**（FRB 返回错误，前端"一键修复"崩溃）— `native/src/api/cide.rs:241-249,292-295`（error_catalog 的字节坐标与字符语义混用）。
+6. **`apply_fix` 按字节列切片字符串，含中文的行 panic**（原经 FRB 返回错误，前端"一键修复"崩溃；**FRB 边界已随前端切割移除**）— ~~`native/src/api/cide.rs:241-249,292-295`~~（**文件已随切割移除**；修复本体现位于语言中立的 `native/src/diagnostics/auto_fix.rs`，三出口可复用，`crash_regression_tests` 的 3 个相关用例已改走新入口）。（error_catalog 的字节坐标与字符语义混用）
 
 ---
 
@@ -227,8 +228,8 @@
 - **前端健壮性/正确性**（14 条）：十进制超 u64 `unwrap_or(0)` 静默归零；`consume` 失败返回恢复点 token；回溯点快照不统一（sizeof 路径 typedef 注册副作用泄漏）；ops.rs 479 行复制粘贴模板代码；make_token 列号用字节长度（中文行偏移 2 倍）；typedef 无块作用域（`(T)-1` 歧义，实测 `int T=5;(T)-1` 输出 -1，clang 4）；`short`/单 `long` 静默丢弃；`null`/`bool`/`NULL` 关键字化；`TemplateArg::Expr` 无相等性恒 false；`set_const` 漏 3 分支；`#include <` 未闭合吞整个文件；宏体不支持 `\` 续行且宏体错误行号错乱；Try/Catch 死 AST 节点；Call/CallPtr 双轨与 `__` mangling 嵌套碰撞风险；`parse_template_arg_expr` 子流无 EOF 哨兵。
 - **typeck/codegen 质量**（10 条）：26 处 `unreachable!()` panic 路径 + `evaluate_constexpr` i32 溢出 debug panic；`compute_type_size` 每次克隆全量类型表（O(n²)）；常量池线性查重；switch `stmt.clone()` 深拷贝/体内声明静默丢弃/case 重复无检查；局部与匿名 struct 定义不支持（未记录）；goto 跳出作用域不析构；static 非字面量初始化每次进函数重跑；typeck/codegen class 大小含不含 vptr 不一致（offsetof 少 4）；派生类新增虚函数而基类无 vtable 时 vptr 覆盖基类首字段；20+ 杂项语义差异（`char s[3]="abc"` 报错、三目不做 usual conversion、`(char)300` 不截断、Float→LongLong 无指令、unsigned LongLong 用有符号指令执行、全局 designated initializer 实际不支持但 AGENTS 声称已支持等）。
 - **VM 运行时**（14 条）：浮点除零 trap 偏离 IEEE（应记录）；`strchr/strrchr/memchr` 符号扩展与 `strcmp` 不一致；`host_strlen` 无 NULL 检查与 `Strlen` opcode 不一致；fseek 二进制负 offset 变巨大 usize；sprintf 缺参数栈检查且无容量检查；restore 不重建 `local_sym_map`（seek 后变量名错误）；`time()/clock()` 真实墙钟破坏重放确定性（rand_seed 已恢复而 time 没有）；`rand()` 只取低 15 位与 glibc 序列完全不同（应记录）；`call_user_function` 用 `assert!` 校验；地址计算 u32 加法依赖编译器产物善意（bytecode bundle 导入打开此面）；UAF freed_log 部分重叠整条删除漏报；`host_strerror` 不进 region 追踪；检查点全量 clone output（同 O(n²) 根因）；每步 `lines().nth()` 源码扫描。
-- **Flutter**（12 条）：`focusNode` getter 每次兜底 new（泄漏）；行高 21.0/字号 14/字体名硬编码散落 15+ 文件；ConceptGraphView `Set != Set` 恒真比较 + await 后无 mounted；learning_path_panel `async void` + 跨 async gap context + 空列表 `firstWhere` 崩溃；语义补全 stale response 竞态；`_outputController` 在 provider rebuild 时 dispose-复用地雷；`_loadProgress` 微任务竞态覆盖用户进度；空安全杂项（`confirm()!`、`inputController!`、`ApiVariableSnapshot` 全 dynamic、`applyFix` 无 orElse）；高频路径重复分配（每行每词 new RegExp、每帧全文比较、TextPainter 不 dispose）；`compute()` spawn isolate 方案待基准；光标无闪烁；可访问性缺失（自绘编辑器无 Semantics、颜色语义无标签、触控目标 <44px）。
-- **工程**（6 条）：C API 输出缓冲契约陷阱（length 不含 NUL 而 max_len 含，`buf[length]` 用法截断末字符）；CI 4 次冗余 Rust 编译 + 多次工具链安装、覆盖率无门禁；Python 脚本硬编码个人机器路径（`D:\Program Files...`）+ `find_flutter()` 逐字重复两份；仓库卫生（`tmp/` 57 个临时测试文件被 git 跟踪、`lines.txt` 被跟踪、根目录 `tmp_threaded*.exe` 4 个二进制残留、`out.txt/numbers.txt/test.txt` 由 shadow 脚本写入 CWD 从不清理、`build/` 旧 CMake 产物与 Phase 5「已清理」声明不符、`reports/` 混杂调试残留）；测试盲区（`algorithm_detector` 8 文件 0 单测、`error_catalog.rs` 455 行 0 直接测试、`ERROR_INFO_MAP` 重复错误码静默覆盖无校验）；脚本死代码与跨平台半成品（`EXPECTED_DIVERGENCES` 未引用、DLL_PATH 硬编码 .dll 但有非 Windows 分支、`infer_intent_from_source` 每次全量 lex+parse 无缓存）。
+- **Flutter**（12 条）〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕：`focusNode` getter 每次兜底 new（泄漏）；行高 21.0/字号 14/字体名硬编码散落 15+ 文件；ConceptGraphView `Set != Set` 恒真比较 + await 后无 mounted；learning_path_panel `async void` + 跨 async gap context + 空列表 `firstWhere` 崩溃；语义补全 stale response 竞态；`_outputController` 在 provider rebuild 时 dispose-复用地雷；`_loadProgress` 微任务竞态覆盖用户进度；空安全杂项（`confirm()!`、`inputController!`、`ApiVariableSnapshot` 全 dynamic、`applyFix` 无 orElse）；高频路径重复分配（每行每词 new RegExp、每帧全文比较、TextPainter 不 dispose）；`compute()` spawn isolate 方案待基准；光标无闪烁；可访问性缺失（自绘编辑器无 Semantics、颜色语义无标签、触控目标 <44px）。
+- **工程**（6 条）：C API 输出缓冲契约陷阱（length 不含 NUL 而 max_len 含，`buf[length]` 用法截断末字符）；CI 4 次冗余 Rust 编译 + 多次工具链安装、覆盖率无门禁；Python 脚本硬编码个人机器路径（`D:\Program Files...`）+ `find_flutter()` 逐字重复两份（**前端脚本已随切割迁出，该子项关闭**）；仓库卫生（`tmp/` 57 个临时测试文件被 git 跟踪、`lines.txt` 被跟踪、根目录 `tmp_threaded*.exe` 4 个二进制残留、`out.txt/numbers.txt/test.txt` 由 shadow 脚本写入 CWD 从不清理、`build/` 旧 CMake 产物与 Phase 5「已清理」声明不符、`reports/` 混杂调试残留）；测试盲区（`algorithm_detector` 8 文件 0 单测、`error_catalog.rs` 455 行 0 直接测试、`ERROR_INFO_MAP` 重复错误码静默覆盖无校验）；脚本死代码与跨平台半成品（`EXPECTED_DIVERGENCES` 未引用、DLL_PATH 硬编码 .dll 但有非 Windows 分支、`infer_intent_from_source` 每次全量 lex+parse 无缓存）。
 
 ---
 
@@ -252,10 +253,10 @@
 11. T-P0-1/2（全局初始化隐式转换 + long long 位模式）→ T-P0-3/4/5（类型化读写宽度）→ T-P0-6（temp_slot 审计）→ T-P0-7（static mangle）→ F-P0-2/3（unsigned long long / enum 常量折叠）
 12. 同批顺带 T-P1-1（`&&`/`||` 规范化）与 T-P1-2（struct 拷贝 `(sz+3)/4`），并把这 10+ 个实测复现用例固化为回归集
 
-**第四批（Flutter 编辑器与状态，3~5 天）**
-13. U-P0-1~P0-5 编辑器渲染管线重构（文档级缓存 + shouldRepaint 内容签名 + scrollOffset ValueListenable）
-14. U-P1-1 IdeState 拆分/select 接入；U-P1-3 防重入守卫；U-P1-4 copyWith error 语义；U-P1-9/10 Timer 生命周期
-15. E-P1-1 run_auto_steps_stream 防重入令牌；E-P1-2 Session 上限
+**第四批（Flutter 编辑器与状态）〔前端侧，2026-09-11 已随前端切割迁出，条目关闭不再推进〕**
+13. ~~U-P0-1~P0-5 编辑器渲染管线重构（文档级缓存 + shouldRepaint 内容签名 + scrollOffset ValueListenable）~~ —— 条目关闭（前端资产已迁出）
+14. ~~U-P1-1 IdeState 拆分/select 接入；U-P1-3 防重入守卫；U-P1-4 copyWith error 语义；U-P1-9/10 Timer 生命周期~~ —— 条目关闭（前端资产已迁出）
+15. **E-P1-1 run_auto_steps_stream 防重入令牌；E-P1-2 Session 上限** —— **后端侧，仍按计划追踪**（落点 `native/src/flutter_bridge.rs`）
 
 **提前插入（与教学目标直接冲突的漏报，建议第三批并行）**
 16. V-P1-6 栈缓冲区溢出检测（E3070 教学 Core 价值）+ V-P1-12 无效 free 诊断 + V-P1-13 scanf 字符流化
@@ -285,7 +286,7 @@
 13. **快照边界完整化**：VFS、local_sym_map、伪时间纳入快照/恢复闭环，`time()` 改 step 派生确定性时钟；文档化不可恢复项清单。
 14. **JIT 与调试器协同**：trace 命中后保留 StepEvent 或周期性断点检查；含断点的循环排除出 trace 编译。
 
-### 7.4 Flutter 层
+### 7.4 Flutter 层〔前端侧，2026-09-11 已随前端切割迁出；以下建议冻结存档，不再作为本仓待办〕
 15. **拆分 IdeState + 全面接入 select**（收益最大的单点改造）：按域拆 sourceProvider/panelLayoutProvider/learningProgressProvider/runStatusProvider；过渡期先在 5 个大消费点切片。
 16. **编辑器渲染管线版本化**：以 CideDocument 为缓存宿主（版本号递增），TextPainter/高亮缓存挂文档实例而非 static；layers 纳入内容签名；scrollOffset 用 ValueNotifier 驱动局部重绘。
 17. **Riverpod 2.x → 3.x 评估**：代码已用新式 Notifier API 迁移成本低；AsyncNotifier 可统一 compile/run 手工状态管理（isCompiling/error 手工管理与 7 相枚举双轨制可收敛）。
@@ -326,6 +327,6 @@
 
 ## 9. 审阅方法与局限
 
-- 5 路并行审阅均逐文件精读（前端 26 文件约 7800 行、typeck/codegen 53 文件、VM/runtime/unified/engine 全部、Flutter 107 文件中自研部分、工程体系全部脚本与 CI），P0 级发现尽可能用 release 版 `cide_cli` 实测复现。
-- 局限：本次未跑完整 E2E/Shadow 防线（Clang 环境依赖），未审计 `frb_generated.rs`/`frb_generated.dart` 生成代码内部；Flutter 发现基于静态审阅未做 profile 实测帧率；P2 中个别「实测」标注来自子代理用 cide_cli 验证，主审阅未逐一复跑。
+- 5 路并行审阅均逐文件精读（前端 26 文件约 7800 行、typeck/codegen 53 文件、VM/runtime/unified/engine 全部、Flutter 107 文件中自研部分、工程体系全部脚本与 CI），P0 级发现尽可能用 release 版 `cide_cli` 实测复现。其中前端/Flutter 部分已于 2026-09-11 随前端切割迁出，相关条目关闭（原文保留）。
+- 局限：本次未跑完整 E2E/Shadow 防线（Clang 环境依赖），未审计 `frb_generated.rs`/`frb_generated.dart` 生成代码内部（**两文件已随 2026-09-11 前端切割移除**）；Flutter 发现基于静态审阅未做 profile 实测帧率〔前端侧，已随前端切割迁出，条目关闭不再推进〕；P2 中个别「实测」标注来自子代理用 cide_cli 验证，主审阅未逐一复跑。
 - 本报告只读审阅，未修改任何源码；报告文件本身为新增（不覆盖 2026-06-13 旧报告），未做 git 提交。

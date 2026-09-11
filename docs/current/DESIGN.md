@@ -1,793 +1,312 @@
-# C IDE 项目设计文档
+# Cide 设计文档（后端引擎）
 
-> 一款面向教学场景的移动端 C 语言子集 IDE
-> 核心技术：Flutter 前端（Android + Desktop Windows） + Rust 后端（手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机）
+> 最后核对：2026-09-11（前端切割后重写为纯后端视角）
+>
+> **定位**：教学 C/C++ 子集参考执行引擎（白箱）。类比 quickjs 之于 JS——**小、白箱、可嵌入、行为与标准对照诚实**。
+> **范围**：本仓库只做后端（MIT 许可），提供核心引擎与三个出口；前端由社区基于出口协议实现。
+> 定位转型的完整决策依据见 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)。
 
 ---
 
 ## 目录
 
-- [1. 项目概述](#1-项目概述)
-- [2. 核心架构](#2-核心架构)
-- [3. C 语言子集](#3-c-语言子集)
-- [4. 后端设计](#4-后端设计)
-- [5. 前端设计](#5-前端设计)
-- [6. 诊断与修复系统](#6-诊断与修复系统)
-- [7. 算法与数据结构支持](#7-算法与数据结构支持)
-- [8. 零侵入可视化](#8-零侵入可视化)
-- [9. 移动端与平板适配](#9-移动端与平板适配)
-- [10. ~~OCR 照片导入~~（已移除）](#10-ocr-照片导入)
-- [11. 开发阶段](#11-开发阶段)
+- [1. 设计目标](#1-设计目标)
+- [2. 三出口一核心架构](#2-三出口一核心架构)
+- [3. 编译器管线](#3-编译器管线)
+- [4. CideVM 执行模型](#4-cidevm-执行模型)
+- [5. 内存模型](#5-内存模型)
+- [6. 统一模式 / 时间旅行](#6-统一模式--时间旅行)
+- [7. 诊断与修复系统](#7-诊断与修复系统)
+- [8. 算法与数据结构支持](#8-算法与数据结构支持)
+- [9. 协议层与出口 API](#9-协议层与出口-api)
+- [10. 仓库结构](#10-仓库结构)
+- [11. 关键设计决策](#11-关键设计决策)
 
 ---
 
-## 1. 项目概述
+## 1. 设计目标
 
-### 1.1 目标
+Cide 为教学场景提供一台**白箱**的 C/C++ 子集执行引擎：
 
-构建一款面向移动端的 **C 语言子集 IDE**，核心特点：
+- **行为可对照**：以 Clang / Clang++ 为唯一 Golden 来源，任何差异如实记录（`*_FAILURES.md`），不粉饰；
+- **执行可观察**：指令级单步、变量快照、内存与指针状态、算法步骤语义，全部通过协议暴露；
+- **过程可回放**：统一模式（时间旅行）支持回退到任意历史步并正向重放；
+- **错误可教学**：中文诊断 + 错误码 + 修复建议 + 知识卡片 + 根因推断；
+- **安全可保证**：1MB 线性内存内的指令级边界检查与教学安全检测（越界 / UAF / Double-Free / 无效 free / 递归深度 / 步数熔断）；
+- **可嵌入**：C ABI / wasm32 / JSON-lines 三个出口，任意语言可消费。
 
-- **友好中文提示**：所有编译错误、运行时异常、诊断信息均为中文，附带行号列号。
-- **一键修复**：根据错误类型自动生成代码修复建议。
-- **关联知识卡片**：遇到错误时弹出相关知识卡片（概念讲解 + 代码示例）。
-- **内存视图**：可视化展示变量、数组、指针在虚拟内存中的布局。
-- **指针/错误视图**：图形化展示指针指向关系，代码中标注错误位置。
-- **零侵入可视化**：写纯 C 代码，系统自动识别算法并展示动画。
-- **后续扩展**：子集渐进式解锁、知识图谱系统。
-
-### 1.2 运行平台
-
-| 平台 | 优先级 | 技术方案 |
-|------|--------|---------|
-| Android (手机/平板) | P0 | Flutter + Rust `.so` + flutter_rust_bridge |
-| Windows Desktop | P1 | Flutter + Rust `.dll` + flutter_rust_bridge |
-| iOS | P2 | 后续考虑 |
-
-### 1.3 技术栈
-
-| 层级 | 技术 | 说明 |
-|------|------|------|
-| 前端 UI | Flutter（Android + Windows Desktop） | 跨平台，统一 UI |
-| 前端渲染 | Flutter CustomPainter + Widget | 算法可视化、内存映射 Canvas |
-| 后端核心 | Rust 1.95 | 手写 C 子集编译器 → 自定义字节码 + CideVM 教学虚拟机 |
-| 通信 | flutter_rust_bridge v2 (SSE codec) | Dart ↔ Rust 零拷贝桥接 |
-| 构建 | Cargo + Flutter tools | Rust cdylib + Flutter 插件 |
-
-### 1.4 参考项目经验
-
-| 来源 | 关键经验 | 本项目应用 |
-|------|---------|-----------|
-| **VisualBinaryTree.Desktop** | C 子集解释器（Lexer/Parser/AST/TypeChecker/VM）、C API 边界设计、双模式执行（编译/解释） | 参考其 C 子集范围和编译器分层设计；后端最终采用自研 CideVM |
-| **2048** | MAUI Android + Canvas + 动画 | 触控手势、移动端适配参考 |
+**明确不做**：不是通用 C 编译器、不是生产级工具链、不是 Clang 替代品；不追求完整 C17/C++20 语义。
 
 ---
 
-## 2. 核心架构
-
-### 2.1 架构总览
+## 2. 三出口一核心架构
 
 ```
-+-----------------------------------------------------------------------------+
-|                     Flutter 前端 (Android / Desktop)                      |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-|  | CodeEditor  |  | MemoryView  |  | KnowledgeCard / QuickFixPanel       |  |
-|  |  代码编辑器  |  |  内存视图    |  | 知识卡片 / 一键修复面板               |  |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-|  | PointerView |  | ErrorPanel  |  | ConsoleOutput / AlgoCanvas          |  |
-|  |  指针视图    |  |  错误面板    |  | 输出控制台 / 算法动画画布             |  |
-|  +-------------+  +-------------+  +-------------------------------------+  |
-+-----------------------------------------------------------------------------+
-                                    |
-                                    v flutter_rust_bridge v2 (SSE codec)
-+-----------------------------------------------------------------------------+
-|                        Rust 后端 (Native DLL / .so)                          |
-|                                                                             |
-|  +---------------------------------------------------------------------+    |
-|  | ① C 子集编译器                                                       |    |
-|  |   用户 C 代码 → Lexer → Parser → AST → TypeChecker → BytecodeGen    |    |
-|  |   输出：自定义字节码指令序列 + 符号表 + 字符串数据段                   |    |
-|  +---------------------------------------------------------------------+    |
-|                                    |                                        |
-|  +---------------------------------------------------------------------+    |
-|  | ② CideVM 教学虚拟机（自研）                                          |    |
-|  |   加载字节码 → 解释执行 → 捕获 trap → StepEvent 单步暂停             |    |
-|  |   提供内存视图、指针追踪、执行步进、中文错误映射                        |    |
-|  +---------------------------------------------------------------------+    |
-|                                    |                                        |
-|  +---------------------------------------------------------------------+    |
-|  | ③ 诊断与可视化引擎                                                   |    |
-|  |   源码位置映射 / 内存布局元数据 / 指针追踪表 / 中文错误消息             |    |
-|  |   算法模式识别 / 运行时验证 / 执行轨迹分析                             |    |
-|  +---------------------------------------------------------------------+    |
-+-----------------------------------------------------------------------------+
+                        ┌──────────────────────────────────────────┐
+                        │  cide 引擎核心（Rust workspace）          │
+                        │  编译器管线 + CideVM + 统一模式 + 诊断     │
+                        │  ── 禁止平台 API 耦合 ──                  │
+                        └───────────────┬──────────────────────────┘
+                                        │  native/src/session_api.rs
+                                        │  （会话语义中立层：三出口共用同一套入口语义）
+        ┌───────────────────────────────┼───────────────────────────────┐
+        │                               │                               │
+┌───────▼────────┐            ┌─────────▼─────────┐          ┌──────────▼──────────┐
+│ 出口 1          │            │ 出口 2             │          │ 出口 3               │
+│ C ABI (capi)    │            │ wasm32            │          │ cide_cli serve       │
+│ cdylib/staticlib│            │ .wasm + JS 绑定    │          │ JSON-lines (NDJSON)  │
+│ cide_abi_version│            │ 浏览器 / 在线教学   │          │ headless 脚本化消费   │
+└─────────────────┘            └───────────────────┘          └──────────────────────┘
+  消费者：cide_cli                消费者：社区 Web 前端            消费者：IDE 后端 /
+  shadow_verify.py（ctypes）     移动浏览器"看"场景                判分服务 / 自动化
+  第三方 IDE（P/Invoke 等）
 ```
 
-### 2.2 关键技术定位
+**架构纪律**（写进 [`AGENTS.md`](../../AGENTS.md) 编码约定）：
 
-**CideVM 在本项目中的角色**：
-- **教学专用执行引擎**：为 C 子集量身定制的轻量级虚拟机，不是通用 WASM 解释器
-- 用户代码编译为扁平字节码，在 **CideVM** 中逐条解释执行
-- 利用线性内存隔离和指令级边界检查保证安全
-- 前端统一使用 **flutter_rust_bridge v2**，Android 和 Desktop 完全一致
-
-**从 wasm3 到 CideVM 的演进**：
-
-项目初期采用 **wasm3** 作为执行引擎（~50KB 纯 C，WASM 解释器），在 Phase 2 完成了编译器到 WASM 的生成。随着 Phase 3 深入，发现 wasm3 作为通用 WASM 解释器存在以下教学场景的瓶颈：
-
-| 能力 | wasm3 现状 | CideVM 改进 |
-|:---|:---|:---|
-| **单步调试** | 无法暂停/恢复，只能阻塞宿主函数 | 每条指令后可检查 `paused` 标志，同步单步 |
-| **运行时中文诊断** | 只能翻译英文 trap 字符串 | 在除零/越界现场直接读取变量值，生成 "当 i=5 时，arr[10] 越界" |
-| **内存可视化** | `m3_GetMemory` 读原始字节，不知道变量名 | VM 自带符号表，知道 `0x1020` 是 `arr[2]` |
-| **零侵入可视化** | 需注入 `__cide_step` 等 host call | VM 层直接发射 `StepEvent`，无需修改用户代码 |
-| **执行步数限制** | 需 patch `m3_Yield` | 原生支持，更精确 |
-| **安全隔离** | 自动内存隔离 | 自己检查边界，同等安全 |
-
-**CideVM 核心优势**：
-- 完全可控的指令集（106 条指令），只实现教学子集真正用到的特性
-- 局部变量映射到线性内存，支持 `&x` 取地址（这是 wasm3 架构下难以实现的）
-- 函数调用栈帧在 `memory_` 中分配，指针/数组/结构体语义与真实 C 完全一致
-- 零线程：单步在主线程同步执行，彻底消除线程泄漏风险
-
-### 2.3 目录结构
-
-```
-c-ide/
-├── scripts/
-│   ├── build.py                       # 日常构建脚本
-│   ├── build_flutter.py               # Flutter 构建脚本
-│   ├── build_release.py               # Release 发布构建
-│   └── test_mobile.py                 # 移动端测试流水线
-├── native/                            # Rust 后端
-│   ├── Cargo.toml
-│   ├── include/
-│   │   └── cide_capi.h               # C API 头文件
-│   ├── src/
-│   │   ├── compiler/                  # C 子集 → 字节码编译器
-│   │   │   ├── lexer.rs
-│   │   │   ├── parser.rs
-│   │   │   ├── ast.rs
-│   │   │   ├── type_checker.rs
-│   │   │   └── bytecode_gen.rs       # AST → CideVM 字节码
-│   │   ├── vm/                        # CideVM 教学虚拟机
-│   │   │   ├── core/                  # VM 核心解释器与执行状态
-│   │   │   │   ├── mod.rs
-│   │   │   │   └── executor.rs
-│   │   │   ├── opcode.rs
-│   │   │   ├── instruction.rs
-│   │   │   ├── host_funcs.rs
-│   │   │   ├── host_func_id.rs        # 宿主函数 ID 统一常量
-│   │   │   └── snapshot.rs            # VM 全量快照（时间旅行）
-│   │   ├── diagnostics/               # 诊断与自动修复系统
-│   │   │   ├── error_codes.rs
-│   │   │   └── error_catalog.rs
-│   │   ├── unified/                   # 统一模式 / 时间旅行引擎
-│   │   │   ├── mod.rs
-│   │   │   ├── engine.rs              # UnifiedEngine（批量执行 + Seek）
-│   │   │   ├── checkpoint.rs          # 检查点管理器
-│   │   │   ├── collector.rs           # StepCollector（每步数据收集）
-│   │   │   └── types.rs               # StepPayload / StepMeta 等 FRB 类型
-│   │   ├── engine/                    # 编译管线与工具
-│   │   │   └── compile_pipeline.rs    # 统一编译管线
-│   │   ├── capi/                      # C API 服务层（Shadow Verification / CLI）
-│   │   │   └── mod.rs
-│   │   ├── api/                       # flutter_rust_bridge API
-│   │   │   └── cide.rs
-│   │   ├── flutter_bridge.rs          # FRB 业务包装层（Session 管理）
-│   │   └── session.rs                 # Session 状态管理
-│   └── tests/                         # 测试套件
-│       ├── end_to_end_test.rs
-│       ├── end_to_end_extra_test.rs
-│       └── compile_pipeline_test.rs
-├── CideFlutter/                       # Flutter 跨平台前端（Android + Desktop）
-│   ├── lib/
-│   │   ├── main.dart
-│   │   ├── src/
-│   │   │   ├── rust/                  # FRB 生成的桥接代码
-│   │   │   ├── screens/               # 页面
-│   │   │   ├── widgets/               # 自定义组件（编辑器、Canvas）
-│   │   │   ├── providers/             # Riverpod 状态管理
-│   │   │   └── services/              # 业务逻辑（编译、诊断、修复）
-│   │   └── assets/                    # 知识卡片等资源
-│   └── rust_builder/                  # FRB Rust 构建配置
-└── docs/
-    ├── current/                         # 当前有效文档
-    │   ├── DESIGN.md
-    │   ├── C_SUBSET_SPEC.md
-    │   ├── ROADMAP.md
-    │   ├── BUILD.md
-    │   ├── MEMORY_SAFETY.md
-    │   └── ...
-    └── archive/                         # 历史归档文档
-        └── ...
-```
+1. 新能力一律先落**语言中立的 Rust 层**，三个出口只做薄包装；
+2. 复杂结构（StepPayload、内存区域、事件流）过边界统一走 **JSON 字符串**——性能换稳定性与版本容忍度；
+3. capi 是**公共 API**，承诺即契约：`cide_abi_version()` 版本化（当前 `1.1.0`），加函数 = minor，改签名/语义 = major；
+4. 状态码约定：`0 = 成功 / 负数 = 入参错误 / 正数 = 领域状态`（1 = trap，2 = 等待输入）；Session 指针句柄**非线程安全**；输入输出为 UTF-8。
 
 ---
 
-## 3. C 语言子集
+## 3. 编译器管线
 
-### 3.1 Phase 1 MVP 子集
-
-```c
-// 数据类型
-int a;                // 32位有符号整数
-int a = 5;
-float f = 3.14;       // 32位浮点数
-char c = 'A';         // 字符（按 i32 存储）
-unsigned u = 5;       // 无符号（语义映射为 int，带提示）
-
-int arr[10];          // 一维数组
-int arr[] = {1,2,3};  // 自动推断大小
-int mat[3][3];        // 多维数组
-char s[] = "hello";   // 字符串/字符数组
-
-int* p;               // 指针
-int* p = &a;
-int* p = malloc(4);   // 动态分配
-const int MAX = 100;  // 常量（阻止后续赋值）
-
-struct Node {          // 结构体
-    int val;
-    struct Node* next;
-};
-
-enum Color { Red, Green, Blue };  // 枚举
-typedef int Integer;              // 类型别名
-
-// 语句
-if (cond) { } else { }
-for (int i = 0; i < n; i++) { }   // C99 风格
-while (cond) { }
-do { } while (cond);
-switch (x) { case 1: ... break; default: ... }
-return expr;
-expr;
-{ stmt... }           // 块作用域
-
-// 表达式
-+ - * / % == != < <= > >= && || !
-& | ^ ~ << >>         // 位运算
-= += -= *= /= %=
-?:                    // 三目运算符
-arr[i]                // 数组索引
-foo(a, b)             // 函数调用
-&a                    // 取地址
-*p                    // 解引用
-node.val / node->val  // 结构体访问（行为一致）
-++a / a++             // 自增自减
-sizeof(int) / sizeof(struct S)  // sizeof
-(int*)p / (float)a    // 显式类型转换
+```
+源代码字符串（可多文件）
+    │
+    ▼
+Lexer::tokenize()            cide_lexer         → Vec<Token>
+    │
+    ▼
+Parser::parse()              cide_parser        → AST（Box<Program>）
+    │
+    ▼
+TypeChecker                  cide_typeck        → 类型标注 + 教学诊断（E3xxx / W3xxx）
+    │
+    ▼
+BytecodeGen                  cide_codegen       → Vec<Instruction>（CideVM 扁平字节码）
+    │
+    ▼
+SourceMap + 字符串数据段 + 符号表（含 decl_line、变量归属函数）
 ```
 
-### 3.2 明确不支持
+设计要点：
 
-| 特性 | 遇到时的中文提示 |
-|------|---------------|
-| `union` / `bitfield` | `union` ✅ 已支持（全管线：`sizeof(union U)`、成员访问、指针访问）；`bitfield` 暂不支持 |
-| `goto` | "暂不支持 goto" |
-| 预处理 (`#include` / `#ifdef`) | "解释器模式下无需 #include，直接编写代码即可" |
-| 文件 I/O (`fopen`/`fread`) | "沙盒中不支持文件 I/O" |
-| `volatile` / `restrict` | "暂不支持该特性" |
+- **AST 用 Rust enum 而非多态类层次**（`Expr` / `Stmt` + `Box<Expr>`），类型系统为完全递归的 `cide_ast::Type`；
+- **零进度保护**：Parser 在位置未推进时强制 `advance()`，杜绝死循环（历史事故见 `docs/archive/INCIDENT_2026_04_27_PARSER_INFINITE_LOOP.md`）；
+- **错误处理不 panic**：诊断收集进 `Vec<Error>` 后统一返回，跨出口边界处 `catch_unwind` 兜底；
+- **多文件**：`cide_compile_unit` 逐文件编译，`cide_compile_all` 链接；`file_ranges` 维护"全局行号 ↔ 文件内行号"映射（多文件语义标签与诊断定位依赖它）。
 
-> 详细规范见 `C_SUBSET_SPEC.md`
+子集规范（行为契约，修改实现必须同步）：
+
+- C：[`C_SUBSET_SPEC.md`](C_SUBSET_SPEC.md)
+- C++：[`CPP_SUBSET_SPEC.md`](CPP_SUBSET_SPEC.md)
 
 ---
 
-## 4. 后端设计
+## 4. CideVM 执行模型
 
-### 4.1 编译器流程
-
-```
-源代码字符串
-    |
-    v
-Lexer::tokenize() -> Vec<Token>
-    |
-    v
-Parser::parse() -> Box<Program> (AST)
-    |
-    v
-TypeChecker::Check()
-    |
-    v
-BytecodeGen::generate() -> Vec<Instruction> (CideVM 字节码)
-    |
-    v
-SourceMap 生成 + 字符串数据段收集
-```
-
-**BytecodeGen 与旧 WasmCodeGen 的区别**：
-- 输出从 `Vec<u8>` (WASM 二进制) 改为 `Vec<Instruction>` (扁平指令序列)
-- 指令集从 WASM 的 ~100 条压缩到教学子集实际需要的 106 条
-- 函数调用从 WASM 的间接调用表改为直接索引调用
-- 新增 `StepEvent` 指令，天然支持单步调试，无需注入 host function
-
-### 4.2 CideVM 执行模型
-
-CideVM 是栈式虚拟机，核心循环逐条解释执行 `Instruction`：
+CideVM 是**栈式虚拟机**，核心循环逐条解释执行 `Instruction`，每条指令携带 `SourceLoc` 供错误映射。
 
 ```rust
-#[repr(u8)]
-enum OpCode {
-    PushConst, LoadLocal, StoreLocal, LoadGlobal, StoreGlobal,
-    LoadMem, StoreMem, LoadMemByte, StoreMemByte,
-    Add, Sub, Mul, Div, Mod, Neg,
-    Eq, Ne, Lt, Le, Gt, Ge,
-    And, Or, Not,
-    Jump, JumpIfZero, JumpIfNotZero,
-    Call, CallHost, Ret, RetVoid,
-    StepEvent, GetFrameBase
-};
-
+// 示意（实际定义见 crates/cide_runtime 与 crates/cide_vm）
 struct Instruction {
-    OpCode op;
-    int32_t operand;
-    SourceLoc loc;    // 源码位置，用于错误映射
-};
-```
-
-**执行示例**：
-```cpp
-// 用户代码
-int main() {
-    int a = 5;
-    int* p = &a;
-    *p = 10;
-    return a;
+    op: OpCode,        // 常量/局部变量/内存/算术/比较/跳转/调用/单步事件……
+    operand: i32,
+    loc: SourceLoc,    // 源码位置
 }
-
-// 生成的字节码（简化）
-PushConst 5
-StoreLocal 0          // a = 5
-GetFrameBase
-PushConst 0
-Add                   // &a
-StoreLocal 1          // p = &a
-LoadLocal 1           // p
-PushConst 10
-StoreMem              // *p = 10
-LoadLocal 0           // a
-Ret
 ```
 
-### 4.3 内存布局（CideVM Linear Memory）
+**为什么自研 VM 而不是复用现成解释器**（历史决策，Phase 2 起）：项目初期用 wasm3 作为执行引擎，Phase 3 深入后确认它在教学场景存在结构性瓶颈——
 
-CideVM 使用 1MB 线性内存，划分如下：
+| 能力 | 通用 WASM 解释器 | CideVM |
+|:---|:---|:---|
+| 单步调试 | 无法暂停/恢复，只能阻塞宿主函数 | 每条指令后可检查暂停标志，同步单步 |
+| 运行时中文诊断 | 只能翻译英文 trap 字符串 | 在除零/越界现场直接读取变量值与声明行 |
+| 内存可视化 | 读原始字节，不知道变量名 | 自带符号表，知道某地址是 `arr[2]` |
+| 零侵入可视化 | 需注入 host call | VM 层直接发射教学事件 |
+| 执行步数限制 | 需 patch 运行时 | 原生支持（会话级保险丝） |
+| 安全隔离 | 依赖宿主内存模型 | 自带边界检查，同等安全 |
 
-```
-地址空间
-|- 0x0000~0x0FFF: 保留（NULL 指针陷阱区，load/store 触发 trap）
-|- 0x1000~0x4FFF: 字符串字面量区 + 全局变量区
-|- 0x5000~0x0FFFF: 堆区（malloc 管理）
-|- 0x10000~0x3FFFF: 栈区（函数调用帧，向下增长）
-```
+核心优势：**局部变量也存放在线性内存中**，因此 `&x`、`scanf("%d", &x)`、指针/数组/结构体语义与真实 C 一致；单步在主线程同步执行（零线程，无线程泄漏风险）。
+
+---
+
+## 5. 内存模型
+
+CideVM 使用 **1MB 线性内存**，按用途分段（NULL 陷阱区 / 字符串字面量 + 全局区 / 堆 / 栈），具体布局常量与运行时不变量由 `cide_runtime` 统一定义。
 
 **关键设计：局部变量在内存中**
 
-与 wasm3 时代不同，CideVM 将局部变量也存储在线性内存的栈区域中：
-
 ```rust
-// Call 指令：在 memory 中分配栈帧
-let frame_size = (local_count as u64) * 4;
-self.mem_stack_top -= frame_size as u32;  // 从高地址向下增长
-// 参数从表达式栈 pop 到 memory 帧中
-// 剩余局部变量零初始化
-
-// LoadLocal：从 memory 读取
-let addr = frame.locals_base + local_index * 4;
-self.push(self.load_i32(addr) as u64);
-
-// StoreLocal：向 memory 写入
-let addr = frame.locals_base + local_index * 4;
-let val = self.pop() as i32;
-self.store_i32(addr, val, loc);
+// Call 指令：在线性内存中分配栈帧（向下增长），参数从表达式栈搬入
+// LoadLocal / StoreLocal：按 frame.locals_base + index * 4 读写内存
 ```
 
-这样做的好处：
-- `&x` 直接返回 `localsBase + index * 4`，是真实的内存地址
-- `scanf("%d", &x)` 可以直接写入
-- 数组和指针语义与真实 C 完全一致
+好处：`&x` 是真实地址；`scanf` 可直接写入；数组/指针语义与真实 C 一致。
 
-### 4.4 运行时诊断与错误处理案例
+**堆**：2026-09-11 决议改为 **bump 分配 + 有界隔离（quarantine）**，把 churn 与 leak 分离，配合"三道墙"（步数保险丝 / 调用深度上限 / region 表封顶）保证教学场景下的内存行为有界且可解释——见 [`CIDE_HEAP_QUARANTINE_DECISION.md`](CIDE_HEAP_QUARANTINE_DECISION.md)。
 
-CideVM 在指令级捕获所有运行时错误，并生成中文诊断信息：
+**教学安全检测**（运行时，指令级）：
 
-**案例 1：除零错误**
-```cpp
-int a = 15, b = 0;
-int c = a / b;   // 😵 除零错误：15 / 0。请检查除数是否可能为零。
-```
-
-**案例 2：NULL 指针解引用**
-```cpp
-int* p = 0;
-*p = 10;         // 访问了 NULL 指针区域（地址 0x0000）。NULL 指针不能解引用。
-                 // 请确认指针已被正确初始化。
-```
-
-**案例 3：数组越界**
-```cpp
-int arr[5];
-arr[10] = 1;     // 内存访问越界：地址 0x8028，有效范围 0x0000~0x10000。
-                 // 当 i=10 时，arr[10] 越界了。数组大小是 5。
-```
-
-**案例 4：栈溢出**
-```cpp
-// 无限递归
-int f() { return f(); }
-// Call: 栈溢出。函数调用层数超过限制。
-```
-
-**案例 5：无限循环熔断**
-```cpp
-while (1) {}     // 程序执行步数超过限制（10000000步），可能包含无限循环。
-```
-
-### 4.5 接口层
-
-#### C API（保留用于 Shadow Verification / CLI / 外部绑定）
-
-C API 当前仅保留编译、执行、输入输出相关核心接口；单步调试、内存视图、诊断详情、可视化事件等能力已迁移至 Rust 内部或 flutter_rust_bridge API，不再通过 C API 暴露。
-
-```cpp
-// 会话管理
-CideSession* cide_session_create();
-void cide_session_destroy(CideSession* s);
-
-// 编译
-int cide_compile(CideSession* s, const char* source);
-int cide_compile_unit(CideSession* s, const char* filename, const char* source);
-int cide_compile_all(CideSession* s);
-const char* cide_get_compile_errors(CideSession* s);
-
-// 命令行参数
-void cide_set_argv(CideSession* s, int argc, const char** argv);
-
-// 执行
-int cide_run(CideSession* s);
-const char* cide_get_runtime_error(CideSession* s);
-
-// 输入
-void cide_set_input(CideSession* s, const char* input);
-void cide_set_input_mode(CideSession* s, int is_batch);
-int cide_is_waiting_input(CideSession* s);
-int cide_provide_input_line(CideSession* s, const char* line);
-
-// 输出（展示视图：程序 stdout/stderr + 引擎附注，按写入顺序拼接）
-int cide_get_output_length(CideSession* s);
-void cide_get_output(CideSession* s, char* buf, int max_len);
-
-// 输出（E-P1-5，ABI 1.1.0：结构化通道——判分/与 Clang golden 比对用纯 stdout）
-int cide_get_program_output_length(CideSession* s);
-void cide_get_program_output(CideSession* s, char* buf, int max_len);
-int cide_get_engine_notes_length(CideSession* s);
-void cide_get_engine_notes(CideSession* s, char* buf, int max_len);
-char* cide_get_program_output_delta(CideSession* s, int cursor);
-```
-
-#### FRB API（Flutter 前端实际使用）
-
-Flutter 前端通过 `flutter_rust_bridge v2` 调用 Rust 后端，主要 API：
-
-| 函数 | 说明 |
-|------|------|
-| `compile(source)` | 编译 C 源码 |
-| `compileAndRun(source)` | 编译并启动统一模式自动收集 |
-| `runAutoSteps(batchSize)` | 批量自动执行 |
-| `seekToStep(target)` | Seek 到指定步 |
-| `stepNextUnified()` | 统一模式单步 |
-| `pauseExecution()` / `resumeExecution()` | 暂停/恢复 |
-| `getHeatmap()` | 获取执行热力图 |
-| `getAlgorithmMatches()` | 获取算法检测匹配 |
-| `getDiagnostics()` | 获取诊断信息 |
-| `getVariables()` | 获取变量快照 |
-| `getMemoryRegions()` | 获取内存区域 |
-| `getCallstack()` | 获取调用栈 |
-| `getOutput()` | 获取输出文本 |
-| `readMemory(addr, count)` | 从 VM 内存读取 |
-| `resetSession()` | 重置会话 |
-
-> VM 设计细节见本章节 4.2 ~ 4.3 节
+| 检测 | 说明 |
+|:---|:---|
+| E3070 栈缓冲区溢出 | 越界写入/读取的栈数组访问 |
+| E3060 / E3061 | Use-After-Free / Double-Free（`freed_logs` 指令层检查） |
+| 无效 free 三场景 | 非堆指针 / 已释放 / 未对齐等 |
+| E3072 | 头文件循环包含 |
+| NULL 陷阱区 | 解引用 NULL 立即 trap 并给出中文诊断 |
+| 步数 / 调用深度熔断 | 会话级保险丝，可控地撞上限并给出教学 trap |
 
 ---
 
-## 5. 前端设计
+## 6. 统一模式 / 时间旅行
 
-### 5.1 响应式布局
+学生点"运行"后，引擎自动逐条推进并收集每一步状态；消费者可随时暂停、单步、拖到任意历史步。
 
-Flutter 前端基于 `LayoutBuilder` 和 `MediaQuery` 实现多端自适应：
+**后端组成**：
 
-| 设备 | 布局 |
-|------|------|
-| **手机竖屏** | 底部导航 Tab + 全屏页面 + 悬浮快捷按钮 |
-| **手机横屏** | 左右分栏：代码 + 输出/可视化 |
-| **平板竖屏** | 编辑器全宽 + 底部可视化面板 |
-| **平板横屏** | **三栏：文件 | 编辑器 | 可视化/调试面板** |
-| **桌面** | 三栏固定 + 最高信息密度 |
+| 组件 | 位置 | 职责 |
+|:---|:---|:---|
+| VM 全量快照 | `cide_vm::snapshot` | 1MB 内存 + 运行时状态 + 内存管理状态 |
+| 检查点管理器 | `cide_vm::snapshot::CheckpointManager` | 按固定间隔保存快照（按语义标签决定密度） |
+| 统一执行引擎 | `native/src/unified/engine.rs` | 批量自动执行 `run_batch` + `seek_to` + Trap 自动回退 |
+| 每步收集器 | `native/src/unified/collector.rs` | 变量快照、调用栈、可视化事件、语义标签、热力图 |
+| 帧缓存 / 流 | `native/src/unified/{stream,types}.rs` | 窗口 2000 帧、差分编码 `StepPayloadDelta` |
+| 根因推断 | `native/src/unified/{root_cause,trace_analyzer}.rs` | 轨迹切片 + Trap 根因提示 |
+| 算法步骤标注 | `crates/cide_algorithm_steps/` | 预定义算法步骤模板 → 教学描述 |
 
-### 5.2 编辑器与交互
+**语义契约**（消费者必须遵守，schema 见 [`../spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)）：
 
-- **编辑器**：自研 `CideEditor`（`EditableText` + `CustomPaint` 实现），支持语法高亮、智能缩进、VS-style Enter 格式化
-- **触控优化**：最小触控区域 48dp；底部符号工具栏；手势滑动切换 Tab（60px 阈值）
-- **虚拟键盘适配**：弹出时自动滚动到光标位置
-- **算法可视化**：内存映射 Canvas（1MB 256×4KB 网格）、链表/数组/树可视化
+- 回退到第 N 步时，文件状态、变量历史、输出窗口必须一致；
+- 越窗 seek = 检查点恢复 + 正向重放；
+- 输出按 `OutputKind`（Stdout / Stderr / Note）分通道，消费方**不得**对文本做正则清洗。
+
+设计细节与消费方契约见 [`UNIFIED_MODE_DESIGN.md`](UNIFIED_MODE_DESIGN.md)；
+为什么这套体验本身是竞争力见 [`VM_EXPERIENCE_ADVANTAGE.md`](VM_EXPERIENCE_ADVANTAGE.md)。
 
 ---
 
-## 6. 诊断与修复系统
+## 7. 诊断与修复系统
 
-### 6.1 三级信息架构
+### 7.1 三级信息架构
 
-| 级别 | 呈现方式 | 内容 |
-|------|---------|------|
-| **L1 感知** | 代码行内弹窗 | 表情 + 一句话 + 修复按钮 |
-| **L2 理解** | 底部面板展开 | 代码片段 + 通俗解释 + 对比 + 生活类比 |
-| **L3 原理** | 知识卡片弹窗 | 内存动画 + 概念详解 + 练习题 |
+| 级别 | 内容 | 载体 |
+|:---|:---|:---|
+| **L1 感知** | 表情 + 一句话 + 修复按钮 | 诊断条目（含位置与 error code） |
+| **L2 理解** | 通俗解释 + 代码片段 + 对比 | 诊断 detail + 结构化修复建议 |
+| **L3 原理** | 概念详解 + 内存动画描述 + 练习 | 知识卡片（JSON，由前端渲染） |
 
-### 6.2 运行时诊断优势
+### 7.2 运行时诊断优势（利用符号表读取真实值）
 
-利用 CideVM 符号表读取实际运行时值：
+| 错误 | 静态分析只能说 | Cide 运行时能说 |
+|:---|:---|:---|
+| 数组越界 | "索引可能越界" | "当 i=10 时越界了，数组大小是 5" |
+| 空指针 | "p 可能未初始化" | "p 的值是 0x00000000，声明于第 3 行，之后无赋值" |
+| 无限循环 | "循环条件可能恒真" | "已执行 100000 步，i 始终是 1（你可能注释掉了 i++）" |
 
-| 错误 | 静态分析只能说 | 运行时诊断能说 |
-|------|-------------|---------------|
-| 数组越界 | "索引可能越界" | "当 i=10 时越界了。数组大小是 5。当前 n=10。" |
-| 空指针 | "p 可能未初始化" | "p 的值是 0x00000000。声明于第 3 行，之后无赋值。" |
-| 无限循环 | "循环条件可能恒真" | "循环已执行 100,000 步。i 始终是 1。你注释掉了 i++。" |
+### 7.3 结构化自动修复
 
-### 6.3 修复分级与结构化自动修复
+诊断在**语言中立层**（`native/src/diagnostics/`）生成结构化修复数据（`fixKind` + 精确替换区间 + 替换文本），三个出口原样透出，不各自实现修复逻辑：
 
 | 级别 | 类型 | 示例 | 自动？ |
-|------|------|------|--------|
-| **L1 语法修复** | 语法错误 | 补分号 `;`、补括号 `}`/`)`/`]`、`\|`→`\|\|`、`&`→`&&` | ✅ 全自动（后端结构化修复） |
-| **L2 语义修复** | 常见逻辑错误 | 改 `<=` 为 `<`、加初始化 | ✅ 全自动（后端结构化修复） |
-| **L3 逻辑建议** | 隐藏逻辑错误 | `=` vs `==`、死代码 | 预览确认 |
-| **L4 教学引导** | 算法设计错误 | 递归边界、排序逻辑 | 仅建议 |
-
-**后端结构化修复架构**：
-
-```
-Lexer/Parser/TypeChecker 报错
-    |
-    v
-MakeDiagnostic(source) ──→ PopulateStructuredFix(d, source)
-    |                          ├── SplitSourceLines(source)
-    |                          ├── 按 errorCode 选择修复策略
-    |                          └── 填充 fixKind / replaceRange / replacementText
-    v
-CideDiagnostic (含结构化 fix 数据)
-    |
-    v  flutter_rust_bridge
-Dart Diagnostic (fixKind, replaceStartLine/Column, replaceEndLine/Column, replacementText)
-    |
-    v
-CodeFixService.tryApplyFix()
-    ├── FixKind.replaceText → applyStructuredReplace()（精确字符级替换）
-    ├── FixKind.insertText  → applyStructuredReplace()（精确字符级插入）
-    ├── FixKind.manualHint  → 显示修复提示，不自动修改
-    └── fallback → applyLegacyFix()（字符串匹配）
-```
-
-**已实现的结构化修复**：
-
-| 错误码 | 触发场景 | fixKind | replacementText |
 |:---|:---|:---|:---|
-| `E2005_ExpectedSemicolon` | 缺少 `;` | `InsertText` | `;` |
-| `E2006_ExpectedClosingBrace` | 缺少 `}` | `InsertText` | `}` |
-| `E2007_ExpectedClosingParen` | 缺少 `)` | `InsertText` | `)` |
-| `E2008_ExpectedClosingBracket` | 缺少 `]` | `InsertText` | `]` |
-| `E1004_UnsupportedOp` | `\|`/`&` 单目误用 | `ReplaceText` | `\|\|` / `&&` |
+| L1 语法 | 缺 `;` `}` `)` `]`、`|`→`||` | 补全/替换 | ✅ 全自动 |
+| L2 语义 | `<=`→`<`、补初始化 | 精确替换 | ✅ 全自动 |
+| L3 逻辑 | `=` vs `==`、死代码 | 预览确认 | 需确认 |
+| L4 教学 | 递归边界、排序逻辑 | 仅建议 | 否 |
 
-> 详细实现见 `ARCHIVE_STRUCTURED_AUTO_FIX_20260505.md`
+> 前端切割时（2026-09-11）自动修复应用器本体从 FRB 出口层下沉到 `native/src/diagnostics/auto_fix.rs`，三出口共用
+> （见 `CHANGELOG.md [Unreleased] Removed` 段）。
 
-### 6.4 ~~OCR 导入纠错~~（已移除）
+### 7.4 认知推理
 
-> OCR 相关代码已清理，该功能不再在路线图内。历史设计见归档文档 `ARCHIVE_OCR_IMPORT_DESIGN.md`。
+| 能力 | 位置 |
+|:---|:---|
+| 轨迹切片 + Trap 根因推断（`RootCauseHint`） | `native/src/unified/trace_analyzer/` |
+| 认知误区模式（`MisconceptionPattern`）+ 学习路径推荐 | `native/src/diagnostics/` |
+| 知识图谱（概念节点 + 关系边） | `native/src/diagnostics/` |
+| 代码意图推断（CFG + 数据流 + IntentInference） | `native/src/compiler/{cfg,data_flow,intent}` |
 
----
-
-## 7. 算法与数据结构支持
-
-### 7.1 算法修复（不是代写代码，是智能诊断 + 引导）
-
-| 层级 | 策略 | 方式 |
-|------|------|------|
-| **L1 模式识别** | AST 结构匹配 | "识别出你在写冒泡排序，外层循环应该是 i < n-1" |
-| **L2 运行时验证** | 自动生成测试用例 | "测试 [5,3,8,1,2] 后元素 8 丢失了" |
-| **L3 轨迹分析** | 记录比较/交换/递归调用 | "第 3 趟没有比较 arr[2] 和 arr[3]" |
-
-**核心原则**：算法修复的目的是**教懂学生算法逻辑**，不是**代写代码**。
-
-### 7.2 数据结构支持
-
-当前子集（int + 指针 + struct + malloc）已支持：
-
-| 数据结构 | 实现方式 | 可视化 |
-|---------|---------|--------|
-| 数组 / 动态数组 | 原生 int[] / malloc | vis_array() |
-| **单链表** | struct Node { int val; Node* next; } | vis_list() |
-| **双链表** | struct DNode { int val; DNode *prev, *next; } | vis_list() |
-| **栈 / 队列** | 数组 + 索引 或 链表 | vis_stack() / vis_queue() |
-| **二叉树** | struct TreeNode { int val; TreeNode *left, *right; } | vis_tree() |
-
-### 7.3 子集扩展路线图
-
-```
-Phase 1（默认开放）: 变量、数组、指针、struct、if/for/while、函数、malloc
-       |
-       v 完成「数组排序」练习
-Phase 2 解锁: break/continue、sizeof、字符串字面量、vis_* 可视化
-       |
-       v 完成「链表基础」练习
-Phase 3 解锁: 多维数组、typedef、枚举、函数指针
-       |
-       v 完成「二叉树遍历」练习
-Phase 4 解锁: 字符串操作、文件 I/O、标准库子集
-```
-
-> 详细设计见 `ALGORITHM_DATASTRUCTURE_DESIGN.md`
+路线与设计见 [`COGNITIVE_REASONING_ROADMAP.md`](COGNITIVE_REASONING_ROADMAP.md)、[`ALGORITHM_DATASTRUCTURE_DESIGN.md`](ALGORITHM_DATASTRUCTURE_DESIGN.md)。
 
 ---
 
-## 8. 零侵入可视化
+## 8. 算法与数据结构支持
 
-### 8.1 核心设计
+### 8.1 零侵入可视化
 
-> **初学者写纯 C 代码，编译器自动识别算法模式，自动注入可视化指令。**
+学生写纯 C，编译器/VM 自动识别算法并发射教学事件——不需要 `vis_array()` 之类的额外代码。
 
 ```c
-// 用户写的代码（纯净的 C）
-void bubbleSort(int arr[], int n) {
-    for (int i = 0; i < n - 1; i++) {
-        for (int j = 0; j < n - i - 1; j++) {
-            if (arr[j] > arr[j + 1]) {
-                int temp = arr[j];
-                arr[j] = arr[j + 1];
-                arr[j + 1] = temp;
-            }
-        }
-    }
-}
+for (int i = 0; i < n - 1; i++)
+    for (int j = 0; j < n - i - 1; j++)
+        if (arr[j] > arr[j + 1]) { int t = arr[j]; arr[j] = arr[j + 1]; arr[j + 1] = t; }
 ```
 
-**系统自动**：
-- 检测到双重循环 + 相邻比较 + 交换 -> 识别为「冒泡排序」
-- 自动在字节码中注入 VisEvent（compare/swap/update）指令
-- 用户看不到任何可视化代码
+引擎侧产出：算法识别结果（置信度）、每步语义标签、`vis_events`（compare / swap / update）、数组快照、指针快照、热力图。
+这些字段通过 StepPayload 协议暴露，渲染完全交给消费方。
 
-### 8.2 三种模式
+设计见 [`ZERO_INTRUSIVE_VISUALIZATION.md`](ZERO_INTRUSIVE_VISUALIZATION.md)。
 
-| 模式 | 用户代码 | 适用人群 |
-|------|---------|---------|
-| **自动**（默认） | 纯 C，无任何额外代码 | 初学者 |
-| **引导** | 纯 C + // @vis: 注释 | 进阶学习者 |
-| **手动** | C + vis_*() 函数 | 教师/高级用户 |
+### 8.2 数据结构支持
 
-> 详细设计见 `ZERO_INTRUSIVE_VISUALIZATION.md`
+当前子集（数组 / 指针 / struct / union / malloc / 模板类）已可表达并可观察：
 
----
+| 结构 | 表达方式 |
+|:---|:---|
+| 数组 / 动态数组 | `int[]` / `malloc` |
+| 单链表 / 双链表 | `struct Node { int val; Node* next; }` |
+| 栈 / 队列 | 数组 + 索引，或链表 |
+| 二叉树 | `struct TreeNode { int val; TreeNode *left, *right; }` |
+| C++ 容器 | `cide_vec<T>` / `cide_list<T>` 等内置容器（`.cpp` 接口声明为唯一真相来源） |
 
-## 9. 移动端与平板适配
-
-### 9.1 设备布局
-
-```
-平板横屏（主力学习场景）
-+--------------+--------------------------+---------------+
-|  文件         | 代码编辑器                |  [内存视图]   |
-| main.c       | （自适应宽度）            |  [指针视图]   |
-|  模板         |                          |  [变量面板]   |
-+--------------+--------------------------+---------------+
-| 运行  | 输出: 排序完成 [1,2,3,5,8]                      |
-+---------------------------------------------------------+
-
-手机竖屏（碎片化学习）
-+-----------------+
-| 代码编辑器       |
-+-----------------+
-| [运行]          |
-+-----------------+
-| 底部导航 Tab    |
-+-----------------+
-```
-
-### 9.2 性能优化
-
-- 移动端动画降频至 30fps（省电）
-- 内存视图最多显示 64 个格子（手机）
-- 快速切换时 CancelAllAnimations() + SnapToFinalState()（参考 2048 防闪退）
-
-> 移动端适配细节见 5.1 ~ 5.2 节
+模板源与教材算法清单见 [`TEMPLATE_GUIDE.md`](TEMPLATE_GUIDE.md)、[`DATASTRUCTURE_TEMPLATE_ROADMAP.md`](DATASTRUCTURE_TEMPLATE_ROADMAP.md)。
 
 ---
 
-## 10. ~~OCR 照片导入~~（已移除）
+## 9. 协议层与出口 API
 
-> OCR 相关代码已于 2026-05-04 清理移除。历史设计见归档文档 `ARCHIVE_OCR_IMPORT_DESIGN.md`。
+**协议先行**：StepPayload schema v0.1 是公共承诺（[`../spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)），字段只增不改语义，废弃走双写过渡期。协议与引擎内部表示解耦，引擎侧优化（CoW、脏页恢复等）可独立推进。
 
----
+| 出口 | 形态 | 主要入口 |
+|:---|:---|:---|
+| C ABI | `native/include/cide_capi.h` | `cide_abi_version` / `cide_compile_json` / `cide_run_json` / `cide_get_program_output*` / `cide_step_next_json` / `cide_get_step_payloads_json` / `cide_set_breakpoints` / `cide_free_string` 等 |
+| wasm32 | `.wasm` + JS/TS 绑定（绑定包待落地） | 与 capi 同一套 C ABI 符号 |
+| serve | JSON-lines（NDJSON） | `compile` / `run` / `output.delta` / `step.begin` / `step.next` / `seek` / `payload.get` / `breakpoints.set` / `memory.regions` / `config.*` / `session.*` |
 
-## 11. 开发阶段
+capi 分批落地进度与签名评审依据见 [`CIDE_CAPI_REVIEW_RESPONSE.md`](CIDE_CAPI_REVIEW_RESPONSE.md)；
+serve 方法与协议契约见 [`CIDE_CLI.md`](CIDE_CLI.md) §6。
 
-### Phase 1: 基础架构（✅ 已完成）
-- [x] 项目脚手架：Cargo, 目录结构, 构建脚本
-- [x] C API 接口定义：cide_capi.h
-- [x] Flutter 跨平台项目 + Android / Windows 入口
-- [x] 代码编辑器基础（自研 `CideEditor` + 语法高亮 + 触控优化，已移除 `re_editor`）
-- [x] **Rust 后端骨架**：Session 类型 + C API 桩
-
-### Phase 2: C 子集编译器 + VM（✅ 已完成）
-- [x] Lexer + Parser + AST + TypeChecker
-- [x] **BytecodeGen**（CideVM 扁平字节码）
-- [x] CideVM 核心实现（106 条指令解释器）
-- [x] 虚拟内存管理 + 指针追踪（局部变量映射到线性内存）
-- [x] Source Map 生成 + `StepEvent` 单步指令
-- [x] 安全加固：边界检查、除零捕获、步数熔断、NULL 区陷阱
-
-### Phase 3: 诊断与可视化（✅ 已完成）
-- [x] 中文错误消息系统（L1/L2/L3）+ 56+ 错误码中文元数据
-- [x] QuickFix 引擎（结构化自动修复：分号/括号/引号/运算符勘误）
-- [x] 知识卡片系统（JSON + 内存 Canvas 图）
-- [x] 零侵入可视化注入引擎（8 种核心算法规则）
-- [x] 内存视图 Canvas + 指针追踪 + 算法动画
-- [x] **单步调试**：`StepEvent` 指令级暂停，同步执行，零线程风险
-- [x] **运行时诊断增强**：精确到变量值的越界/除零/NULL 诊断
-
-### Phase 4: 算法与数据结构（✅ 已完成）
-- [x] 算法模式识别系统（冒泡/选择/插入/快排/归并/二分/链表遍历/链表反转）
-- [x] 运行时验证（Property-based Testing，自动测试用例验证排序属性）
-- [x] 内存泄漏检测（程序结束时未 free 的堆内存）
-- [x] 数组/链表/树实时可视化
-
-### Phase 5: 前端交互与体验（✅ 已完成）
-- [x] Flutter 响应式布局（手机/平板/桌面三态）
-- [x] Android 触控手势 + 虚拟键盘适配
-- [x] 横竖屏切换状态保持
-- [x] 动画稳定性优化
-- [x] VS-style Enter 格式化、Touch swipe tabs、Execution speed slider
-- [x] 教程引导 overlay (`IntroOverlay`)
-- [x] 学习进度追踪系统（编译统计、错误修复、知识卡片、算法验证）
-
-### Phase 6: C 子集 P0/P1/P2 拓展（✅ 已完成）
-- [x] `float` 类型全管线支持（算术/比较/转换/`printf %f`/`scanf %f`）
-- [x] 位运算符 `& | ^ ~ << >>`
-- [x] 三目运算符 `? :`
-- [x] 指针算术（`p++` / `p+i` / `p-q`，自动按 pointee 大小缩放）
-- [x] `const` 语义（阻止赋值和自增/自减）
-- [x] `NULL` 关键字、`char` 字面量、`0x` 十六进制、块注释 `/* */`
-- [x] 复合赋值扩展到数组索引/指针解引用/结构体成员
-- [x] 函数前向声明、显式类型转换（Cast）
-- [x] 新增宿主函数：`getchar`/`putchar`/`rand`/`srand`/`memset`/`exit`/`strcat`/`atoi`
-- [x] `fprintf`/`realloc`/`qsort`
-- [x] 隐式转换提示系统（warning + hint 分级）
-
-### Phase 7: 统一模式 / 时间旅行（✅ 已完成）
-- [x] VM 全量快照/恢复（`vm/snapshot.rs`）：1MB 内存 + 运行时状态 + 内存管理状态
-- [x] 检查点管理器（`unified/checkpoint.rs`）：固定间隔 20 步保存快照
-- [x] 批量自动执行引擎（`unified/engine.rs`）：`run_batch` + `seek_to` + Trap 自动回退
-- [x] 每步数据收集（`unified/collector.rs`）：变量快照、调用栈、可视化事件、语义标签、热力图
-- [x] Flutter 前端：`UnifiedNotifier` 状态机 + `ExecutionControlPanel` 控制面板 + `VarHistoryTab` 变量历史趋势图
-- [x] 运行时异常自动回退 + 知识卡片诊断匹配
-
-### Phase 8: 扩展与未来
-- [ ] 函数指针完整支持（当前仅基础支持，用于 `qsort` 回调）
-- [ ] 知识图谱系统
-- [ ] 社区贡献算法模板
-- [ ] 链表/树可视化增强（`LinkedListVisualizer` / `TreeVisualizer`）
+> **输出通道（E-P1-5）**：引擎把程序 stdout / stderr 与引擎附注分别打标，绝不再混流后由消费方正则清洗
+> （历史教训：十余处清洗规则语义不一致，且程序自己打印同类文本时误删真实输出）。
 
 ---
 
-## 关键设计决策总结
+## 10. 仓库结构
+
+见 [`README.md`](../../README.md) "项目结构" 与 [`AGENTS.md`](../../AGENTS.md) "关键目录"（两者与 Cargo workspace 保持同步）。
+文档索引见 [`docs/README.md`](../README.md)。
+
+---
+
+## 11. 关键设计决策
 
 | 决策点 | 选择 | 理由 |
-|--------|------|------|
-| 执行引擎 | **自研 CideVM（替代 wasm3）** | 教学专用：完全可控的单步/诊断/内存可视化；局部变量映射到线性内存支持 `&x` |
-| 编译目标 | **自定义扁平字节码（替代 WASM）** | 只实现教学子集需要的 106 条指令；简化编译器和 VM 的耦合 |
-| 可视化方式 | **零侵入自动注入** | 初学者写纯 C，系统自动识别算法 |
-| 渲染引擎 | **Flutter CustomPainter + Widget** | 跨平台，算法可视化与内存映射 |
-| 动画稳定性 | **CancelAll + SnapToFinalState** | 参考 2048 修复经验 |
-| 中文支持 | **三级信息 + 运行时值注入** | L1 感知/L2 理解/L3 原理 |
+|:---|:---|:---|
+| 执行引擎 | **自研 CideVM**（替代 wasm3） | 教学专用：完全可控的单步/诊断/内存可视化；局部变量入线性内存以支持 `&x` |
+| 编译目标 | **自定义扁平字节码**（替代 WASM） | 只实现教学子集需要的指令；简化编译器与 VM 耦合 |
+| 出口形态 | **三出口共用一套语义层** | 防"typeck 与 codegen 双轨语义"的漂移覆辙 |
+| 边界数据 | **JSON 字符串** | 稳定、可版本化、任意语言可消费；ctypes 生产验证已证明够用 |
+| 对外契约 | **协议先行（schema v0.1）** | 协议是公共承诺；与引擎内部表示解耦后各自演进 |
+| 可视化 | **零侵入自动识别** | 初学者写纯 C，系统自动给出教学事件 |
+| 诊断风格 | **运行时值注入 + 三级信息** | L1 感知 / L2 理解 / L3 原理 |
 | 算法修复 | **诊断 + 引导，不代写代码** | 保护学习过程 |
-| 子集扩展 | **渐进式解锁** | 按需开放，降低认知负担 |
-| ~~OCR 纠错~~ | ~~编译器驱动反馈循环~~ | ~~形式语法验证比 NLP 猜测更可靠~~ |
+| 内存安全 | **1MB 线性内存 + 指令级检查 + 有界堆隔离** | 教学场景需要"可控地失败并解释" |
+| 许可证 | **MIT** | 对教育产品集成最友好（无 copyleft 顾虑） |
+| 前端 | **切割给社区**（2026-09-11） | 前端 30 条审查发现几乎全是架构级；移动端取舍持续拖累桌面端 |
+| 原生移动端 | **放弃** | 软键盘/IME/触控目标是自研编辑器在移动端的固有硬伤；"看"由 wasm + 浏览器覆盖 |
+
+> 历史设计（wasm3 时代、Flutter 前端时代）保留在 [`../archive/`](../archive/)，仅供追溯。

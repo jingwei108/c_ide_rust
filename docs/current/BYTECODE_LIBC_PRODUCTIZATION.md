@@ -1,6 +1,6 @@
 # Bytecode Libc 产品化设计文档
 
-> **状态**: 已实现（2026-06-07）  
+> **状态**: 已实现（2026-06-07；产物与加载器路径已于 2026-09-11 核对沉降）  
 > **关联文档**: `STDLIB_AND_TEST_DESIGN.md`、`SUPPORTED_LIBC.md`
 
 ---
@@ -10,7 +10,7 @@
 将 `native/runtime_libc/src/*.c` 从"仅在测试中编译"提升为**产品默认路径**，使学生代码调用 `isdigit(c)` / `abs(n)` / `tolower(c)` 等纯计算函数时，执行 Bytecode Libc 的 C 实现而非 Rust Host Func。
 
 核心诉求：
-- **教学展示价值**：学生可以看到 libc 函数的纯 C 实现（`runtime_libc/src/ctype.c` 等）
+- **教学展示价值**：学生可以看到 libc 函数的纯 C 实现（`native/runtime_libc/src/ctype.c` 等）
 - **消除重复编译开销**：构建期一次预编译，运行时直接嵌入
 - **函数索引固定**：为 JIT trace 缓存、静态分析提供稳定的函数地址空间
 
@@ -23,7 +23,7 @@
 ```
 构建期                          编译期                          运行时
 ─────────────────────────────────────────────────────────────────────────────────
-runtime_libc/src/*.c
+native/runtime_libc/src/*.c
       │
       ▼
 cide_cli export ──→ bytecode_libc_data.json  ──→ include_str!  ──→ VM setup
@@ -67,10 +67,12 @@ IP 0           IP=LIBC_CODE_LEN                 IP=LIBC_CODE_LEN+user_code_len
 | 文件 | 类型 | 说明 |
 |------|------|------|
 | `scripts/precompile_bytecode_libc.py` | 构建脚本 | 构建期预编译脚本，生成产物文件 |
-| `native/src/vm/bytecode_libc_data.json` | 产物 | 预编译字节码 + 函数元数据 + 全局初始化数据（提交 git） |
-| `native/src/vm/bytecode_libc_index.rs` | 产物 | 固定索引映射常量（提交 git） |
-| `native/src/vm/bytecode_libc_loader.rs` | 源码 | 运行时加载器，解析 JSON 产物 |
+| `native/crates/cide_vm/src/bytecode_libc_data.json` | 产物 | 预编译字节码 + 函数元数据 + 全局初始化数据（提交 git） |
+| `native/crates/cide_runtime/src/bytecode_libc_index.rs` | 产物 | 固定索引映射常量（提交 git） |
+| `native/crates/cide_vm/src/bytecode_libc_loader.rs` | 源码 | 运行时加载器，解析 JSON 产物 |
 | `native/src/bin/cide_cli.rs` | 源码 | `export` 子命令：编译 C 源码并输出 JSON |
+
+> **路径沉降说明（2026-09-11 核对）**：`vm/` 模块（原位于 `native/src/` 下）已整体迁入 `native/crates/cide_vm/`；`bytecode_libc_index.rs` 随运行时共享数据落在 `native/crates/cide_runtime/`。产物内容与生成流程未变。
 
 ---
 
@@ -84,8 +86,8 @@ python scripts/precompile_bytecode_libc.py
 
 脚本逻辑：
 1. `cargo build --release --bin cide_cli`
-2. `cide_cli export runtime_libc/src/*.c -o native/src/vm/bytecode_libc_data.json`
-3. 读取 JSON，生成 `native/src/vm/bytecode_libc_index.rs`
+2. `cide_cli export native/runtime_libc/src/*.c -o native/crates/cide_vm/src/bytecode_libc_data.json`
+3. 读取 JSON，生成 `native/crates/cide_runtime/src/bytecode_libc_index.rs`
 
 ### 4.2 修改 runtime_libc C 源码后
 
@@ -94,7 +96,7 @@ python scripts/precompile_bytecode_libc.py
 # 2. 重新预编译
 python scripts/precompile_bytecode_libc.py
 # 3. 提交产物与源码
-git add native/src/vm/bytecode_libc_data.json native/src/vm/bytecode_libc_index.rs native/runtime_libc/src/
+git add native/crates/cide_vm/src/bytecode_libc_data.json native/crates/cide_runtime/src/bytecode_libc_index.rs native/runtime_libc/src/
 git commit -m "update runtime_libc: ..."
 ```
 
@@ -107,7 +109,20 @@ git commit -m "update runtime_libc: ..."
   run: python scripts/precompile_bytecode_libc.py --check
 ```
 
-若产物与 C 源码不同步，CI 会失败并提示重新运行预编译脚本。
+判定方式（**2026-09-11 修订**）：`--check` 比对的是**源文件内容摘要** ——
+产物 JSON 内记录 `source_digest`（`native/runtime_libc/{src,cide}/` 下全部
+`.c/.cpp/.h` 的「相对路径 + 规范化行尾后的内容」SHA-256），检查时重算并比对。
+
+- 摘要**与文件 mtime 无关**，因此 CI 干净检出（`actions/checkout` 不保留 mtime、按路径顺序写文件）
+  不会误报；行尾规范化则消除了 `core.autocrlf` 带来的平台差异。
+- **历史缺陷记录**：旧实现比较 mtime，在 CI 中必然失败（源文件写入晚于产物）；
+  它同时长期掩盖了"产物其实早已与编译器不同步"这一事实。
+- 若产物与源码不同步，CI 会失败并打印 `recorded digest` / `current digest` 便于定位，
+  提示重新运行预编译脚本。
+
+> 产物本身的可重现性由两处保证：`generate_implicit_move_ctors` 按类名排序生成
+> （避免 `HashSet` 迭代顺序随机），以及生成脚本用 `json.dump(..., sort_keys=True)`
+> 输出（避免 Rust 侧 `HashMap` 键序随机）。连续多次生成的 JSON 应**字节级一致**。
 
 ---
 
@@ -260,7 +275,7 @@ C 标准只保证 ctype 函数返回**非零值**表示真，不保证具体数�
 ### 8.3 预编译产物版本控制
 
 **循环依赖**：`cide_cli` 依赖 `cide_native`，而 `cide_native` 的编译产物（`.cidebc`）又需要 `cide_cli` 生成。  
-**解决方案**：预编译产物始终提交到 git，开发者仅在修改 `runtime_libc/src/*.c` 时手动运行脚本更新。
+**解决方案**：预编译产物始终提交到 git，开发者仅在修改 `native/runtime_libc/src/*.c` 时手动运行脚本更新。
 
 **风险**：忘记运行预编译脚本即提交 C 源码修改，会导致 CI 失败（`--check` 模式会检测）。
 
@@ -272,11 +287,11 @@ C 标准只保证 ctype 函数返回**非零值**表示真，不保证具体数�
 
 ### 8.5 VLA 与 Bytecode Libc
 
-预编译的 Bytecode Libc 代码长度是固定的（`BYTECODE_LIBC_CODE_LEN`）。如果未来 Bytecode Libc 引入了 VLA（变长数组），其栈帧大小是动态的，可能影响 `local_count` 的预编译值。当前 `runtime_libc/src/*.c` 中无 VLA，暂不受影响。
+预编译的 Bytecode Libc 代码长度是固定的（`BYTECODE_LIBC_CODE_LEN`）。如果未来 Bytecode Libc 引入了 VLA（变长数组），其栈帧大小是动态的，可能影响 `local_count` 的预编译值。当前 `native/runtime_libc/src/*.c` 中无 VLA，暂不受影响。
 
 ### 8.6 source_map 偏移的边界情况
 
-`source_map` 中的 IP 已统一偏移 `BYTECODE_LIBC_CODE_LEN`，确保 capi 调试查询正确。但如果用户代码的 `return_ip` 恰好落在 Bytecode Libc 区域内（如 Bytecode Libc 函数返回时），`capi/mod.rs` 中的 source_map 查询会返回 `best_line = 0`（无对应条目）。这是可接受的行为，表示"无法定位到用户源代码"。
+`source_map` 中的 IP 已统一偏移 `BYTECODE_LIBC_CODE_LEN`，确保 capi 调试查询正确。但如果用户代码的 `return_ip` 恰好落在 Bytecode Libc 区域内（如 Bytecode Libc 函数返回时），`native/src/capi/mod.rs` 中的 source_map 查询会返回 `best_line = 0`（无对应条目）。这是可接受的行为，表示"无法定位到用户源代码"。
 
 ---
 
@@ -295,4 +310,4 @@ C 标准只保证 ctype 函数返回**非零值**表示真，不保证具体数�
 ---
 
 *文档状态：实现完成 + 已知限制记录*  
-*最后更新：2026-06-07*
+*最后更新：2026-09-11（前端切割后文档翻新：产物/加载器路径随 crate 化沉降，简写路径补全）*

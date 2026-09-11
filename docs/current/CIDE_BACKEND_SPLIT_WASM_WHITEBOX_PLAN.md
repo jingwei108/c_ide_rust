@@ -2,7 +2,7 @@
 
 > 记录日期：2026-09-11
 > 决策依据：2026-09-06 全面代码审阅报告（docs/current/code_review_report_2026-09-06.md）、SharpTutor 三个 Issue（A/B/C，2026-09-07）、前端切割战略讨论、wasm32 冒烟实测（2026-09-11）
-> 取代：`CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md` 的"移动端优先"定位（该文档保留作历史参考）
+> 取代：`CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md` 的"移动端优先"定位（该文档已于 2026-09-11 归档至 [`../archive/ARCHIVE_CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md`](../archive/ARCHIVE_CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md)）
 > 核心定位转型：**从"移动端教学编辑器"到"教学 C/C++ 子集参考执行引擎（白箱）"**
 
 ---
@@ -167,7 +167,9 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 
 ---
 
-## 5. 切割清单（Phase 0 执行手册）
+## 5. 切割清单（Phase 0 执行手册 · ✅ 已于 2026-09-11 执行完毕）
+
+> 以下清单保留为执行记录与验收依据；逐项落地结果见 [`CHANGELOG.md`](../../CHANGELOG.md) `[Unreleased] Removed` 段。
 
 ### 5.1 仓库拆分
 
@@ -176,7 +178,7 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 | 迁出 | `CideFlutter/` 整目录（含 assets/templates——注意：shadow 防线与 E2E 模板用例依赖 `CideFlutter/assets/templates/*.c`，迁出前先把模板用例源复制到 `native/tests/cases/templates/` 并改 shadow 加载路径） |
 | 删除/迁出 | `scripts/build_flutter.py`、`scripts/test_mobile.py`、`scripts/build_release.py` 的 Flutter 段 |
 | CI | `.github/workflows/ci.yml` 移除 Flutter/Android job；新增 `wasm32-check` job（cargo check target + Node 冒烟） |
-| 文档 | AGENTS.md 重写为后端视角（定位、三出口架构、边界纪律）；`docs/current/` 前端相关文档标注"已迁出"并指向新仓库；新增 `docs/spec/`（协议 schema） |
+| 文档 | AGENTS.md 重写为后端视角（定位、三出口架构、边界纪律）✅；`docs/current/` 前端相关文档**归档**至 `docs/archive/`（2026-09-11 执行：17 份旧文档移入，索引与核心文档重写）✅；新增 `docs/spec/`（协议 schema）✅ |
 | README | 重写：五分钟跑通第一个 demo（cide_cli run + wasm 浏览器 demo）是社区前端的启动门槛 |
 
 ### 5.2 许可证与治理
@@ -204,7 +206,7 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 
 | 阶段 | 内容 | 规模 | 前置 |
 |---|---|---|---|
-| **Phase 0：切割准备** | 依赖盘点、模板用例迁移、切割清单执行、MIT 化、AGENTS/README 重写 | 2~3 天 | 无 |
+| **Phase 0：切割准备** ✅ **已完成（2026-09-11）** | 依赖盘点、模板用例迁移、切割清单执行、MIT 化、AGENTS/README 重写 | 2~3 天 | 无 |
 | **Phase 1：边界补全** | 语言中立 Rust 层提炼（session/unified/memory/breakpoints 下沉）；capi 第一批（含 deterministic 最小形态与运行时保险丝契约，见 §5.3）；`cide_cli serve` JSON-lines（含 id 关联/错误帧同构/session.reset）；`cide_abi_version()`；**StepPayload schema v0.1 定稿**（双方回放场景校验，定稿后 CoW 方可动工）；**Issue A/B 修复 ✅ 已完成（2026-09-11）** | 1~1.5 周 | Phase 0 |
 | **Phase 2a / 2b：并行** | **2a wasm 白箱**：FRB 门控（产物免 stub）；JS/TS 绑定包；wasm 进 CI；体积优化；浏览器最小 demo。**2b capi 第二批**：内存 API（kind 三段式合成/字节读取）+ 错误码机器可读导出 | 各约 1 周，互不抢资源（wasm 走构建/绑定层，第二批走纯 capi 层） | Phase 1 |
 | **Phase 3：时间旅行完整面** | capi 第三批（run_auto/seek/vis_events/heatmap/demangle）；时间旅行 CoW（V-P1-9）+ 快照边界完整化（VFS/local_sym_map/**完整 step 派生伪时钟**——与 Phase 1 判分确定性分层：前者服务重放，后者服务判分） | 2~3 周 | schema v0.1 定稿（Phase 1） |
@@ -244,7 +246,7 @@ cide 引擎核心（Rust workspace，禁止平台 API 耦合）
 
 - `code_review_report_2026-09-06.md`：继续作为修复进度权威追踪（第 0 节）；
 - `CIDE_CAPI_REVIEW_RESPONSE.md`：**capi 签名定稿的评审依据**（SharpTutor 诉求逐条回应 + 开放问题答案），实现 §5.3 第一批时对照执行；
-- `CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md`：移动端定位部分被本文档取代，三语言服务目标（C/C++/信）不变；
+- [`../archive/ARCHIVE_CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md`](../archive/ARCHIVE_CIDE_MOBILE_TEACHING_THREE_LANGUAGE_PLAN.md)：移动端定位部分被本文档取代（2026-09-11 已归档），三语言服务目标（C/C++/信）不变；
 - `C_SUBSET_SPEC.md` / `CPP_SUBSET_SPEC.md`：子集规范不变，仍是行为契约；
 - `CIDE_CLI.md`：Phase 1 扩展 serve 命令后更新；
 - 各 `*_FAILURES.md`：继续作为防线 5 双向监控的事实源（Phase 2b 错误码机器可读导出后与代码常量共同作为事实源）。

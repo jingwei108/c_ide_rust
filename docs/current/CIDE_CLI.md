@@ -1,8 +1,10 @@
 # Cide CLI 使用手册
 
-> [English Version](CIDE_CLI_EN.md)
+> 最后核对日期：2026-09-11
+> 修订说明（2026-09-11）：去前端化——移除已删除的 `CIDE_CLI_EN.md` 链接，入口表述改为"无前端依赖"并补三出口交叉引用。
+> 出口定位：本文档描述的是"三出口一核心"中的**出口 3**（`cide_cli serve` JSON-lines 会话模式）；另两个出口为 C ABI（`native/src/capi/`）与 wasm32，完整清单与职责边界见 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §2.2。
 
-`cide_cli` 是 Cide 项目 Rust 后端的命令行调试工具，无需启动 Flutter 前端即可直接编译、运行和单步调试 C 代码。
+`cide_cli` 是 Cide 项目 Rust 后端的命令行调试工具，**无前端依赖（headless 交互第一入口）**，可直接编译、运行和单步调试 C 代码。
 
 ## 构建
 
@@ -152,7 +154,7 @@ cide_cli unified hello.c
 sum=15
 ```
 
-统一模式会完整记录每一步的 VM 状态，支持检查点保存和回溯，与前端"时间旅行"功能使用同一引擎。
+统一模式会完整记录每一步的 VM 状态，支持检查点保存和回溯；`cide_cli serve` 的 `step.begin` / `step.next` / `seek` 与之共用同一 `UnifiedEngine`（三出口一套语义，见 §6）。
 
 对于可能超过默认 10 万步限制的长程序，可使用 `--max-steps` 放宽限制：
 
