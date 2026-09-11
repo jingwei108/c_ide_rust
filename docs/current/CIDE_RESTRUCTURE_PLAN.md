@@ -265,5 +265,12 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   本地全通。
 - **全批次交付声明**：R1/R2/R3/R4 + E1/E2/E3 七批次全部完成（各批次独立
   提交、独立过全防线；行为变化均已如实记录 CHANGELOG/spec）。按 §7 时序，
-  `CSHARP_EXTENSION_PLAN.md` 的 CS0~CS6 具备启动条件（锚定客户对齐后排期）。  含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
-  C/C++" → C/C++ 主轴 + C# 教学子集）待定位主计划同步声明。
+  `CSHARP_EXTENSION_PLAN.md` 的 CS0~CS6 具备启动条件（锚定客户对齐后排期）。
+- **R4 及其 CI 修复已提交（`3c767bb` + `5bbd815` wasm 步骤 working-directory +
+  `d2f7543` C++ Shadow 目录去重/clang 重试 + `968a408` wasm 暂存区
+  memory.grow），最终 CI 全绿（968a408，含新增 wasm 冒烟步骤）**。CI 顺带
+  暴露并修复两处预存问题：C++ Shadow 驱动内嵌用例与目录用例同名双跑且内容
+  漂移（G10 同源病）；`__heap_base` 在部分 Rust 版本默认不导出（冒烟暂存区
+  改 memory.grow 新增页，位于程序堆之上无重叠）。
+  定位扩展（"后端语言锁定 C/C++" → C/C++ 主轴 + C# 教学子集）待定位主计划
+  同步声明。
