@@ -464,12 +464,13 @@ pub fn set_breakpoints(lines: Vec<i32>) {
 }
 
 /// 设置输入（用于 scanf）
+///
+/// 2026-09-11：改为**保留换行**（`RuntimeState::set_stdin`）—— 此前 `str::lines()`
+/// 会丢掉行尾 `'\n'`，导致 `getchar()` 永远读不到换行、与 Clang 行为不一致。
 pub fn set_input(input: String) {
     let session_arc_l420 = current_session();
     let mut session = lock_or_reset(&session_arc_l420);
-    session.runtime.input_lines = input.lines().map(|l| l.trim_end_matches('\r').to_string()).collect();
-    session.runtime.input_index = 0;
-    session.runtime.input_char_offset = 0;
+    session.runtime.set_stdin(&input);
 }
 
 /// 提供单行输入（恢复执行）

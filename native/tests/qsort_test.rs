@@ -24,20 +24,16 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
 
         let run_ret = cide_native::capi::cide_run(session);
 
+        // E-P1-5：直接读纯程序 stdout 通道（引擎附注走 note 通道），不再做文本清洗。
         let mut outputs = Vec::new();
-        let out_len = cide_native::capi::cide_get_output_length(session);
+        let out_len = cide_native::capi::cide_get_program_output_length(session);
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            cide_native::capi::cide_get_program_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
             for line in out_str.lines() {
-                let cleaned = if let Some(pos) = line.find("程序运行完成") {
-                    &line[..pos]
-                } else {
-                    line
-                };
-                if !cleaned.is_empty() {
-                    outputs.push(cleaned.to_string());
+                if !line.is_empty() {
+                    outputs.push(line.to_string());
                 }
             }
         }

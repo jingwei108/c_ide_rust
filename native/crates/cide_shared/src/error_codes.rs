@@ -91,6 +91,14 @@ pub enum ErrorCode {
     E3063_ScanfFormatMismatch = 3063,
     W3064_DoublePointerCast = 3064,
     E3065_ConstViolation = 3065,
+    E3066_CallNonFunction = 3066,
+    /// 指针类型不兼容的隐式赋值（P1-6）。
+    ///
+    /// 与 `W3053_ImplicitScalarConversion` 区分：那是**标量**隐式转换（int → char 截断等，
+    /// "可能导致数据截断"的建议成立）；指针不兼容是另一类问题——C++ 向上转型
+    /// （`Derived* → Base*`）本就允许且不需要转换，向下转型/无关类型才需要显式转换。
+    /// 此前共用 W3053，把多态基础建议成了"数据截断"，属教学误导。
+    W3067_PointerTypeMismatch = 3067,
     E3070_BufferOverflow = 3070,
     E3071_UndefinedLabel = 3071,
     E3072_StructSelfContain = 3072,

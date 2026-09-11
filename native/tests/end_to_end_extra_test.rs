@@ -2,11 +2,18 @@
 
 use std::ffi::{c_char, c_int, CString};
 
-fn filter_outputs(outputs: Vec<String>) -> Vec<String> {
-    outputs.into_iter().filter(|s| !s.contains("程序运行完成")).collect()
-}
+// E-P1-5：`filter_outputs`（过滤"程序运行完成"附注）已删除——引擎按通道分离输出后，
+// `compile_and_run*` 直接读纯 stdout，不需要也不允许再做文本清洗（清洗会在教学程序
+// 自己打印同类文本时误删真实输出）。
 
 fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
+    compile_and_run_detailed(source).map(|(ret, stdout, _notes)| (ret, stdout))
+}
+
+/// 与 `compile_and_run` 相同，但额外返回引擎附注（note 通道）。
+///
+/// E-P1-5：泄漏报告等附注不再混入 stdout，验证附注的测试必须显式读 note 通道。
+fn compile_and_run_detailed(source: &str) -> Result<(i32, Vec<String>, Vec<String>), String> {
     unsafe {
         let session = cide_native::capi::cide_session_create();
         if session.is_null() {
@@ -28,15 +35,29 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
 
         let run_ret = cide_native::capi::cide_run(session);
 
+        // E-P1-5：纯程序 stdout；引擎附注单独从 note 通道读取。
         let mut outputs = Vec::new();
-        let out_len = cide_native::capi::cide_get_output_length(session);
+        let out_len = cide_native::capi::cide_get_program_output_length(session);
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            cide_native::capi::cide_get_program_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
             for line in out_str.lines() {
                 if !line.is_empty() {
                     outputs.push(line.to_string());
+                }
+            }
+        }
+
+        let mut notes = Vec::new();
+        let notes_len = cide_native::capi::cide_get_engine_notes_length(session);
+        if notes_len > 0 {
+            let mut buf = vec![0u8; notes_len as usize + 1];
+            cide_native::capi::cide_get_engine_notes(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            let notes_str = String::from_utf8_lossy(&buf[..notes_len as usize]);
+            for line in notes_str.lines() {
+                if !line.is_empty() {
+                    notes.push(line.to_string());
                 }
             }
         }
@@ -56,7 +77,7 @@ fn compile_and_run(source: &str) -> Result<(i32, Vec<String>), String> {
             }
         }
 
-        Ok((run_ret, outputs))
+        Ok((run_ret, outputs, notes))
     }
 }
 
@@ -86,10 +107,10 @@ fn compile_and_run_with_input(source: &str, input: &str) -> Result<(i32, Vec<Str
         let run_ret = cide_native::capi::cide_run(session);
 
         let mut outputs = Vec::new();
-        let out_len = cide_native::capi::cide_get_output_length(session);
+        let out_len = cide_native::capi::cide_get_program_output_length(session);
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            cide_native::capi::cide_get_program_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
             for line in out_str.lines() {
                 if !line.is_empty() {
@@ -144,10 +165,10 @@ fn compile_and_run_with_argv(source: &str, argv: &[&str]) -> Result<(i32, Vec<St
         let run_ret = cide_native::capi::cide_run(session);
 
         let mut outputs = Vec::new();
-        let out_len = cide_native::capi::cide_get_output_length(session);
+        let out_len = cide_native::capi::cide_get_program_output_length(session);
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            cide_native::capi::cide_get_program_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
             for line in out_str.lines() {
                 if !line.is_empty() {
@@ -1313,12 +1334,13 @@ int main() {
     return 0;
 }
 "#;
-    let result = compile_and_run(src);
+    let result = compile_and_run_detailed(src);
     assert!(result.is_ok(), "{:?}", result.err());
-    let (_ret, outputs) = result.unwrap();
-    assert!(outputs.iter().any(|l| l.contains("before")), "Outputs: {:?}", outputs);
-    assert!(!outputs.iter().any(|l| l.contains("after")), "Outputs: {:?}", outputs);
-    assert!(outputs.iter().any(|l| l.contains("返回值：42")), "Outputs: {:?}", outputs);
+    let (_ret, stdout, notes) = result.unwrap();
+    assert!(stdout.iter().any(|l| l.contains("before")), "stdout: {:?}", stdout);
+    assert!(!stdout.iter().any(|l| l.contains("after")), "stdout: {:?}", stdout);
+    // E-P1-5：运行完成提示是引擎附注，读 note 通道（不再混入 stdout）。
+    assert!(notes.iter().any(|l| l.contains("返回值：42")), "notes: {:?}", notes);
 }
 
 #[test]
@@ -2143,7 +2165,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["2 78", "3 85", "1 92"]);
 }
 
@@ -2201,7 +2223,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1 2 3 4 5 "]);
 }
 
@@ -2225,7 +2247,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["0 1 1 2 3 5 8 13 21 34 55 "]);
 }
 
@@ -2250,7 +2272,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["10 20 30 "]);
 }
 
@@ -2272,7 +2294,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["Hello World 11"]);
 }
 
@@ -2298,7 +2320,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1 2 3 ", "4 5 6 "]);
 }
 
@@ -2330,7 +2352,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["0 0 10 20"]);
 }
 
@@ -2354,7 +2376,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["25"]);
 }
 
@@ -2373,7 +2395,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["7"]);
 }
 
@@ -2410,7 +2432,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["3 78", "1 85", "4 88", "2 92"]);
 }
 
@@ -2446,7 +2468,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["3 0 6 -1"]);
 }
 
@@ -2481,7 +2503,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["olleh", "dcba"]);
 }
 
@@ -2538,7 +2560,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["30 30 20 0", "10 1"]);
 }
 
@@ -2575,7 +2597,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["11 12 22 25 64 90 "]);
 }
 
@@ -2615,7 +2637,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["101", "1101", "0", "11111111"]);
 }
 
@@ -2645,7 +2667,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["A -> C", "A -> B", "C -> B", "A -> C", "B -> A", "B -> C", "A -> C"]);
 }
 
@@ -2670,7 +2692,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["15"]);
 }
 
@@ -2707,7 +2729,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["3"]);
 }
 
@@ -2729,7 +2751,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["15"]);
 }
 
@@ -2777,7 +2799,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["7", "1 2 3 4 5 6 9 "]);
 }
 
@@ -2813,7 +2835,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1", "0", "1", "1"]);
 }
 
@@ -2839,7 +2861,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["8 10 12 ", "14 16 18 "]);
 }
 
@@ -2863,7 +2885,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["0", "5", "6"]);
 }
 
@@ -2892,7 +2914,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["6", "6"]);
 }
 
@@ -2918,7 +2940,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["18", "12", "45", "5"]);
 }
 
@@ -2955,7 +2977,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["0 1 2 3 4 5 6 "]);
 }
 
@@ -2985,7 +3007,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["Hello", "CideVM"]);
 }
 
@@ -3018,7 +3040,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["6 5 4 3 2 1 "]);
 }
 
@@ -3047,7 +3069,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1", "32", "81", "125"]);
 }
 
@@ -3081,7 +3103,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["12", "10", "1"]);
 }
 
@@ -3132,7 +3154,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1 1 2 3 6 8 10 "]);
 }
 
@@ -3160,7 +3182,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["10 5", "3 2 1"]);
 }
 
@@ -3197,7 +3219,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["0 1 2 4 5 8 "]);
 }
 
@@ -3225,7 +3247,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["0", "-1", "1", "-99"]);
 }
 
@@ -3255,7 +3277,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["85.000000"]);
 }
 
@@ -3286,7 +3308,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["6", "3", "-1"]);
 }
 
@@ -3323,7 +3345,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["5 6 1 2 3 4 "]);
 }
 
@@ -3362,7 +3384,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["2", "8"]);
 }
 
@@ -3429,7 +3451,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["10 20 0", "30 40 50 60 "]);
 }
 
@@ -3463,7 +3485,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["123", "-456", "0", "9876"]);
 }
 
@@ -3494,7 +3516,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["6", "1", "12", "42"]);
 }
 
@@ -3522,7 +3544,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1 2 0", "4 0 1"]);
 }
 
@@ -3544,7 +3566,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["2 20"]);
 }
 
@@ -3566,7 +3588,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out, vec!["1 10"]);
 }
 
@@ -3588,7 +3610,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "Result:     42");
     assert_eq!(out[1], "Pi: 3.14");
     assert_eq!(out[2], "Long: 42");
@@ -3611,12 +3633,16 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "10 20 100 200 300");
 }
 
 #[test]
-fn test_e2e_realloc_in_place_shrink() {
+fn test_e2e_realloc_new_block_copy() {
+    // 2026-09-11 堆决议 §3：realloc 恒为新块拷贝，原「堆顶原地收缩」特例被移除
+    // （原地收缩会把 heap_offset 回退进隔离区，破坏"隔离窗口内地址不复用"的保证）。
+    // 原测试断言 old_addr == new_addr 即是在测分配器的复用行为本身——按决议 §4-3
+    // 把该行为从契约中除名：改测"地址改变 + 原数据完整保留"（数据正确性不下沉）。
     let src = r#"
 #include <stdio.h>
 #include <stdlib.h>
@@ -3626,7 +3652,7 @@ int main() {
     int old_addr = (int)p;
     p = (int*)realloc(p, 8);
     int new_addr = (int)p;
-    printf("%d %d %d %d\n", old_addr == new_addr, p[0], p[1], p[2]);
+    printf("%d %d %d\n", old_addr == new_addr, p[0], p[1]);
     return 0;
 }
 "#;
@@ -3634,8 +3660,8 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
-    assert_eq!(out[0], "1 1 2 3");
+    let out = outputs;
+    assert_eq!(out[0], "0 1 2");
 }
 
 #[test]
@@ -3653,7 +3679,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "7");
 }
 
@@ -3672,7 +3698,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "6");
 }
 
@@ -3694,7 +3720,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "1");
     assert_eq!(out[1], "2");
 }
@@ -3719,7 +3745,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "7 5");
 }
 
@@ -3739,7 +3765,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "10");
 }
 
@@ -3762,7 +3788,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "1 2 3");
 }
 
@@ -3779,7 +3805,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     // 所有函数指针/指向函数指针的指针都是 4 字节
     assert_eq!(out[0], "4 4 4");
 }
@@ -3801,7 +3827,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "12 4");
 }
 
@@ -3820,7 +3846,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "7");
 }
 
@@ -3839,7 +3865,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "10");
 }
 
@@ -3865,7 +3891,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "7");
     assert_eq!(out[1], "5");
 }
@@ -3886,7 +3912,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "4.0");
 }
 
@@ -3906,7 +3932,7 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (ret, outputs) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out[0], "10000000001");
 }
 
@@ -3922,13 +3948,12 @@ int main() {
     return 0;
 }
 "#;
-    let result = compile_and_run(src);
+    let result = compile_and_run_detailed(src);
     assert!(result.is_ok(), "{:?}", result.err());
-    let (ret, outputs) = result.unwrap();
+    let (ret, _stdout, notes) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
-    // 确认输出包含泄漏报告
-    let joined = out.join("\n");
+    // E-P1-5：泄漏报告是引擎附注，读 note 通道（不再混在 stdout 里）。
+    let joined = notes.join("\n");
     assert!(joined.contains("内存泄漏检测报告"), "应包含泄漏报告标题");
     assert!(joined.contains("未被 free"), "应提示未被 free");
 }
@@ -3946,12 +3971,11 @@ int main() {
     return 0;
 }
 "#;
-    let result = compile_and_run(src);
+    let result = compile_and_run_detailed(src);
     assert!(result.is_ok(), "{:?}", result.err());
-    let (ret, outputs) = result.unwrap();
+    let (ret, _stdout, notes) = result.unwrap();
     assert_eq!(ret, 0);
-    let out = filter_outputs(outputs);
-    let joined = out.join("\n");
+    let joined = notes.join("\n");
     assert!(!joined.contains("内存泄漏检测报告"), "已 free 不应报告泄漏");
 }
 
@@ -4042,7 +4066,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "1", "0.1 + 0.2 == 0.3 should be true with epsilon");
 }
 
@@ -4061,7 +4085,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "0", "0.1 + 0.2 != 0.3 should be false with epsilon");
 }
 
@@ -4083,7 +4107,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     // With epsilon: <= true, >= true, > false, < false
     assert_eq!(
         out.join(""),
@@ -4106,7 +4130,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     // diff ~9.7e-8 < EPS_F32 (1e-6) => should be true
     assert_eq!(out.join(""), "1", "Nearby floats should be equal with epsilon");
 }
@@ -4125,7 +4149,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "0", "Nearby floats should not be unequal with epsilon");
 }
 
@@ -4146,7 +4170,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     // With epsilon: <= true, >= true, > false, < false
     assert_eq!(out.join(""), "1100", "Nearby float relational with epsilon");
 }
@@ -4168,7 +4192,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     // diff = 1.0 > EPS_F32 => normal comparison
     assert_eq!(out.join(""), "0110", "Far apart floats should compare normally");
 }
@@ -4194,7 +4218,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "1037", "Parametric macro MAX should work");
 }
 
@@ -4214,7 +4238,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "2 1", "Parametric macro SWAP should work");
 }
 
@@ -4237,7 +4261,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(
         out.join(""),
         "2 1",
@@ -4260,7 +4284,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "2", "Nested parametric macros should work");
 }
 
@@ -4283,7 +4307,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "123", "Static local variable should persist across calls");
 }
 
@@ -4305,7 +4329,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "4344", "Static local should initialize only once");
 }
 
@@ -4331,7 +4355,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "69", "Static local array should persist and mutate");
 }
 
@@ -4358,7 +4382,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert!(
         out.iter().any(|l| l.contains("hello")),
         "fgets should read first line: {:?}",
@@ -4385,7 +4409,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "hello world", "fputs to stdout should produce output: {:?}", out);
 }
 
@@ -4404,7 +4428,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "42", "Double pointer dereference should print 42");
 }
 
@@ -4436,7 +4460,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "2010", "struct Node** linked-list pattern should work");
 }
 
@@ -4458,7 +4482,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "12", "Double pointer cast and index should work");
 }
 
@@ -4481,7 +4505,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "1020", "Double pointer arithmetic should step by 4 bytes");
 }
 
@@ -4505,7 +4529,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "3 4", "Struct return by value should copy fields correctly");
 }
 
@@ -4529,7 +4553,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "56", "Direct member access on struct return should work");
 }
 
@@ -4555,7 +4579,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "12", "Struct return used as function argument should work");
 }
 
@@ -4576,7 +4600,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "10 20 50", "VLA basic access should work");
 }
 
@@ -4594,7 +4618,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "20", "sizeof(VLA) should be n * sizeof(int) = 20");
 }
 
@@ -4618,7 +4642,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "0 10 20 30 ", "VLA in loop should work");
 }
 
@@ -4646,7 +4670,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "15", "VLA passed to function should decay to pointer");
 }
 
@@ -4669,7 +4693,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "0 12 21", "Multidim VLA with constant second dim should work");
 }
 
@@ -4688,7 +4712,7 @@ int main() {
     println!("DEBUG subarray sizeof: {:?}", result);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "12", "sizeof(a[0]) for VLA subarray should be 12");
 }
 
@@ -4715,7 +4739,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "0 10 20 30 ", "VLA as function parameter should work");
 }
 
@@ -4740,7 +4764,7 @@ int main() {
     println!("DEBUG all vla: {:?}", result);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = filter_outputs(output);
+    let out = output;
     assert_eq!(out.join(""), "0 2 10 12", "All-dim VLA should work");
 }
 
@@ -4760,7 +4784,7 @@ end:
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "0", "Forward goto should skip assignment");
 }
 
@@ -4783,7 +4807,7 @@ end:
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "012", "Backward goto should form loop");
 }
 
@@ -4824,7 +4848,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "100", "When MODE is defined, get_val() should return 100");
 }
 
@@ -4845,7 +4869,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "200", "When MODE is undefined, get_val() should return 200");
 }
 
@@ -4865,7 +4889,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "42", "Header guard should allow helper() to be compiled");
 }
 
@@ -4891,7 +4915,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "2", "When OUTER defined but INNER undefined, val should be 2");
 }
 
@@ -4918,7 +4942,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "1", "When both OUTER and INNER defined, val should be 1");
 }
 
@@ -4939,7 +4963,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "1", "When RELEASE is not defined, debug() should return 1");
 }
 
@@ -4960,7 +4984,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(
         out.join(""),
         "20604040",
@@ -4982,7 +5006,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, outputs) = result.unwrap();
-    let out = filter_outputs(outputs);
+    let out = outputs;
     assert_eq!(out.join(""), "5", "sizeof(int[n]) / sizeof(int) should equal n");
 }
 
@@ -5008,18 +5032,15 @@ fn compile_and_run_raw_output(source: &str) -> Result<(i32, String), String> {
 
         let run_ret = cide_native::capi::cide_run(session);
 
-        let out_len = cide_native::capi::cide_get_output_length(session);
-        let mut out_str = if out_len > 0 {
+        // E-P1-5：纯程序 stdout（引擎附注走 note 通道），无需再截断后缀提示。
+        let out_len = cide_native::capi::cide_get_program_output_length(session);
+        let out_str = if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
+            cide_native::capi::cide_get_program_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             String::from_utf8_lossy(&buf[..out_len as usize]).to_string()
         } else {
             String::new()
         };
-        // 过滤 Cide CLI 风格的后缀提示
-        if let Some(pos) = out_str.find("程序运行完成") {
-            out_str.truncate(pos);
-        }
 
         let err_ptr = cide_native::capi::cide_get_runtime_error(session);
         let runtime_err = if err_ptr.is_null() {
@@ -5054,6 +5075,46 @@ int main() {
     assert!(result.is_ok(), "{:?}", result.err());
     let (_, out) = result.unwrap();
     assert_eq!(out, "0 1 2 ", "printf calls should not automatically add newlines");
+}
+
+#[test]
+fn test_e2e_engine_note_does_not_pollute_stdout() {
+    // E-P1-5：程序自己打印"程序运行完成，返回值：N"与泄漏报告样式的文本时，必须原样
+    // 保留在 stdout；引擎附注（完成提示、malloc(0) 教学警告）走 note 通道。
+    // 旧实现用正则清洗 stdout，会把这些**真实输出**整段删掉（假阳性 output_gap）。
+    let src = r#"
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    printf("程序运行完成，返回值：7\n");
+    printf("===== 内存泄漏检测报告 =====\n");
+    printf("==============================\n");
+    void *p = malloc(0);
+    (void)p;
+    return 0;
+}
+"#;
+    let (ret, stdout, notes) = compile_and_run_detailed(src).expect("compile+run");
+    assert_eq!(ret, 0);
+    let out = stdout.join("\n");
+    let note = notes.join("\n");
+
+    assert!(out.contains("程序运行完成，返回值：7"), "程序自身输出不得被清洗：{}", out);
+    assert!(
+        out.contains("===== 内存泄漏检测报告 ====="),
+        "程序打印的报告样式文本不得被清洗：{}",
+        out
+    );
+    assert_eq!(
+        out.matches("==============================").count(),
+        1,
+        "30 等号分隔行必须保留：{}",
+        out
+    );
+
+    assert!(note.contains("程序运行完成，返回值：0"), "引擎完成提示应在 note 通道：{}", note);
+    assert!(note.contains("malloc(0)"), "malloc(0) 教学警告应在 note 通道：{}", note);
+    assert!(!out.contains("malloc(0)"), "引擎附注不得混入 stdout：{}", out);
 }
 
 #[test]

@@ -93,76 +93,66 @@ impl TypeChecker {
                 };
                 return self.resolve_expr_type(expr);
             }
-            // Lambda call: f(args) -> f.__call(args)
+            // Lambda call: f(args) -> __lambda_N__call(f, args)
             if let Expr::CallPtr { args, ty, .. } = expr {
-                if let Some(sym) = self.lookup_var(name) {
-                    if let Type::Class { name: class_name, .. } = &sym.ty {
-                        if class_name.starts_with("__lambda_") {
-                            // Replace current expr and resolve
-                            // Need to manually resolve MemberCall here
-                            let _obj_ty = &sym.ty;
-                            let call_name = format!("{}__call", class_name);
-                            let ret_ty = if let Some(func_sym) = self.funcs.get(&call_name).cloned() {
-                                let expected = func_sym.param_types.clone();
-                                if args.len() + 1 != expected.len() {
-                                    self.report_error(
-                                        &format!(
-                                            "Lambda 调用参数数量不匹配：期望 {} 个，实际 {} 个",
-                                            expected.len() - 1,
-                                            args.len()
-                                        ),
-                                        &loc,
-                                        ErrorCode::E3037_FuncArgCount,
-                                    );
-                                } else {
-                                    for (i, arg) in args.iter_mut().enumerate() {
-                                        let arg_ty = self.resolve_expr_type(arg);
-                                        let expected_ty = &expected[i + 1];
-                                        if !self.check_assignable(expected_ty, &arg_ty, &loc) {
-                                            self.report_error(
-                                                &format!(
-                                                    "Lambda 调用第 {} 个参数类型不匹配：期望 '{}'，实际 '{}'",
-                                                    i + 1,
-                                                    expected_ty,
-                                                    arg_ty
-                                                ),
-                                                &loc,
-                                                ErrorCode::E3004_TypeMismatch,
-                                            );
-                                        } else {
-                                            insert_implicit_cast(arg, expected_ty);
-                                        }
-                                    }
-                                }
-                                // Rewrite CallPtr -> Call with this as first arg
-                                let mut new_args = vec![Expr::Identifier {
-                                    name: name.clone(),
-                                    ty: sym.ty.clone(),
-                                    loc,
-                                }];
-                                new_args.extend(args.iter().cloned());
-                                *expr = Expr::Call {
-                                    name: call_name,
-                                    args: new_args,
-                                    loc,
-                                    ty: func_sym.return_type.clone(),
-                                };
-                                func_sym.return_type.clone()
-                            } else {
-                                self.report_error(
-                                    &format!("未找到 Lambda 调用函数 '{}'", call_name),
-                                    &loc,
-                                    ErrorCode::E3036_UndefinedFunc,
-                                );
-                                *ty = Type::int();
-                                Type::int()
-                            };
-                            return ret_ty;
-                        }
+                let lambda_ty = self.lookup_var(name).map(|s| s.ty.clone());
+                let lambda_class = match &lambda_ty {
+                    Some(Type::Class { name: class_name, .. }) if class_name.starts_with("__lambda_") => {
+                        Some(class_name.clone())
                     }
+                    _ => None,
+                };
+                if let Some(class_name) = lambda_class {
+                    let this_operand = Expr::Identifier {
+                        name: name.clone(),
+                        ty: lambda_ty.unwrap_or_default(),
+                        loc,
+                    };
+                    if let Some((new_expr, ret_ty)) =
+                        self.rewrite_lambda_call(&class_name, this_operand, args, &loc)
+                    {
+                        *expr = new_expr;
+                        return ret_ty;
+                    }
+                    self.report_error(
+                        &format!("未找到 Lambda 调用函数 '{}__call'", class_name),
+                        &loc,
+                        ErrorCode::E3036_UndefinedFunc,
+                    );
+                    *ty = Type::int();
+                    return Type::int();
                 }
             } else {
                 unreachable!()
+            }
+        }
+
+        // C++ lambda 立即调用：`[](int a, int b){ return a + b; }(2, 3)`。
+        // 此时 callee 是 Lambda 表达式节点而非标识符，上面全部具名函数路径都不适用，
+        // 旧实现直接落到下方"非函数指针"兜底并报错（Issue B1）。
+        // 语义等价于 `auto __tmp = <lambda>; __tmp(2, 3)`，与变量形式共用同一改写。
+        if let Expr::CallPtr { callee, args, loc, ty } = expr {
+            if matches!(callee.as_ref(), Expr::Lambda { .. }) {
+                // 先解析 lambda 类型：注册 __lambda_N 类与 __lambda_N__call 函数符号
+                let lambda_ty = self.resolve_expr_type(callee);
+                if let Type::Class { name: class_name, .. } = &lambda_ty {
+                    let class_name = class_name.clone();
+                    let this_operand = (**callee).clone();
+                    let loc = *loc;
+                    if let Some((new_expr, ret_ty)) =
+                        self.rewrite_lambda_call(&class_name, this_operand, args, &loc)
+                    {
+                        *expr = new_expr;
+                        return ret_ty;
+                    }
+                    self.report_error(
+                        &format!("未找到 Lambda 调用函数 '{}__call'", class_name),
+                        &loc,
+                        ErrorCode::E3036_UndefinedFunc,
+                    );
+                    *ty = Type::int();
+                    return Type::int();
+                }
             }
         }
 
@@ -194,7 +184,7 @@ impl TypeChecker {
             // Support (*fp)(args) where callee type is Function directly
             Some((param_types.clone(), return_type.as_ref().clone()))
         } else {
-            self.report_error("不能对非函数指针类型进行调用", &loc, ErrorCode::E3045_CompoundAssignType);
+            self.report_error("不能对非函数类型进行调用", &loc, ErrorCode::E3066_CallNonFunction);
             if let Expr::CallPtr { args, ty, .. } = expr {
                 for arg in args.iter_mut() {
                     self.resolve_expr_type(arg);
@@ -233,6 +223,69 @@ impl TypeChecker {
         } else {
             unreachable!()
         }
+    }
+
+    /// C++ lambda 调用的统一改写：`lambda(args)` → `__lambda_N__call(this, args)`。
+    ///
+    /// 两种书写形式共用本函数，避免"变量形式 / 立即调用形式"双轨语义漂移：
+    /// - 变量形式 `auto f = [](int x){ return x; }; f(1)`——`this_operand` 是标识符 `f`
+    ///   （codegen 中 lambda 变量槽里存的是闭包对象地址）；
+    /// - 立即调用 `[](int a, int b){ return a + b; }(2, 3)`——`this_operand` 是 Lambda
+    ///   表达式节点本身（`gen_lambda` 求值后在栈顶留下闭包对象地址，与变量形式同语义）。
+    ///
+    /// 返回 `(改写后的 Call 表达式, 返回类型)`；`__call` 未注册时返回 `None`，由调用方兜底。
+    fn rewrite_lambda_call(
+        &mut self,
+        class_name: &str,
+        this_operand: Expr,
+        args: &mut [Expr],
+        loc: &SourceLoc,
+    ) -> Option<(Expr, Type)> {
+        let call_name = format!("{}__call", class_name);
+        let func_sym = self.funcs.get(&call_name).cloned()?;
+        let expected = func_sym.param_types.clone();
+        if args.len() + 1 != expected.len() {
+            self.report_error(
+                &format!(
+                    "Lambda 调用参数数量不匹配：期望 {} 个，实际 {} 个",
+                    expected.len().saturating_sub(1),
+                    args.len()
+                ),
+                loc,
+                ErrorCode::E3037_FuncArgCount,
+            );
+        } else {
+            for (i, arg) in args.iter_mut().enumerate() {
+                let arg_ty = self.resolve_expr_type(arg);
+                let expected_ty = &expected[i + 1];
+                if !self.check_assignable(expected_ty, &arg_ty, loc) {
+                    self.report_error(
+                        &format!(
+                            "Lambda 调用第 {} 个参数类型不匹配：期望 '{}'，实际 '{}'",
+                            i + 1,
+                            expected_ty,
+                            arg_ty
+                        ),
+                        loc,
+                        ErrorCode::E3004_TypeMismatch,
+                    );
+                } else {
+                    insert_implicit_cast(arg, expected_ty);
+                }
+            }
+        }
+        let mut new_args = vec![this_operand];
+        new_args.extend(args.iter().cloned());
+        let ret_ty = func_sym.return_type.clone();
+        Some((
+            Expr::Call {
+                name: call_name,
+                args: new_args,
+                loc: *loc,
+                ty: ret_ty.clone(),
+            },
+            ret_ty,
+        ))
     }
 
     pub(crate) fn resolve_member_call(&mut self, expr: &mut Expr) -> Type {

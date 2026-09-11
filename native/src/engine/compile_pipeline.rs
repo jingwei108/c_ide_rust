@@ -70,6 +70,7 @@ impl CompileError for crate::compiler::typeck::TypeError {
 
 // ========== 多文件行号映射 ==========
 
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileRange {
     pub filename: String,
     pub start_line: i32,
@@ -269,7 +270,12 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
     i64_constants.extend_from_slice(&session.compile.i64_constants);
     vm.set_i64_constants(i64_constants);
 
-    vm.set_max_steps(10_000_000);
+    // 注意：**不要**在这里设置步数上限。`max_steps` 是会话级配置
+    // （capi `cide_set_max_steps` / serve `config.set`），默认值由 `CideVM::default()` 提供
+    // （1000 万），`CideVM::reset()` 也刻意保留它。此处曾硬编码
+    // `vm.set_max_steps(10_000_000)` —— 每次 run 都把用户配置抹掉，使"先设上限再运行"
+    // 的教学保险丝形同虚设（实测：设 2000 步的程序一路跑到 16 万步撞 1MB 堆墙才停）。
+    // 回归：`native/tests/session_config_test.rs::test_max_steps_survives_run`。
 
     // ── 8. 符号表 ──
     let symbols: Vec<VMSymbol> = session
@@ -283,6 +289,7 @@ pub fn setup_vm(vm: &mut CideVM, session: &Session) {
             ty: s.ty.clone(),
             scope_depth: s.scope_depth,
             func_name: s.func_name.clone(),
+            decl_line: s.decl_line,
         })
         .collect();
     vm.set_symbols(symbols);
@@ -334,6 +341,9 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.struct_fields.clear();
     session.compile.errors.clear();
     session.compile.compiled = false;
+
+    // 单文件管线：全局行号即文件内行号，清空多文件映射（collector 据此回退到直接行号查询）
+    session.compile.file_ranges.clear();
 
     // 1. Lexer
     let (tokens, lex_errors) = Lexer::new(full_source).tokenize();
@@ -433,6 +443,7 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
             ty: sym.ty,
             scope_depth: sym.scope_depth,
             func_name: sym.func_name,
+            decl_line: sym.decl_line,
         });
     }
 
@@ -534,6 +545,10 @@ pub fn run_multi_file_pipeline(
     session.compile.compiled = false;
 
     let (full_source, file_ranges) = merge_compile_units(&units);
+    // P0-4：记录"全局行号 → 文件"映射，供 StepPayload 的语义标注按文件定位源码行
+    // （此前 collector 固定查 `compile_units.first()`，多文件时必然错配：
+    //  实测 main.c 仅 13 行却报出 line 20..25，描述与本行执行内容无关）。
+    session.compile.file_ranges = file_ranges.clone();
 
     // 根据文件扩展名检测 C++ 模式
     let is_cpp_mode = units.iter().any(|u| {
@@ -653,6 +668,7 @@ pub fn run_multi_file_pipeline(
             ty: sym.ty,
             scope_depth: sym.scope_depth,
             func_name: sym.func_name,
+            decl_line: sym.decl_line,
         });
     }
 

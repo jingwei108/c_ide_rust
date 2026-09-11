@@ -298,15 +298,36 @@ pub(crate) fn format_printf_string(vm: &CideVM, fmt: &str, args: &[u64]) -> Stri
     out
 }
 
-/// 解析 scanf 格式字符串，返回每个格式符的类型及长度修饰符级别（0=无, 1=l/h, 2=ll）。
-pub(crate) fn parse_scanf_specs(fmt: &str) -> Vec<(char, i32)> {
+/// scanf 格式串解析项。
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum ScanfItem {
+    /// `%` 转换符：(格式字母, 长度修饰符级别 0=无, 1=l/h, 2=ll)
+    Spec(char, i32),
+    /// 格式串中的空白指令（C11 7.21.6.2）：匹配输入中任意数量（含零）的
+    /// 空白字符，直到首个非空白字符。`%c` 不自动跳白，空白指令是学生控制
+    /// `scanf("%d %c")` 读到非空白字符的唯一手段（Issue A）。
+    Whitespace,
+    /// **普通字符指令**（C11 7.21.6.2，条目 4，2026-09-11 补齐）：格式串中的
+    /// 非空白非 `%` 字符（含 `%%` 展开的 `%`），需与输入流的下一个字符**精确匹配**，
+    /// 不匹配即停止解析。此前被整段忽略，`scanf("a=%d", &x)` 读 `a=5` 会得到 `x=0`。
+    Literal(u8),
+}
+
+/// 解析 scanf 格式字符串，返回转换符、空白指令与普通字符指令的有序序列。
+///
+/// 普通字符指令（条目 4，2026-09-11 起实现精确匹配）：格式串中的非空白非 `%` 字符，
+/// 以及与输入流比较的 `%%`（展开为字面 `%`）。非 ASCII 字面字符仍被忽略
+/// （教学格式串中不出现；需要时按 UTF-8 多字节匹配另行设计）。
+pub(crate) fn parse_scanf_specs(fmt: &str) -> Vec<ScanfItem> {
     let mut specs = Vec::new();
     let mut chars = fmt.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '%' {
             if let Some(&next) = chars.peek() {
                 if next == '%' {
-                    chars.next(); // 跳过 %%
+                    // `%%`：格式串中的字面 `%`，需与输入精确匹配
+                    specs.push(ScanfItem::Literal(b'%'));
+                    chars.next();
                 } else {
                     // 跳过 flags
                     while let Some(&c) = chars.peek() {
@@ -361,11 +382,16 @@ pub(crate) fn parse_scanf_specs(fmt: &str) -> Vec<(char, i32)> {
                     }
                     // 真正的格式字母
                     if let Some(&spec) = chars.peek() {
-                        specs.push((spec, len_mod));
+                        specs.push(ScanfItem::Spec(spec, len_mod));
                         chars.next();
                     }
                 }
             }
+        } else if ch.is_whitespace() {
+            specs.push(ScanfItem::Whitespace);
+        } else if ch.is_ascii() {
+            // 普通字符指令：需与输入流的下一个字符精确匹配（此前被整段忽略）
+            specs.push(ScanfItem::Literal(ch as u8));
         }
     }
     specs

@@ -798,7 +798,7 @@ impl TypeChecker {
         Type::void()
     }
 
-    fn type_has_auto(ty: &Type) -> bool {
+    pub(crate) fn type_has_auto(ty: &Type) -> bool {
         match ty {
             Type::Auto => true,
             Type::Pointer { pointee, .. } => Self::type_has_auto(pointee),
@@ -809,7 +809,7 @@ impl TypeChecker {
         }
     }
 
-    fn type_has_typeof(ty: &Type) -> bool {
+    pub(crate) fn type_has_typeof(ty: &Type) -> bool {
         match ty {
             Type::Typeof { .. } => true,
             Type::Pointer { pointee, .. } => Self::type_has_typeof(pointee),
@@ -820,7 +820,7 @@ impl TypeChecker {
         }
     }
 
-    fn resolve_typeof_in_type(ty: &Type, replacement: Type) -> Type {
+    pub(crate) fn resolve_typeof_in_type(ty: &Type, replacement: Type) -> Type {
         match ty {
             Type::Typeof { is_const, .. } => {
                 let mut t = replacement;
@@ -857,7 +857,7 @@ impl TypeChecker {
         }
     }
 
-    fn replace_auto_in_type(ty: &Type, replacement: Type) -> Type {
+    pub(crate) fn replace_auto_in_type(ty: &Type, replacement: Type) -> Type {
         match ty {
             Type::Auto => replacement,
             Type::Pointer { pointee, is_const } => Type::Pointer {

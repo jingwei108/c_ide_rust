@@ -6,6 +6,11 @@ use std::slice;
 use crate::engine::compile_pipeline::run_multi_file_pipeline;
 use crate::engine::session_ops::execute_run;
 
+/// capi 第一批（2026-09-11 SharpTutor 评审定稿）：版本/错误/JSON 诊断与运行结果/
+/// 输出游标增量/会话级保险丝（max_steps、call_depth_limit、deterministic）。
+mod first_batch;
+pub use first_batch::*;
+
 /// 将 C 字符串指针安全转换为 Rust &str。
 ///
 /// 内部完成 null 检查，可作为 safe 函数调用。
@@ -213,6 +218,9 @@ pub unsafe extern "C" fn cide_get_runtime_error(s: *mut Session) -> *const c_cha
 #[no_mangle]
 /// cide_set_input 的 C API 封装。
 ///
+/// 语义：**保留换行**的标准输入（C 的 stdin 是字节流，`getchar()` 需读到 `'\n'`）。
+/// 拆分实现见 `RuntimeState::split_stdin`（capi / FRB / serve 共用同一口径）。
+///
 /// # Safety
 /// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 /// - `input` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
@@ -222,16 +230,16 @@ pub unsafe extern "C" fn cide_set_input(s: *mut Session, input: *const c_char) {
         return;
     }
     let session = &mut *s;
-    session.runtime.input_lines.clear();
-    session.runtime.input_index = 0;
-    session.runtime.input_char_offset = 0;
     let input_str = match cstr_to_str(input) {
         Some(v) => v,
-        None => return,
+        None => {
+            session.runtime.input_lines.clear();
+            session.runtime.input_index = 0;
+            session.runtime.input_char_offset = 0;
+            return;
+        }
     };
-    for line in input_str.lines() {
-        session.runtime.input_lines.push(line.trim_end_matches('\r').to_string());
-    }
+    session.runtime.set_stdin(&input_str);
 }
 
 #[no_mangle]
@@ -274,8 +282,25 @@ pub unsafe extern "C" fn cide_provide_input_line(s: *mut Session, line: *const c
     0
 }
 
+/// 把 Rust 字符串写入调用方缓冲区（按字节截断，末尾补 NUL）。
+///
+/// # Safety
+/// - `buf` 若非空，必须指向至少 `max_len` 字节的有效可写内存。
+unsafe fn write_c_buf(text: &str, buf: *mut c_char, max_len: c_int) {
+    if buf.is_null() || max_len <= 0 {
+        return;
+    }
+    let copy_len = text.len().min((max_len - 1) as usize);
+    let slice = slice::from_raw_parts_mut(buf as *mut u8, copy_len);
+    slice.copy_from_slice(&text.as_bytes()[..copy_len]);
+    *buf.add(copy_len) = 0;
+}
+
 #[no_mangle]
 /// cide_get_output_length 的 C API 封装。
+///
+/// **展示视图**（程序 stdout + stderr + 引擎附注按写入顺序拼接）。需要与 Clang golden
+/// 比对的纯净 stdout 请用 `cide_get_program_output_length`（E-P1-5）。
 ///
 /// # Safety
 /// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
@@ -283,25 +308,73 @@ pub unsafe extern "C" fn cide_get_output_length(s: *mut Session) -> c_int {
     if s.is_null() {
         return 0;
     }
-    (*s).runtime.output_lines.iter().map(|l| l.len()).sum::<usize>() as c_int
+    (*s).runtime.display().len() as c_int
 }
 
 #[no_mangle]
-/// cide_get_output 的 C API 封装。
+/// 纯程序 stdout 的字节长度（不含引擎附注、不含 stderr）。
+///
+/// E-P1-5：这是 Shadow Verification / 判分场景的**唯一**合法输出来源；此前消费方只能
+/// 对 `cide_get_output` 做正则清洗，程序自己打印"程序运行完成，返回值：N"时会被误删。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+pub unsafe extern "C" fn cide_get_program_output_length(s: *mut Session) -> c_int {
+    if s.is_null() {
+        return 0;
+    }
+    (*s).runtime.stdout().len() as c_int
+}
+
+#[no_mangle]
+/// 引擎附注（运行完成提示 / 内存泄漏报告 / 教学安全提示）的字节长度。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+pub unsafe extern "C" fn cide_get_engine_notes_length(s: *mut Session) -> c_int {
+    if s.is_null() {
+        return 0;
+    }
+    (*s).runtime.notes().len() as c_int
+}
+
+#[no_mangle]
+/// cide_get_output 的 C API 封装（展示视图，语义同 `cide_get_output_length`）。
 ///
 /// # Safety
 /// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
 /// - `buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
 pub unsafe extern "C" fn cide_get_output(s: *mut Session, buf: *mut c_char, max_len: c_int) {
-    if s.is_null() || buf.is_null() || max_len <= 0 {
+    if s.is_null() {
         return;
     }
-    let session = &*s;
-    let all: String = session.runtime.output_lines.concat();
-    let copy_len = all.len().min((max_len - 1) as usize);
-    let slice = slice::from_raw_parts_mut(buf as *mut u8, copy_len);
-    slice.copy_from_slice(&all.as_bytes()[..copy_len]);
-    *buf.add(copy_len) = 0;
+    write_c_buf(&(*s).runtime.display(), buf, max_len);
+}
+
+#[no_mangle]
+/// 复制纯程序 stdout 到缓冲区（max_len 含 NUL 终止符）。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+pub unsafe extern "C" fn cide_get_program_output(s: *mut Session, buf: *mut c_char, max_len: c_int) {
+    if s.is_null() {
+        return;
+    }
+    write_c_buf(&(*s).runtime.stdout(), buf, max_len);
+}
+
+#[no_mangle]
+/// 复制引擎附注到缓冲区（max_len 含 NUL 终止符）。
+///
+/// # Safety
+/// - `s` 必须是由 `cide_session_create` 返回的有效 `Session` 指针，且未被 `cide_session_destroy` 销毁。
+/// - `buf` 若非空，必须指向足够大的有效内存区域，供函数写入结果。
+pub unsafe extern "C" fn cide_get_engine_notes(s: *mut Session, buf: *mut c_char, max_len: c_int) {
+    if s.is_null() {
+        return;
+    }
+    write_c_buf(&(*s).runtime.notes(), buf, max_len);
 }
 
 #[no_mangle]

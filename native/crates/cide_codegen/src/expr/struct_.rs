@@ -1,4 +1,5 @@
 use super::*;
+use crate::is_lambda_closure_type;
 
 pub(crate) fn gen_member_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
@@ -74,9 +75,10 @@ impl BytecodeGen {
         for arg in args.iter_mut().rev() {
             let arg_ty = arg.ty().clone();
             if arg_ty.is_struct() || arg_ty.is_class() {
-                let is_lambda = arg_ty.is_class() && arg_ty.name().starts_with("__lambda_");
+                let is_lambda = is_lambda_closure_type(&arg_ty);
                 let sz = self.type_size(&arg_ty);
-                let words = (sz + 3) / 4;
+                // lambda 以闭包对象地址（1 word）传参，与闭包类字段大小无关（Issue B2）
+                let words = if is_lambda { 1 } else { (sz + 3) / 4 };
                 if let Expr::Identifier { name: arg_name, .. } = arg {
                     if let Some(&offset) = self.local_indices.get(arg_name) {
                         if is_lambda {

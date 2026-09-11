@@ -155,5 +155,5 @@ fn host_step(vm: &mut CideVM, session: &mut VmContext<'_>) {
 
 fn host_output(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let val = vm.pop();
-    session.runtime.output_lines.push(format!("{}\n", val));
+    session.runtime.push_stdout(format!("{}\n", val));
 }

@@ -869,9 +869,9 @@ fn fuzz_round_leak_detection(rng: &mut FuzzRng) -> Vec<String> {
     }
 
     // 获取泄漏报告前的输出行数
-    let lines_before = session.runtime.output_lines.len();
+    let lines_before = session.runtime.note_chunks().len();
     append_leak_report(&mut session);
-    let lines_after = session.runtime.output_lines.len();
+    let lines_after = session.runtime.note_chunks().len();
 
     let leaked = alloc_addrs.len();
     if leaked > 0 {
@@ -879,7 +879,7 @@ fn fuzz_round_leak_detection(rng: &mut FuzzRng) -> Vec<String> {
             issues.push(format!("leak fuzz: {} 个泄漏块但 append_leak_report 未输出任何内容", leaked));
         } else {
             // 检查所有新增行中是否包含泄漏数量信息
-            let new_lines: Vec<String> = session.runtime.output_lines[lines_before..lines_after].to_vec();
+            let new_lines: Vec<&str> = session.runtime.note_chunks()[lines_before..lines_after].to_vec();
             let report_text = new_lines.join("\n");
             let count_in_report = report_text.matches("分配了").count();
             if count_in_report < leaked {

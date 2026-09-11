@@ -165,6 +165,8 @@ fn test_type_checker_struct_pointer_return_allowed() {
 #[test]
 fn test_type_checker_incompatible_pointer_assignment_warns() {
     // B39: 不兼容的具体指针类型赋值应报告 warning，但不影响编译。
+    // P1-6：改用专用码 W3067（"指针类型不兼容"），不再复用标量转换码 W3053
+    //（后者的建议文案是"可能导致数据截断"，用在指针上属教学误导）。
     let (errors, warnings, _) = type_check("int main() { int x; int *p = (double *)&x; return 0; }");
     assert!(
         errors.is_empty(),
@@ -172,7 +174,7 @@ fn test_type_checker_incompatible_pointer_assignment_warns() {
         errors
     );
     assert!(
-        warnings.iter().any(|w| w.message.contains("不兼容的指针类型赋值")),
+        warnings.iter().any(|w| w.message.contains("指针类型不兼容")),
         "Expected warning for incompatible pointer assignment, got: {:?}",
         warnings
     );

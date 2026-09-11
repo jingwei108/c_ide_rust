@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 
 /// 总内存空间（1MB）。
 pub const MEM_SIZE: u32 = 1024 * 1024;
@@ -14,6 +14,14 @@ pub const STACK_START: u32 = MEM_SIZE;
 pub const SNAPSHOT_INTERVAL: i32 = 100_000;
 /// 最大调用栈深度。
 pub const MAX_STACK_DEPTH: usize = 10_000;
+/// 隔离区默认字节预算：堆上限的 1/4 = 256KB。
+///
+/// 依据 [`CIDE_HEAP_QUARANTINE_DECISION.md`] §1：采用 ASAN 原版的**有界隔离**
+/// —— 隔离窗口保证 UAF/Double-Free 必被检出，超预算时 FIFO 驱逐最老块复用，
+/// 保证合法 churn（分配-释放循环）不误伤。预算可按会话调整。
+///
+/// [`CIDE_HEAP_QUARANTINE_DECISION.md`]: ../../../docs/current/CIDE_HEAP_QUARANTINE_DECISION.md
+pub const DEFAULT_QUARANTINE_BUDGET: i32 = (MEM_SIZE / 4) as i32;
 
 /// 内存区域基础数据：VM 内部使用；`cide_native` 会定义带 `#[frb]` 的同名包装。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -57,13 +65,32 @@ pub struct FreeBlock {
     pub size: i32,
 }
 
-/// 内存状态：跟踪堆分配、空闲块与堆顶偏移。
+/// 内存状态：跟踪堆分配、隔离区、可复用空闲块与堆顶偏移。
+///
+/// 堆模型（2026-09-11 决议）：**bump 分配 + 有界隔离**
+/// - `malloc`：先按需驱逐隔离区，再 first-fit 复用驱逐块，否则 bump 推进 `heap_offset`；
+/// - `free`：块进 `quarantine`（FIFO，地址暂不复用），超预算时驱逐最老块到 `free_list`；
+/// - 因此 `free_list` 只承载"隔离期满已归还"的块，`heap_offset` 单调不减。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryState {
     pub regions: Vec<MemoryRegionData>,
+    /// 可复用空闲块（来源：隔离区驱逐归还）。malloc 在此做 first-fit。
     pub free_list: Vec<FreeBlock>,
+    /// 隔离区：已 free 但地址暂不复用的块，FIFO（队首最老）。
+    #[serde(default)]
+    pub quarantine: VecDeque<FreeBlock>,
+    /// 隔离区当前占用字节数（与 `quarantine` 同步维护，避免每次求和）。
+    #[serde(default)]
+    pub quarantine_bytes: i32,
+    /// 隔离区字节预算，超预算触发 FIFO 驱逐。
+    #[serde(default = "default_quarantine_budget")]
+    pub quarantine_budget: i32,
     pub heap_offset: u32,
     pub alloc_counter: i32,
+}
+
+fn default_quarantine_budget() -> i32 {
+    DEFAULT_QUARANTINE_BUDGET
 }
 
 impl Default for MemoryState {
@@ -71,6 +98,9 @@ impl Default for MemoryState {
         Self {
             regions: Vec::new(),
             free_list: Vec::new(),
+            quarantine: VecDeque::new(),
+            quarantine_bytes: 0,
+            quarantine_budget: DEFAULT_QUARANTINE_BUDGET,
             heap_offset: HEAP_START,
             alloc_counter: 0,
         }
@@ -78,82 +108,71 @@ impl Default for MemoryState {
 }
 
 impl MemoryState {
-    /// 从 free_list 或 heap 顶部分配 `aligned_size` 字节。
-    /// 成功返回地址，失败返回 None。
+    /// 分配 `aligned_size` 字节（决议 §1/§3 的 bump + 有界隔离）。
+    ///
+    /// 顺序：
+    /// 1. 隔离区超预算 → FIFO 驱逐最老块归还 `free_list`；
+    /// 2. `free_list` first-fit 复用（来源见 1）；
+    /// 3. 否则 bump 推进 `heap_offset` —— leak 路径由此单调推进直至撞内存墙。
+    ///
+    /// 成功返回地址，超出 `mem_limit` 返回 None。
     pub fn allocate_raw(&mut self, aligned_size: u32, mem_limit: u32) -> Option<u32> {
         if aligned_size == 0 {
             return Some(0);
         }
-        let mut addr = 0u32;
-        let mut found_idx = None;
-        for (i, block) in self.free_list.iter().enumerate() {
-            if (block.size as u32) >= aligned_size {
-                addr = block.addr;
-                found_idx = Some(i);
-                break;
-            }
+        self.evict_quarantine();
+        if let Some(addr) = self.take_from_free_list(aligned_size) {
+            return Some(addr);
         }
-        if let Some(idx) = found_idx {
-            let block = &mut self.free_list[idx];
-            if (block.size as u32) > aligned_size {
-                block.addr += aligned_size;
-                block.size -= aligned_size as i32;
-                // 若该 free block 恰位于 heap 顶部，更新 heap_offset 避免后续分配冲突
-                if addr == self.heap_offset {
-                    self.heap_offset = block.addr;
-                }
-            } else {
-                self.free_list.remove(idx);
-                // 若整块被分配且位于 heap 顶部，推进 heap_offset
-                if addr == self.heap_offset {
-                    self.heap_offset = addr + aligned_size;
-                }
-            }
+        let addr = self.heap_offset;
+        let new_offset = addr as u64 + aligned_size as u64;
+        if new_offset > mem_limit as u64 || new_offset > u32::MAX as u64 {
+            return None;
+        }
+        self.heap_offset = new_offset as u32;
+        Some(addr)
+    }
+
+    /// 从 `free_list` 做 first-fit 取块；块大于请求时切分，余量留在表中。
+    fn take_from_free_list(&mut self, aligned_size: u32) -> Option<u32> {
+        let idx = self
+            .free_list
+            .iter()
+            .position(|b| (b.size as u32) >= aligned_size)?;
+        let addr = self.free_list[idx].addr;
+        if (self.free_list[idx].size as u32) > aligned_size {
+            self.free_list[idx].addr += aligned_size;
+            self.free_list[idx].size -= aligned_size as i32;
         } else {
-            addr = self.heap_offset;
-            let new_offset = addr as u64 + aligned_size as u64;
-            if new_offset > mem_limit as u64 || new_offset > u32::MAX as u64 {
-                return None;
-            }
-            self.heap_offset = new_offset as u32;
-        }
-        // 清理 free_list 中与刚分配区域重叠的 stale 块
-        let alloc_end = addr + aligned_size;
-        let mut i = 0;
-        while i < self.free_list.len() {
-            let block = &self.free_list[i];
-            let block_end = block.addr + block.size as u32;
-            if block.addr >= alloc_end || block_end <= addr {
-                i += 1;
-                continue;
-            }
-            if block.addr >= addr && block_end <= alloc_end {
-                // 完全被覆盖
-                self.free_list.remove(i);
-            } else if block.addr < addr && block_end > alloc_end {
-                // 分配在块内部：拆分为前后两部分
-                let tail_size = block_end - alloc_end;
-                let head_size = addr - block.addr;
-                self.free_list[i].size = head_size as i32;
-                if tail_size > 0 {
-                    self.free_list.push(FreeBlock {
-                        addr: alloc_end,
-                        size: tail_size as i32,
-                    });
-                }
-                i += 1;
-            } else if block.addr < addr {
-                // 覆盖块的后部
-                self.free_list[i].size = (addr - block.addr) as i32;
-                i += 1;
-            } else {
-                // 覆盖块的前部
-                self.free_list[i].addr = alloc_end;
-                self.free_list[i].size = (block_end - alloc_end) as i32;
-                i += 1;
-            }
+            self.free_list.remove(idx);
         }
         Some(addr)
+    }
+
+    /// 块进入 FIFO 隔离区 —— free 路径的唯一出口，地址在隔离期内不复用。
+    pub fn release_to_quarantine(&mut self, block: FreeBlock) {
+        self.quarantine_bytes += block.size;
+        self.quarantine.push_back(block);
+    }
+
+    /// 隔离区超预算时按 FIFO 驱逐最老块至 `free_list`，直至回到预算内。
+    ///
+    /// 这是 churn 与 leak 的分水岭：合法循环的隔离占用稳定在预算内（最老块持续
+    /// 被驱逐复用，堆顶不推进，无限可跑）；只分配不释放的 leak 块根本不进隔离区，
+    /// 由 bump 持续推进直至撞 1MB 墙（教学信号）。
+    fn evict_quarantine(&mut self) {
+        if self.quarantine_bytes <= self.quarantine_budget {
+            return;
+        }
+        while self.quarantine_bytes > self.quarantine_budget {
+            let Some(block) = self.quarantine.pop_front() else {
+                break;
+            };
+            self.quarantine_bytes -= block.size;
+            self.free_list.push(block);
+        }
+        // 合并相邻块，提升后续 first-fit 命中率（仅驱逐路径的代价）
+        self.merge_free_list();
     }
 
     /// 合并 free_list 中地址相邻的空闲块。
@@ -175,21 +194,30 @@ impl MemoryState {
     }
 
     /// 释放 `addr` 对应的已分配堆区域（若存在且未释放）。
+    ///
+    /// 块**进入隔离区**（地址在隔离期内不复用），不直接归还 `free_list` ——
+    /// 这是 UAF / Double-Free 检测窗口的物理基础（决议 §1/§3）。
     /// 成功释放返回 `true`，找不到对应区域或已释放返回 `false`。
     pub fn free_region(&mut self, addr: u32) -> bool {
+        let mut block = None;
         for r in &mut self.regions {
             if r.addr == addr && !r.is_freed {
                 r.is_freed = true;
                 let aligned_size = ((r.size as u32) + 3) & !3;
-                self.free_list.push(FreeBlock {
+                block = Some(FreeBlock {
                     addr: r.addr,
                     size: aligned_size as i32,
                 });
-                self.merge_free_list();
-                return true;
+                break;
             }
         }
-        false
+        match block {
+            Some(b) => {
+                self.release_to_quarantine(b);
+                true
+            }
+            None => false,
+        }
     }
 }
 

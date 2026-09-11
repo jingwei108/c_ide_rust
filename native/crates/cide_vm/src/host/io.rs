@@ -14,21 +14,26 @@ pub fn host_printf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
         args.push(vm.pop());
     }
     let out = format_printf_string(vm, &fmt, &args);
-    session.runtime.output_lines.push(out);
+    session.runtime.push_stdout(out);
 }
 
 pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
-    // 扫描格式字符串，记录每个 % 格式符的类型及是否带 long 修饰符
+    // 扫描格式字符串，记录每个 % 格式符的类型、长度修饰符及空白指令
     let spec_types = parse_scanf_specs(&fmt);
-    if vm.get_stack().len() < spec_types.len() {
+    // 仅 % 转换符消耗指针参数（空白指令不取参）
+    let arg_count = spec_types
+        .iter()
+        .filter(|s| matches!(s, ScanfItem::Spec(..)))
+        .count();
+    if vm.get_stack().len() < arg_count {
         vm.trap("scanf: 格式字符串要求的参数多于实际提供的参数。", &SourceLoc::default());
         return;
     }
     // 按数量 pop 指针参数
-    let mut ptrs = Vec::with_capacity(spec_types.len());
-    for _ in 0..spec_types.len() {
+    let mut ptrs = Vec::with_capacity(arg_count);
+    for _ in 0..arg_count {
         ptrs.push(vm.pop() as u32);
     }
     // V-P1-13：scanf 改为与 getchar 一致的字符流游标语义。
@@ -68,9 +73,33 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
     }
     let chars: Vec<u8> = stream;
     let mut pos = 0usize;
-    // 依次解析并写入各指针地址
-    for (i, (spec, len_mod)) in spec_types.iter().enumerate() {
-        let ptr = ptrs[i];
+    // 依次解析并写入各指针地址（空白指令只跳白不取参）
+    let mut arg_idx = 0usize;
+    // C11 7.21.6.2：scanf 返回"成功匹配并赋值的项数"（条目 3，2026-09-11 补齐）
+    let mut matched = 0usize;
+    for item in spec_types.iter() {
+        let (spec, len_mod) = match item {
+            ScanfItem::Whitespace => {
+                // C11 7.21.6.2：匹配输入中任意数量（含零）的空白
+                while pos < chars.len() && chars[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                continue;
+            }
+            ScanfItem::Literal(expected) => {
+                // 普通字符指令（条目 4）：与输入流的下一个字符**精确比较**（不跳空白）。
+                // 不相等则按 C11 7.21.6.2 **停止解析**（输入流保持不动），
+                // 返回已成功赋值的项数。
+                if pos >= chars.len() || chars[pos] != *expected {
+                    break;
+                }
+                pos += 1;
+                continue;
+            }
+            ScanfItem::Spec(spec, len_mod) => (*spec, *len_mod),
+        };
+        let ptr = ptrs[arg_idx];
+        arg_idx += 1;
         match spec {
             'd' => {
                 // 跳过前导空白
@@ -88,7 +117,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 let token: String = chars[start..pos].iter().map(|&b| b as char).collect();
-                if *len_mod >= 2 {
+                if len_mod >= 2 {
                     // %lld → long long (8 bytes)
                     let value: i64 = token.parse().unwrap_or(0);
                     vm.store_i64(ptr, value as u64, &SourceLoc::default());
@@ -112,7 +141,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 let token: String = chars[start..pos].iter().map(|&b| b as char).collect();
-                if *len_mod >= 2 {
+                if len_mod >= 2 {
                     let value: u64 = token.parse().unwrap_or(0);
                     vm.store_i64(ptr, value, &SourceLoc::default());
                 } else {
@@ -127,7 +156,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 if token.is_empty() {
                     break;
                 }
-                if *len_mod >= 1 {
+                if len_mod >= 1 {
                     // %lf → double (8 bytes)
                     let value: f64 = token.parse().unwrap_or(0.0);
                     vm.store_i64(ptr, value.to_bits(), &SourceLoc::default());
@@ -169,8 +198,12 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 }
                 vm.store_i8(ptr + token.len() as u32, 0, &SourceLoc::default());
             }
-            _ => {}
+            _ => {
+                // 不支持的转换符：未消费输入，不计入"成功赋值项数"
+                continue;
+            }
         }
+        matched += 1;
     }
     // V-P1-13：按实际消费量经映射表推进游标（未消费部分留给后续输入函数）
     if pos > 0 {
@@ -186,6 +219,9 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
             }
         }
     }
+    // 返回值：成功匹配并赋值的项数（与 sscanf 一致；此前 scanf 不返回值，
+    // 教学代码 `int r = scanf(...)` 会被 typeck 判为 void→int 错误，见条目 3）
+    vm.push(matched as u64);
 }
 
 pub fn host_ungetc(vm: &mut CideVM, session: &mut VmContext<'_>) {
@@ -243,11 +279,11 @@ pub fn host_getchar(vm: &mut CideVM, session: &mut VmContext<'_>) {
 
 pub fn host_putchar(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let val = vm.pop();
-    session.runtime.output_lines.push((val as u8 as char).to_string());
+    session.runtime.push_stdout((val as u8 as char).to_string());
 }
 
 pub fn host_fprintf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
-    let _stream = vm.pop();
+    let stream = vm.pop();
     let fmt_addr = vm.pop() as u32;
     let fmt = read_cstring(vm, fmt_addr);
     let specs = parse_format_specs(&fmt);
@@ -260,13 +296,19 @@ pub fn host_fprintf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
         args.push(vm.pop());
     }
     let out = format_printf_string(vm, &fmt, &args);
-    session.runtime.output_lines.push(out);
+    // E-P1-5：stderr(2) 分流到 stderr 通道，不再混入 stdout；stdout(1) 与其它流
+    // 维持既有"直接输出"行为（fprintf 到自定义 FILE* 未落盘属既有偏差，另行记录）。
+    if stream == 2 {
+        session.runtime.push_stderr(out);
+    } else {
+        session.runtime.push_stdout(out);
+    }
 }
 
 pub fn host_puts(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let s_addr = vm.pop() as u32;
     let s = read_cstring(vm, s_addr);
-    session.runtime.output_lines.push(s + "\n");
+    session.runtime.push_stdout(s + "\n");
     vm.push(1); // puts returns non-negative on success
 }
 
@@ -316,15 +358,40 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut VmContext<'_>) {
     let fmt = read_cstring(vm, fmt_addr);
     let src = read_cstring(vm, str_addr);
     let spec_types = parse_scanf_specs(&fmt);
-    let mut ptrs = Vec::with_capacity(spec_types.len());
-    for _ in 0..spec_types.len() {
+    let arg_count = spec_types
+        .iter()
+        .filter(|s| matches!(s, ScanfItem::Spec(..)))
+        .count();
+    let mut ptrs = Vec::with_capacity(arg_count);
+    for _ in 0..arg_count {
         ptrs.push(vm.pop() as u32);
     }
     let chars: Vec<char> = src.chars().collect();
     let mut pos = 0usize;
     let mut matched = 0usize;
-    for (i, (spec, len_mod)) in spec_types.iter().enumerate() {
-        let ptr = ptrs[i];
+    let mut arg_idx = 0usize;
+    for item in spec_types.iter() {
+        let (spec, len_mod) = match item {
+            ScanfItem::Whitespace => {
+                // C11 7.21.6.2：匹配任意数量（含零）的空白
+                while pos < chars.len() && chars[pos].is_whitespace() {
+                    pos += 1;
+                }
+                continue;
+            }
+            ScanfItem::Literal(expected) => {
+                // 普通字符指令（条目 4）：与源串下一个字符精确比较，不等即停止解析
+                // （sscanf 与 scanf 同族同修，与空白指令修复的先例一致）
+                if pos >= chars.len() || chars[pos] as u32 != *expected as u32 {
+                    break;
+                }
+                pos += 1;
+                continue;
+            }
+            ScanfItem::Spec(spec, len_mod) => (*spec, *len_mod),
+        };
+        let ptr = ptrs[arg_idx];
+        arg_idx += 1;
         match spec {
             'd' => {
                 while pos < chars.len() && chars[pos].is_whitespace() {
@@ -341,7 +408,7 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 let token: String = chars[start..pos].iter().collect();
-                if *len_mod >= 2 {
+                if len_mod >= 2 {
                     let value: i64 = token.parse().unwrap_or(0);
                     vm.store_i64(ptr, value as u64, &SourceLoc::default());
                 } else {
@@ -365,7 +432,7 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 let token: String = chars[start..pos].iter().collect();
-                if *len_mod >= 2 {
+                if len_mod >= 2 {
                     let value: u64 = token.parse().unwrap_or(0);
                     vm.store_i64(ptr, value, &SourceLoc::default());
                 } else {
@@ -380,7 +447,7 @@ pub fn host_sscanf(vm: &mut CideVM, _session: &mut VmContext<'_>) {
                 if token.is_empty() {
                     break;
                 }
-                if *len_mod >= 1 {
+                if len_mod >= 1 {
                     let value: f64 = token.parse().unwrap_or(0.0);
                     vm.store_i64(ptr, value.to_bits(), &SourceLoc::default());
                 } else {

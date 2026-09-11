@@ -191,6 +191,9 @@ impl TypeChecker {
             }
             // Register lambda call function
             let call_name = format!("{}__call", lambda_name);
+            // 返回类型：由 body 的首个 return 表达式推断（条目 1），
+            // 注册的 __call 签名与 Pass 4 生成的 FuncDecl 共用该结果
+            let lambda_return_ty = self.infer_lambda_return_type(body.as_ref(), params, &capture_info);
             if !self.funcs.contains_key(&call_name) {
                 let mut call_params = vec![Param {
                     name: "this".to_string(),
@@ -205,7 +208,7 @@ impl TypeChecker {
                 self.funcs.insert(
                     call_name.clone(),
                     FuncSymbol {
-                        return_type: Type::int(),
+                        return_type: lambda_return_ty.clone(),
                         param_types: call_params.iter().map(|p| p.ty.clone()).collect(),
                         is_variadic: false,
                         param_defaults: call_params.iter().map(|p| p.default.clone()).collect(),
@@ -219,11 +222,85 @@ impl TypeChecker {
                 params: params.clone(),
                 body: body.as_ref().clone(),
                 loc: *loc,
+                return_type: lambda_return_ty,
             });
 
             *ty = result.clone();
             return result;
         }
         unreachable!()
+    }
+
+    /// 从 lambda 体推断返回类型（条目 1，2026-09-11）。
+    ///
+    /// 教学子集策略：取**第一个** `return <expr>;` 做轻量推断 —— 字面量 / 形参 /
+    /// 已捕获变量 / 二元运算取较宽者 / 显式转型 / 已注册函数签名；无法判定时退回
+    /// `int`（沿用旧行为，不引入新错误）。
+    ///
+    /// **已知限制**（记于 `native/tests/CPP_FAILURES.md`）：不做多条 `return` 的类型合并、
+    /// 不支持尾置返回类型 `-> T`；这两个场景仍按 `int` 处理。
+    pub(crate) fn infer_lambda_return_type(
+        &self,
+        body: &Stmt,
+        params: &[Param],
+        captures: &[(String, Type, bool)],
+    ) -> Type {
+        match first_return_expr(body) {
+            Some(e) => self.infer_lambda_expr_type(e, params, captures),
+            None => Type::int(),
+        }
+    }
+
+    /// 轻量表达式类型推断：只依赖字面量、形参、捕获变量与已注册签名 ——
+    /// 不做完整类型检查（lambda 注册阶段 body 尚未进入作用域，形参需自行查表）。
+    fn infer_lambda_expr_type(&self, expr: &Expr, params: &[Param], captures: &[(String, Type, bool)]) -> Type {
+        match expr {
+            Expr::Literal { .. } => Type::int(),
+            Expr::FloatLiteral { ty, .. } => ty.clone(),
+            Expr::LongLiteral { .. } => Type::long_long(),
+            Expr::StringLiteral { .. } => Type::pointer_to(Type::char()),
+            Expr::Identifier { name, ty, .. } => params
+                .iter()
+                .find(|p| &p.name == name)
+                .map(|p| p.ty.clone())
+                .or_else(|| captures.iter().find(|(n, _, _)| n == name).map(|(_, t, _)| t.clone()))
+                .unwrap_or_else(|| ty.clone()),
+            Expr::Cast { target_type, .. } => target_type.clone(),
+            Expr::Unary { operand, .. } => self.infer_lambda_expr_type(operand, params, captures),
+            Expr::Binary { left, right, .. } => {
+                let l = self.infer_lambda_expr_type(left, params, captures);
+                let r = self.infer_lambda_expr_type(right, params, captures);
+                Self::wider_scalar_type(&l, &r)
+            }
+            Expr::Ternary { then_branch, .. } => self.infer_lambda_expr_type(then_branch, params, captures),
+            _ => Type::int(),
+        }
+    }
+
+    /// 取两个标量类型中较宽者（`double` > `float` > `long long` > 其它，取左）。
+    fn wider_scalar_type(a: &Type, b: &Type) -> Type {
+        use cide_ast::TypeKind;
+        if matches!(a.kind(), TypeKind::Double) || matches!(b.kind(), TypeKind::Double) {
+            Type::double()
+        } else if matches!(a.kind(), TypeKind::Float) || matches!(b.kind(), TypeKind::Float) {
+            Type::float()
+        } else if matches!(a.kind(), TypeKind::LongLong) || matches!(b.kind(), TypeKind::LongLong) {
+            Type::long_long()
+        } else {
+            a.clone()
+        }
+    }
+}
+
+/// 深度优先查找语句树中第一个 `return <expr>;` 的表达式（lambda 体的返回表达式）。
+fn first_return_expr(stmt: &Stmt) -> Option<&Expr> {
+    match stmt {
+        Stmt::Return { value, .. } => value.as_ref(),
+        Stmt::Block { stmts, .. } => stmts.iter().find_map(first_return_expr),
+        Stmt::If {
+            then_stmt, else_stmt, ..
+        } => first_return_expr(then_stmt).or_else(|| else_stmt.as_deref().and_then(first_return_expr)),
+        Stmt::While { body, .. } | Stmt::DoWhile { body, .. } | Stmt::For { body, .. } => first_return_expr(body),
+        _ => None,
     }
 }

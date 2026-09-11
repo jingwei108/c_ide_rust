@@ -38,6 +38,19 @@ impl CideVM {
     ) {
         let idx = func_idx as usize;
         let meta = self.func_table[idx].clone();
+        // V-P1-10 会话级保险丝：调用深度上限。教学内容 = 可控地撞上限并拿到教学
+        // trap，而非无限等待；默认值与 MAX_STACK_DEPTH 一致，可经 capi 调小。
+        if self.call_stack.len() >= self.call_depth_limit {
+            let limit = self.call_depth_limit;
+            self.trap(
+                &format!(
+                    "{}: 调用深度超过上限（{} 层）。请检查递归是否有终止条件，或把问题规模调小。",
+                    op_name, limit
+                ),
+                loc,
+            );
+            return;
+        }
         let func_name = if idx < self.func_names.len() {
             self.func_names[idx].clone()
         } else {

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::context::VmContext;
 use crate::core::{CallFrame, CideVM, FreedRegionInfo};
-use cide_runtime::{FreeBlock, MemoryRegionData, MemoryState, RuntimeState, TraceEntryData, VisEventData};
+use cide_runtime::{FreeBlock, MemoryRegionData, MemoryState, OutputChunk, RuntimeState, TraceEntryData, VisEventData};
 
 /// VM 内存快照：全量或页级增量（页大小 4KB）。
 #[derive(Clone)]
@@ -82,7 +82,9 @@ pub struct VMSnapshot {
 /// 运行时状态快照子集（不含输入/输出等大字段）。
 #[derive(Clone)]
 pub struct RuntimeSnapshot {
-    pub output_lines: Vec<String>,
+    /// E-P1-5：快照携带完整输出分段（含通道标记），时间旅行回退后仍能区分
+    /// 程序 stdout 与引擎附注，不会退回"文本清洗"口径。
+    pub output_chunks: Vec<OutputChunk>,
     pub trace: Vec<TraceEntryData>,
     pub current_line: i32,
     pub input_index: usize,
@@ -98,6 +100,11 @@ pub struct RuntimeSnapshot {
 pub struct MemorySnapshot {
     pub regions: Vec<MemoryRegionData>,
     pub free_list: Vec<FreeBlock>,
+    /// 隔离区（FIFO，队首最老）——2026-09-11 堆决议引入，必须随快照往返，
+    /// 否则时间旅行回退后隔离窗口丢失，UAF/Double-Free 检测出现假阴性。
+    pub quarantine: std::collections::VecDeque<FreeBlock>,
+    pub quarantine_bytes: i32,
+    pub quarantine_budget: i32,
     pub heap_offset: u32,
     pub alloc_counter: i32,
 }
@@ -105,7 +112,7 @@ pub struct MemorySnapshot {
 impl From<&RuntimeState> for RuntimeSnapshot {
     fn from(rt: &RuntimeState) -> Self {
         Self {
-            output_lines: rt.output_lines.clone(),
+            output_chunks: rt.output_chunks.clone(),
             trace: rt.trace.clone(),
             current_line: rt.current_line,
             input_index: rt.input_index,
@@ -123,6 +130,9 @@ impl From<&MemoryState> for MemorySnapshot {
         Self {
             regions: mem.regions.clone(),
             free_list: mem.free_list.clone(),
+            quarantine: mem.quarantine.clone(),
+            quarantine_bytes: mem.quarantine_bytes,
+            quarantine_budget: mem.quarantine_budget,
             heap_offset: mem.heap_offset,
             alloc_counter: mem.alloc_counter,
         }

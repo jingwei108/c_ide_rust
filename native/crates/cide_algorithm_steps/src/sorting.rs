@@ -13,11 +13,20 @@ pub(crate) fn infer_bubble_sort(
     let j = vars.get_int("j").unwrap_or(-1);
     let n = vars.get_int_any(&["n", "len", "size", "length"]).unwrap_or(-1);
 
+    // 内层循环条件为 `j < n - 1 - i`，故参与相邻比较的 j 合法上界是 `n - 2 - i`
+    // （此时 j + 1 = n - 1 - i 仍在数组内）。当 j 停在退出值上时不得再产出
+    // "比较/交换 arr[j] 与 arr[j+1]" —— 那是拿残留变量值编造出来的描述，
+    // 其 arr[j+1] 恒越界（实测 5 元素数组会产生 24 步越界描述，真实比较只有 10 次）。
+    let j_in_inner_range = if n > 0 && i >= 0 { j >= 0 && j < n - 1 - i } else { j >= 0 };
+
     if line_lower.starts_with("for ") || line_lower.starts_with("while ") {
         if line_lower.contains('i') && !line_lower.contains('j') {
             let pass = if i >= 0 { (i + 1).to_string() } else { "?".to_string() };
-            let kth = if n > 0 && i >= 0 {
-                (n - i).to_string()
+            // 第 pass 趟确定的是"第 pass 大"的元素（升序冒泡每趟把当前未排序区间的
+            // 最大值冒到区间末尾）。此前写作 `n - i`（= 剩余待排元素个数），恰好与
+            // 排名相反：n=5 时第 1 趟显示"第 5 大"（= 最小元素），把概念教反了。
+            let kth = if n > 0 && i >= 0 && i < n {
+                (i + 1).to_string()
             } else {
                 "?".to_string()
             };
@@ -38,12 +47,18 @@ pub(crate) fn infer_bubble_sort(
     }
 
     if line_lower.starts_with("if ") && is_comparison_line(&line_lower) {
+        if !j_in_inner_range {
+            return None;
+        }
         let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
         let j1 = if j >= 0 { (j + 1).to_string() } else { "?".to_string() };
         return Some(build_step(algorithm, "compare", &format!("比较 arr[{}] 与 arr[{}]", j_str, j1)));
     }
 
     if source_line.contains("temp") && source_line.contains('=') {
+        if !j_in_inner_range {
+            return None;
+        }
         let j_str = if j >= 0 { j.to_string() } else { "?".to_string() };
         let j1 = if j >= 0 { (j + 1).to_string() } else { "?".to_string() };
         return Some(build_step(

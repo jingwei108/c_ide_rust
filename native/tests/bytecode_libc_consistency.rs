@@ -19,23 +19,13 @@ use std::process::Command;
 const BASE_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/bytecode_libc_consistency");
 const RUNTIME_LIBC_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/runtime_libc");
 
-/// 从 Cide session 中提取纯净的 stdout（模拟字节流行为，过滤诊断信息）。
+/// 从 Cide session 中提取纯净的 stdout。
+///
+/// E-P1-5：引擎附注（"程序运行完成，返回值：N"、内存泄漏报告）已走 note 通道，
+/// 这里直接读结构化 stdout 投影——**不再需要文本正则清洗**（旧实现会在程序自己
+/// 打印同类文本时误删真实输出）。
 fn extract_cide_stdout(session: &Session) -> String {
-    let mut result = String::new();
-    for line in &session.runtime.output_lines {
-        let mut cleaned = line.clone();
-        // Cide 会在最后一行追加 "程序运行完成，返回值：X"，截断之
-        if let Some(pos) = cleaned.find("程序运行完成，返回值：") {
-            cleaned = cleaned[..pos].to_string();
-        }
-        // 跳过内存泄漏检测报告（若存在）
-        if cleaned.starts_with("===== 内存泄漏检测报告 =====") || cleaned.starts_with("==============================")
-        {
-            continue;
-        }
-        result.push_str(&cleaned);
-    }
-    result
+    session.runtime.stdout()
 }
 
 /// 运行一个一致性测试用例。

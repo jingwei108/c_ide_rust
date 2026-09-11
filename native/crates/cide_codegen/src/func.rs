@@ -47,6 +47,7 @@ impl BytecodeGen {
                 ty: p.ty.clone(),
                 scope_depth: 1,
                 func_name: self.current_func.clone(),
+                decl_line: p.loc.line,
             });
             offset += aligned_sz;
         }

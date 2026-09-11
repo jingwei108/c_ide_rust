@@ -157,10 +157,7 @@ pub fn host_qsort(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let compar = vm.pop() as u32;
 
     if vm.qsort_depth() >= MAX_QSORT_DEPTH {
-        session
-            .runtime
-            .output_lines
-            .push("[qsort] 嵌套深度超过限制，防止栈溢出".to_string());
+        session.runtime.push_note("[qsort] 嵌套深度超过限制，防止栈溢出");
         return;
     }
 
@@ -242,10 +239,7 @@ pub fn host_bsearch(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let compar = vm.pop() as u32;
 
     if vm.qsort_depth() >= MAX_BSEARCH_DEPTH {
-        session
-            .runtime
-            .output_lines
-            .push("[bsearch] 嵌套深度超过限制，防止栈溢出".to_string());
+        session.runtime.push_note("[bsearch] 嵌套深度超过限制，防止栈溢出");
         vm.push(0);
         return;
     }
@@ -357,7 +351,7 @@ pub fn host_atol(vm: &mut CideVM, _session: &mut VmContext<'_>) {
 // ========== Math extensions ==========
 
 pub fn host_abort(vm: &mut CideVM, session: &mut VmContext<'_>) {
-    session.runtime.output_lines.push("[abort] 程序异常终止 (SIGABRT)".to_string());
+    session.runtime.push_note("[abort] 程序异常终止 (SIGABRT)");
     vm.set_finished(134);
 }
 
@@ -475,21 +469,32 @@ pub fn host_strerror(vm: &mut CideVM, session: &mut VmContext<'_>) {
     vm.push(addr as u64);
 }
 
-pub fn host_time(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+pub fn host_time(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let _tloc = vm.pop() as u32;
-    let secs = (current_time_millis() / 1000) as i64;
+    // 判分确定性最小形态（Phase 1）：deterministic 下时间固定为 0，
+    // 否则同一份代码每次判分得到不同的 time() 值（完整 step 派生伪时钟留 Phase 3）。
+    let secs = if session.runtime.deterministic {
+        0i64
+    } else {
+        (current_time_millis() / 1000) as i64
+    };
     vm.push(secs as u64);
 }
 
-pub fn host_clock(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+pub fn host_clock(vm: &mut CideVM, session: &mut VmContext<'_>) {
     // 返回一个近似值：使用当前时间戳的微秒数作为单调时钟
     // CLOCKS_PER_SEC 通常定义为 1_000_000，返回微秒级精度
-    let clocks = (current_time_millis() * 1000) as i64;
+    // 判分确定性模式下固定为 0（同 host_time）。
+    let clocks = if session.runtime.deterministic {
+        0i64
+    } else {
+        (current_time_millis() * 1000) as i64
+    };
     vm.push(clocks as u64);
 }
 
 pub fn host_cide_assert_fail(vm: &mut CideVM, session: &mut VmContext<'_>) {
-    session.runtime.output_lines.push("🚫 断言失败 (assertion failed)".to_string());
+    session.runtime.push_note("🚫 断言失败 (assertion failed)");
     vm.set_finished(1);
 }
 

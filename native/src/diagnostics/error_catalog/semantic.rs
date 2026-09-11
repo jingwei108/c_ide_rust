@@ -1,6 +1,6 @@
 use super::ErrorInfo;
 
-pub(crate) fn entries() -> [(i32, ErrorInfo); 56] {
+pub(crate) fn entries() -> [(i32, ErrorInfo); 58] {
     [
         (3002, ErrorInfo {
             code: 3002,
@@ -352,6 +352,15 @@ pub(crate) fn entries() -> [(i32, ErrorInfo); 56] {
             explanation: "赋值时发生了隐式类型转换，可能导致数据截断或精度丢失。例如 int 赋值给 char 会截断高位。",
             common_causes: &["int 赋值给 char（截断）", "float 赋值给 int（丢失小数）"],
         }),
+        (3067, ErrorInfo {
+            code: 3067,
+            emoji: "⚠️",
+            title: "指针类型不兼容",
+            explanation: "把一种指针赋给另一种不相关的指针类型，需要显式转换。注意区分方向：\
+                          向上转型（派生类指针 → 基类指针）是 C++ 允许的隐式转换，无需强制转换；\
+                          向下转型（基类指针 → 派生类指针）或无关类型之间必须显式转换。",
+            common_causes: &["向下转型未写 static_cast/dynamic_cast", "无关类型的指针互相赋值（如 int* ← double*）"],
+        }),
         (3054, ErrorInfo {
             code: 3054,
             emoji: "⚠️",
@@ -393,6 +402,17 @@ pub(crate) fn entries() -> [(i32, ErrorInfo); 56] {
             title: "重复释放内存 (Double-Free)",
             explanation: "同一块内存被 free() 了两次。这会破坏内存管理器的内部数据结构，可能导致程序崩溃或后续分配出错。",
             common_causes: &["free(p) 后没有置 NULL，再次 free(p)", "两个指针指向同一地址，都执行了 free"],
+        }),
+        (3066, ErrorInfo {
+            code: 3066,
+            emoji: "📞",
+            title: "调用目标不是函数",
+            explanation: "只有函数名、函数指针（以及 C++ 中的 lambda / 可调用对象）才能被 () 调用。",
+            common_causes: &[
+                "把普通变量当成函数调用，如 int x; x();",
+                "函数指针未初始化，或类型与实际函数不匹配",
+                "函数名拼写错误，被当成变量解析",
+            ],
         }),
         // ---- C++ 教学知识卡片 ----
     ]

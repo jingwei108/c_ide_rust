@@ -121,3 +121,26 @@ M6 阶段记录的 10 项 C++ 子集边界已全部在后续迭代中修复：
 - `list_int` 无 `clear` 方法（C 实现未提供，不影响当前测试）
 - `sort_int` 为自由函数，非容器方法，不经过 `cpp_container.rs` 降级路径
 - C++ `vector<int>` 与 C `cide_vec_int` 的 `push_back` 字节码差异：C++ 版使用 `new[]/delete[]` + 循环复制，C 版使用 `realloc`。算法差异导致字节码不一致，但这属于实现方式不同而非编译器缺陷。以运行 stdout 一致性为首要验收标准。
+
+## lambda 子集边界（2026-09-11 记录，SharpTutor Issue B 复核时实测发现）
+
+Issue B（lambda 调用三缺陷）修复过程中顺带实测出的两项能力缺口，均以 Clang++ 为对照确认。
+**两项均已于 2026-09-11 修复**（修复记录见本节末）。
+
+| # | 边界 | 复现方式 | Clang++ 对照 | Cide 现状 |
+|---|---|---|---|---|
+| 1 | 文件作用域 lambda 变量 | `auto gf = [](int x){ return x + 7; };` 定义在 `main` 之外 | 输出 `gg=8 6` | typeck 报 `E3004`：`无法将 'class __lambda_0' 赋值给 'auto'`（全局 auto 声明路径未接 lambda 类型） |
+| 2 | lambda 返回类型非 `int` | `auto d = [](double x){ return x * 2.0; }; printf("%.2f", d(1.5));` | 输出 `d=3.00` | `__call` 的返回类型在 `resolve_lambda`（typeck）与 Pass 4 生成的 `FuncDecl` 中**均硬编码为 `Type::int()`**，调用点被当作 int → printf 触发 `E3062` 格式不匹配 |
+
+> 影响面界定：局部 lambda 的基本调用语义（无捕获/有捕获、立即调用/变量调用、`static` 变量）已全部工作并与 Clang++ 输出逐字节一致（见 `crash_regression_tests.rs` 的 Issue B 用例组）；上表两项属"返回类型推断"与"全局初始化"的能力缺口，不是调用语义缺陷。
+
+### 修复记录（2026-09-11）
+
+| # | 根因 | 修复 | 对照验证 |
+|---|---|---|---|
+| 2 | `__call` 的返回类型在 `resolve_lambda`（typeck）与 Pass 4 的 `FuncDecl` 中**各自硬编码 `Type::int()`** | 新增 `TypeChecker::infer_lambda_return_type`（取 body 首个 `return` 表达式轻量推断：字面量 / 形参 / 捕获变量 / 二元取较宽者 / 显式转型），结果存入 `LambdaInfo::return_type`，**两处共用同一来源** | Cide `d=3.00` / `i=110` = Clang++ |
+| 1 | Pass 2.5 的 `declare_var` 登记的是替换前的 `auto`（类型替换发生在登记之后），调用点查表得到 `auto` → E3066 | Pass 2.5 改为**先定型再登记**：全局 `auto`/`typeof` 由初始化器解析出类型、替换 `g.ty` 后再 `declare_var`，解析结果缓存给检查循环复用（避免二次解析重复登记 `pending_lambdas`）。同时把 4 个类型工具函数提升为 `pub(crate)` | Cide `gg=8 6` = Clang++ |
+
+> **剩余已知限制**（如实记录）：`infer_lambda_return_type` 只取**第一个** `return` 表达式，不做多条 return 的类型合并；
+> 不支持尾置返回类型 `-> T`；两者仍按 `int` 处理。回归测试：`native/tests/cpp_lambda_test.rs`（3 用例）。
+

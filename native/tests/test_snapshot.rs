@@ -419,7 +419,7 @@ fn test_smart_checkpoint_triggers() {
             global_count: 0,
             freed_logs: Vec::new(),
             runtime: cide_vm::snapshot::RuntimeSnapshot {
-                output_lines: Vec::new(),
+                output_chunks: Vec::new(),
                 trace: Vec::new(),
                 current_line: 0,
                 input_index: 0,
@@ -432,6 +432,9 @@ fn test_smart_checkpoint_triggers() {
             memory_state: cide_vm::snapshot::MemorySnapshot {
                 regions: Vec::new(),
                 free_list: Vec::new(),
+                quarantine: std::collections::VecDeque::new(),
+                quarantine_bytes: 0,
+                quarantine_budget: cide_runtime::memory_state::DEFAULT_QUARANTINE_BUDGET,
                 heap_offset: 0,
                 alloc_counter: 0,
             },
@@ -509,5 +512,5 @@ int main() {
     assert_eq!(vm_a.get_stack(), vm_b.get_stack());
     assert_eq!(vm_a.get_call_stack(), vm_b.get_call_stack());
     assert_eq!(vm_a.memory_ref(), vm_b.memory_ref());
-    assert_eq!(session_a.runtime.output_lines, session_b.runtime.output_lines);
+    assert_eq!(session_a.runtime.output_chunks, session_b.runtime.output_chunks);
 }

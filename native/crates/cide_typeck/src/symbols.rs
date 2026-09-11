@@ -67,4 +67,9 @@ pub(crate) struct LambdaInfo {
     pub(crate) params: Vec<Param>,
     pub(crate) body: cide_ast::Stmt,
     pub(crate) loc: cide_ast::SourceLoc,
+    /// lambda 的返回类型（条目 1，2026-09-11）：
+    /// 由 body 的首个 `return` 表达式轻量推断，`resolve_lambda` 与 Pass 4 生成的
+    /// `__call` FuncDecl **共用同一来源** —— 此前两处都硬编码 `Type::int()`，
+    /// 非 int 返回的 lambda 在调用点被当作 int（`printf("%.2f", d(1.5))` 触发 E3062）。
+    pub(crate) return_type: Type,
 }

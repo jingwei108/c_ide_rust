@@ -249,46 +249,85 @@ impl CideVM {
         }
     }
 
+    /// 当前**可见**变量的快照（供 `StepPayload.local_vars`）。
+    ///
+    /// 可见性规则（P2-7a + 跨函数混入修复）：
+    /// 1. **按函数归属过滤**：函数内声明的符号（`func_name` 非空，含静态局部）只在该函数
+    ///    栈帧活跃时可见。此前不过滤，`helper` 的局部变量会出现在 `main` 的 payload 里，
+    ///    并且是用 `main` 的 `locals_base` 去读 `helper` 的偏移——地址错位、值无意义；
+    /// 2. **按声明行过滤**：`decl_line` 大于当前执行行的符号尚未进入作用域，不可见
+    ///    （`decl_line == 0` 表示未知，不过滤）。这是"两个 `for` 各声明一个 `i`"时
+    ///    唯一能判定谁活跃的依据——符号表顺序与分配地址都无法排除"尚未执行到声明处"；
+    /// 3. **同名取最近声明**：同一名字在多个块中声明时保留 `decl_line` 最大者
+    ///    （与调试器"显示当前作用域可见变量"的惯例一致），条目的相对顺序保持不变。
     pub fn get_variable_snapshot(&self) -> Vec<cide_runtime::VariableSnapshotData> {
-        self.symbols
-            .iter()
-            .filter_map(|sym| {
-                let vaddr = if sym.is_local {
-                    if let Some(frame) = self.call_stack.last() {
-                        frame.locals_base + sym.addr
-                    } else {
-                        return None;
-                    }
-                } else {
-                    super::state::GLOBAL_START + sym.addr
-                };
-                if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
-                    return None;
+        let frame = self.call_stack.last();
+        let current_func = frame.map(|f| f.func_name.as_str()).unwrap_or("");
+        let current_line = self.get_current_line();
+
+        let mut result: Vec<cide_runtime::VariableSnapshotData> = Vec::new();
+        // 名字 → (已选条目的声明行, 在 result 中的下标)
+        let mut chosen: std::collections::HashMap<&str, (i32, usize)> = std::collections::HashMap::new();
+
+        for sym in self.symbols.iter() {
+            if !sym.func_name.is_empty() && sym.func_name != current_func {
+                continue;
+            }
+            // 无有效执行位置（如预热步 code_line == 0）时无法判定作用域可见性：
+            // 保守地不输出局部变量，否则同名变量会退化为"取声明最晚者"而误导消费方。
+            if sym.is_local && current_line <= 0 {
+                continue;
+            }
+            if sym.decl_line > 0 && current_line > 0 && sym.decl_line > current_line {
+                continue;
+            }
+            let vaddr = if sym.is_local {
+                match frame {
+                    Some(f) => f.locals_base + sym.addr,
+                    None => continue,
                 }
-                let val = if matches!(sym.ty.kind(), TypeKind::Double) {
-                    if vaddr + 8 > MEM_SIZE {
-                        return None;
+            } else {
+                super::state::GLOBAL_START + sym.addr
+            };
+            if vaddr + 4 > MEM_SIZE || vaddr < NULL_TRAP_SIZE {
+                continue;
+            }
+            let val = if matches!(sym.ty.kind(), TypeKind::Double) {
+                if vaddr + 8 > MEM_SIZE {
+                    continue;
+                }
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&self.memory[vaddr as usize..vaddr as usize + 8]);
+                u64::from_le_bytes(bytes) as i64
+            } else {
+                i32::from_le_bytes([
+                    self.memory[vaddr as usize],
+                    self.memory[vaddr as usize + 1],
+                    self.memory[vaddr as usize + 2],
+                    self.memory[vaddr as usize + 3],
+                ]) as i64
+            };
+            let snap = cide_runtime::VariableSnapshotData {
+                name: sym.name.clone(),
+                addr: vaddr,
+                is_local: sym.is_local,
+                ty: sym.ty.clone(),
+                value: val,
+            };
+            match chosen.get(sym.name.as_str()).copied() {
+                Some((prev_line, idx)) => {
+                    if sym.decl_line >= prev_line {
+                        result[idx] = snap;
+                        chosen.insert(sym.name.as_str(), (sym.decl_line, idx));
                     }
-                    let mut bytes = [0u8; 8];
-                    bytes.copy_from_slice(&self.memory[vaddr as usize..vaddr as usize + 8]);
-                    u64::from_le_bytes(bytes) as i64
-                } else {
-                    i32::from_le_bytes([
-                        self.memory[vaddr as usize],
-                        self.memory[vaddr as usize + 1],
-                        self.memory[vaddr as usize + 2],
-                        self.memory[vaddr as usize + 3],
-                    ]) as i64
-                };
-                Some(cide_runtime::VariableSnapshotData {
-                    name: sym.name.clone(),
-                    addr: vaddr,
-                    is_local: sym.is_local,
-                    ty: sym.ty.clone(),
-                    value: val,
-                })
-            })
-            .collect()
+                }
+                None => {
+                    chosen.insert(sym.name.as_str(), (sym.decl_line, result.len()));
+                    result.push(snap);
+                }
+            }
+        }
+        result
     }
 
     /// 获取所有数组变量的元素快照（用于算法可视化条形图）。
@@ -367,15 +406,9 @@ impl CideVM {
                 };
                 elements.push(val_str);
             }
-            let element_ty = match base_kind {
-                TypeKind::Int => "int",
-                TypeKind::Char => "char",
-                TypeKind::Float => "float",
-                TypeKind::Double => "double",
-                TypeKind::LongLong => "long long",
-                _ => "unknown",
-            }
-            .to_string();
+            // 类型名走与 local_vars 同一来源（`cide_runtime::type_display_name`），
+            // 避免两处手写映射漂移。
+            let element_ty = cide_runtime::type_display_name(cide_ast::base_element_type(&sym.ty));
             result.push(cide_runtime::ArraySnapshotData {
                 name: sym.name.clone(),
                 element_ty,

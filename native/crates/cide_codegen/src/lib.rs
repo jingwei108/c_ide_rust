@@ -401,6 +401,7 @@ impl BytecodeGen {
                 ty: g.ty.clone(),
                 scope_depth: 0,
                 func_name: String::new(),
+                decl_line: g.loc.line,
             });
             self.next_global_offset += sz;
         }
@@ -422,6 +423,7 @@ impl BytecodeGen {
                 ty: g.ty.clone(),
                 scope_depth: 0,
                 func_name: String::new(),
+                decl_line: g.loc.line,
             });
             self.next_global_offset += sz;
         }
@@ -787,6 +789,17 @@ pub(crate) use init::{compute_stride, flatten_init_list, stmt_loc};
 mod expr;
 mod stmt;
 pub(crate) use stmt::StmtGen;
+
+/// 判断类型是否为 lambda 闭包类（`__lambda_N`）。
+///
+/// 这类值在 codegen 中一律以"闭包对象地址"（1 word）形态传递与存储，
+/// 与普通 class 值类型的按字段拷贝语义不同：闭包变量槽里存地址、
+/// 作为实参时也只压地址、调用时地址即 `this`。此前各处依赖
+/// `type_size()` 自行判断，无捕获闭包 size 为 0，导致分配 0 字节槽位
+/// 却在其中写 4 字节地址（Issue B2）。统一走本判定，勿再分散硬编码。
+pub(crate) fn is_lambda_closure_type(ty: &Type) -> bool {
+    ty.is_class() && ty.name().starts_with("__lambda_")
+}
 
 #[derive(Debug, Clone)]
 pub struct CompileOutput {

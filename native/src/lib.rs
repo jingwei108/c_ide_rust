@@ -22,6 +22,7 @@ pub mod flutter_bridge;
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod frb_generated; /* AUTO INJECTED BY flutter_rust_bridge. This line may not be accurate, and you can change it according to your needs. */
 pub mod session;
+pub mod session_api;
 pub mod shared;
 pub mod unified;
 pub use cide_vm as vm;

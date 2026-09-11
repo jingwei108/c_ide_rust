@@ -61,12 +61,11 @@ impl UnifiedEngine {
         if code_line <= 0 {
             return String::new();
         }
+        // P0-4：按全局行号 → 文件映射定位（此前固定查第一个编译单元，多文件时会串文件）
         let source_line = session
-            .compile
-            .compile_units
-            .first()
-            .and_then(|u| u.source.lines().nth((code_line - 1) as usize).map(|s| s.trim()))
-            .unwrap_or("");
+            .source_line_at(code_line)
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
 
         if source_line.starts_with("for ") || source_line.starts_with("while ") {
             "循环边界".to_string()
@@ -94,7 +93,7 @@ impl UnifiedEngine {
             let after_assign = if let Some(pos) = source_line.find('=') {
                 source_line[pos + 1..].trim()
             } else {
-                source_line
+                source_line.as_str()
             };
             if let Some(paren_pos) = after_assign.find('(') {
                 let name = after_assign[..paren_pos].trim();

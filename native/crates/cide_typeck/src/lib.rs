@@ -272,6 +272,26 @@ impl TypeChecker {
 
         // Pass 2.5: Register globals and check initializers
         self.enter_scope();
+        // 条目 2（2026-09-11）：全局 `auto` / `typeof` 变量必须**先用初始化器定型再登记**。
+        // 此前 `declare_var` 登记的是替换前的 `auto`，调用点查表得到 `auto` →
+        // `auto gf = [](int x){ return x + 7; };` 的 `gf(1)` 报 E3066「不能对非函数类型进行调用」。
+        // 初始化器在此只解析一次，结果缓存给下面的检查循环复用 —— 重复解析 lambda 会二次登记
+        // `pending_lambdas`，进而在 Pass 4 重复生成 `__call` 定义。
+        let mut precomputed_init_types: std::collections::HashMap<String, Type> = std::collections::HashMap::new();
+        for g in &mut program.globals {
+            if let Some(init) = g.init.as_mut() {
+                if Self::type_has_auto(&g.ty) || Self::type_has_typeof(&g.ty) {
+                    let init_ty = self.resolve_expr_type(init);
+                    if Self::type_has_auto(&g.ty) {
+                        g.ty = Self::replace_auto_in_type(&g.ty, init_ty.clone());
+                    }
+                    if Self::type_has_typeof(&g.ty) {
+                        g.ty = Self::resolve_typeof_in_type(&g.ty, init_ty.clone());
+                    }
+                    precomputed_init_types.insert(g.name.clone(), init_ty);
+                }
+            }
+        }
         for g in &mut program.globals {
             self.declare_var(&g.name, &g.ty, true, g.is_extern, g.is_static);
             if g.is_static {
@@ -288,7 +308,20 @@ impl TypeChecker {
                 } else if g.ty.is_struct() && matches!(init, Expr::InitList { .. }) {
                     self.check_struct_initializer(&g.ty, init, &g.loc);
                 } else {
-                    let init_type = self.resolve_expr_type(init);
+                    let init_type = match precomputed_init_types.get(&g.name) {
+                        Some(t) => t.clone(),
+                        None => self.resolve_expr_type(init),
+                    };
+                    // 条目 2（2026-09-11）：全局 `auto` / `typeof` 变量此前**不做类型替换** ——
+                    // 实测 `auto gf = [](int x){ return x + 7; };` 在文件作用域报
+                    // E3004「无法将 'class __lambda_0' 赋值给 'auto'」（lambda 类型其实已推出）。
+                    // 现与局部声明路径一致：先用初始化器类型替换声明类型，再判可赋值性。
+                    if Self::type_has_auto(&g.ty) {
+                        g.ty = Self::replace_auto_in_type(&g.ty, init_type.clone());
+                    }
+                    if Self::type_has_typeof(&g.ty) {
+                        g.ty = Self::resolve_typeof_in_type(&g.ty, init_type.clone());
+                    }
                     if !self.check_assignable(&g.ty, &init_type, &g.loc) {
                         self.report_error(
                             &format!("类型不匹配：无法将 '{}' 赋值给 '{}'", init_type, g.ty),
@@ -378,7 +411,8 @@ impl TypeChecker {
 
             let mut func_decl = FuncDecl {
                 loc: info.loc,
-                return_type: Type::int(),
+                // 条目 1：与 resolve_lambda 注册的 __call 签名共用同一返回类型
+                return_type: info.return_type.clone(),
                 name: call_name,
                 params: call_params,
                 body: Some(info.body),

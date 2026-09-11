@@ -15,6 +15,7 @@ pub mod host_func_id;
 pub mod instruction;
 pub mod memory_state;
 pub mod opcode;
+pub mod output;
 pub mod runtime_state;
 pub mod symbol;
 pub mod type_utils;
@@ -26,11 +27,12 @@ pub use memory_state::{
     MemoryRegionData, MemoryState, GLOBAL_START, HEAP_START, MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE,
     SNAPSHOT_INTERVAL, STACK_START,
 };
+pub use output::{OutputChunk, OutputKind};
 pub use runtime_state::{
     ExecutionHeatmap, InputMode, RuntimeState, TraceEntryData, VariableSnapshotData, VisEventData,
 };
 pub use symbol::Symbol;
-pub use type_utils::{base_kind, immediate_base_kind};
+pub use type_utils::{base_kind, immediate_base_kind, type_display_name};
 pub use unified_types::{AccessedVarData, ArraySnapshotData, PointerSnapshotData, PointerStatusData};
 
 /// 编译单元：一次编译的单个源文件。

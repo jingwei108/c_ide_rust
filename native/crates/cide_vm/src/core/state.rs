@@ -98,6 +98,9 @@ pub struct CideVM {
     pub(crate) step_event_hit: bool,
     pub(crate) step_count: i32,
     pub(crate) max_steps: i32,
+    /// 调用深度上限（会话级可配，V-P1-10）。教学场景下"可控地撞上限并拿到教学
+    /// trap"优于无限等待；`cide_set_call_depth_limit` 直接映射本字段。
+    pub(crate) call_depth_limit: usize,
     pub(crate) current_line: i32,
     pub(crate) error: String,
     pub(crate) last_snapshot_step: i32,
@@ -153,6 +156,7 @@ impl CideVM {
             step_event_hit: false,
             step_count: 0,
             max_steps: 10_000_000,
+            call_depth_limit: MAX_STACK_DEPTH,
             current_line: 0,
             error: String::new(),
             last_snapshot_step: 0,
@@ -192,7 +196,8 @@ impl CideVM {
         self.cancelled = false;
         self.step_event_hit = false;
         self.step_count = 0;
-        self.max_steps = 10_000_000;
+        // max_steps / call_depth_limit 是**会话级配置**（由 capi `cide_set_*` 设定），
+        // 不随执行状态重置——否则"先设上限再运行"的配置会被本函数清掉。
         self.current_line = 0;
         self.error.clear();
         self.global_count = 0;
@@ -463,6 +468,26 @@ impl CideVM {
         self.max_steps = max;
     }
 
+    /// 当前步数上限（会话级配置回显；见 capi `cide_set_max_steps` 与 serve `config.get`）。
+    pub fn max_steps(&self) -> i32 {
+        self.max_steps
+    }
+
+    /// V-P1-10 会话级保险丝：调用深度上限。
+    /// 下限 16 层兜底，避免过小配置把正常程序直接判死。
+    pub fn set_call_depth_limit(&mut self, limit: usize) {
+        self.call_depth_limit = limit.max(16);
+    }
+
+    pub fn call_depth_limit(&self) -> usize {
+        self.call_depth_limit
+    }
+
+    /// 已执行步数（capi `cide_run_json` 的 steps_executed 字段）。
+    pub fn get_step_count(&self) -> i32 {
+        self.step_count
+    }
+
     pub fn has_error(&self) -> bool {
         !self.error.is_empty()
     }
@@ -565,6 +590,7 @@ impl CideVM {
         if self.freed_logs.iter().any(|log| log.addr == addr) {
             return;
         }
+        let mut freed_size = 0i32;
         for r in &mut session.memory.regions {
             if r.addr == addr && !r.is_freed {
                 r.is_freed = true;
@@ -577,13 +603,16 @@ impl CideVM {
                     alloc_step: 0,
                     freed_step: self.get_executed_steps(),
                 });
-                session.memory.free_list.push(cide_runtime::FreeBlock {
-                    addr: r.addr,
-                    size: aligned_size as i32,
-                });
-                session.memory.merge_free_list();
+                freed_size = aligned_size as i32;
                 break;
             }
+        }
+        if freed_size > 0 {
+            // 决议 §3：统一进 FIFO 隔离区
+            session.memory.release_to_quarantine(cide_runtime::FreeBlock {
+                addr,
+                size: freed_size,
+            });
         }
     }
 

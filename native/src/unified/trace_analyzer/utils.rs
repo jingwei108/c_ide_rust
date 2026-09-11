@@ -167,16 +167,13 @@ pub fn extract_increment(line: &str, var: &str) -> Option<i32> {
     None
 }
 
-/// Retrieve a source line from the first compile unit (matches collector.rs logic).
+/// Retrieve a source line for a **global** line number (P0-4: multi-file safe).
+///
+/// 与 `collector.rs` 共用 `Session::source_line_at`，不再各自固定查第一个编译单元。
 pub fn get_source_line(session: &Session, line: i32) -> String {
-    if line <= 0 {
-        return String::new();
-    }
     session
-        .compile
-        .compile_units
-        .first()
-        .and_then(|u| u.source.lines().nth((line - 1) as usize).map(|s| s.trim().to_string()))
+        .source_line_at(line)
+        .map(|s| s.trim().to_string())
         .unwrap_or_default()
 }
 

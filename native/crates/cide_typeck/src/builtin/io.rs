@@ -83,7 +83,10 @@ impl TypeChecker {
                 }
             }
         }
-        Type::void()
+        // C11 7.21.6.2：scanf 返回成功匹配并赋值的项数（输入失败时为 EOF）。
+        // 此前声明为 void —— 教学代码 `int r = scanf("%d", &x);` 会报 E3004，
+        // `while (scanf(...) != EOF)` 类写法完全不可用（条目 3，2026-09-11 修正）。
+        Type::int()
     }
 
     pub(crate) fn check_builtin_getchar(&mut self, args: &mut [Expr], loc: &SourceLoc) -> Type {

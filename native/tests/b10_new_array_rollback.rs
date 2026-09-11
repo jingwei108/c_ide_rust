@@ -61,6 +61,7 @@ int main() {
                 ty: s.ty.clone(),
                 scope_depth: s.scope_depth,
                 func_name: s.func_name.clone(),
+                decl_line: s.decl_line,
             })
             .collect(),
     );

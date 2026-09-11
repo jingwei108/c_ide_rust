@@ -148,7 +148,7 @@ impl CideVM {
         self.global_count = snap.global_count;
 
         // Session 运行时状态
-        session.runtime.output_lines = snap.runtime.output_lines.clone();
+        session.runtime.output_chunks = snap.runtime.output_chunks.clone();
         session.runtime.trace = snap.runtime.trace.clone();
         session.runtime.current_line = snap.runtime.current_line;
         session.runtime.input_index = snap.runtime.input_index;
@@ -158,9 +158,13 @@ impl CideVM {
         session.runtime.vis_event_cache = snap.runtime.vis_event_cache.clone();
         session.runtime.ungetc_char = snap.runtime.ungetc_char;
 
-        // Session 内存管理状态
+        // Session 内存管理状态：逐字段恢复（MemorySnapshot 与 MemoryState 是不同类型）。
+        // 隔离区三件套必须一起恢复（2026-09-11 堆决议），否则回退后 UAF 检测出现假阴性。
         session.memory.regions = snap.memory_state.regions.clone();
         session.memory.free_list = snap.memory_state.free_list.clone();
+        session.memory.quarantine = snap.memory_state.quarantine.clone();
+        session.memory.quarantine_bytes = snap.memory_state.quarantine_bytes;
+        session.memory.quarantine_budget = snap.memory_state.quarantine_budget;
         session.memory.heap_offset = snap.memory_state.heap_offset;
         session.memory.alloc_counter = snap.memory_state.alloc_counter;
 

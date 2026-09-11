@@ -272,6 +272,31 @@ impl TypeChecker {
         true
     }
 
+    /// `value_pointee*` 是否可**隐式**赋给 `target_pointee*`：即 C++ 向上转型
+    /// （派生类指针 → 基类指针）。
+    ///
+    /// 只沿单继承链回溯（教学子集范围），带步数上限防环。多继承在本子集中不支持
+    /// （`E4005`），因此单链判定足够。
+    fn is_upcast(&self, target_pointee: &Type, value_pointee: &Type) -> bool {
+        let (Type::Class { name: base_name, .. }, Type::Class { name: derived_name, .. }) =
+            (target_pointee, value_pointee)
+        else {
+            return false;
+        };
+        let mut cur: &str = derived_name.as_str();
+        for _ in 0..32 {
+            let Some(sym) = self.classes.get(cur) else {
+                return false;
+            };
+            match sym.base.as_deref() {
+                Some(b) if b == base_name => return true,
+                Some(b) => cur = b,
+                None => return false,
+            }
+        }
+        false
+    }
+
     fn check_pointer_assignable(&mut self, target: &Type, value: &Type, loc: &SourceLoc) -> bool {
         if matches!(target.kind(), TypeKind::Pointer) && matches!(value.kind(), TypeKind::Int) {
             self.report_warning(
@@ -307,11 +332,21 @@ impl TypeChecker {
                 if matches!(v_pointee.as_ref(), Type::Void { .. }) {
                     self.report_hint("void* 被隐式转换为具体指针类型。", loc, ErrorCode::H3057_ImplicitConversionHint);
                 } else if t_pointee != v_pointee {
-                    self.report_warning(
-                        &format!("不兼容的指针类型赋值：{}* ← {}*。", t_pointee.name(), v_pointee.name()),
-                        loc,
-                        ErrorCode::W3053_ImplicitScalarConversion,
-                    );
+                    // P1-6：C++ 向上转型（`Derived* → Base*`）隐式允许，不得报"不兼容/截断"
+                    // —— Clang++ 在 `-Wall -Wextra` 下对此零警告，它是多态的基础写法。
+                    // 此前复用标量转换码 W3053（建议文案为"可能导致数据截断"），把多态
+                    // 基础讲成了危险操作。
+                    if !self.is_upcast(t_pointee, v_pointee) {
+                        self.report_warning(
+                            &format!(
+                                "指针类型不兼容：{}* ← {}*，需要显式转换（向上转型 Derived* → Base* 除外）。",
+                                t_pointee.name(),
+                                v_pointee.name()
+                            ),
+                            loc,
+                            ErrorCode::W3067_PointerTypeMismatch,
+                        );
+                    }
                 }
                 if *v_const && !*t_const {
                     self.report_warning(

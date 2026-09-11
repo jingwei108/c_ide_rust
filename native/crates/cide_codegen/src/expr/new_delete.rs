@@ -346,6 +346,12 @@ impl BytecodeGen {
             }
         }
         class_size = (class_size + 3) & !3;
+        // Issue B2：无捕获闭包没有任何字段，size 为 0，但其**地址**仍会被压栈并
+        // 作为 `this` 传给 `__lambda_N__call`。保底 4 字节，使闭包对象落在帧内
+        // 有效内存（与 lambda 变量槽位的 4 字节口径一致，见 is_lambda_closure_type）。
+        if class_size == 0 {
+            class_size = 4;
+        }
 
         // Allocate closure on stack as a temporary
         let closure_offset = self.next_local_offset;

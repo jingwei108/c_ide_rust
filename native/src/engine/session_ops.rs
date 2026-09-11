@@ -24,6 +24,8 @@ pub fn append_leak_report(session: &mut Session) {
     }
 
     let mut lines: Vec<String> = Vec::new();
+    // 首行前导 `\n` 用于与最后一段程序输出分隔；每段的尾随换行由 `push_note` 统一补齐
+    // （否则 display 视图零分隔拼接会把报告压成一行：`===== 报告 =====发现 1 处…`）。
     lines.push("\n===== 内存泄漏检测报告 =====".to_string());
 
     let mut sorted = leaks.clone();
@@ -47,16 +49,22 @@ pub fn append_leak_report(session: &mut Session) {
     lines.push("💡 提示：在 C 语言中，malloc 分配的内存需要对应 free 释放，否则会造成内存泄漏。".to_string());
     lines.push("==============================".to_string());
 
-    session.runtime.output_lines.extend(lines);
+    // E-P1-5：泄漏报告是引擎附注，走 note 通道——绝不混入程序 stdout。
+    for line in lines {
+        session.runtime.push_note(line);
+    }
 }
 
 /// 初始化程序运行环境（非 resume 场景）
 pub fn reset_runtime(session: &mut Session) {
-    session.runtime.output_lines.clear();
+    session.runtime.clear_output();
     session.runtime.error.clear();
     session.runtime.trace.clear();
     session.memory.regions.clear();
     session.memory.free_list.clear();
+    // 隔离区随运行一起清空（quarantine_budget 是会话级配置，保留）
+    session.memory.quarantine.clear();
+    session.memory.quarantine_bytes = 0;
     session.memory.heap_offset = crate::vm::core::HEAP_START;
     session.memory.alloc_counter = 0;
     session.vfs = crate::vm::vfs::VirtualFileSystem::new();
@@ -134,7 +142,8 @@ pub fn execute_run(session: &mut Session) -> Result<(i32, bool), String> {
                 session.vm = Some(vm);
                 Ok((ret, true))
             } else {
-                session.runtime.output_lines.push(format!("程序运行完成，返回值：{}\n", ret));
+                // E-P1-5：运行完成提示是引擎附注，走 note 通道。
+                session.runtime.push_note(format!("程序运行完成，返回值：{}\n", ret));
                 append_leak_report(session);
                 session.runtime.running = false;
                 session.vm = Some(vm);

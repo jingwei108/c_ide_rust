@@ -14,10 +14,14 @@ pub fn host_fopen(vm: &mut CideVM, session: &mut VmContext<'_>) {
     if fd != 0 {
         let mut file_ptr = 0u32;
         let aligned = 4u32;
-        let addr = session.memory.heap_offset;
-        let new_offset = addr as u64 + aligned as u64;
-        if new_offset <= vm.get_memory_size() as u64 && new_offset <= u32::MAX as u64 {
-            session.memory.heap_offset = new_offset as u32;
+        // 统一走堆分配入口（bump + 有界隔离），不再直接推进 heap_offset
+        if let Some(addr) = session.memory.allocate_raw(aligned, vm.get_memory_size()) {
+            // 该地址可能刚从隔离区驱逐复用，清理对应 freed_logs
+            let new_end = addr + aligned;
+            vm.freed_logs.retain(|log| {
+                let log_end = log.addr.saturating_add(log.size);
+                log_end <= addr || log.addr >= new_end
+            });
             let mut reused = false;
             for r in &mut session.memory.regions {
                 if r.addr == addr && r.is_freed {
@@ -114,10 +118,16 @@ pub fn host_fputs(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let s_addr = vm.pop() as u32;
     let stream = vm.pop() as u32;
 
-    // stdout(1)/stderr(2) 直接输出到 runtime output_lines
+    // stdout(1)/stderr(2) 直接输出到运行时会话。
+    // E-P1-5：stderr 走独立通道——此前与 stdout 混在一条字节流里，程序写 stderr 时
+    // 会被 Shadow Verification 误当成 stdout 差异。
     if stream == 1 || stream == 2 {
         let s = read_cstring(vm, s_addr);
-        session.runtime.output_lines.push(s);
+        if stream == 2 {
+            session.runtime.push_stderr(s);
+        } else {
+            session.runtime.push_stdout(s);
+        }
         vm.push(0u64);
         return;
     }
@@ -200,7 +210,8 @@ pub fn host_perror(vm: &mut CideVM, session: &mut VmContext<'_>) {
     } else {
         format!("{}: Error\n", prefix)
     };
-    session.runtime.output_lines.push(msg);
+    // C 标准：perror 输出到 stderr（E-P1-5：独立通道，不混入 stdout）。
+    session.runtime.push_stderr(msg);
 }
 
 pub fn host_clearerr(vm: &mut CideVM, session: &mut VmContext<'_>) {

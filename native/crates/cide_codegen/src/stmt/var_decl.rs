@@ -2,6 +2,7 @@
 
 use crate::expr::ExprGen;
 use crate::flatten_init_list;
+use crate::is_lambda_closure_type;
 use cide_ast::base_element_type;
 use cide_ast::{Designator, Expr, InitElement, SourceLoc, Type, TypeKind};
 use cide_runtime::opcode::OpCode;
@@ -32,7 +33,17 @@ impl BytecodeGen {
             return;
         }
 
-        let sz = self.type_size(vty);
+        // Issue B2：lambda 变量的槽里存的是**闭包对象地址**（见
+        // `cpp/var_decl.rs::try_gen_cpp_class_init` 的 Lambda 分支：gen_lambda
+        // 压入地址后直接 StoreLocal），而不是闭包对象本身。因此槽位必须按
+        // 指针大小（4 字节）分配——闭包类无捕获时 size 为 0，旧实现按
+        // `type_size` 得出 aligned_sz = 0，帧内根本没有 f 的槽位，
+        // StoreLocal 写到帧外并冲出 1MB 线性内存（"StoreLocal: 地址越界"）。
+        let sz = if is_lambda_closure_type(vty) {
+            4
+        } else {
+            self.type_size(vty)
+        };
         let aligned_sz = (sz + 3) & !3;
         let local_offset = self.next_local_offset;
         self.next_local_offset += aligned_sz;
@@ -58,6 +69,7 @@ impl BytecodeGen {
             ty: vty.clone(),
             scope_depth: 1,
             func_name: self.current_func.clone(),
+            decl_line: loc.line,
         });
 
         if vty.is_vla() {
@@ -84,7 +96,15 @@ impl BytecodeGen {
         if self.static_local_indices.contains_key(n) {
             return;
         }
-        let sz = self.type_size(vty);
+        // Issue B2 同源分支：lambda 静态变量槽里存的同样是闭包对象地址（见
+        // emit_static_init 兜底分支的 StoreGlobal），必须按 4 字节占地。旧实现
+        // 按闭包类字段大小分配，无捕获闭包 size=0 → 多个 static 闭包地址重叠，
+        // printf 读到非法数据（Clang 输出 "s=8 6"，Cide 输出乱码）。
+        let sz = if is_lambda_closure_type(vty) {
+            4
+        } else {
+            self.type_size(vty)
+        };
         let aligned_sz = (sz + 3) & !3;
         let global_offset = self.next_global_offset;
         self.next_global_offset += aligned_sz;
@@ -98,6 +118,7 @@ impl BytecodeGen {
             ty: vty.clone(),
             scope_depth: 0,
             func_name: self.current_func.clone(),
+            decl_line: loc.line,
         });
         if let Some(e) = init {
             self.emit_static_init(vty, e, global_offset, loc);

@@ -118,14 +118,20 @@ impl Lexer {
                             if line_end < self.chars.len() && self.chars[line_end] == '\n' {
                                 line_end += 1;
                             }
-                            // 标准库存根保持原行为（换行替换为空格，避免源文件行号大幅偏移）；
-                            // 自定义头文件保留原始换行，使 #ifndef / #define / #endif 等预处理指令可正常解析。
-                            let content_chars: Vec<char> = if is_stub.is_some() {
-                                content.replace('\n', " ").chars().collect()
-                            } else {
-                                content.chars().collect()
-                            };
+                            // 保留 include 内容的原始换行：`#define` / `#ifdef` 等指令必须
+                            // 独占一行，此前把 stub 换行替换为空格会让 `#` 落到行中间而不再
+                            // 被识别为预处理指令——`time.h` / `float.h` / `errno.h` /
+                            // `assert.h` / `stdarg.h` 五个含宏的标准库 stub 因此整体编译失败
+                            // 且不给任何诊断（`stdio.h` 不含宏，故一直正常）。
+                            let content_chars: Vec<char> = content.chars().collect();
+                            let inserted_newlines =
+                                content_chars.iter().filter(|c| **c == '\n').count() as i32;
                             self.chars.splice(line_end..line_end, content_chars);
+                            // 行号补偿：插入内容自带 N 个换行，扫描它会让 self.line 前进 N 行。
+                            // 这里先扣掉 N —— 扫描完插入内容后 self.line 恰好回到 include 行的
+                            // 下一行，因此后续源码的诊断行号不受 include 影响（stub 与自定义
+                            // 头文件同此处理；此前自定义头文件保留换行但没有补偿，行号会整体偏移）。
+                            self.line -= inserted_newlines;
                         }
                     }
                 }

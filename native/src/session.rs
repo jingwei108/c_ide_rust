@@ -63,6 +63,68 @@ pub struct CompileState {
     pub struct_fields: HashMap<String, Vec<(String, i32)>>,
     /// 智能补全快照：每次成功编译后从 AST 提取的符号表
     pub completion_snapshot: CompletionSnapshot,
+    /// 多文件会话的**全局行号 → 文件**映射（由 `merge_compile_units` 产出）。
+    ///
+    /// P0-4：多文件编译会把各编译单元合并成一份源码，因此字节码里的行号是**全局行号**；
+    /// 单文件管线（`run_compile_pipeline`）为空 —— 此时全局行号即文件内行号。
+    /// 语义标注 / 源码行查询必须经此映射换算，不能再假设"第一个编译单元"。
+    #[serde(default)]
+    pub file_ranges: Vec<crate::engine::compile_pipeline::FileRange>,
+}
+
+impl Session {
+    /// 按**全局行号**取源码行（P0-4：多文件会话安全的行号定位）。
+    ///
+    /// 多文件编译会把各编译单元合并成一份源码（`merge_compile_units`），因此字节码与
+    /// `code_line` 里的是**全局行号**。此前多处直接拿它去查 `compile_units.first()` ——
+    /// 单文件时两者恰好一致（所以问题长期未暴露），多文件时必然错配（实测 `main.c` 仅
+    /// 13 行却报出 `line 20..25`），语义标注会产出与本行执行内容无关的"看似合理"描述。
+    ///
+    /// 单文件会话（`file_ranges` 为空）保持"全局行号 == 文件内行号"的原语义。
+    pub fn source_line_at(&self, global_line: i32) -> Option<String> {
+        if global_line <= 0 {
+            return None;
+        }
+        if let Some(range) = self
+            .compile
+            .file_ranges
+            .iter()
+            .find(|r| global_line >= r.start_line && global_line <= r.end_line)
+        {
+            let in_file = (global_line - range.start_line) as usize;
+            let unit = self
+                .compile
+                .compile_units
+                .iter()
+                .find(|u| u.filename == range.filename)?;
+            return unit.source.lines().nth(in_file).map(|s| s.to_string());
+        }
+        self.compile
+            .compile_units
+            .first()
+            .and_then(|u| u.source.lines().nth((global_line - 1) as usize).map(|s| s.to_string()))
+    }
+
+    /// 步数保险丝（会话级）：**与 VM 是否已创建解耦**。
+    ///
+    /// 此前 capi 的 `cide_set_max_steps` 与 serve 的 `config.set` 都写成
+    /// `if let Some(vm) = session.vm.as_mut() { vm.set_max_steps(..) }` 并返回"成功" ——
+    /// 会话尚未编译（`vm == None`）时配置被**静默丢弃**。实测：serve 里把
+    /// `config.set {"max_steps": 2000}` 写在 `compile` 之前，程序一路跑到默认的
+    /// 1000 万步才 trap（API 报告成功，配置完全不生效）。
+    ///
+    /// 现在无 VM 时先建立一个承载配置的 VM：`compile` → `run` 会 take 它，
+    /// `setup_vm` 内部的 `reset()` 保留会话级保险丝。
+    pub fn set_max_steps(&mut self, max: i32) {
+        let vm = self.vm.get_or_insert_with(CideVM::default);
+        vm.set_max_steps(max.max(1));
+    }
+
+    /// 调用深度保险丝（会话级）：同 [`Session::set_max_steps`]，与 VM 是否已创建解耦。
+    pub fn set_call_depth_limit(&mut self, limit: usize) {
+        let vm = self.vm.get_or_insert_with(CideVM::default);
+        vm.set_call_depth_limit(limit);
+    }
 }
 
 #[frb]
@@ -310,6 +372,9 @@ pub struct Session {
     pub memory: MemoryState,
     pub vm: Option<CideVM>,
     pub vfs: VirtualFileSystem,
+    /// 统一模式（时间旅行）引擎。由 `cide_step_begin` 初始化，
+    /// 供 `cide_step_next_json` / `cide_get_step_payloads_json` 消费。
+    pub unified: Option<crate::unified::engine::UnifiedEngine>,
 }
 
 impl Session {
@@ -331,15 +396,15 @@ impl Default for Session {
             memory: MemoryState::default(),
             vm: Some(CideVM::default()),
             vfs: VirtualFileSystem::new(),
+            unified: None,
         }
     }
 }
 
 impl cide_algorithm_steps::AlgorithmContext for Session {
     fn source_line(&self, line: i32) -> Option<String> {
-        let unit = self.compile.compile_units.first()?;
-        let line = unit.source.lines().nth((line - 1) as usize)?;
-        Some(line.trim().to_string())
+        // P0-4：统一走多文件安全的行号定位（此前固定查第一个编译单元）
+        self.source_line_at(line).map(|s| s.trim().to_string())
     }
 
     fn find_algorithm(&self, func_name: &str) -> Option<cide_algorithm_steps::AlgorithmMatch> {

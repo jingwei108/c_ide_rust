@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::ffi::CString;
 
+use crate::output::{OutputChunk, OutputKind};
 use cide_ast::Type;
 
 /// 执行轨迹条目基础数据：`cide_native` 会定义带 `#[frb]` 的同名包装。
@@ -68,7 +69,14 @@ pub struct RuntimeState {
     /// 最近一次 `cide_get_runtime_error` 返回的 C 字符串缓存，避免返回 `String` 内部指针导致悬垂。
     pub last_error_cstring: Option<CString>,
     pub error_buffer: String,
-    pub output_lines: Vec<String>,
+    /// 输出分段（按写入顺序）：程序 stdout / 程序 stderr / 引擎附注各自打标。
+    ///
+    /// E-P1-5 修复：此前这里是 `Vec<String> output_lines`，三种语义混在一条字节流里，
+    /// 消费方只能靠文本正则清洗（十余处、口径不一，程序打印"程序运行完成，返回值：N"
+    /// 会被误删）。需要纯程序输出请用 [`RuntimeState::stdout`]，需要展示视图用
+    /// [`RuntimeState::display`]。
+    #[serde(default)]
+    pub output_chunks: Vec<OutputChunk>,
     pub running: bool,
     pub trace: Vec<TraceEntryData>,
     pub current_line: i32,
@@ -88,13 +96,124 @@ pub struct RuntimeState {
     pub argc: i32,
     /// 命令行参数字符串数组（供 `main(int argc, char *argv[])` 使用）。
     pub argv: Vec<String>,
+    /// 判分确定性模式（Phase 1 最小形态）：`time()`/`clock()` 固定返回 0，
+    /// `rand()` 使用固定起始种子。与 Phase 3 的"完整 step 派生伪时钟"分层——
+    /// 本项服务判分可复现，后者服务时间旅行重放确定性。
+    pub deterministic: bool,
 }
 
 impl RuntimeState {
-    /// 拼接所有输出片段为完整输出字符串。
-    /// output_lines 中每个元素是独立的输出单元（如一次 printf/putchar 调用产生的字节），
-    /// 不再自动添加换行符；换行由格式字符串或 puts 等函数显式提供，与 C 标准一致。
+    /// 追加程序 stdout 片段。
+    pub fn push_stdout(&mut self, text: impl Into<String>) {
+        self.output_chunks.push(OutputChunk::stdout(text));
+    }
+
+    /// 追加程序 stderr 片段。
+    pub fn push_stderr(&mut self, text: impl Into<String>) {
+        self.output_chunks.push(OutputChunk::stderr(text));
+    }
+
+    /// 追加引擎附注（教学诊断 / 运行完成提示 / 泄漏报告等），不进入 stdout。
+    ///
+    /// 附注是"给人读的段落"：本方法保证每段以 `\n` 收尾，避免多段附注在
+    /// [`RuntimeState::display`] 的零分隔顺序拼接中粘连成一行（泄漏报告曾因此
+    /// 输出为 `===== 内存泄漏检测报告 =====发现 1 处…`）。**程序 stdout / stderr
+    /// 不做任何加工** —— 那必须逐字节保真。
+    pub fn push_note(&mut self, text: impl Into<String>) {
+        let mut text = text.into();
+        if !text.is_empty() && !text.ends_with('\n') {
+            text.push('\n');
+        }
+        self.output_chunks.push(OutputChunk::note(text));
+    }
+
+    /// 清空全部输出通道。
+    pub fn clear_output(&mut self) {
+        self.output_chunks.clear();
+    }
+
+    /// 按通道筛选片段（保持写入顺序）。
+    pub fn chunks_of(&self, kind: OutputKind) -> Vec<&str> {
+        self.output_chunks
+            .iter()
+            .filter(|c| c.kind == kind)
+            .map(|c| c.text.as_str())
+            .collect()
+    }
+
+    /// 纯程序 stdout —— Shadow Verification / 差分对比的**唯一**合法来源。
+    ///
+    /// 不含引擎附注、不含 stderr。
+    pub fn stdout(&self) -> String {
+        self.join_kind(OutputKind::Stdout)
+    }
+
+    /// 程序 stderr 文本（教学场景下单独展示，不参与 stdout 比对）。
+    pub fn stderr(&self) -> String {
+        self.join_kind(OutputKind::Stderr)
+    }
+
+    /// 引擎附注文本（运行完成提示、泄漏报告、安全提示等）。
+    pub fn notes(&self) -> String {
+        self.join_kind(OutputKind::Note)
+    }
+
+    /// 程序 stdout 片段列表（每个元素是一次 printf/puts/putchar 等调用的产物）。
+    pub fn stdout_chunks(&self) -> Vec<&str> {
+        self.chunks_of(OutputKind::Stdout)
+    }
+
+    /// 引擎附注片段列表。
+    pub fn note_chunks(&self) -> Vec<&str> {
+        self.chunks_of(OutputKind::Note)
+    }
+
+    fn join_kind(&self, kind: OutputKind) -> String {
+        let mut out = String::new();
+        for chunk in self.output_chunks.iter().filter(|c| c.kind == kind) {
+            out.push_str(&chunk.text);
+        }
+        out
+    }
+
+    /// 展示视图：所有通道按写入顺序拼接（原 `output()` 语义，UI / CLI 使用）。
+    pub fn display(&self) -> String {
+        let mut out = String::new();
+        for chunk in &self.output_chunks {
+            out.push_str(&chunk.text);
+        }
+        out
+    }
+
+    /// 兼容别名：等同于 [`RuntimeState::display`]。
+    ///
+    /// 保留旧名是为了让 `flutter_bridge` / `session_api` / `cide_cli` 等展示型出口
+    /// 无需改动；**需要与 Clang 比对的消费方请改用 [`RuntimeState::stdout`]**。
     pub fn output(&self) -> String {
-        self.output_lines.join("")
+        self.display()
+    }
+
+    /// 把一段标准输入文本拆成"**保留换行**"的行序列（stdin 行语义的单一来源）。
+    ///
+    /// C 的 stdin 是字节流：`getchar()` 必须能读到 `'\n'`（K&R 用例 `kr_1_8`
+    /// 统计换行数即依赖此项），`scanf` 的流式游标也按真实字节推进。
+    /// 此前 capi / FRB / serve 三处各自用 `str::lines()` 拆分、把行尾换行丢掉，
+    /// 而 E2E 防线用 `split_inclusive('\n')` —— 同一份输入在不同出口语义不一致；
+    /// Shadow 防线首次注入用例自带的 `.in` 后立刻暴露（`nl` 恒为 0、逆波兰计算器无输出）。
+    ///
+    /// `\r\n` 先规整为 `\n`（Windows 文本输入的等价处理）；最后一行无换行时保持原样。
+    pub fn split_stdin(input: &str) -> Vec<String> {
+        input
+            .replace("\r\n", "\n")
+            .split_inclusive('\n')
+            .map(|s| s.to_string())
+            .collect()
+    }
+
+    /// 设置标准输入并复位读取游标（等价于 `input_lines = split_stdin(input)`）。
+    pub fn set_stdin(&mut self, input: &str) {
+        self.input_lines = Self::split_stdin(input);
+        self.input_index = 0;
+        self.input_char_offset = 0;
     }
 }

@@ -53,15 +53,19 @@ fn compile_and_run_with_filename(
 
         let run_ret = cide_native::capi::cide_run(session);
 
+        // E-P1-5：直接读纯程序 stdout 通道（引擎附注走 note 通道），不再做文本清洗。
+        // 逐行 trim + 丢空行的归一化与 load_golden 的规则对称（两侧口径一致）。
         let mut outputs = Vec::new();
-        let out_len = cide_native::capi::cide_get_output_length(session);
+        let out_len = cide_native::capi::cide_get_program_output_length(session);
         if out_len > 0 {
             let mut buf = vec![0u8; out_len as usize + 1];
-            cide_native::capi::cide_get_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
-            // Exclude the trailing null byte that cide_get_output writes
+            cide_native::capi::cide_get_program_output(session, buf.as_mut_ptr() as *mut c_char, buf.len() as i32);
             let out_str = String::from_utf8_lossy(&buf[..out_len as usize]);
             for line in out_str.lines() {
-                outputs.push(line.to_string());
+                let trimmed = line.trim();
+                if !trimmed.is_empty() {
+                    outputs.push(trimmed.to_string());
+                }
             }
         }
 
@@ -84,36 +88,12 @@ fn compile_and_run_with_filename(
     }
 }
 
-/// Filter out Cide-specific diagnostic lines that are not part of the
-/// program's own stdout (e.g. completion message, leak report).
-fn filter_cide_diagnostics(lines: &[String]) -> Vec<String> {
-    let mut result = Vec::new();
-    let mut in_leak_report = false;
-    for line in lines {
-        // Cide appends "程序运行完成" directly after the last program output
-        // if there is no trailing newline. Strip it from the line tail.
-        let mut cleaned = line.clone();
-        if let Some(pos) = cleaned.find("程序运行完成，返回值：") {
-            cleaned = cleaned[..pos].to_string();
-        }
-        if cleaned.starts_with("===== 内存泄漏检测报告 =====") {
-            in_leak_report = true;
-            continue;
-        }
-        if in_leak_report && cleaned.starts_with("==============================") {
-            in_leak_report = false;
-            continue;
-        }
-        if in_leak_report {
-            continue;
-        }
-        let trimmed = cleaned.trim();
-        if !trimmed.is_empty() {
-            result.push(trimmed.to_string());
-        }
-    }
-    result
-}
+// E-P1-5：`filter_cide_diagnostics`（行级状态机清洗"程序运行完成"与泄漏报告）已删除。
+//
+// 旧的清洗规则有三处后果性差异（与 Python 驱动的全局正则不一致）：行内截断 vs 整段删除、
+// 哨兵 `==30` vs `>=30` 个等号、丢弃空行 vs 仅 strip 首尾。根因是引擎把程序 stdout 与
+// 引擎附注写进同一条字节流，现已按通道分离（stdout / stderr / note），
+// 本防线直接读 `cide_get_program_output*`，口径与 Python 驱动完全一致。
 
 fn load_cases(dir: &Path) -> Vec<(String, String, Option<String>)> {
     load_cases_with_ext(dir, "c")
@@ -201,7 +181,8 @@ fn run_case_with_compiler(
             if ret != 0 {
                 return Err(format!("Exit code {} != 0", ret));
             }
-            let filtered = filter_cide_diagnostics(&outputs);
+            // E-P1-5：输出已是纯程序 stdout（引擎附注走 note 通道），无需清洗。
+            let filtered = outputs;
             if let Some(golden) = load_golden(name, golden_subdir) {
                 if filtered != golden {
                     return Err(format!(

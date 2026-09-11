@@ -13,16 +13,43 @@ impl StepCollector {
         let code_line = vm.get_current_line();
         let func_name = vm.get_call_stack().last().map(|f| f.func_name.clone()).unwrap_or_default();
 
+        // 数组元素快照（可视化条形图 + 下面 local_vars 的元素摘要共用一次采集）
+        let array_snapshots: Vec<crate::unified::types::ArraySnapshot> =
+            vm.get_array_snapshots().into_iter().map(Into::into).collect();
+        // 数组的"值"用元素摘要表示：此前 local_vars 里的数组条目显示的是首元素（如 `0`），
+        // 与 array_snapshots 重复，且会被消费方误读成"数组的值"（P2-7b）。
+        let array_summaries: std::collections::HashMap<&str, String> = array_snapshots
+            .iter()
+            .map(|a| {
+                const MAX_SHOWN: usize = 16;
+                let shown: Vec<String> = a.elements.iter().take(MAX_SHOWN).cloned().collect();
+                let mut s = format!("{{{}}}", shown.join(", "));
+                if a.elements.len() > shown.len() {
+                    s.push_str(", …");
+                }
+                (a.name.as_str(), s)
+            })
+            .collect();
+
         let local_vars: Vec<ApiVariableSnapshot> = vm
             .get_variable_snapshot()
             .into_iter()
             .map(|v| {
-                let value_str = format_value(&v);
+                let is_array = matches!(v.ty.kind(), crate::compiler::ast::TypeKind::Array);
+                let value_str = if is_array {
+                    array_summaries
+                        .get(v.name.as_str())
+                        .cloned()
+                        .unwrap_or_else(|| format_value(&v))
+                } else {
+                    format_value(&v)
+                };
                 ApiVariableSnapshot {
                     name: v.name,
                     addr: v.addr,
                     is_local: v.is_local,
-                    ty_name: format!("{:?}", v.ty),
+                    // P2-7c：C 风格可读类型名（此前是 `format!("{:?}", ty)` 的内部枚举结构）
+                    ty_name: cide_runtime::type_display_name(&v.ty),
                     value: value_str,
                 }
             })
@@ -75,8 +102,6 @@ impl StepCollector {
             })
             .collect();
 
-        let array_snapshots: Vec<crate::unified::types::ArraySnapshot> =
-            vm.get_array_snapshots().into_iter().map(Into::into).collect();
         let pointer_snapshots = collect_pointer_snapshots(vm, session, &local_vars);
 
         StepPayload {
@@ -138,6 +163,60 @@ fn collect_pointer_snapshots(
     result
 }
 
+/// 判断某行是否是函数**定义**行（形如 `int helper(int x) {`）。
+///
+/// 用于把"函数定义行"从递归调用判定里排除。仅识别单行形态（`{` 与签名同行）；
+/// 左花括号写在下一行时仍会误判 —— 已知限制，记录于 `code_review_report_2026-09-11.md`。
+fn is_function_definition_line(line: &str, func_name: &str) -> bool {
+    line.ends_with('{') && line.contains(&format!("{}(", func_name))
+}
+
+/// 从源码行里提取数组下标的**标识符**（`temp = arr[j];` → `j`）。
+///
+/// 只认形如 `name[ident]` 的简单下标；表达式下标（`arr[i + 1]`）返回 `None`。
+fn array_index_var(line: &str) -> Option<String> {
+    let mut search_from = 0usize;
+    while let Some(rel) = line[search_from..].find('[') {
+        let open = search_from + rel;
+        let name_start = line[..open]
+            .rfind(|c: char| !(c.is_alphanumeric() || c == '_'))
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        if name_start < open {
+            if let Some(close_rel) = line[open..].find(']') {
+                let inner = line[open + 1..open + close_rel].trim();
+                if !inner.is_empty() && inner.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    return Some(inner.to_string());
+                }
+            }
+        }
+        search_from = open + 1;
+        if search_from >= line.len() {
+            break;
+        }
+    }
+    None
+}
+
+/// 取"当前最内层迭代变量"的值（P0-3）。
+///
+/// 优先用源码行里的数组下标标识符；取不到时按内层循环的常见命名回退（`j` → `i` → `k` …），
+/// 最后才退回候选列表的末位。**不使用 `first()`** —— 白名单首位可能是 `n`/`len` 这类
+/// 规模量，与"当前迭代到哪"无关，曾导致 `交换 arr[5]↔arr[6]` 这类与执行事实相反的描述。
+fn pick_inner_index(loop_vars: &[(String, i32)], source_line: &str) -> i32 {
+    if let Some(name) = array_index_var(source_line) {
+        if let Some((_, v)) = loop_vars.iter().find(|(n, _)| *n == name) {
+            return *v;
+        }
+    }
+    for cand in ["j", "i", "k", "idx", "index"] {
+        if let Some((_, v)) = loop_vars.iter().find(|(n, _)| n == cand) {
+            return *v;
+        }
+    }
+    loop_vars.last().map(|(_, v)| *v).unwrap_or(0)
+}
+
 fn is_pointer_type(ty_name: &str) -> bool {
     ty_name.contains('*') || ty_name.contains("Pointer")
 }
@@ -195,13 +274,11 @@ fn infer_semantic_label(
         return String::new();
     }
 
-    // 获取当前源码行
+    // 获取当前源码行（P0-4：按全局行号 → 文件映射定位，多文件会话下不再固定查第一个单元）
     let source_line = session
-        .compile
-        .compile_units
-        .first()
-        .and_then(|u| u.source.lines().nth((code_line - 1) as usize).map(|s| s.trim()))
-        .unwrap_or("");
+        .source_line_at(code_line)
+        .map(|s| s.trim().to_string())
+        .unwrap_or_default();
 
     // 提取循环变量（i, j, k, idx, index, m, n, left, right, mid, low, high, pivot）
     let loop_vars: Vec<(String, i32)> = local_vars
@@ -237,8 +314,12 @@ fn infer_semantic_label(
         && (source_line.contains("arr[") || source_line.contains("a["))
         && source_line.contains("=");
 
-    // 检测递归调用
-    let is_recursive = !func_name.is_empty() && func_name != "main" && source_line.contains(&format!("{}(", func_name));
+    // 检测递归调用（排除函数定义行 —— `int helper(int x) {` 含 `helper(` 但不是递归调用，
+    // 此前会把定义行标成"递归调用 helper"，是直接呈现给学生的错误描述）
+    let is_recursive = !func_name.is_empty()
+        && func_name != "main"
+        && source_line.contains(&format!("{}(", func_name))
+        && !is_function_definition_line(&source_line, func_name);
 
     // 检测普通函数调用（排除控制流关键字）
     let is_func_call = source_line.contains('(')
@@ -252,8 +333,12 @@ fn infer_semantic_label(
 
     // 生成语义标签
     if is_swap && loop_depth >= 1 {
-        let i_val = loop_vars.first().map(|(_, v)| *v).unwrap_or(0);
-        format!("交换 arr[{}]↔arr[{}]", i_val, i_val + 1)
+        // P0-3：交换语句形如 `temp = arr[j];` —— 下标变量从**源码行**里取。
+        // 此前用 `loop_vars.first()`，而白名单里含 `n`（规模量），取到的常是 n 而非 j，
+        // 于是同一个 payload 里 semantic_label 说 `交换 arr[5]↔arr[6]`、
+        // algorithm_step 说 `交换 arr[0]↔arr[1]`，消费方同时收到一对一错的描述。
+        let idx_val = pick_inner_index(&loop_vars, &source_line);
+        format!("交换 arr[{}]↔arr[{}]", idx_val, idx_val + 1)
     } else if loop_depth >= 1 {
         let iter_str = loop_vars
             .iter()
@@ -282,7 +367,7 @@ fn infer_semantic_label(
         "调用 qsort".to_string()
     } else if is_func_call {
         // 尝试提取函数名
-        if let Some(func) = extract_called_func(source_line) {
+        if let Some(func) = extract_called_func(&source_line) {
             format!("调用 {}", func)
         } else {
             "函数调用".to_string()

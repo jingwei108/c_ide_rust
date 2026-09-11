@@ -52,12 +52,8 @@ fn test_malloc_zero_returns_null_with_warning() {
     host_malloc(&mut vm, &mut session.as_vm_context());
     let addr = vm.pop() as u32;
     assert_eq!(addr, 0, "malloc(0) 必须返回 NULL（0）");
-    let warns: Vec<_> = session
-        .runtime
-        .output_lines
-        .iter()
-        .filter(|l| l.contains("malloc(0)"))
-        .collect();
+    let notes = session.runtime.note_chunks();
+    let warns: Vec<_> = notes.iter().filter(|l| l.contains("malloc(0)")).collect();
     assert!(!warns.is_empty(), "malloc(0) 必须输出警告说明其行为是实现定义的");
 }
 
@@ -405,7 +401,7 @@ fn test_printf_basic_string() {
     write_test_string(&mut vm, fmt, "hello");
     vm.push(fmt as u64);
     host_printf_n(&mut vm, &mut session.as_vm_context());
-    assert_eq!(session.runtime.output_lines.last().unwrap(), "hello");
+    assert_eq!(session.runtime.stdout_chunks().last().copied().unwrap(), "hello");
 }
 
 #[test]
@@ -416,7 +412,7 @@ fn test_printf_integer() {
     vm.push(42u64);
     vm.push(fmt as u64);
     host_printf_n(&mut vm, &mut session.as_vm_context());
-    assert_eq!(session.runtime.output_lines.last().unwrap(), "42");
+    assert_eq!(session.runtime.stdout_chunks().last().copied().unwrap(), "42");
 }
 
 #[test]
@@ -429,7 +425,7 @@ fn test_printf_string_arg() {
     vm.push(arg as u64);
     vm.push(fmt as u64);
     host_printf_n(&mut vm, &mut session.as_vm_context());
-    assert_eq!(session.runtime.output_lines.last().unwrap(), "world");
+    assert_eq!(session.runtime.stdout_chunks().last().copied().unwrap(), "world");
 }
 
 // ─── scanf 契约 ──────────────────────────────────────────────────────────────
@@ -484,7 +480,7 @@ fn test_putchar_outputs_char() {
     let (mut vm, mut session) = fresh_session();
     vm.push('X' as u64);
     host_putchar(&mut vm, &mut session.as_vm_context());
-    assert_eq!(session.runtime.output_lines.last().unwrap(), "X");
+    assert_eq!(session.runtime.stdout_chunks().last().copied().unwrap(), "X");
 }
 
 // ─── rand / srand 契约 ───────────────────────────────────────────────────────
@@ -685,7 +681,7 @@ fn test_puts_basic_string_with_newline() {
     write_test_string(&mut vm, s, "hello");
     vm.push(s as u64);
     host_puts(&mut vm, &mut session.as_vm_context());
-    assert_eq!(session.runtime.output_lines.last().unwrap(), "hello\n");
+    assert_eq!(session.runtime.stdout_chunks().last().copied().unwrap(), "hello\n");
     let ret = vm.pop() as i32;
     assert!(ret >= 0, "puts 成功时应返回非负值");
 }
@@ -697,7 +693,7 @@ fn test_puts_empty_string_outputs_only_newline() {
     write_test_string(&mut vm, s, "");
     vm.push(s as u64);
     host_puts(&mut vm, &mut session.as_vm_context());
-    assert_eq!(session.runtime.output_lines.last().unwrap(), "\n");
+    assert_eq!(session.runtime.stdout_chunks().last().copied().unwrap(), "\n");
 }
 
 // ─── calloc 契约 ─────────────────────────────────────────────────────────────
@@ -1121,7 +1117,7 @@ fn test_abort_sets_finished() {
     assert!(vm.is_finished(), "abort 必须设置 finished");
     assert_eq!(vm.exit_code(), 134, "abort 退出码应为 134 (SIGABRT)");
     assert!(
-        session.runtime.output_lines.iter().any(|l| l.contains("abort")),
+        session.runtime.note_chunks().iter().any(|l| l.contains("abort")),
         "abort 必须输出诊断"
     );
 }
@@ -1182,6 +1178,7 @@ fn test_strtol_empty_sets_errno() {
         ty: cide_native::compiler::ast::Type::int(),
         scope_depth: 0,
         func_name: String::new(),
+        decl_line: 0,
     });
     vm.set_symbols(symbols);
 
@@ -1286,7 +1283,7 @@ fn test_assert_fail_sets_finished() {
     assert!(vm.is_finished(), "assert_fail 必须设置 finished");
     assert_eq!(vm.exit_code(), 1);
     assert!(
-        session.runtime.output_lines.iter().any(|l| l.contains("断言失败")),
+        session.runtime.note_chunks().iter().any(|l| l.contains("断言失败")),
         "assert_fail 必须输出诊断"
     );
 }
@@ -1381,5 +1378,96 @@ fn test_scanf_n_rejects_insufficient_args() {
         vm.get_error().contains("参数多于实际提供的参数"),
         "错误信息应提示参数不足: {}",
         vm.get_error()
+    );
+}
+
+// ─── 堆隔离区契约（2026-09-11 决议：bump 分配 + 有界隔离）──────────────────────
+// 依据 CIDE_HEAP_QUARANTINE_DECISION.md §1/§3/§6。原 3a 的 free 断言只覆盖
+// "标记 is_freed"，未触及分配器复用行为；本节把新语义的行为契约显式化。
+
+#[test]
+fn test_free_enters_quarantine_not_free_list() {
+    // free 的块进入 FIFO 隔离区（地址在隔离期内不复用），不得直接进入可复用 free_list
+    let (mut vm, mut session) = fresh_session();
+    vm.push(64);
+    host_malloc(&mut vm, &mut session.as_vm_context());
+    let addr = vm.pop() as u32;
+    assert!(session.memory.free_list.is_empty(), "malloc 后 free_list 应为空");
+
+    vm.push(addr as u64);
+    host_free(&mut vm, &mut session.as_vm_context());
+
+    assert_eq!(session.memory.quarantine.len(), 1, "free 后块必须进入隔离区");
+    assert_eq!(
+        session.memory.quarantine.front().map(|b| b.addr),
+        Some(addr),
+        "隔离区队首应是刚释放的块地址"
+    );
+    assert!(
+        session.memory.free_list.is_empty(),
+        "隔离期内不得进入 free_list（否则地址可被立即复用，UAF 检测窗口失效）"
+    );
+    assert_eq!(session.memory.quarantine_bytes, 64, "隔离区字节数应与块大小同步");
+}
+
+#[test]
+fn test_malloc_reuses_after_quarantine_eviction() {
+    // 隔离区超预算 → FIFO 驱逐最老块归还 free_list → 下一次 malloc 复用该地址
+    let (mut vm, mut session) = fresh_session();
+    session.memory.quarantine_budget = 0; // 会话级预算可调（决议 §1）
+
+    vm.push(64);
+    host_malloc(&mut vm, &mut session.as_vm_context());
+    let addr = vm.pop() as u32;
+    vm.push(addr as u64);
+    host_free(&mut vm, &mut session.as_vm_context());
+    assert_eq!(session.memory.quarantine.len(), 1);
+
+    // 预算为 0 → 下一次分配先驱逐，再 first-fit 复用被驱逐的地址
+    vm.push(64);
+    host_malloc(&mut vm, &mut session.as_vm_context());
+    let addr2 = vm.pop() as u32;
+
+    assert_eq!(addr2, addr, "隔离区驱逐后 malloc 必须复用被驱逐的地址");
+    assert!(session.memory.quarantine.is_empty(), "驱逐后隔离区应为空");
+    assert_eq!(session.memory.quarantine_bytes, 0, "驱逐后隔离区字节数应归零");
+}
+
+#[test]
+fn test_realloc_never_reuses_old_address() {
+    // 决议 §3：realloc 恒为新块拷贝——旧块进隔离区，新地址必不同于旧地址
+    let (mut vm, mut session) = fresh_session();
+    vm.push(64);
+    host_malloc(&mut vm, &mut session.as_vm_context());
+    let old_addr = vm.pop() as u32;
+
+    vm.push(128); // new_size
+    vm.push(old_addr as u64); // ptr
+    host_realloc(&mut vm, &mut session.as_vm_context());
+    let new_addr = vm.pop() as u32;
+
+    assert_ne!(new_addr, old_addr, "realloc 必须搬移（隔离期内旧地址不复用）");
+    assert_eq!(session.memory.quarantine.len(), 1, "旧块必须进入隔离区");
+}
+
+#[test]
+fn test_heap_offset_never_rewinds() {
+    // bump 语义：heap_offset 单调不减（leak 路径由此撞墙；churn 复用不推进堆顶）
+    let (mut vm, mut session) = fresh_session();
+    vm.push(64);
+    host_malloc(&mut vm, &mut session.as_vm_context());
+    let addr1 = vm.pop() as u32;
+    let top_after_first = session.memory.heap_offset;
+
+    vm.push(addr1 as u64);
+    host_free(&mut vm, &mut session.as_vm_context());
+
+    vm.push(64);
+    host_malloc(&mut vm, &mut session.as_vm_context());
+    let _addr2 = vm.pop() as u32;
+
+    assert!(
+        session.memory.heap_offset >= top_after_first,
+        "free 后 heap_offset 不得回退（原地收缩特例已被决议移除）"
     );
 }

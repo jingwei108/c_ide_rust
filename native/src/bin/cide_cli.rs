@@ -8,10 +8,11 @@
 
 use std::env;
 use std::fs;
-use std::io::{self, Read, Write};
+use std::io::{self, BufRead, Read, Write};
 
 use cide_native::flutter_bridge;
-use cide_native::session::CodeFile;
+use cide_native::session::{CodeFile, CompileUnit, InputMode, Session};
+use cide_native::session_api;
 
 fn print_usage() {
     eprintln!("Cide CLI — C 语言教学 IDE 后端调试工具");
@@ -22,6 +23,7 @@ fn print_usage() {
     eprintln!("  cide_cli step   <file.c> [-i <in>]  交互式单步调试");
     eprintln!("  cide_cli unified <file.c> [-i <in>] [--max-steps <n>] 统一模式（时间旅行）执行并摘要");
     eprintln!("  cide_cli export <file1.c> [file2.c ...] -o <out.json> [--builtin-libc]  预编译为字节码产物");
+    eprintln!("  cide_cli serve                      JSON-lines 会话模式（stdin 读请求 / stdout 写响应）");
     eprintln!();
     eprintln!("特殊文件名:");
     eprintln!("  -          从标准输入读取源代码（如 echo '...' | cide_cli run -）");
@@ -30,6 +32,12 @@ fn print_usage() {
     eprintln!("  -i <file>   从文件读取标准输入（多行输入）");
     eprintln!("  -o <file>   指定输出文件（仅 export 命令需要）");
     eprintln!("  --builtin-libc  库模式导出（export 命令）：不混入已有 Bytecode Libc 符号");
+    eprintln!();
+    eprintln!("serve 会话模式（每行一个 JSON 请求，响应与请求 id 关联）：");
+    eprintln!("  {{\"id\":1,\"method\":\"compile\",\"params\":{{\"source\":\"int main(){{return 0;}}\"}}}}");
+    eprintln!("  {{\"id\":2,\"method\":\"run\"}} / output.delta / step.begin / step.next / payload.get");
+    eprintln!("  {{\"id\":3,\"method\":\"seek\",\"params\":{{\"step\":10}}}} / breakpoints.set / memory.regions");
+    eprintln!("  {{\"id\":4,\"method\":\"session.reset\"}} / config.get / config.set / shutdown");
 }
 
 fn read_source(path: &str) -> String {
@@ -49,14 +57,12 @@ fn read_source(path: &str) -> String {
 }
 
 fn read_input_file(path: &str) -> Vec<String> {
-    fs::read_to_string(path)
-        .unwrap_or_else(|e| {
-            eprintln!("错误: 无法读取输入文件 '{}': {}", path, e);
-            std::process::exit(1);
-        })
-        .lines()
-        .map(|s| s.to_string())
-        .collect()
+    let text = fs::read_to_string(path).unwrap_or_else(|e| {
+        eprintln!("错误: 无法读取输入文件 '{}': {}", path, e);
+        std::process::exit(1);
+    });
+    // 保留换行（与 capi / FRB / serve 同一口径）：`getchar()` 需读到 '\n'
+    cide_native::session::RuntimeState::split_stdin(&text)
 }
 
 fn compile_file(path: &str, source: &str) -> bool {
@@ -102,9 +108,15 @@ fn compile_file(path: &str, source: &str) -> bool {
     }
 }
 
+/// `compile` 子命令：编译失败必须以**非零退出码**结束。
+///
+/// 此前丢弃了 `compile_file` 的返回值，`cide_cli compile bad.c` 会带着诊断信息
+/// 退出 0 —— CI 脚本 / headless 消费方（SharpTutor）据此判断"编译通过"，是静默失败。
 fn cmd_compile(path: &str) {
     let source = read_source(path);
-    compile_file(path, &source);
+    if !compile_file(path, &source) {
+        std::process::exit(1);
+    }
 }
 
 fn cmd_run(path: &str, input_lines: Vec<String>, argv: Vec<String>) {
@@ -468,14 +480,283 @@ fn cmd_unified(path: &str, input_lines: Vec<String>, max_steps: i32) {
     }
 }
 
+// ─── serve：JSON-lines 会话模式（Phase 1 出口 3）──────────────────────────────
+//
+// 设计要点（主计划 §3.3）：
+// - **NDJSON**：每行一个请求 / 一个响应，天然流式、可 `jq`、任意语言可消费；
+// - 请求可选 `id`，响应原样回填（异步竞态对账）；
+// - **错误帧与成功帧同构**：都有 `id` / `ok`，二选一携带 `result` 或 `error`；
+// - `session.reset` 供长寿命进程复用（避免高频重启进程）；
+// - 与 capi **共用 `session_api` 入口语义**（纪律 §2.2-2：三出口只做薄包装）。
+
+fn serve_ok(id: serde_json::Value, result: serde_json::Value) -> serde_json::Value {
+    serde_json::json!({ "id": id, "ok": true, "result": result })
+}
+
+fn serve_err(id: serde_json::Value, kind: &str, message: impl Into<String>) -> serde_json::Value {
+    serde_json::json!({
+        "id": id,
+        "ok": false,
+        "error": { "kind": kind, "message": message.into() }
+    })
+}
+
+/// `session.reset`：清空编译/运行状态，**保留会话级配置**（隔离预算、判分确定性、
+/// argv），与引擎 `reset_runtime` 的既有语义一致（"配置保留、运行清空"）。
+fn serve_reset_session(session: &mut Session) {
+    let quarantine_budget = session.memory.quarantine_budget;
+    let deterministic = session.runtime.deterministic;
+    let argc = session.runtime.argc;
+    let argv = std::mem::take(&mut session.runtime.argv);
+    *session = Session::default();
+    session.memory.quarantine_budget = quarantine_budget;
+    session.runtime.deterministic = deterministic;
+    session.runtime.argc = argc;
+    session.runtime.argv = argv;
+}
+
+/// 会话级配置写入（与 capi 的 `cide_set_max_steps` / `cide_set_deterministic` /
+/// `cide_set_quarantine_budget` 同一批 Session 字段，语义一致）。
+fn serve_apply_config(session: &mut Session, params: &serde_json::Value) -> serde_json::Value {
+    if let Some(v) = params.get("quarantine_budget").and_then(|v| v.as_i64()) {
+        session.memory.quarantine_budget = v.clamp(0, 1024 * 1024) as i32;
+    }
+    if let Some(v) = params.get("deterministic").and_then(|v| v.as_bool()) {
+        session.runtime.deterministic = v;
+    }
+    if let Some(v) = params.get("max_steps").and_then(|v| v.as_i64()) {
+        // 走 Session 的会话级入口：会话尚未编译（vm == None）时也生效 ——
+        // 此前 `if let Some(vm)` 写法会在 compile 之前静默丢弃该配置（见 Session::set_max_steps）
+        session.set_max_steps(v.max(1).min(i32::MAX as i64) as i32);
+    }
+    if let Some(v) = params.get("call_depth_limit").and_then(|v| v.as_i64()) {
+        session.set_call_depth_limit(v.max(1) as usize);
+    }
+    session_api::config(session)
+}
+
+fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) {
+    let req: serde_json::Value = match serde_json::from_str(line) {
+        Ok(v) => v,
+        Err(e) => {
+            return (
+                serve_err(serde_json::Value::Null, "protocol", format!("非法 JSON 请求：{}", e)),
+                false,
+            )
+        }
+    };
+    let id = req.get("id").cloned().unwrap_or(serde_json::Value::Null);
+    let Some(method) = req.get("method").and_then(|m| m.as_str()) else {
+        return (serve_err(id, "protocol", "请求缺少 method 字段"), false);
+    };
+    let params = req.get("params").cloned().unwrap_or_else(|| serde_json::json!({}));
+
+    match method {
+        "ping" => (
+            serve_ok(
+                id,
+                serde_json::json!({ "pong": true, "abi": cide_native::capi::CIDE_ABI_VERSION }),
+            ),
+            false,
+        ),
+        "session.create" => {
+            *session = Session::default();
+            (
+                serve_ok(
+                    id,
+                    serde_json::json!({ "created": true, "config": session_api::config(session) }),
+                ),
+                false,
+            )
+        }
+        "session.reset" => {
+            serve_reset_session(session);
+            (
+                serve_ok(
+                    id,
+                    serde_json::json!({ "reset": true, "config": session_api::config(session) }),
+                ),
+                false,
+            )
+        }
+        "session.destroy" => {
+            *session = Session::default();
+            (serve_ok(id, serde_json::json!({ "destroyed": true })), false)
+        }
+        "shutdown" => (serve_ok(id, serde_json::json!({ "shutdown": true })), true),
+        "config.get" => (serve_ok(id, session_api::config(session)), false),
+        "config.set" => {
+            let cfg = serve_apply_config(session, &params);
+            (serve_ok(id, cfg), false)
+        }
+        "compile" => {
+            // 覆盖式语义：params.files 即当前完整编译单元集合（非追加），
+            // 便于长寿命会话反复替换被测程序而无需重启进程。
+            let mut units: Vec<CompileUnit> = Vec::new();
+            if let Some(files) = params.get("files").and_then(|v| v.as_array()) {
+                for f in files {
+                    units.push(CompileUnit {
+                        filename: f
+                            .get("filename")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("main.c")
+                            .to_string(),
+                        source: f.get("source").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    });
+                }
+            } else if let Some(source) = params.get("source").and_then(|v| v.as_str()) {
+                units.push(CompileUnit {
+                    filename: params
+                        .get("filename")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("main.c")
+                        .to_string(),
+                    source: source.to_string(),
+                });
+            }
+            if units.is_empty() {
+                return (
+                    serve_err(id, "protocol", "compile 需要 params.files 或 params.source"),
+                    false,
+                );
+            }
+            session.compile.compile_units = units;
+            session.compile.compiled = false;
+            session.unified = None;
+            let diagnostics = session_api::compile(session);
+            (serve_ok(id, diagnostics), false)
+        }
+        "run" => {
+            if let Some(input) = params.get("input").and_then(|v| v.as_str()) {
+                // 保留换行（与 capi / FRB / CLI -i 同一口径）
+                session.runtime.set_stdin(input);
+            }
+            if let Some(argv) = params.get("argv").and_then(|v| v.as_array()) {
+                let args: Vec<String> = argv
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect();
+                session.runtime.argc = args.len() as i32;
+                session.runtime.argv = args;
+            }
+            if let Some(batch) = params.get("batch_input").and_then(|v| v.as_bool()) {
+                session.runtime.input_mode = if batch { InputMode::Batch } else { InputMode::Interactive };
+            }
+            serve_apply_config(session, &params);
+            (serve_ok(id, session_api::run(session)), false)
+        }
+        "output.delta" => {
+            let cursor = params.get("cursor").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            // E-P1-5：可选 `stream` 选择输出通道（display / stdout / stderr / note）。
+            // 缺省 display 与旧行为逐字节一致。
+            let stream = params.get("stream").and_then(|v| v.as_str()).unwrap_or("display");
+            (serve_ok(id, session_api::output_delta_on(session, cursor, stream)), false)
+        }
+        "step.begin" => match session_api::step_begin(session) {
+            0 => (
+                serve_ok(id, serde_json::json!({ "ready": true, "max_collected_step": -1 })),
+                false,
+            ),
+            code => (
+                serve_err(
+                    id,
+                    "state",
+                    format!("统一模式初始化失败（返回 {}）：会话需先编译成功", code),
+                ),
+                false,
+            ),
+        },
+        "step.next" => match session_api::step_next(session) {
+            Ok(v) => (serve_ok(id, v), false),
+            Err(e) => (serve_err(id, "state", e), false),
+        },
+        "payload.get" => {
+            let start = params.get("start").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            let end = params.get("end").and_then(|v| v.as_i64()).unwrap_or(i32::MAX as i64) as i32;
+            match session_api::payloads(session, start, end) {
+                Ok(v) => (serve_ok(id, v), false),
+                Err(e) => (serve_err(id, "state", e), false),
+            }
+        }
+        "seek" => {
+            let Some(step) = params.get("step").and_then(|v| v.as_i64()) else {
+                return (serve_err(id, "protocol", "seek 需要 params.step"), false);
+            };
+            match session_api::seek(session, step as i32) {
+                Ok(v) => (serve_ok(id, v), false),
+                Err(e) => (serve_err(id, "state", e), false),
+            }
+        }
+        "breakpoints.set" => {
+            let lines: Vec<i32> = params
+                .get("lines")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().filter_map(|x| x.as_i64()).map(|x| x as i32).collect())
+                .unwrap_or_default();
+            session_api::set_breakpoints(session, &lines);
+            (serve_ok(id, serde_json::json!({ "lines": lines })), false)
+        }
+        "memory.regions" => (serve_ok(id, session_api::memory_regions(session)), false),
+        other => (serve_err(id, "protocol", format!("未知方法：{}", other)), false),
+    }
+}
+
+fn cmd_serve() {
+    let stdin = io::stdin();
+    let mut session = Session::default();
+    let mut out = io::stdout();
+
+    eprintln!("cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）");
+    for line in stdin.lock().lines() {
+        let line = match line {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("stdin 读取错误: {}", e);
+                break;
+            }
+        };
+        if line.trim().is_empty() {
+            continue;
+        }
+        let (response, shutdown) = serve_handle(&mut session, &line);
+        let text = match serde_json::to_string(&response) {
+            Ok(t) => t,
+            Err(e) => format!(
+                "{{\"id\":null,\"ok\":false,\"error\":{{\"kind\":\"internal\",\"message\":\"序列化失败：{}\"}}}}",
+                e
+            ),
+        };
+        if writeln!(out, "{}", text).is_err() {
+            break;
+        }
+        let _ = out.flush();
+        if shutdown {
+            break;
+        }
+    }
+}
+
 fn main() {
     let args: Vec<String> = env::args().collect();
-    if args.len() < 3 {
+    if args.len() < 2 {
         print_usage();
         std::process::exit(1);
     }
 
     let cmd = &args[1];
+
+    // serve 不需要文件参数：会话内容全部经 stdin 的 JSON 请求提供
+    if cmd == "serve" {
+        cmd_serve();
+        return;
+    }
+
+    if args.len() < 3 {
+        print_usage();
+        std::process::exit(1);
+    }
+
     let file_path = &args[2];
 
     // 解析 -i 选项与 -- 后的命令行参数
