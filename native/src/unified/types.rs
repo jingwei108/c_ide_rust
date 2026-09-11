@@ -1,10 +1,8 @@
 // NOTE: StepPayload 在内存中的完整表示用于前端解码后的状态；
 // 跨 FFI 传输时已通过 `unified::stream` 进行变量/调用栈/数组/指针/访问变量/可视化事件差分编码。
 use crate::unified::root_cause::RootCauseHint;
-use flutter_rust_bridge::frb;
 
 /// 算法步骤语义快照（用于前端步骤标注）。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AlgorithmStepSnapshot {
     pub algorithm_name: String,
@@ -14,7 +12,6 @@ pub struct AlgorithmStepSnapshot {
 }
 
 /// 每步的轻量数据包，传输到 Flutter 前端作为 FrameCache。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct StepPayload {
     pub step_index: i32,
@@ -34,7 +31,6 @@ pub struct StepPayload {
 }
 
 /// 指针变量快照（用于指针追踪动画）。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct PointerSnapshot {
     pub name: String,
@@ -46,7 +42,6 @@ pub struct PointerSnapshot {
 }
 
 /// 指针状态。
-#[frb]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub enum PointerStatus {
     /// 指向有效内存（栈、全局、已分配堆）。
@@ -60,7 +55,6 @@ pub enum PointerStatus {
 }
 
 /// 当前步访问的变量（用于变量级高亮）。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AccessedVar {
     pub name: String,
@@ -68,7 +62,6 @@ pub struct AccessedVar {
 }
 
 /// FRB 友好的变量快照（ty 已格式化为字符串）。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ApiVariableSnapshot {
     pub name: String,
@@ -79,7 +72,6 @@ pub struct ApiVariableSnapshot {
 }
 
 /// 数组变量快照（用于算法可视化条形图）。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ArraySnapshot {
     pub name: String,
@@ -98,7 +90,6 @@ impl From<cide_runtime::ArraySnapshotData> for ArraySnapshot {
 }
 
 /// FRB 友好的调用帧信息。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct ApiFrameInfo {
     pub func_name: String,
@@ -106,7 +97,6 @@ pub struct ApiFrameInfo {
 }
 
 /// 语义元数据（用于进度条标签和智能检查点）。
-#[frb]
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct StepMeta {
     pub code_line: i32,
@@ -116,7 +106,6 @@ pub struct StepMeta {
 }
 
 /// 调试摘要（悬浮球零延迟）。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct DebugSummary {
     pub local_vars: Vec<ApiVariableSnapshot>,
@@ -125,7 +114,6 @@ pub struct DebugSummary {
 }
 
 /// 执行热力图增量。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HeatmapDelta {
     pub line: i32,
@@ -133,7 +121,6 @@ pub struct HeatmapDelta {
 }
 
 /// 编译并启动统一模式的返回结果。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct UnifiedRunResult {
     pub success: bool,
@@ -143,7 +130,6 @@ pub struct UnifiedRunResult {
 }
 
 /// 批量自动执行的返回结果。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct AutoStepResult {
     pub payloads: Vec<StepPayload>,
@@ -158,7 +144,6 @@ pub struct AutoStepResult {
 }
 
 /// Seek 到指定步的返回结果。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SeekResult {
     pub success: bool,
@@ -167,7 +152,6 @@ pub struct SeekResult {
 }
 
 /// 执行热力图数据。
-#[frb]
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HeatmapData {
     pub line_counts: Vec<(i32, u64)>,

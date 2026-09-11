@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 
-use flutter_rust_bridge::frb;
 
 use crate::session::VisEvent;
 use crate::unified::root_cause::RootCauseHint;
@@ -14,7 +13,6 @@ mod encode;
 pub type SymIdx = i32;
 
 /// 使用符号表的变量快照（不变数据 dedup）。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct ApiVarSnapshotRef {
     pub name_idx: SymIdx,
@@ -25,7 +23,6 @@ pub struct ApiVarSnapshotRef {
 }
 
 /// 差分变量：仅包含值发生变化的变量。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct VarDelta {
     pub name_idx: SymIdx,
@@ -33,7 +30,6 @@ pub struct VarDelta {
 }
 
 /// 使用符号表的指针快照。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct PointerSnapshotRef {
     pub name_idx: SymIdx,
@@ -45,7 +41,6 @@ pub struct PointerSnapshotRef {
 }
 
 /// 使用符号表的数组快照。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct ArraySnapshotRef {
     pub name_idx: SymIdx,
@@ -54,7 +49,6 @@ pub struct ArraySnapshotRef {
 }
 
 /// 使用符号表的访问变量。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct AccessedVarRef {
     pub name_idx: SymIdx,
@@ -62,7 +56,6 @@ pub struct AccessedVarRef {
 }
 
 /// 使用符号表的调用帧。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct ApiFrameInfoRef {
     pub func_name_idx: SymIdx,
@@ -70,7 +63,6 @@ pub struct ApiFrameInfoRef {
 }
 
 /// 使用符号表的算法步骤。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct AlgorithmStepSnapshotRef {
     pub algorithm_name_idx: SymIdx,
@@ -80,7 +72,6 @@ pub struct AlgorithmStepSnapshotRef {
 }
 
 /// 使用符号表的 StepPayload（基准快照）。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct StepPayloadRef {
     pub step_index: i32,
@@ -100,7 +91,6 @@ pub struct StepPayloadRef {
 }
 
 /// 差分 StepPayload（基于前一个 StepPayloadRef 或 StepPayloadDelta）。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct StepPayloadDelta {
     pub step_index: i32,
@@ -139,7 +129,6 @@ pub struct StepPayloadDelta {
 /// - `base_payloads` 包含每 batch 的第 1 个完整快照（step 0）。
 /// - `deltas` 包含后续步的差分数据（基于前一步的局部变量状态）。
 /// - `symbol_table` 全局去重字符串池。
-#[frb]
 #[derive(Debug, Clone)]
 pub struct StepStreamBatch {
     pub symbol_table: Vec<String>,

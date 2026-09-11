@@ -8,10 +8,8 @@
 
 use crate::compiler::ast::{FuncDecl, Stmt};
 use crate::compiler::cfg::ControlFlowGraph;
-use flutter_rust_bridge::frb;
 
 /// High-level code intent categories.
-#[frb]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodeIntent {
     Sort,
@@ -47,7 +45,6 @@ impl CodeIntent {
 }
 
 /// A scored intent guess.
-#[frb]
 #[derive(Debug, Clone)]
 pub struct IntentScore {
     pub intent: CodeIntent,

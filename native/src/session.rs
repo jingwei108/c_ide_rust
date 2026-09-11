@@ -2,7 +2,6 @@ use crate::engine::completion::CompletionSnapshot;
 use crate::vm::core::CideVM;
 use crate::vm::vfs::VirtualFileSystem;
 use cide_runtime::instruction::Instruction;
-use flutter_rust_bridge::frb;
 use std::collections::HashMap;
 use std::ffi::CString;
 
@@ -11,7 +10,6 @@ pub use cide_runtime::{
     MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE, SNAPSHOT_INTERVAL, STACK_START,
 };
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct Diagnostic {
     pub line: i32,
@@ -29,7 +27,6 @@ pub struct Diagnostic {
     pub filename: String,
 }
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AlgorithmMatch {
     pub name: String,
@@ -127,7 +124,6 @@ impl Session {
     }
 }
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TraceEntry {
     pub line: i32,
@@ -152,7 +148,6 @@ impl From<TraceEntry> for cide_runtime::TraceEntryData {
     }
 }
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VariableSnapshot {
     pub name: String,
@@ -186,7 +181,6 @@ impl From<VariableSnapshot> for cide_runtime::VariableSnapshotData {
     }
 }
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct VisEvent {
     pub ty: i32,
@@ -226,7 +220,6 @@ impl From<VisEvent> for cide_runtime::VisEventData {
 /// 执行路径热力图：记录每行源代码被执行的次数。
 pub use cide_runtime::ExecutionHeatmap;
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryRegion {
     pub addr: u32,
@@ -271,7 +264,6 @@ impl From<MemoryRegion> for cide_runtime::MemoryRegionData {
     }
 }
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryFragment {
     pub addr: u32,
@@ -296,7 +288,6 @@ impl From<MemoryFragment> for cide_runtime::MemoryFragmentData {
     }
 }
 
-#[frb]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct HeapStats {
     /// 总堆空间（heap_offset - HEAP_START），字节
@@ -331,7 +322,6 @@ impl From<HeapStats> for cide_runtime::HeapStatsData {
     }
 }
 
-#[frb]
 #[derive(Debug, Clone)]
 pub struct CompileResult {
     pub success: bool,
@@ -339,7 +329,6 @@ pub struct CompileResult {
     pub algorithm_matches: Vec<AlgorithmMatch>,
 }
 
-#[frb]
 #[derive(Debug, Clone)]
 pub struct RunResult {
     pub success: bool,
@@ -348,7 +337,6 @@ pub struct RunResult {
     pub error: Option<String>,
 }
 
-#[frb]
 #[derive(Debug, Clone)]
 pub struct StepResult {
     pub status: StepStatus,
@@ -357,7 +345,6 @@ pub struct StepResult {
     pub waiting_input: bool,
 }
 
-#[frb]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StepStatus {
     Paused,
