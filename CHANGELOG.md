@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (重构批次 R3：语义单源审计)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R3 批次。
+审计清单归档于 [`docs/current/R3_MULTI_TRUTH_AUDIT.md`](docs/current/R3_MULTI_TRUTH_AUDIT.md)
+（A 本批收口 3 项 / B 历史批次复核确认 5 项 / C 有意保留 3 项含 CS0/CS5/R4 归属 / D 扫描方法）：
+
+- **教学语义标注单源化（核心）**：删除 `unified/engine.rs::quick_semantic_label`
+  第二套简化启发（"循环边界"/"交换" vs StepPayload 的"循环"/"交换 arr[i]↔arr[i+1]"
+  词汇不一致）；`collector.rs::infer_semantic_label` 升级为**全库唯一分类器**
+  （`local_vars: Option` 双形态——StepPayload 全量形态 / 检查点保存降级形态），
+  检查点判定与教学标注出自同一函数，标注矛盾类缺陷结构性消除（P0-3 同类事故
+  不再可能复发）。
+- **堆耗尽教学消息常量化**：`report_heap_exhausted` 文本硬编码 "1MB/256KB"
+  改为自 `MEM_SIZE`/`DEFAULT_QUARANTINE_BUDGET` 格式化（改常量不再漏改文案）。
+- **`session.reset` 语义单源**：配置保留式重置自 cide_cli 迁至
+  `session_api::reset_session_preserving_config`（出口薄包装纪律）。
+
 ### Added (重构批次 E2：模块化预处理器 + 预定义宏族 + capabilities 出口)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 E2 批次

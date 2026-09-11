@@ -377,6 +377,21 @@ pub fn config(session: &Session) -> Value {
     })
 }
 
+/// `session.reset` 语义单源：清空编译/运行状态，**保留会话级配置**
+/// （隔离预算、判分确定性、argv），与引擎 `reset_runtime` 的"配置保留、运行
+/// 清空"语义一致。serve 与后续出口共用本入口（R3 自 cide_cli 收口）。
+pub fn reset_session_preserving_config(session: &mut Session) {
+    let quarantine_budget = session.memory.quarantine_budget;
+    let deterministic = session.runtime.deterministic;
+    let argc = session.runtime.argc;
+    let argv = std::mem::take(&mut session.runtime.argv);
+    *session = Session::default();
+    session.memory.quarantine_budget = quarantine_budget;
+    session.runtime.deterministic = deterministic;
+    session.runtime.argc = argc;
+    session.runtime.argv = argv;
+}
+
 /// E2：引擎能力清单（机器可读真实能力；"版本宏当能力探测"的三层配套之一）。
 ///
 /// 口径（C23 锚定决议）：`__STDC_VERSION__=202311L` 是**名义锚点**，真实能力

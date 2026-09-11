@@ -1,5 +1,6 @@
 use super::*;
 use crate::VmContext;
+use cide_runtime::{DEFAULT_QUARANTINE_BUDGET, MEM_SIZE};
 
 pub fn host_malloc(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let size = vm.pop() as i32;
@@ -149,9 +150,14 @@ pub(crate) fn trap_invalid_free(vm: &mut CideVM, session: &VmContext<'_>, addr: 
 pub(crate) fn report_heap_exhausted(session: &mut VmContext<'_>) {
     // 末尾必须带换行：note 通道的后续 printf 输出会续接最后一个元素，
     // 缺换行会让教学提示与程序输出粘成一行。
-    const MSG: &str = "[堆] 内存耗尽：malloc/calloc/realloc 返回 NULL（Cide 堆上限 1MB，其中 256KB 为隔离区预算）。常见原因是「只分配不释放」——请确认每条 malloc 路径都有对应的 free。\n";
-    if !session.runtime.note_chunks().contains(&MSG) {
-        session.runtime.push_note(MSG);
+    // R3：数值从 cide_runtime 常量格式化（此前文本硬编码 1MB/256KB 双写）。
+    let msg = format!(
+        "[堆] 内存耗尽：malloc/calloc/realloc 返回 NULL（Cide 堆上限 {}KB，其中 {}KB 为隔离区预算）。常见原因是「只分配不释放」——请确认每条 malloc 路径都有对应的 free。\n",
+        MEM_SIZE / 1024,
+        DEFAULT_QUARANTINE_BUDGET / 1024
+    );
+    if !session.runtime.note_chunks().contains(&msg.as_str()) {
+        session.runtime.push_note(&msg);
     }
 }
 

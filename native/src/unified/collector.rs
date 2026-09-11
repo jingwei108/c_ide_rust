@@ -70,7 +70,7 @@ impl StepCollector {
         let heatmap_line = code_line;
         let heatmap_count = session.runtime.heatmap.line_counts.get(&code_line).copied().unwrap_or(0);
 
-        let semantic_label = infer_semantic_label(code_line, &local_vars, &func_name, session);
+        let semantic_label = infer_semantic_label(code_line, Some(&local_vars), &func_name, session);
         let algorithm_step = {
             let ctx: &dyn cide_algorithm_steps::AlgorithmContext = session;
             let algo_vars: Vec<cide_algorithm_steps::VariableSnapshot> = local_vars
@@ -263,10 +263,20 @@ fn format_value(v: &cide_runtime::VariableSnapshotData) -> String {
     }
 }
 
-/// 推断语义标签：根据源码行内容 + 局部变量值生成教学友好的描述。
-fn infer_semantic_label(
+/// 推断语义标签——**全库唯一分类器**（R3 教学标注单源化）。
+///
+/// `local_vars`：
+/// - `Some(vars)`：全量形态（交换下标、循环变量取值等值敏感分支可用），
+///   供 StepPayload 语义标注使用；
+/// - `None`：降级形态（局部变量不可用时，如检查点保存路径），**同一词汇表、
+///   同一判定顺序**，仅值敏感分支退化为行首形态判断。
+///
+/// 此前 `engine.rs::quick_semantic_label` 是第二套简化启发（"循环边界" vs
+/// 本函数的"循环"、无交换下标），同一行源码两处标注词汇不一致——R3 收口后
+/// 检查点判定与 StepPayload 标注出自同一函数。
+pub(crate) fn infer_semantic_label(
     code_line: i32,
-    local_vars: &[ApiVariableSnapshot],
+    local_vars: Option<&[ApiVariableSnapshot]>,
     func_name: &str,
     session: &Session,
 ) -> String {
@@ -282,6 +292,7 @@ fn infer_semantic_label(
 
     // 提取循环变量（i, j, k, idx, index, m, n, left, right, mid, low, high, pivot）
     let loop_vars: Vec<(String, i32)> = local_vars
+        .unwrap_or(&[])
         .iter()
         .filter_map(|v| {
             if matches!(
@@ -309,6 +320,10 @@ fn infer_semantic_label(
 
     let loop_depth = loop_vars.len() as i32;
 
+    // 降级形态（无局部变量值）：循环行首形态直接判"循环"（同一词汇表）
+    let is_loop_headline = local_vars.is_none()
+        && (source_line.starts_with("for ") || source_line.starts_with("while "));
+
     // 检测交换模式：包含 temp + arr[ / a[ + 赋值
     let is_swap = source_line.contains("temp")
         && (source_line.contains("arr[") || source_line.contains("a["))
@@ -332,6 +347,9 @@ fn infer_semantic_label(
         && !source_line.starts_with("/*");
 
     // 生成语义标签
+    if is_loop_headline {
+        return "循环".to_string();
+    }
     if is_swap && loop_depth >= 1 {
         // P0-3：交换语句形如 `temp = arr[j];` —— 下标变量从**源码行**里取。
         // 此前用 `loop_vars.first()`，而白名单里含 `n`（规模量），取到的常是 n 而非 j，

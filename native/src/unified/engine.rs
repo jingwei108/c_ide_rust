@@ -1,5 +1,5 @@
 use crate::session::Session;
-use crate::unified::collector::StepCollector;
+use crate::unified::collector::{self, StepCollector};
 use crate::unified::trace_analyzer::TraceAnalyzer;
 use crate::unified::types::{AutoStepResult, SeekResult, StepMeta, StepPayload};
 use crate::vm::core::{CideVM, StepResult};
@@ -57,56 +57,6 @@ impl UnifiedEngine {
 
     /// 轻量级语义标签推断（仅基于源码行，不访问变量值）。
     /// 用于智能检查点判断，避免每步都计算完整语义标签。
-    fn quick_semantic_label(code_line: i32, session: &Session) -> String {
-        if code_line <= 0 {
-            return String::new();
-        }
-        // P0-4：按全局行号 → 文件映射定位（此前固定查第一个编译单元，多文件时会串文件）
-        let source_line = session
-            .source_line_at(code_line)
-            .map(|s| s.trim().to_string())
-            .unwrap_or_default();
-
-        if source_line.starts_with("for ") || source_line.starts_with("while ") {
-            "循环边界".to_string()
-        } else if source_line.starts_with("return") {
-            "返回".to_string()
-        } else if source_line.contains("malloc") || source_line.contains("calloc") {
-            "内存分配".to_string()
-        } else if source_line.contains("free(") {
-            "释放内存".to_string()
-        } else if source_line.contains("temp")
-            && (source_line.contains("arr[") || source_line.contains("a["))
-            && source_line.contains('=')
-        {
-            "交换".to_string()
-        } else if source_line.contains('(')
-            && !source_line.starts_with("if ")
-            && !source_line.starts_with("while ")
-            && !source_line.starts_with("for ")
-            && !source_line.starts_with("switch ")
-            && !source_line.starts_with("return ")
-            && !source_line.starts_with("//")
-            && !source_line.starts_with("/*")
-        {
-            // 尝试提取函数名
-            let after_assign = if let Some(pos) = source_line.find('=') {
-                source_line[pos + 1..].trim()
-            } else {
-                source_line.as_str()
-            };
-            if let Some(paren_pos) = after_assign.find('(') {
-                let name = after_assign[..paren_pos].trim();
-                if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-                    return format!("调用 {}", name);
-                }
-            }
-            "调用".to_string()
-        } else {
-            String::new()
-        }
-    }
-
     pub fn reset(&mut self) {
         self.checkpoints.clear();
         self.frame_cache.clear();
@@ -169,10 +119,21 @@ impl UnifiedEngine {
             let step = vm.get_executed_steps();
 
             // 检查点保存（固定间隔 + 智能边界）
-            let semantic_label = Self::quick_semantic_label(vm.get_current_line(), session);
+            // R3：语义标签单源——与 StepPayload 共用 collector 的唯一分类器（降级形态）
+            let func_name = vm
+                .get_call_stack()
+                .last()
+                .map(|f| f.func_name.clone())
+                .unwrap_or_default();
+            let semantic_label = collector::infer_semantic_label(
+                vm.get_current_line(),
+                None,
+                &func_name,
+                session,
+            );
             let meta = StepMeta {
                 code_line: vm.get_current_line(),
-                func_name: vm.get_call_stack().last().map(|f| f.func_name.clone()).unwrap_or_default(),
+                func_name: func_name.clone(),
                 loop_depth: 0,
                 semantic_label,
             };

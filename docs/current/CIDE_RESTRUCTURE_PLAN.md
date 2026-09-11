@@ -233,7 +233,15 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   （含环用例双侧失败=match 形态）+ 14 词法单测、cargo test 870/0、clippy 零
   警告、C Shadow 657（648+9）0 非预期、serve 冒烟扩展 capabilities 断言全过；
   放弃清单记入 spec §2.11。下一批：R3（语义单源审计）。
-- **C# 教学子集前端立项（2026-09-11，v3 定稿）**：SharpTutor 诉求锚定，计划落
+- **E2 已提交（`706575b`，CI 全绿）**
+- **R3 已完成（2026-09-12，未提交待确认）**：审计清单归档
+  `docs/current/R3_MULTI_TRUTH_AUDIT.md`（A 收口 3 / B 历史复核 5 / C 有意保留
+  3 含归属）。收口三项：① 教学语义标注单源化——删 `quick_semantic_label` 第二
+  启发，`infer_semantic_label` 成全库唯一分类器（Option 局部变量双形态），检查点
+  判定与 StepPayload 标注同词汇；② 堆耗尽消息自常量格式化（`DEFAULT_QUARANTINE_
+  BUDGET` 补入 runtime 导出）；③ `reset_session_preserving_config` 迁
+  session_api。验收线：审计清单归档 ✓、标注矛盾结构性消除 ✓、cargo test 870/0、
+  clippy 零警告、C Shadow 657 用例 0 非预期、serve 冒烟过。下一批：E3（C23 语义级）。- **C# 教学子集前端立项（2026-09-11，v3 定稿）**：SharpTutor 诉求锚定，计划落
   `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
   含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
   C/C++" → C/C++ 主轴 + C# 教学子集）待定位主计划同步声明。

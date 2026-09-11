@@ -517,20 +517,6 @@ fn serve_err(id: serde_json::Value, kind: &str, message: impl Into<String>) -> s
     })
 }
 
-/// `session.reset`：清空编译/运行状态，**保留会话级配置**（隔离预算、判分确定性、
-/// argv），与引擎 `reset_runtime` 的既有语义一致（"配置保留、运行清空"）。
-fn serve_reset_session(session: &mut Session) {
-    let quarantine_budget = session.memory.quarantine_budget;
-    let deterministic = session.runtime.deterministic;
-    let argc = session.runtime.argc;
-    let argv = std::mem::take(&mut session.runtime.argv);
-    *session = Session::default();
-    session.memory.quarantine_budget = quarantine_budget;
-    session.runtime.deterministic = deterministic;
-    session.runtime.argc = argc;
-    session.runtime.argv = argv;
-}
-
 /// 会话级配置写入（与 capi 的 `cide_set_max_steps` / `cide_set_deterministic` /
 /// `cide_set_quarantine_budget` 同一批 Session 字段，语义一致）。
 fn serve_apply_config(session: &mut Session, params: &serde_json::Value) -> serde_json::Value {
@@ -588,7 +574,8 @@ fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) 
             )
         }
         "session.reset" => {
-            serve_reset_session(session);
+            // R3：reset 语义单源 session_api（serve/capi 共用）
+            session_api::reset_session_preserving_config(session);
             (
                 serve_ok(
                     id,
