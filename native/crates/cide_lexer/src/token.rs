@@ -18,6 +18,7 @@ pub enum TokenType {
     Union,
     Sizeof,
     Offsetof,
+    Alignof,
     Generic,
     Switch,
     Case,

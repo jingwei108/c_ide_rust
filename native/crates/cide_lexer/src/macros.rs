@@ -192,6 +192,35 @@ pub(crate) fn builtin_macros() -> HashMap<String, MacroDef> {
             }],
         },
     );
+    // limits.h 其余宏（E1 B 档）。负值沿用 INT_MIN 的"Number 带负号文本"口径
+    //（宏体不经 number() 重扫，parser 直接按 token 文本取值）；
+    // ULLONG_MAX 等 (i64::MAX, u64::MAX] 值域按 64 位位模式承载为 unsigned long long。
+    for (name, ty, text) in [
+        ("SCHAR_MIN", TokenType::Number, "-128"),
+        ("SCHAR_MAX", TokenType::Number, "127"),
+        ("UCHAR_MAX", TokenType::Number, "255"),
+        ("SHRT_MIN", TokenType::Number, "-32768"),
+        ("SHRT_MAX", TokenType::Number, "32767"),
+        ("USHRT_MAX", TokenType::Number, "65535"),
+        ("UINT_MAX", TokenType::UnsignedLiteral, "4294967295"),
+        ("ULONG_MAX", TokenType::UnsignedLiteral, "4294967295"),
+        ("LLONG_MAX", TokenType::LongLiteral, "9223372036854775807"),
+        ("LLONG_MIN", TokenType::LongLiteral, "-9223372036854775808"),
+        ("ULLONG_MAX", TokenType::UnsignedLiteral, "18446744073709551615"),
+    ] {
+        macros.insert(
+            name.to_string(),
+            MacroDef {
+                params: vec![],
+                body: vec![Token {
+                    ty,
+                    text: text.to_string(),
+                    line: 0,
+                    column: 0,
+                }],
+            },
+        );
+    }
     // stdbool.h macros
     macros.insert(
         "true".to_string(),

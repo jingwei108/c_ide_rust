@@ -68,6 +68,9 @@ pub fn keyword_type(text: &str) -> Option<TokenType> {
         "float" => Some(TokenType::Float),
         "double" => Some(TokenType::Double),
         "goto" => Some(TokenType::Goto),
+        // C23（C11 起 _Alignof）：对齐查询（E1）
+        "alignof" => Some(TokenType::Alignof),
+        "_Alignof" => Some(TokenType::Alignof),
         "NULL" => Some(TokenType::Null),
         "null" => Some(TokenType::Null),
         _ => None,

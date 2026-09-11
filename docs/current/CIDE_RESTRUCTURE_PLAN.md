@@ -145,6 +145,9 @@ Clang 一致——`alias=DCBA size=4` 两边相同）。
 
 二选一之前保持「待评估」；**不允许**默认沉默地丢掉教学能力。
 
+> **2026-09-11 决议**：SharpTutor 诉求已触发（C# 立项使其获得 C/C# 双消费者，价值翻倍），
+> **采纳方案 A**，排期落 `CSHARP_EXTENSION_PLAN.md` **CS5 批次**（与认知管线出山同批）。
+
 ## 5. 升级为更大重构的判据（诚实记录）
 
 R3 审计后若仍出现新的「多真相」类缺陷、或发生「修 A 坏 B」横切回归 ≥2 次、或
@@ -185,4 +188,21 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   超上限 fail loud + warning + argv 隔离 + 布局函数单元测试）；cargo test 852/0；
   clippy 零警告；C Shadow 636 / C++ Shadow 100 均 0 非预期差异（lc_22/lc_977 回归通过）。
   行为变化如实入 CHANGELOG：全局数据 >60 KB（旧可静默放行）现编译失败。
-  下一批：E1（C23 lexer/typeck 级 + B 档快赢）。
+- **R1 已提交（`47061c9`）**
+- **E1 已完成（2026-09-11，未提交待确认）**：C23 lexer/typeck 级全项落地——
+  `0b` 二进制、`'` 数字分隔符、`u8""` 字符串、`alignof`/`_Alignof`、`typeof_unqual`、
+  `enum : T`（含 64 位成员常量）；B 档快赢全项——字符串拼接（C89）、`long long`
+  位运算（新增 7 个 64 位 opcode，E3048 销项）、`limits.h` 全宏 + `ULLONG_MAX`
+  u64 承载、科学计数法字面量（`float.h` 病根，比计划记录的更深一层：C89 基础
+  能力缺失）、`va_copy`、`__func__`。**两处超出计划的语义修正**（探针实测暴露）：
+  ① 无后缀浮点字面量 double 化（C 标准；原 float 建模致 DBL_MIN 下溢为 0 +
+  typeck/codegen 位宽错位损坏二元浮点结果）；② 浮点比较 epsilon 容差 → IEEE
+  精确（原容差使 `0.1+0.2==0.3` 判真，与 Clang golden 矛盾）。暴露并建档两项
+  预存差异：struct packed 布局、指针 4 字节模型（spec §2.10）。验收线全绿：
+  12 个 baseline 用例 Clang golden 全 match、探针 13/13、cargo test 856/0、
+  clippy 零警告、C Shadow 648（636+12）0 非预期、C++ Shadow 0 非预期、serve
+  冒烟通过。下一批：R2（会话收口）。
+- **C# 教学子集前端立项（2026-09-11，v3 定稿）**：SharpTutor 诉求锚定，计划落
+  `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
+  含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
+  C/C++" → C/C++ 主轴 + C# 教学子集）待定位主计划同步声明。

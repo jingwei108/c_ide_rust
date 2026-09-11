@@ -225,6 +225,55 @@ impl CideVM {
                     self.push((a >> b) as u64);
                 }
             }
+            // E1 B 档：64 位位运算（long long / unsigned long long）。
+            // 栈值本就是 u64 位模式：与/或/异或按位组合与符号性无关；
+            // 算术右移按 i64 解释，逻辑右移按 u64。
+            OpCode::BitAndQ => {
+                let b = self.pop();
+                let a = self.pop();
+                self.push(a & b);
+            }
+            OpCode::BitOrQ => {
+                let b = self.pop();
+                let a = self.pop();
+                self.push(a | b);
+            }
+            OpCode::BitXorQ => {
+                let b = self.pop();
+                let a = self.pop();
+                self.push(a ^ b);
+            }
+            OpCode::BitNotQ => {
+                let a = self.pop();
+                self.push(!a);
+            }
+            OpCode::ShlQ => {
+                let b = self.pop() as i64;
+                let a = self.pop();
+                if !(0..64).contains(&b) {
+                    self.trap(&format!("Shl 移位量越界：{}（必须是 0~63）", b), loc);
+                } else {
+                    self.push(a << b);
+                }
+            }
+            OpCode::ShrQ => {
+                let b = self.pop() as i64;
+                let a = self.pop() as i64;
+                if !(0..64).contains(&b) {
+                    self.trap(&format!("Shr 移位量越界：{}（必须是 0~63）", b), loc);
+                } else {
+                    self.push((a >> b) as u64);
+                }
+            }
+            OpCode::LShrQ => {
+                let b = self.pop() as i64;
+                let a = self.pop();
+                if !(0..64).contains(&b) {
+                    self.trap(&format!("LShr 移位量越界：{}（必须是 0~63）", b), loc);
+                } else {
+                    self.push(a >> b);
+                }
+            }
             _ => {}
         }
     }

@@ -55,6 +55,18 @@ impl TypeChecker {
                     }
                 }
             }
+            if name == "__func__" {
+                // C99 __func__（E1 B 档）：预定义标识符，按 const char 数组定型
+                //（退化语义与字符串字面量一致）；值由 codegen 发射当前函数名
+                return Type::Array {
+                    element: Box::new(Type::char()),
+                    array_size: name.len() as i32, // 名字长度运行期才定，占位即可
+                    dims: vec![name.len() as i32],
+                    is_const: true,
+                    is_vla: false,
+                    vla_dims: Vec::new(),
+                };
+            }
             self.report_error(&format!("未声明的变量 '{}'", name), &loc, ErrorCode::E3023_UndeclaredVar);
             Type::int()
         };

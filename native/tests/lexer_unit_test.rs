@@ -374,3 +374,48 @@ fn test_lexer_cpp_line_comment() {
     assert_eq!(tokens[1], (TokenType::Identifier, "x".to_string()));
     assert_eq!(tokens[2], (TokenType::Semicolon, ";".to_string()));
 }
+
+// ── E1（C23/C89）：数字字面量与 u8 字符串 ──
+
+fn lex_numbers(src: &str) -> Vec<(String, String)> {
+    let (tokens, errors) = Lexer::new(src).tokenize();
+    assert!(errors.is_empty(), "lexer errors: {:?}", errors);
+    tokens
+        .into_iter()
+        .filter(|t| matches!(t.ty, TokenType::Number | TokenType::LongLiteral | TokenType::UnsignedLiteral | TokenType::FloatLiteral))
+        .map(|t| (format!("{:?}", t.ty), t.text))
+        .collect()
+}
+
+#[test]
+fn test_lexer_c23_binary_literal() {
+    let toks = lex_numbers("int a = 0b1010; int b = 0B11111111;");
+    assert!(toks.contains(&("Number".to_string(), "10".to_string())));
+    assert!(toks.contains(&("Number".to_string(), "255".to_string())));
+}
+
+#[test]
+fn test_lexer_c23_digit_separators() {
+    let toks = lex_numbers("int m = 1'000'000; int h = 0x1'0000; int b = 0b1010'0000;");
+    assert!(toks.contains(&("Number".to_string(), "1000000".to_string())));
+    assert!(toks.contains(&("Number".to_string(), "65536".to_string())));
+    assert!(toks.contains(&("Number".to_string(), "160".to_string())));
+}
+
+#[test]
+fn test_lexer_c89_scientific_notation() {
+    let toks = lex_numbers("double a = 2.2e-16; double b = 1e5; double c = 1.5E+3; double d = 3.f;");
+    assert!(toks.iter().any(|(_, t)| t == "2.2e-16"), "got {:?}", toks);
+    assert!(toks.iter().any(|(_, t)| t == "1e5"), "got {:?}", toks);
+    assert!(toks.iter().any(|(_, t)| t == "1.5E+3"), "got {:?}", toks);
+}
+
+#[test]
+fn test_lexer_u8_string_prefix() {
+    let src = "u8".to_string() + "\"" + "hi" + "\"";
+    let (tokens, errors) = Lexer::new(&src).tokenize();
+    assert!(errors.is_empty(), "errors: {:?}", errors);
+    let strings: Vec<_> = tokens.into_iter().filter(|t| t.ty == TokenType::String).collect();
+    assert_eq!(strings.len(), 1);
+    assert_eq!(strings[0].text, "hi");
+}

@@ -537,8 +537,26 @@ impl Parser {
             enum_name = self.current().text.clone();
             self.advance();
         }
+        // C23 enum : T 底层类型（E1）：`enum E : unsigned char { ... }`。
+        // 枚举成员与类型名都按 T 处理（sizeof(enum E) = sizeof(T)）。
+        let mut underlying = Type::int();
+        if self.match_token(TokenType::Colon) {
+            underlying = self.parse_base_type();
+            if !matches!(
+                underlying.kind(),
+                cide_ast::TypeKind::Int | cide_ast::TypeKind::Char | cide_ast::TypeKind::LongLong
+            ) {
+                self.errors.push(ParseError {
+                    message: "enum 底层类型必须是整数类型（int / char / long long 及其 unsigned 变体）".to_string(),
+                    line: loc.line,
+                    column: loc.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                underlying = Type::int();
+            }
+        }
         self.consume(TokenType::LBrace, "enum 后预期 '{'");
-        let mut next_value = 0;
+        let mut next_value: i64 = 0;
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
             if self.match_token(TokenType::Assign) {
@@ -546,7 +564,7 @@ impl Parser {
                 // F-P0-3：此前仅匹配裸 Literal，`NEG = -1`（Unary）、`BIG = 1+2`
                 // （Binary）静默保持旧值（输出 0 1 2 而非 -1 0 3）
                 match eval_enum_const(&val_expr) {
-                    Some(v) => next_value = v as i32,
+                    Some(v) => next_value = v,
                     None => {
                         self.errors.push(ParseError {
                             message: "enum 初始化器必须是编译期整数常量（支持负数与四则/位运算）".to_string(),
@@ -563,16 +581,33 @@ impl Parser {
                     column: loc.column,
                     file_id: 0,
                 },
-                ty: Type::int(),
+                // E1：成员常量超 i32（enum Big : long long）按 LongLiteral 存储
+                ty: if next_value >= i32::MIN as i64 && next_value <= i32::MAX as i64 {
+                    Type::int()
+                } else {
+                    underlying.clone()
+                },
                 name: member_tok.text,
-                init: Some(Expr::Literal {
-                    value: next_value,
-                    loc: SourceLoc {
-                        line: member_tok.line,
-                        column: member_tok.column,
-                        file_id: 0,
-                    },
-                    ty: Type::int(),
+                init: Some(if next_value >= i32::MIN as i64 && next_value <= i32::MAX as i64 {
+                    Expr::Literal {
+                        value: next_value as i32,
+                        loc: SourceLoc {
+                            line: member_tok.line,
+                            column: member_tok.column,
+                            file_id: 0,
+                        },
+                        ty: Type::int(),
+                    }
+                } else {
+                    Expr::LongLiteral {
+                        value: next_value,
+                        loc: SourceLoc {
+                            line: member_tok.line,
+                            column: member_tok.column,
+                            file_id: 0,
+                        },
+                        ty: Type::long_long(),
+                    }
                 }),
                 is_static: false,
                 is_extern: false,
@@ -588,7 +623,7 @@ impl Parser {
         self.consume(TokenType::Semicolon, "typedef 后预期 ';'");
         self.typedef_names.insert(alias_tok.text, Type::int());
         if !enum_name.is_empty() {
-            self.typedef_names.insert(enum_name, Type::int());
+            self.typedef_names.insert(enum_name, underlying);
         }
     }
     pub(crate) fn parse_func_decl(&mut self, is_static: bool, is_extern: bool) -> FuncDecl {
@@ -682,8 +717,26 @@ impl Parser {
             enum_name = self.current().text.clone();
             self.advance();
         }
+        // C23 enum : T 底层类型（E1）：`enum E : unsigned char { ... }`。
+        // 枚举成员与类型名都按 T 处理（sizeof(enum E) = sizeof(T)）。
+        let mut underlying = Type::int();
+        if self.match_token(TokenType::Colon) {
+            underlying = self.parse_base_type();
+            if !matches!(
+                underlying.kind(),
+                cide_ast::TypeKind::Int | cide_ast::TypeKind::Char | cide_ast::TypeKind::LongLong
+            ) {
+                self.errors.push(ParseError {
+                    message: "enum 底层类型必须是整数类型（int / char / long long 及其 unsigned 变体）".to_string(),
+                    line: loc.line,
+                    column: loc.column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+                underlying = Type::int();
+            }
+        }
         self.consume(TokenType::LBrace, "enum 后预期 '{'");
-        let mut next_value = 0;
+        let mut next_value: i64 = 0;
         while !self.check(TokenType::RBrace) && !self.is_at_end() {
             let member_tok = self.consume(TokenType::Identifier, "enum 成员预期标识符").clone();
             if self.match_token(TokenType::Assign) {
@@ -691,7 +744,7 @@ impl Parser {
                 // F-P0-3：此前仅匹配裸 Literal，`NEG = -1`（Unary）、`BIG = 1+2`
                 // （Binary）静默保持旧值（输出 0 1 2 而非 -1 0 3）
                 match eval_enum_const(&val_expr) {
-                    Some(v) => next_value = v as i32,
+                    Some(v) => next_value = v,
                     None => {
                         self.errors.push(ParseError {
                             message: "enum 初始化器必须是编译期整数常量（支持负数与四则/位运算）".to_string(),
@@ -708,16 +761,33 @@ impl Parser {
                     column: loc.column,
                     file_id: 0,
                 },
-                ty: Type::int(),
+                // E1：成员常量超 i32（enum Big : long long）按 LongLiteral 存储
+                ty: if next_value >= i32::MIN as i64 && next_value <= i32::MAX as i64 {
+                    Type::int()
+                } else {
+                    underlying.clone()
+                },
                 name: member_tok.text,
-                init: Some(Expr::Literal {
-                    value: next_value,
-                    loc: SourceLoc {
-                        line: member_tok.line,
-                        column: member_tok.column,
-                        file_id: 0,
-                    },
-                    ty: Type::int(),
+                init: Some(if next_value >= i32::MIN as i64 && next_value <= i32::MAX as i64 {
+                    Expr::Literal {
+                        value: next_value as i32,
+                        loc: SourceLoc {
+                            line: member_tok.line,
+                            column: member_tok.column,
+                            file_id: 0,
+                        },
+                        ty: Type::int(),
+                    }
+                } else {
+                    Expr::LongLiteral {
+                        value: next_value,
+                        loc: SourceLoc {
+                            line: member_tok.line,
+                            column: member_tok.column,
+                            file_id: 0,
+                        },
+                        ty: Type::long_long(),
+                    }
                 }),
                 is_static: false,
                 is_extern: false,
@@ -731,7 +801,7 @@ impl Parser {
         self.consume(TokenType::RBrace, "enum 成员后预期 '}'");
         self.consume(TokenType::Semicolon, "enum 声明后预期 ';'");
         if !enum_name.is_empty() {
-            self.typedef_names.insert(enum_name, Type::int());
+            self.typedef_names.insert(enum_name, underlying);
         }
     }
 }

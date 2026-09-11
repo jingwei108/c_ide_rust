@@ -298,7 +298,13 @@ impl Parser {
         }
         if self.check(TokenType::Identifier) {
             let name = &self.current().text;
-            if name == "typeof" || name == "__typeof__" || name == "__typeof" {
+            if name == "typeof"
+                || name == "__typeof__"
+                || name == "__typeof"
+                || name == "typeof_unqual"
+                || name == "__typeof_unqual__"
+                || name == "__typeof_unqual"
+            {
                 return true;
             }
             return self.typedef_names.contains_key(name);
@@ -353,6 +359,12 @@ impl Parser {
                     if self.check(TokenType::Identifier) {
                         self.advance();
                     }
+                    // C23 enum : T：底层类型子句不改变"是否 enum 定义"的判定
+                    if self.check(TokenType::Colon) {
+                        while !self.is_at_end() && !self.check(TokenType::LBrace) && !self.check(TokenType::Semicolon) {
+                            self.advance();
+                        }
+                    }
                     if self.check(TokenType::LBrace) {
                         self.pos = checkpoint;
                         self.errors.truncate(errors_checkpoint);
@@ -371,6 +383,12 @@ impl Parser {
                 self.advance();
                 if self.check(TokenType::Identifier) {
                     self.advance();
+                }
+                // C23 enum : T：底层类型子句不改变"是否 enum 定义"的判定
+                if self.check(TokenType::Colon) {
+                    while !self.is_at_end() && !self.check(TokenType::LBrace) && !self.check(TokenType::Semicolon) {
+                        self.advance();
+                    }
                 }
                 let is_enum_decl = self.check(TokenType::LBrace);
                 self.pos = checkpoint;

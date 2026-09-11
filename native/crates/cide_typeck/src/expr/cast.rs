@@ -22,6 +22,16 @@ impl TypeChecker {
         ty.clone()
     }
 
+    /// C23 alignof（E1）：结果为 int；对齐值由 codegen 的 type_align 计算
+    ///（typeck 只需解析操作数类型并定型）。
+    pub(crate) fn resolve_alignof(&mut self, operand: &mut Option<Box<Expr>>, _loc: &SourceLoc, ty: &mut Type) -> Type {
+        if let Some(ref mut op) = operand {
+            self.resolve_expr_type(op);
+        }
+        *ty = Type::int();
+        ty.clone()
+    }
+
     pub(crate) fn resolve_cast(
         &mut self,
         expr_inner: &mut Expr,

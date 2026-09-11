@@ -4049,10 +4049,15 @@ int main() {
     );
 }
 
-// ── Float/double epsilon comparison tests ──
+// ── Float/double 比较语义测试（E1 更替：epsilon 容差 → IEEE 精确）──
+//
+// E1（C23 锚定）将 double/float 比较从 epsilon 容差（1e-6）改为 IEEE 754 精确
+// 语义：原容差使 `0.1 + 0.2 == 0.3` 判真，与 C 标准（Clang golden 实测为 0）
+// 直接矛盾，而浮点精确性正是浮点教学的核心一课。IEEE 754 算术是确定性的，
+// 与宿主编译器逐位一致，容差没有存在依据。以下断言与 Clang 行为逐项对齐。
 
 #[test]
-fn test_e2e_double_epsilon_equality() {
+fn test_e2e_double_exact_equality() {
     let src = r#"
 #include <stdio.h>
 int main() {
@@ -4060,18 +4065,19 @@ int main() {
     double b = 0.2;
     double c = a + b;
     printf("%d\n", c == 0.3);
+    printf("%d\n", 0.5 == 0.5);
     return 0;
 }
 "#;
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = output;
-    assert_eq!(out.join(""), "1", "0.1 + 0.2 == 0.3 should be true with epsilon");
+    // IEEE 精确：0.1+0.2 的位模式 != 0.3（Clang 实测一致）
+    assert_eq!(output.join(""), "01", "0.1+0.2 == 0.3 为假（精确语义），0.5 == 0.5 为真");
 }
 
 #[test]
-fn test_e2e_double_epsilon_inequality() {
+fn test_e2e_double_exact_inequality() {
     let src = r#"
 #include <stdio.h>
 int main() {
@@ -4085,12 +4091,11 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = output;
-    assert_eq!(out.join(""), "0", "0.1 + 0.2 != 0.3 should be false with epsilon");
+    assert_eq!(output.join(""), "1", "0.1 + 0.2 != 0.3 应为真（IEEE 精确语义）");
 }
 
 #[test]
-fn test_e2e_double_epsilon_relational() {
+fn test_e2e_double_exact_relational() {
     let src = r#"
 #include <stdio.h>
 int main() {
@@ -4107,17 +4112,12 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = output;
-    // With epsilon: <= true, >= true, > false, < false
-    assert_eq!(
-        out.join(""),
-        "1100",
-        "0.1+0.3 relational with epsilon: <= and >= true, > and < false"
-    );
+    // c = 0.30000000000000004 > 0.3：<= 假、>= 真、> 真、< 假（与 Clang 一致）
+    assert_eq!(output.join(""), "0110", "精确语义下 c 略大于 0.3");
 }
 
 #[test]
-fn test_e2e_float_epsilon_equality() {
+fn test_e2e_float_exact_equality() {
     let src = r#"
 #include <stdio.h>
 int main() {
@@ -4130,13 +4130,12 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = output;
-    // diff ~9.7e-8 < EPS_F32 (1e-6) => should be true
-    assert_eq!(out.join(""), "1", "Nearby floats should be equal with epsilon");
+    // 两值相差约 6~7 个 f32 ULP，精确比较为假（与 Clang 一致）
+    assert_eq!(output.join(""), "0", "相邻但不同的 float 精确比较为假");
 }
 
 #[test]
-fn test_e2e_float_epsilon_inequality() {
+fn test_e2e_float_exact_inequality() {
     let src = r#"
 #include <stdio.h>
 int main() {
@@ -4149,12 +4148,11 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = output;
-    assert_eq!(out.join(""), "0", "Nearby floats should not be unequal with epsilon");
+    assert_eq!(output.join(""), "1", "相邻但不同的 float 精确不等为真");
 }
 
 #[test]
-fn test_e2e_float_epsilon_relational() {
+fn test_e2e_float_exact_relational() {
     let src = r#"
 #include <stdio.h>
 int main() {
@@ -4170,9 +4168,7 @@ int main() {
     let result = compile_and_run(src);
     assert!(result.is_ok(), "Compile/run failed: {:?}", result);
     let (_, output) = result.unwrap();
-    let out = output;
-    // With epsilon: <= true, >= true, > false, < false
-    assert_eq!(out.join(""), "1100", "Nearby float relational with epsilon");
+    assert_eq!(output.join(""), "1001", "x < y 精确成立");
 }
 
 #[test]

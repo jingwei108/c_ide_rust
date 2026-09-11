@@ -822,6 +822,56 @@ impl BytecodeGen {
         compute_type_size(ty, &self.struct_defs, &self.union_defs, &self.class_sizes)
     }
 
+    /// C23 alignof（E1）：类型的自然对齐。
+    /// 口径说明：Cide 的 struct/union 布局是 packed（无对齐填充，sizeof/offsetof
+    /// 与 Clang 存在既有差异），本函数按"成员最大自然对齐"取值（即 Clang 的
+    /// _Alignof 口径）；该差异已记录于 AGENTS.md 已知差异清单。
+    fn type_align(&self, ty: &Type) -> i32 {
+        let mut visiting = HashSet::new();
+        Self::type_align_impl(ty, &self.struct_defs, &self.union_defs, &mut visiting)
+    }
+
+    fn type_align_impl(
+        ty: &Type,
+        struct_defs: &HashMap<String, Vec<StructField>>,
+        union_defs: &HashMap<String, Vec<StructField>>,
+        visiting: &mut HashSet<String>,
+    ) -> i32 {
+        match ty.kind() {
+            TypeKind::Char => 1,
+            TypeKind::Double | TypeKind::LongLong => 8,
+            TypeKind::Array => {
+                if ty.is_vla() {
+                    return 4; // VLA 变量本体按指针存储
+                }
+                Self::type_align_impl(base_element_type(ty), struct_defs, union_defs, visiting)
+            }
+            TypeKind::Struct | TypeKind::Union => {
+                let name = ty.name().to_string();
+                if !visiting.insert(name.clone()) {
+                    return 1; // 自含 struct（T-P0-8 同源环）：兜底最小对齐防递归
+                }
+                let fields = if ty.kind() == TypeKind::Struct {
+                    struct_defs.get(&name)
+                } else {
+                    union_defs.get(&name)
+                };
+                let align = fields
+                    .map(|f| {
+                        f.iter()
+                            .map(|field| Self::type_align_impl(&field.ty, struct_defs, union_defs, visiting))
+                            .max()
+                            .unwrap_or(1)
+                    })
+                    .unwrap_or(4);
+                visiting.remove(&name);
+                align
+            }
+            TypeKind::Class => 4, // 类布局无字段对齐表（class_sizes 仅尺寸），按指针对齐兜底
+            _ => 4,               // Int/Float/Pointer/Function/Reference 等
+        }
+    }
+
     // =====================================================================
     // Statement / Expression dispatch
     // =====================================================================

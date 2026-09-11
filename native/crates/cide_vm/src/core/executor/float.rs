@@ -39,35 +39,37 @@ impl CideVM {
                 let r = -a;
                 self.push(r.to_bits() as u64);
             }
+            // E1（C23 锚定）：float 比较同改 IEEE 精确语义（与 EqD 同理，
+            // IEEE 754 运算确定性，容差与 Clang golden 矛盾）
             OpCode::EqF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(if (a - b).abs() < EPS_F32 { 1 } else { 0 });
+                self.push(if a == b { 1 } else { 0 });
             }
             OpCode::NeF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(if (a - b).abs() >= EPS_F32 { 1 } else { 0 });
+                self.push(if a != b { 1 } else { 0 });
             }
             OpCode::LtF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(if a < b && (a - b).abs() >= EPS_F32 { 1 } else { 0 });
+                self.push(if a < b { 1 } else { 0 });
             }
             OpCode::LeF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(if a <= b || (a - b).abs() < EPS_F32 { 1 } else { 0 });
+                self.push(if a <= b { 1 } else { 0 });
             }
             OpCode::GtF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(if a > b && (a - b).abs() >= EPS_F32 { 1 } else { 0 });
+                self.push(if a > b { 1 } else { 0 });
             }
             OpCode::GeF => {
                 let b = f32::from_bits(self.pop() as u32);
                 let a = f32::from_bits(self.pop() as u32);
-                self.push(if a >= b || (a - b).abs() < EPS_F32 { 1 } else { 0 });
+                self.push(if a >= b { 1 } else { 0 });
             }
             OpCode::CastI2F => {
                 let a = self.pop() as i32;
@@ -137,35 +139,39 @@ impl CideVM {
                 let a = f64::from_bits(self.pop());
                 self.push((a as f32).to_bits() as u64);
             }
+            // E1（C23 锚定）：double 比较改为 IEEE 精确语义。原 epsilon 容差
+            //（1e-6）使 `0.1 + 0.2 == 0.3` 判真，与 C 标准和 Clang golden 直接
+            // 矛盾——浮点精确性正是浮点教学的核心一课。IEEE 754 算术是确定性
+            // 的，与宿主编译器逐位一致，无需容差。
             OpCode::EqD => {
                 let b = f64::from_bits(self.pop());
                 let a = f64::from_bits(self.pop());
-                self.push(if (a - b).abs() < EPS_F64 { 1 } else { 0 });
+                self.push(if a == b { 1 } else { 0 });
             }
             OpCode::NeD => {
                 let b = f64::from_bits(self.pop());
                 let a = f64::from_bits(self.pop());
-                self.push(if (a - b).abs() >= EPS_F64 { 1 } else { 0 });
+                self.push(if a != b { 1 } else { 0 });
             }
             OpCode::LtD => {
                 let b = f64::from_bits(self.pop());
                 let a = f64::from_bits(self.pop());
-                self.push(if a < b && (a - b).abs() >= EPS_F64 { 1 } else { 0 });
+                self.push(if a < b { 1 } else { 0 });
             }
             OpCode::LeD => {
                 let b = f64::from_bits(self.pop());
                 let a = f64::from_bits(self.pop());
-                self.push(if a <= b || (a - b).abs() < EPS_F64 { 1 } else { 0 });
+                self.push(if a <= b { 1 } else { 0 });
             }
             OpCode::GtD => {
                 let b = f64::from_bits(self.pop());
                 let a = f64::from_bits(self.pop());
-                self.push(if a > b && (a - b).abs() >= EPS_F64 { 1 } else { 0 });
+                self.push(if a > b { 1 } else { 0 });
             }
             OpCode::GeD => {
                 let b = f64::from_bits(self.pop());
                 let a = f64::from_bits(self.pop());
-                self.push(if a >= b || (a - b).abs() < EPS_F64 { 1 } else { 0 });
+                self.push(if a >= b { 1 } else { 0 });
             }
             _ => {}
         }

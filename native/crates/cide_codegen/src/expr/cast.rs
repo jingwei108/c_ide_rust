@@ -113,6 +113,22 @@ pub(crate) fn gen_sizeof_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
     }
 }
 
+/// C23 alignof（E1）：对齐值由 [`BytecodeGen::type_align`] 计算（VLA 本体按
+/// 指针 4 字节对齐，无 sizeof 的 VLA 维度展开特例）。
+pub(crate) fn gen_alignof_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
+    let loc = *expr.loc();
+    if let Expr::Alignof { target_type, operand, .. } = expr {
+        let align = if let Some(ref t) = target_type {
+            gen.type_align(t)
+        } else if let Some(ref op) = operand {
+            gen.type_align(op.ty())
+        } else {
+            4
+        };
+        gen.emit(OpCode::PushConst, align, &loc);
+    }
+}
+
 pub(crate) fn gen_offsetof_expr(gen: &mut BytecodeGen, expr: &mut Expr) {
     let loc = *expr.loc();
     if let Expr::Offsetof { target_type, field, .. } = expr {

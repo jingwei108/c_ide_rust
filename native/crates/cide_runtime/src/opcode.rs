@@ -145,5 +145,13 @@ define_opcode! {
     PushArgc = 127,
     PushArgv = 128,
     TrapBoundsVla = 129,
+    // E1 B 档：long long 位运算（64 位变体）
+    BitAndQ = 130,
+    BitOrQ = 131,
+    BitXorQ = 132,
     CallVar = 133,
+    BitNotQ = 134,
+    ShlQ = 135,
+    ShrQ = 136,
+    LShrQ = 137,
 }

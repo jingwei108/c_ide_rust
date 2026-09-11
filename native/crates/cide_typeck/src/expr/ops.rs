@@ -85,14 +85,20 @@ impl TypeChecker {
                 Type::int()
             }
             BinaryOp::BitAnd | BinaryOp::BitOr | BinaryOp::BitXor => {
-                if !self.is_int(&left_type) || !self.is_int(&right_type) {
-                    self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3048_BitOpTypeError);
+                // E1 B 档：放行 long long（E3048 半成品缺陷——typeck 拒绝但算术族
+                // 已有 Q 系列，属系统性误拒的一半）
+                if !self.is_int(&left_type) && !matches!(left_type.kind(), TypeKind::LongLong)
+                    || !self.is_int(&right_type) && !matches!(right_type.kind(), TypeKind::LongLong)
+                {
+                    self.report_error("位运算要求两边都是整数类型", loc, ErrorCode::E3048_BitOpTypeError);
                 }
                 super::promote_type(&left_type, &right_type)
             }
             BinaryOp::Shl | BinaryOp::Shr => {
-                if !self.is_int(&left_type) || !self.is_int(&right_type) {
-                    self.report_error("位运算要求两边都是 int 类型", loc, ErrorCode::E3048_BitOpTypeError);
+                if !self.is_int(&left_type) && !matches!(left_type.kind(), TypeKind::LongLong)
+                    || !self.is_int(&right_type) && !matches!(right_type.kind(), TypeKind::LongLong)
+                {
+                    self.report_error("位运算要求两边都是整数类型", loc, ErrorCode::E3048_BitOpTypeError);
                 }
                 // Result type is the promoted left operand type (C semantics)
                 if left_type.kind() == TypeKind::Char {
@@ -177,10 +183,15 @@ impl TypeChecker {
                 Type::int()
             }
             UnaryOp::BitNot => {
-                if !self.is_int(&operand_type) {
-                    self.report_error("按位取反要求操作数是 int 类型", loc, ErrorCode::E3020_UnaryTypeError);
+                // E1 B 档：放行 long long（同 E3048 半成品缺陷）；结果随操作数宽度
+                if !self.is_int(&operand_type) && !matches!(operand_type.kind(), TypeKind::LongLong) {
+                    self.report_error("按位取反要求操作数是整数类型", loc, ErrorCode::E3020_UnaryTypeError);
                 }
-                Type::int()
+                if matches!(operand_type.kind(), TypeKind::LongLong) {
+                    operand_type.clone()
+                } else {
+                    Type::int()
+                }
             }
             UnaryOp::Addr => Type::pointer_to(operand_type.clone()),
             UnaryOp::Deref => {

@@ -219,7 +219,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 **语句**：变量声明（含多变量、块作用域）、`if/else`、`while`、`do...while`、`for`（C99 风格变量声明）、`switch/case/default`、`break`、`continue`、`return`
 
-**表达式**：算术、比较、逻辑（短路求值）、位运算 `& | ^ ~ << >>`、赋值（含复合赋值；指针支持 `+=` / `-=` 整数，按 pointee 大小缩放，`void*` 按 1 字节扩展）、三目运算符 `?:`、**`_Generic` 泛型选择（C11）**、数组索引、函数调用、`&`、`*`、结构体访问 `.` / `->`、`++` / `--`、`sizeof`
+**表达式**：算术、比较、逻辑（短路求值）、位运算 `& | ^ ~ << >>`（含 `long long` 64 位变体）、赋值（含复合赋值；指针支持 `+=` / `-=` 整数，按 pointee 大小缩放，`void*` 按 1 字节扩展）、三目运算符 `?:`、**`_Generic` 泛型选择（C11）**、数组索引、函数调用、`&`、`*`、结构体访问 `.` / `->`、`++` / `--`、`sizeof`、**`_Alignof` / `alignof`（C11/C23）**、**`0b` 二进制字面量与 `'` 数字分隔符（C23）**、**相邻字符串字面量拼接（C89）**、**科学计数法浮点字面量 `1.5e-3`（C89）**
 
 **函数**：定义/调用/递归/前向声明、**函数按值返回结构体**（Hidden Return Pointer ABI）
 
@@ -231,17 +231,17 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 **数学**：`sin`/`cos`/`tan`/`sqrt`/`pow`/`atan`/`log`/`log10`/`exp`/`fabs`/`abs`/`ceil`/`floor`/`round`/`fmod`（通过 `libm`，`double` 精度）
 
-**类型系统**：`typedef`、`sizeof`、`const`、`static`（局部+全局+函数）、`extern`、`volatile`、`restrict`、`inline`、`register`、`auto`
+**类型系统**：`typedef`、`sizeof`、`const`、`static`（局部+全局+函数）、`extern`、`volatile`、`restrict`、`inline`、`register`、`auto`、**`typeof` / `typeof_unqual`（GCC/C23）**、**`enum E : T` 底层类型（C23）**
 
 **头文件**：`#include <stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 加载存根声明
 
-**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`，支持 `int`/`double`/`long long` 等类型）
+**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
 
 **字符分类**：`isdigit`/`isalpha`/`islower`/`isupper`/`isalnum`/`isspace`/`isprint`/`iscntrl`/`isxdigit`/`tolower`/`toupper`（`ctype.h`，部分走 Bytecode Libc 路径）
 
 **C++ 类与模板（Phase 31+）**：`class`、成员访问控制、`this` 指针、虚函数、模板类单态化、栈对象 RAII（自动构造/析构）、构造函数初始化语法 `Type name(args);`、隐式默认构造/移动构造、`std::move`、简化版 `unique_ptr<T>` dogfooding（构造/`get`/`release`/`reset`/析构/所有权转移）
 
-**明确不支持**：bitfield、全局 VLA、完整预处理器（仅 `#define` 常量宏 + `#include` 标准库存根）
+**明确不支持**：bitfield、全局 VLA、完整预处理器（仅 `#define` 常量宏 + `#include` 标准库存根）。C23 锚定的完整支持清单与已知差异（浮点字面量 double 语义、IEEE 精确比较、struct packed 布局、指针 4 字节模型）见 `C_SUBSET_SPEC.md` §2.10
 
 **C++ 子集边界（诚实记录）**：`cide_vec<T>` / `cide_list<T>` 已支持类类型模板实参；`const T&` 参数已支持绑定到字面量、变量与表达式右值；**默认参数**、**嵌套类 `Outer::Inner` 实例化**、**类模板非类型模板参数（NTTP，如 `Array<int, 5>`）**、**自定义拷贝构造函数（`Class(const Class&)`）** 已支持；函数模板显式 `<>` 调用等特性暂不支持（2026-06-26 记录）。这些限制在 Cide C++ 教学子集当前 Stage 0~6 范围内尚未覆盖，后续按教学需求逐步扩展。
 

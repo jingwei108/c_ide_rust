@@ -19,7 +19,7 @@ pub use crate::jit_templates::{execute_trace_bulk, CompiledTrace};
 pub use crate::jit_trace::{JitStats, TraceRecorder, JIT_THRESHOLD};
 pub use crate::opcode::OpCode;
 pub use cide_runtime::VisEventData;
-pub use state::{FuncMeta, VMSymbol, EPS_F32, EPS_F64};
+pub use state::{FuncMeta, VMSymbol};
 pub use std::sync::Arc;
 
 pub mod executor;

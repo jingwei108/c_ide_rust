@@ -13,13 +13,6 @@ pub use cide_runtime::{
     GLOBAL_START, HEAP_START, MAX_STACK_DEPTH, MEM_SIZE, NULL_TRAP_SIZE, SNAPSHOT_INTERVAL, STACK_START,
 };
 
-/// Epsilon for approximate float comparison (f32).
-pub const EPS_F32: f32 = 1e-6;
-/// Epsilon for approximate double comparison (f64).
-/// Using 1e-6 (same as f32) because Cide's float literals default to f32
-/// and are promoted to double in contexts, leading to larger rounding deltas.
-pub const EPS_F64: f64 = 1e-6;
-
 pub use cide_runtime::{FuncMeta, Symbol as VMSymbol};
 
 #[derive(Debug, Clone)]

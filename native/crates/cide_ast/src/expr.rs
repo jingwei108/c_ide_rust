@@ -152,6 +152,15 @@ pub enum Expr {
         loc: SourceLoc,
         ty: Type,
     },
+    /// C23 `_Alignof` / `alignof`（E1）：取类型的自然对齐。
+    /// 注意：Cide 的 struct 布局是 packed（无对齐填充），本节点按"成员最大
+    /// 自然对齐"语义取值（与 Clang 口径一致），与自身布局的差异已在 spec 记录。
+    Alignof {
+        target_type: Option<Type>,
+        operand: Option<Box<Expr>>,
+        loc: SourceLoc,
+        ty: Type,
+    },
     Cast {
         expr: Box<Expr>,
         target_type: Type,
@@ -253,6 +262,7 @@ macro_rules! expr_field {
             Expr::Assign { $field, .. } => $field,
             Expr::Ternary { $field, .. } => $field,
             Expr::Sizeof { $field, .. } => $field,
+            Expr::Alignof { $field, .. } => $field,
             Expr::Cast { $field, .. } => $field,
             Expr::InitList { $field, .. } => $field,
             Expr::Offsetof { $field, .. } => $field,

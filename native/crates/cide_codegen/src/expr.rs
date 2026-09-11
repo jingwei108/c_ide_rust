@@ -53,6 +53,11 @@ impl ExprGen for BytecodeGen {
             Expr::LongLiteral { value, .. } => literal::gen_long_literal(self, *value, &loc),
             Expr::StringLiteral { value, .. } => literal::gen_string_literal(self, value, &loc),
             Expr::Identifier { name, .. } => {
+                // C99 __func__（E1 B 档）：预定义标识符 → 当前函数名字符串字面量
+                if name == "__func__" {
+                    literal::gen_string_literal(self, &self.current_func.clone(), &loc);
+                    return;
+                }
                 // Function name used as value (function pointer)
                 if let Some(&idx) = self.func_index.get(name) {
                     self.emit(OpCode::PushConst, idx, &loc);
@@ -149,6 +154,7 @@ impl ExprGen for BytecodeGen {
             Expr::Ternary { .. } => assign::gen_ternary_expr(self, expr),
             Expr::Assign { .. } => assign::gen_assign_expr(self, expr),
             Expr::Sizeof { .. } => cast::gen_sizeof_expr(self, expr),
+            Expr::Alignof { .. } => cast::gen_alignof_expr(self, expr),
             Expr::Cast { .. } => cast::gen_cast_expr(self, expr),
             Expr::InitList { .. } => {
                 self.report_error("初始化列表只能在变量声明中使用", &loc);

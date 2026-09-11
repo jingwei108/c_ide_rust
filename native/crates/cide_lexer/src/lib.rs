@@ -343,6 +343,11 @@ impl Lexer {
             }
         }
         let text: String = self.chars[start..self.pos].iter().collect();
+        // C23 u8 前缀字符串：u8"..." 直接按普通字符串字面量处理（教学子集差异：
+        // 无独立 char8_t 类型语义，已在 spec 记录）
+        if text == "u8" && self.peek(0) == '"' {
+            return self.string_literal();
+        }
         let ty = keyword::keyword_type(&text)
             .or_else(|| {
                 if self.is_cpp_mode {

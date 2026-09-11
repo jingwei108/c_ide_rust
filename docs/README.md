@@ -33,6 +33,7 @@
 | [`current/C_SUBSET_SPEC.md`](current/C_SUBSET_SPEC.md) | C 教学子集规范（支持语法 / 排除清单 / 与 Clang 的已记录差异） |
 | [`current/CPP_SUBSET_SPEC.md`](current/CPP_SUBSET_SPEC.md) | C++14 教学子集规范（面向学生/教师，含 Honest Subset 边界） |
 | [`current/CPLUSPLUS_EXTENSION_PLAN.md`](current/CPLUSPLUS_EXTENSION_PLAN.md) | C++ 子集拓展实施计划（Stage 0~6 与后续 Phase 全景） |
+| [`current/CSHARP_EXTENSION_PLAN.md`](current/CSHARP_EXTENSION_PLAN.md) | **C# 教学子集前端引入计划**（v3 定稿：ARC 降解 / 异常与栈展开 / CS0~CS6 批次；重构计划交付后启动，SharpTutor 锚定） |
 | [`current/STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md`](current/STAGE2B_CPP_CONTAINER_TEMPLATE_NOTES.md) | 内置 C++ 容器模板化迁移笔记与编译器约束 |
 
 #### 标准库与测试防线

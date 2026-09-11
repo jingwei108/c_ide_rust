@@ -5,7 +5,14 @@ impl TypeChecker {
     pub(crate) fn deduce_auto_type(&mut self, init: &Expr) -> Type {
         match init {
             Expr::Literal { .. } => Type::int(),
-            Expr::FloatLiteral { .. } => Type::float(),
+            // E1：auto 按字面量后缀定型（无后缀 double，f/F 后缀 float）
+            Expr::FloatLiteral { ty, .. } => {
+                if ty.kind() == cide_ast::TypeKind::Double {
+                    Type::double()
+                } else {
+                    Type::float()
+                }
+            }
             Expr::LongLiteral { .. } => Type::long_long(),
             Expr::StringLiteral { .. } => Type::pointer_to(Type::char()),
             Expr::Identifier { name, .. } => {

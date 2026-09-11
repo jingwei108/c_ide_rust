@@ -820,10 +820,23 @@ impl TypeChecker {
         }
     }
 
+    /// C23 typeof_unqual（E1）：剥离**顶层**限定符（const / volatile 语义在
+    /// 教学子集中仅建模 is_const）。嵌套层（如指针的 pointee）保持不变——
+    /// 这正是 typeof_unqual 与 typeof 的唯一区别。
+    pub(crate) fn strip_top_level_qualifiers(ty: &Type) -> Type {
+        let mut t = ty.clone();
+        t.set_const(false);
+        t
+    }
+
     pub(crate) fn resolve_typeof_in_type(ty: &Type, replacement: Type) -> Type {
         match ty {
-            Type::Typeof { is_const, .. } => {
+            Type::Typeof { is_const, unqual, .. } => {
                 let mut t = replacement;
+                if *unqual {
+                    // C23 typeof_unqual（E1）：剥离顶层限定符后再套 is_const
+                    t = Self::strip_top_level_qualifiers(&t);
+                }
                 t.set_const(*is_const);
                 t
             }

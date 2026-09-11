@@ -539,3 +539,13 @@ pub fn host_va_end(vm: &mut CideVM, _session: &mut VmContext<'_>) {
     let _ap_addr = vm.pop() as i32;
     // 无操作；保留函数以匹配标准接口
 }
+
+/// E1 B 档：va_copy —— 复制 va_list（本实现中即 char* 游标值）。
+/// 宏展开为 `__cide_va_copy(&dst, &src)`，参数顺序与 host_va_start 一致：先 &dst 后 &src。
+pub fn host_va_copy(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+    let dst_addr = vm.pop() as i32;
+    let src_addr = vm.pop() as i32;
+    let loc = SourceLoc::default();
+    let value = vm.load_i32(src_addr as u32, &loc);
+    vm.store_i32(dst_addr as u32, value, &loc);
+}

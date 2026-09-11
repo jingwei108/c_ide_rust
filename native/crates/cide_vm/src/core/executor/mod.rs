@@ -154,7 +154,14 @@ impl CideVM {
             | OpCode::BitNot
             | OpCode::Shl
             | OpCode::Shr
-            | OpCode::LShr => {
+            | OpCode::LShr
+            | OpCode::BitAndQ
+            | OpCode::BitOrQ
+            | OpCode::BitXorQ
+            | OpCode::BitNotQ
+            | OpCode::ShlQ
+            | OpCode::ShrQ
+            | OpCode::LShrQ => {
                 self.execute_bitwise(op, operand, loc);
             }
 

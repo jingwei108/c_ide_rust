@@ -447,6 +447,71 @@ int main() {
 
 > **反向链接**：本节隔离预算（堆上限 1/4 = 256KB）、FIFO 驱逐与"第三道墙"（region 表封顶）的完整推导、决议原文与验收用例见 [`CIDE_HEAP_QUARANTINE_DECISION.md`](CIDE_HEAP_QUARANTINE_DECISION.md)（语言中立的引擎层决议，三出口共用）。
 
+### 2.10 C23 锚定特性（E1 批次，2026-09-11）
+
+语言锚定 ISO C23（ISO/IEC 9899:2024）。E1 批次落地的 lexer/typeck 级特性：
+
+```c
+// 0b 二进制字面量（C23）
+int a = 0b1010;              // 10
+// ' 数字分隔符（C23；0x/0b/十进制内均可）
+int m = 1'000'000;
+int h = 0x1'0000;
+// u8 前缀字符串（C23）
+// 教学子集差异：无独立 char8_t 类型，按 char[] 处理（见下方差异清单）
+printf("%s", u8"hi");
+// alignof / _Alignof（C11/C23）
+int k = (int)_Alignof(double);   // 8
+int k2 = (int)alignof(int);      // 4（alignof 拼写同支持）
+// typeof_unqual（C23）：推导并剥离顶层限定符
+const int ci = 9;
+typeof_unqual(ci) x = ci + 1;    // x 为 int（非 const），可再赋值
+// enum 底层类型（C23）
+enum Small : unsigned char { S1 = 200, S2 = 255 };  // sizeof(enum Small) == 1
+enum Big : long long { B2 = 5000000000LL };          // 成员常量支持 64 位
+```
+
+E1 B 档（基础能力补齐）：
+
+```c
+// 相邻字符串字面量拼接（C89）
+char s[] = "ab" "\t" "cd";            // "ab<TAB>cd"
+// long long 位运算（原 E3048 误拒；BitAndQ/BitOrQ/BitXorQ/BitNotQ/ShlQ/ShrQ/LShrQ）
+long long x = 12;  x << 40;  x & 10;
+unsigned long long u;  u >> 60;       // 逻辑右移
+// limits.h 全宏（INT_MAX/UINT_MAX/LLONG_MIN/ULLONG_MAX/CHAR_BIT 等）
+printf("%llu", ULLONG_MAX);           // 18446744073709551615
+// float.h（依赖科学计数法字面量 2.2e-16，同批补齐）
+DBL_EPSILON;  DBL_MIN;  DBL_MAX;  FLT_DIG;
+// va_copy（stdarg.h）
+va_list ap, ap2;  va_start(ap, n);  va_copy(ap2, ap);
+// __func__ 预定义标识符（C99）
+printf("in %s", __func__);
+```
+
+**浮点字面量语义（本批修正）**：无后缀浮点字面量类型为 **double**（C 标准
+C89~C23 一致），带 `f`/`F` 后缀为 float。此前一律建模为 float，导致 `2.2e-308`
+经 f32 位模式存储下溢为 0、与 Clang 存在系统性 epsilon 偏差。
+
+**浮点比较语义（本批修正）**：double/float 比较改为 **IEEE 754 精确语义**。
+原实现带 1e-6 容差，使 `0.1 + 0.2 == 0.3` 判真——与 C 标准和 Clang golden 直接
+矛盾。教学上"浮点比较不能直接用 =="恰恰是核心一课，精确语义才是正确示范。
+
+**与 Clang 的差异（诚实记录，本批新增/暴露）**：
+
+- **struct/union 布局为 packed**（预存）：Cide 不做成员对齐填充
+  （`struct S { char c; int i; }` 的 sizeof：Cide=5，Clang Win64=8）；
+  `alignof` 按"成员最大自然对齐"取值（与 Clang 口径一致），与自身 packed
+  布局的 sizeof/offsetof 存在内部不一致。教学映射/堆可视化依赖 packed
+  布局，改动需整体评估。
+- **指针为 4 字节**（预存）：VM 指针模型 4 字节，Win64 宿主实际 8 字节
+  （`_Alignof(int*)`：Cide=4，Clang=8）。1MB 线性内存模型使 4 字节指针
+  自洽，非缺陷。
+- **数字分隔符**（C23-only 语法）在 Clang gnu17 默认模式下无法编译，
+  对应用例由词法单元测试覆盖（`lexer_unit_test.rs`），不进 Shadow baseline。
+
+---
+
 ## 3. 明确不支持的语法
 
 ### 3.1 排除清单

@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (重构批次 E1：C23 lexer/typeck 级 + B 档快赢)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 E1 批次。
+C23 锚定决议下的第一批语言能力（详细口径与差异见 `C_SUBSET_SPEC.md` §2.10）：
+
+- **C23 特性**：`0b` 二进制字面量、`'` 数字分隔符、`u8"..."` 前缀字符串（教学子集差异：
+  无独立 char8_t，按 char[] 处理）、`_Alignof`/`alignof`、`typeof_unqual`（三种拼写，
+  推导并剥离顶层限定符）、`enum E : T` 底层类型声明（`sizeof(enum E) == sizeof(T)`，
+  成员常量支持 64 位）。
+- **B 档快赢**：相邻字符串字面量拼接（C89）；`long long` 位运算全链路
+  （E3048 半成品缺陷——typeck 误拒而算术族已有 Q 系列；新增 7 个 64 位位运算
+  opcode BitAndQ/BitOrQ/BitXorQ/BitNotQ/ShlQ/ShrQ/LShrQ）；`limits.h` 全宏
+  （`ULLONG_MAX` 等 (i64::MAX, u64::MAX] 值域按 64 位位模式承载为 unsigned long long）；
+  科学计数法浮点字面量（C89 基础能力，`float.h` 的病根）；`<float.h>` 宏可用；
+  `va_copy`；`__func__` 预定义标识符。
+- **浮点字面量语义修正（行为变化，诚实记录）**：无后缀浮点字面量为 **double**
+  （C 标准），带 `f`/`F` 后缀为 float。此前一律建模 float，`2.2e-308` 经 f32 位模式
+  存储下溢为 0（DBL_MIN 打印 0），且 typeck `resolve_float_literal` 无条件返回 float
+  与 codegen `PushConstD` 位宽错位（二元浮点运算结果损坏，kr_1_3 温度转换家族
+  全部 output_gap）。
+- **浮点比较语义更替（行为变化，诚实记录）**：double/float 比较从 1e-6 epsilon
+  容差改为 **IEEE 754 精确语义**——原容差使 `0.1 + 0.2 == 0.3` 判真，与 C 标准和
+  Clang golden 矛盾（实测 clang 输出 0）。IEEE 754 运算确定性，容差无存在依据。
+  6 个固化旧语义的 `*_epsilon_*` 单元测试同步更替为精确语义断言（`*_exact_*`），
+  非粉饰：语义变更有 C 标准与 Clang 双重依据。
+- **暴露的预存差异（如实记录进 spec §2.10）**：struct/union 布局为 packed
+  （sizeof 与 Clang 不一致，alignof 口径与自身布局内部不一致）；VM 指针 4 字节
+  vs Win64 宿主 8 字节。均为预存结构特性，本批通过 alignof 用例暴露后建档。
+- **回归与验证**：新增 12 个 baseline E2E 用例（`e1_*.c`，Clang golden 全 match）+
+  5 个词法单元测试；探针 13 项全 PASS；`cargo test --workspace --all-features`
+  **856 passed / 0 failed**；clippy 零警告；C Shadow **648 用例 0 非预期差异**
+  （636 存量 + 12 新增，kr_1_3 家族等 11 例由浮点修复转绿）；C++ Shadow 0 非预期
+  差异；serve 冒烟通过。数字分隔符为 C23-only 语法（Clang gnu17 无法出 golden），
+  由词法单元测试覆盖不进 baseline。
+
 ### Changed (重构批次 R1：内存边界收口——动态堆起点 + 全局区判据单源)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R1 批次

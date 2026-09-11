@@ -98,6 +98,8 @@ pub enum Type {
     Typeof {
         expr: Box<Expr>,
         is_const: bool,
+        /// C23 typeof_unqual（E1）：推导结果需剥离顶层限定符（const 等）
+        unqual: bool,
     },
 }
 

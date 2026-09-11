@@ -91,6 +91,10 @@ impl Parser {
         }
         if self.match_token(TokenType::FloatLiteral) {
             let prev = self.previous().clone();
+            // C 标准（C89~C23 一致）：无后缀浮点字面量类型是 **double**，
+            // 带 f/F 后缀才是 float（E1：此前一律建模为 float，DBL_MIN=2.2e-308
+            // 经 f32 位模式存储下溢为 0，且与 Clang 的 epsilon 偏差源于此）
+            let has_f_suffix = prev.text.ends_with('f') || prev.text.ends_with('F');
             let text = prev.text.trim_end_matches('f').trim_end_matches('F');
             let value: f64 = text.parse().unwrap_or_else(|_| {
                 self.errors.push(ParseError {
@@ -106,7 +110,8 @@ impl Parser {
                 column: prev.column,
                 file_id: 0,
             };
-            return Expr::FloatLiteral { value, loc, ty: Type::float() };
+            let ty = if has_f_suffix { Type::float() } else { Type::double() };
+            return Expr::FloatLiteral { value, loc, ty };
         }
         if self.match_token(TokenType::CharLiteral) {
             let prev = self.previous().clone();
@@ -127,12 +132,17 @@ impl Parser {
             return Expr::Literal { value, loc, ty: Type::char() };
         }
         if self.match_token(TokenType::String) {
-            let value = self.previous().text.clone();
+            // C89 相邻字符串字面量拼接（E1 B 档）："ab" "cd" → "abcd"
+            let mut value = self.previous().text.clone();
             let loc = SourceLoc {
                 line: self.previous().line,
                 column: self.previous().column,
                 file_id: 0,
             };
+            while self.check(TokenType::String) {
+                self.advance();
+                value.push_str(&self.previous().text);
+            }
             let array_size = value.len() as i32 + 1; // including null terminator
             return Expr::StringLiteral {
                 value,

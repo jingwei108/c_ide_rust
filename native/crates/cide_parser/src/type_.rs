@@ -59,13 +59,18 @@ impl Parser {
             if self.check(TokenType::Identifier)
                 && (self.current().text == "typeof"
                     || self.current().text == "__typeof__"
-                    || self.current().text == "__typeof")
+                    || self.current().text == "__typeof"
+                    || self.current().text == "typeof_unqual"
+                    || self.current().text == "__typeof_unqual__"
+                    || self.current().text == "__typeof_unqual")
             {
+                // C23 typeof_unqual（E1）：推导结果剥离顶层限定符
+                let unqual = self.current().text.contains("unqual");
                 let _name_tok = self.advance().clone();
                 self.consume(TokenType::LParen, "typeof 后预期 '('");
                 let expr = self.parse_expression();
                 self.consume(TokenType::RParen, "typeof 预期 ')'");
-                return Type::Typeof { expr: Box::new(expr), is_const };
+                return Type::Typeof { expr: Box::new(expr), is_const, unqual };
             }
             break;
         }
@@ -136,6 +141,11 @@ impl Parser {
         } else if self.match_token(TokenType::Enum) {
             if self.check(TokenType::Identifier) {
                 let name_tok = self.advance().clone();
+                // C23 enum : T（E1）：已声明的具名 enum 返回其底层类型
+                //（sizeof(enum E) = sizeof(T)）；未声明的按 int 登记并返回。
+                if let Some(t) = self.typedef_names.get(&name_tok.text).cloned() {
+                    return t;
+                }
                 self.typedef_names.insert(name_tok.text.clone(), Type::int());
             }
             Type::int()

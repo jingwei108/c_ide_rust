@@ -163,7 +163,7 @@ impl TypeChecker {
             } => self.resolve_ternary(cond, then_branch, else_branch, loc, ty),
             Expr::Unary { op, operand, loc, ty } => self.resolve_unary(op, operand, loc, ty),
             Expr::Literal { ty, .. } => self.resolve_literal(ty),
-            Expr::FloatLiteral { .. } => self.resolve_float_literal(),
+            Expr::FloatLiteral { ty, .. } => self.resolve_float_literal(ty),
             Expr::LongLiteral { .. } => self.resolve_long_literal(),
             Expr::StringLiteral { value, ty, .. } => self.resolve_string_literal(value, ty),
             Expr::Identifier { .. } => self.resolve_identifier(expr),
@@ -173,6 +173,7 @@ impl TypeChecker {
             Expr::Member { object, member, loc, ty } => self.resolve_member(object, member, loc, ty),
             Expr::Assign { op, left, right, loc, ty } => self.resolve_assign(op, left, right, loc, ty),
             Expr::Sizeof { operand, ty, loc, .. } => self.resolve_sizeof(operand, loc, ty),
+            Expr::Alignof { operand, ty, loc, .. } => self.resolve_alignof(operand, loc, ty),
             Expr::Cast {
                 expr: inner,
                 target_type,

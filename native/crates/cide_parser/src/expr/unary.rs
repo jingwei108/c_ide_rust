@@ -5,6 +5,9 @@ impl Parser {
         if self.match_token(TokenType::Sizeof) {
             return self.parse_sizeof();
         }
+        if self.match_token(TokenType::Alignof) {
+            return self.parse_alignof();
+        }
         if self.match_token(TokenType::Offsetof) {
             return self.parse_offsetof();
         }
@@ -190,6 +193,56 @@ impl Parser {
         }
         let expr = self.parse_unary();
         Expr::Sizeof {
+            target_type: None,
+            operand: Some(Box::new(expr)),
+            loc,
+            ty: Type::int(),
+        }
+    }
+
+    /// C23 `_Alignof` / `alignof`（E1）：结构与 parse_sizeof 同构（类型名/表达式双形态）。
+    pub(crate) fn parse_alignof(&mut self) -> Expr {
+        let loc = SourceLoc {
+            line: self.previous().line,
+            column: self.previous().column,
+            file_id: 0,
+        };
+        if self.match_token(TokenType::LParen) {
+            let checkpoint = self.pos;
+            let typedef_snapshot = self.typedef_names.clone();
+            let mut is_type = false;
+            let mut t = Type::default();
+            if self.is_type_token() {
+                t = self.parse_base_type();
+                if let Some(node) = self.parse_abstract_declarator() {
+                    t = Self::interpret_declarator_node(&node, &t);
+                }
+                if self.check(TokenType::RParen) {
+                    is_type = true;
+                }
+            }
+            if is_type {
+                self.consume(TokenType::RParen, "alignof(type) 后预期 ')'");
+                return Expr::Alignof {
+                    target_type: Some(t),
+                    operand: None,
+                    loc,
+                    ty: Type::int(),
+                };
+            }
+            self.pos = checkpoint;
+            self.typedef_names = typedef_snapshot;
+            let expr = self.parse_expression();
+            self.consume(TokenType::RParen, "alignof(expr) 后预期 ')'");
+            return Expr::Alignof {
+                target_type: None,
+                operand: Some(Box::new(expr)),
+                loc,
+                ty: Type::int(),
+            };
+        }
+        let expr = self.parse_unary();
+        Expr::Alignof {
             target_type: None,
             operand: Some(Box::new(expr)),
             loc,

@@ -99,7 +99,12 @@ pub(crate) fn gen_unary(gen: &mut BytecodeGen, expr: &mut Expr) {
             }
             UnaryOp::BitNot => {
                 gen.gen_expr(operand);
-                gen.emit(OpCode::BitNot, 0, &loc);
+                // E1 B 档：long long 操作数走 64 位取反
+                if operand.ty().kind() == TypeKind::LongLong {
+                    gen.emit(OpCode::BitNotQ, 0, &loc);
+                } else {
+                    gen.emit(OpCode::BitNot, 0, &loc);
+                }
             }
             UnaryOp::Addr => {
                 match operand.as_mut() {

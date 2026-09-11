@@ -11,9 +11,15 @@ impl TypeChecker {
         }
     }
 
+    /// E1：浮点字面量类型由 parser 按后缀定型（无后缀 double / f·F 后缀 float，
+    /// C 标准）；此前无条件返回 float，与 codegen 的 PushConstD 位宽错位。
     #[allow(clippy::unused_self)]
-    pub(crate) fn resolve_float_literal(&mut self) -> Type {
-        Type::float()
+    pub(crate) fn resolve_float_literal(&mut self, ty: &Type) -> Type {
+        if ty.kind() == TypeKind::Double {
+            Type::double()
+        } else {
+            Type::float()
+        }
     }
 
     #[allow(clippy::unused_self)]

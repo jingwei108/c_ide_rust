@@ -283,12 +283,45 @@ pub(crate) fn gen_binary(
                 gen.emit(OpCode::Ge, 0, loc);
             }
         }
-        BinaryOp::BitAnd => gen.emit(OpCode::BitAnd, 0, loc),
-        BinaryOp::BitOr => gen.emit(OpCode::BitOr, 0, loc),
-        BinaryOp::BitXor => gen.emit(OpCode::BitXor, 0, loc),
-        BinaryOp::Shl => gen.emit(OpCode::Shl, 0, loc),
+        BinaryOp::BitAnd => {
+            // E1 B 档：long long 位运算走 64 位指令（Int 操作数已由上方
+            // cast_is_long_long 机制 CastI2Q 扩展）
+            if result_is_long_long {
+                gen.emit(OpCode::BitAndQ, 0, loc);
+            } else {
+                gen.emit(OpCode::BitAnd, 0, loc);
+            }
+        }
+        BinaryOp::BitOr => {
+            if result_is_long_long {
+                gen.emit(OpCode::BitOrQ, 0, loc);
+            } else {
+                gen.emit(OpCode::BitOr, 0, loc);
+            }
+        }
+        BinaryOp::BitXor => {
+            if result_is_long_long {
+                gen.emit(OpCode::BitXorQ, 0, loc);
+            } else {
+                gen.emit(OpCode::BitXor, 0, loc);
+            }
+        }
+        BinaryOp::Shl => {
+            if result_is_long_long {
+                gen.emit(OpCode::ShlQ, 0, loc);
+            } else {
+                gen.emit(OpCode::Shl, 0, loc);
+            }
+        }
         BinaryOp::Shr => {
-            if is_unsigned {
+            if result_is_long_long {
+                // unsigned long long 用逻辑右移（Type::is_unsigned 覆盖 LongLong 变体）
+                if ty.is_unsigned() {
+                    gen.emit(OpCode::LShrQ, 0, loc);
+                } else {
+                    gen.emit(OpCode::ShrQ, 0, loc);
+                }
+            } else if is_unsigned {
                 gen.emit(OpCode::LShr, 0, loc);
             } else {
                 gen.emit(OpCode::Shr, 0, loc);
