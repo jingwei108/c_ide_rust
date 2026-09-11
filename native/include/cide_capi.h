@@ -152,11 +152,31 @@ CIDE_API int cide_provide_input_line(CideSession* s, const char* line);
 
 // ========== 输出 ==========
 
-/// Get the length of the console output.
+/// Get the length of the console output (display view: program stdout/stderr +
+/// engine notes, in write order). For the program's own stdout only, use
+/// cide_get_program_output_length.
 CIDE_API int cide_get_output_length(CideSession* s);
 
 /// Copy console output into the provided buffer (max_len includes null terminator).
 CIDE_API void cide_get_output(CideSession* s, char* buf, int max_len);
+
+/// Get the length of the program's own stdout (excludes engine notes and stderr).
+/// E-P1-5: this is the only legitimate source for comparing against a Clang
+/// golden or for grading.
+CIDE_API int cide_get_program_output_length(CideSession* s);
+
+/// Copy the program's own stdout into the provided buffer.
+CIDE_API void cide_get_program_output(CideSession* s, char* buf, int max_len);
+
+/// Get the length of engine notes (completion message, leak report, teaching hints).
+CIDE_API int cide_get_engine_notes_length(CideSession* s);
+
+/// Copy engine notes into the provided buffer.
+CIDE_API void cide_get_engine_notes(CideSession* s, char* buf, int max_len);
+
+/// Incremental output since a byte cursor, as a JSON string (rust-alloc, free with
+/// cide_free_string). Returns {"delta":..,"cursor":..,"total":..,"stream":"stdout"}.
+CIDE_API char* cide_get_program_output_delta(CideSession* s, int cursor);
 
 #ifdef __cplusplus
 }
