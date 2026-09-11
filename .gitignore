@@ -115,3 +115,8 @@ native/tests/shadow_verification/.clang_cache/
 native/tests/shadow_verification/.shadow_tmp/
 # C++ shadow 驱动的自管工作目录（替代 tempfile，E-P1-5 同期修复）
 /.shadow_cpp_tmp/
+
+# 临时探针/复现脚本（2026-09-11 清理轮起明确忽略）：
+# 审查复核与修复验证用的探针统一放这里，禁止入库（历史上有 56 个误入，已清除）
+/tmp/
+tmp_threaded*.exe
