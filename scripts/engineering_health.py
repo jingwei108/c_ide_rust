@@ -13,7 +13,13 @@
 
 import re
 import subprocess
+import io
 import sys
+# Windows CI 控制台默认 cp1252，编码不了中文/✓ 等字符（UnicodeEncodeError）。
+# 与 shadow_verify.py 的入口处理一致：显式把 stdout/stderr 重包为 UTF-8。
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
+
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
