@@ -242,6 +242,14 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   BUDGET` 补入 runtime 导出）；③ `reset_session_preserving_config` 迁
   session_api。验收线：审计清单归档 ✓、标注矛盾结构性消除 ✓、cargo test 870/0、
   clippy 零警告、C Shadow 657 用例 0 非预期、serve 冒烟过。下一批：E3（C23 语义级）。- **C# 教学子集前端立项（2026-09-11，v3 定稿）**：SharpTutor 诉求锚定，计划落
-  `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
+- **R3 已提交（`e5aee40`）**；E2 提交 CI 全绿（`706575b`）。
+- **E3 已完成（2026-09-12，未提交待确认）**：`nullptr`（与 NULL 同路径，无独立
+  nullptr_t 入 spec）、`static_assert`/`_Static_assert` 真求值（E1020，双拼写/
+  双参单参/块作用域，求值器扩展 sizeof 内建类型）、`constexpr`（按 const 口径，
+  边界入 spec）、`[[属性]]` 前缀解析忽略、`unreachable()`（stddef.h + Host Func，
+  执行到即教学 trap）。验收线：4 baseline 用例（static_assert 失败双侧失败=match、
+  unreachable 严格死代码——可到达处调用会使 clang 链接失败，故用例限定死代码）+
+  5 管线单测；cargo test 875/0；clippy 零警告；C Shadow 660（656+4）0 非预期。
+  下一批：R4（债务与防线）。  `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
   含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
   C/C++" → C/C++ 主轴 + C# 教学子集）待定位主计划同步声明。

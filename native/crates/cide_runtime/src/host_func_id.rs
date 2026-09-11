@@ -141,6 +141,7 @@ pub const VA_START: u32 = 140;
 pub const VA_ARG: u32 = 141;
 pub const VA_END: u32 = 142;
 pub const VA_COPY: u32 = 143;
+pub const UNREACHABLE: u32 = 144;
 
 /// 已由 Bytecode Libc 覆盖的纯计算函数。
 /// 这些函数不再走 CallHost 路径，而是走 Bytecode Libc 的固定索引 Call。
@@ -271,6 +272,7 @@ pub fn by_user_name(name: &str) -> Option<u32> {
         "__cide_va_arg" => Some(VA_ARG),
         "__cide_va_end" => Some(VA_END),
         "__cide_va_copy" => Some(VA_COPY),
+        "unreachable" => Some(UNREACHABLE),
         _ => None,
     }
 }

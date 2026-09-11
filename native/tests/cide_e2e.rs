@@ -204,7 +204,7 @@ fn run_case_with_compiler(
 fn test_cide_e2e_baseline() {
     // E2：故意双侧编译失败的用例（Shadow 判 match：环检测 vs Clang 无限嵌套
     // 包含错误），e2e 的"必须可运行"契约不适用
-    const KNOWN_BASELINE_COMPILE_FAILURES: &[&str] = &["e2_include_cycle"];
+    const KNOWN_BASELINE_COMPILE_FAILURES: &[&str] = &["e2_include_cycle", "e3_static_assert_fail"];
 
     let cases = load_cases(Path::new("tests/cases/baseline"));
     let known_compile_fail: std::collections::HashSet<&str> =

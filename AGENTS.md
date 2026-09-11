@@ -234,7 +234,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 **头文件**：`#include <stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 加载存根声明
 
-**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、**模块化预处理器（E2：`#`/`##`、`#if`/`#elif`、`defined`、`__has_include`、`#undef`、include-once、环检测、遮蔽/副作用警告、展开链教学追踪，详见 `C_SUBSET_SPEC.md` §2.11）**、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
+**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、**模块化预处理器（E2：`#`/`##`、`#if`/`#elif`、`defined`、`__has_include`、`#undef`、include-once、环检测、遮蔽/副作用警告、展开链教学追踪，详见 `C_SUBSET_SPEC.md` §2.11）**、**C23 语义级（E3：`nullptr`、`static_assert`/`_Static_assert` 真求值、`constexpr`（按 const 口径）、`[[属性]]` 解析忽略、`unreachable()` 教学 trap，详见 §2.12）**、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
 
 **字符分类**：`isdigit`/`isalpha`/`islower`/`isupper`/`isalnum`/`isspace`/`isprint`/`iscntrl`/`isxdigit`/`tolower`/`toupper`（`ctype.h`，部分走 Bytecode Libc 路径）
 

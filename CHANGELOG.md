@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (重构批次 E3：C23 语义级——nullptr / static_assert 真求值 / constexpr / 属性 / unreachable)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 E3 批次
+（口径与差异见 `C_SUBSET_SPEC.md` §2.12）：
+
+- **`nullptr`**：关键字入表，与 `NULL` 同路径（`void*` 空）；无独立 `nullptr_t`
+  类型（教学子集差异，spec 记录）。Clang gnu17 默认模式拒绝，不出 golden（同
+  数字分隔符口径，单测覆盖）。
+- **`static_assert` / `_Static_assert` 真求值**：此前仅消费语法（`_Static_assert
+  (1==2, ...)` 静默通过，与 Clang 相反）；现经编译期常量求值（复用 enum 初始化器
+  求值器并扩展 `sizeof(内建类型)`），为假 → E1020 编译错误（携带消息）。双拼写、
+  双参/单参（C23）、顶层与块作用域均支持。
+- **`constexpr` 对象**：按 `const` 语义处理（教学子集边界入 spec：无常量传播）。
+- **`[[属性]]`**：顶层/语句前缀位置解析并忽略（无属性语义）。
+- **`unreachable()`**：`<stddef.h>` 声明 + Host Func；执行到即教学 trap（确定性
+  诊断），死代码调用不影响输出。
+- **回归与验证**：4 个新 baseline 用例（含 static_assert 失败的"双侧编译失败=
+  match"形态与 unreachable 死代码形态）+ 5 个管线单测；`cargo test --workspace
+  --all-features` **875/0**；clippy 零警告；C Shadow **660 用例 0 非预期差异**。
+
 ### Changed (重构批次 R3：语义单源审计)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R3 批次。

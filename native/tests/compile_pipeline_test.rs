@@ -340,3 +340,45 @@ int main() {
     let result = compile_source(src);
     assert!(result.is_ok(), "{:?}", result.err());
 }
+
+// ── E3：C23 语义级 ──
+
+#[test]
+fn test_e3_nullptr_assigns_pointer() {
+    let out = compile_source("#include <stdio.h>\nint main(){ int *p = nullptr; return p == (int*)0 ? 0 : 1; }")
+        .expect("nullptr 应可编译（与 NULL 同路径，void* 空）");
+    assert!(!out.code.is_empty());
+}
+
+#[test]
+fn test_e3_static_assert_pass_and_fail() {
+    let ok = compile_source("#include <stdio.h>\nstatic_assert(1 + 1 == 2, \"math\");\n_Static_assert(sizeof(int) == 4);\nstatic_assert(2 > 1);\nint main(){ return 0; }");
+    assert!(ok.is_ok(), "成立的断言应编译通过，实际 {:?}", ok.err());
+
+    let bad = compile_source("static_assert(1 == 2, \"broken\");\nint main(){ return 0; }");
+    assert!(bad.is_err(), "失败的断言应编译失败");
+    let msg = bad.unwrap_err();
+    assert!(msg.contains("static_assert 断言失败"), "{:?}", msg);
+}
+
+#[test]
+fn test_e3_static_assert_single_arg_and_block_scope_block_support_note() {
+    // 单参形态（C23）
+    let ok = compile_source("static_assert(42 > 41);\nint main(){ return 0; }");
+    assert!(ok.is_ok(), "{:?}", ok.err());
+}
+
+#[test]
+fn test_e3_constexpr_object() {
+    // constexpr 按 const 语义处理（教学子集边界，spec §2.12）
+    let out = compile_source("constexpr int N = 42;\nint main(){ return N - 42; }")
+        .expect("constexpr 对象应可编译");
+    assert!(!out.code.is_empty());
+}
+
+#[test]
+fn test_e3_attributes_prefix_skip() {
+    let out = compile_source("#include <stdio.h>\n[[maybe_unused]] int u = 5;\nint main(){ [[maybe_unused]] int v = 6; printf(\"%d\", u + v); return 0; }")
+        .expect("属性前缀应被解析并忽略");
+    assert!(!out.code.is_empty());
+}

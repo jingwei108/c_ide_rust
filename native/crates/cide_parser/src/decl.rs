@@ -808,10 +808,22 @@ impl Parser {
 
 /// F-P0-3：enum 初始化器的编译期常量求值。
 /// 支持整数字面量、一元负号/按位取反/逻辑非、四则与位运算、比较的常量折叠。
-fn eval_enum_const(expr: &Expr) -> Option<i64> {
+pub(crate) fn eval_enum_const(expr: &Expr) -> Option<i64> {
     match expr {
         Expr::Literal { value, .. } => Some(*value as i64),
         Expr::LongLiteral { value, .. } => Some(*value),
+        // E3：static_assert 的 sizeof（教学最高频用法）。内建类型即可精确求值
+        //（空 struct/class 表——struct 布局参与常量求值属子集边界，返回 None）
+        Expr::Sizeof { target_type: Some(t), .. } => {
+            let empty = std::collections::HashMap::new();
+            let empty_cls = std::collections::HashMap::new();
+            let sz = crate::compute_type_size(t, &empty, &empty, &empty_cls);
+            if sz > 0 {
+                Some(sz as i64)
+            } else {
+                None
+            }
+        }
         Expr::Unary { op, operand, .. } => {
             let v = eval_enum_const(operand)?;
             match op {

@@ -540,6 +540,15 @@ pub fn host_va_end(vm: &mut CideVM, _session: &mut VmContext<'_>) {
     // 无操作；保留函数以匹配标准接口
 }
 
+/// E3：C23 `unreachable()`（<stddef.h>）——执行到即教学 trap。
+/// 死代码中的调用不执行、不影响输出；典型用法是标记"逻辑上不可达"的分支。
+pub fn host_unreachable(vm: &mut CideVM, _session: &mut VmContext<'_>) {
+    vm.trap(
+        "执行了标注为不可达的代码（unreachable）。请检查分支条件是否覆盖了这条路径——这不是防御式编程的兜底，而是逻辑错误的信号。",
+        &SourceLoc::default(),
+    );
+}
+
 /// E1 B 档：va_copy —— 复制 va_list（本实现中即 char* 游标值）。
 /// 宏展开为 `__cide_va_copy(&dst, &src)`，参数顺序与 host_va_start 一致：先 &dst 后 &src。
 pub fn host_va_copy(vm: &mut CideVM, _session: &mut VmContext<'_>) {

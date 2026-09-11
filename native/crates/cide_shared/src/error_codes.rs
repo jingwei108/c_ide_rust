@@ -25,6 +25,7 @@ pub enum ErrorCode {
     E1017_ExpandDepthExceeded = 1017,
     W1018_MacroShadowing = 1018,
     W1019_MacroArgSideEffect = 1019,
+    E1020_StaticAssertFailed = 1020,
     E2001_ExpectedType = 2001,
     E2002_ExpectedArraySize = 2002,
     E2003_ExpectedExpr = 2003,

@@ -5,34 +5,77 @@ impl Parser {
     // Statements
     // =========================================================================
 
+    /// `_Static_assert` / `static_assert`（C11/C23，E3：真求值）。
+    ///
+    /// 形态：`(constant-expression)` 或 `(constant-expression, string-literal)`。
+    /// 条件经编译期常量求值（与 enum 初始化器同一求值器）：为假即编译错误
+    ///（携带消息），为真不产生任何代码——此前仅消费语法，`_Static_assert(1==2)`
+    /// 静默通过，与 Clang 行为相反。
     pub(crate) fn parse_static_assert(&mut self) {
-        // _Static_assert(constant-expression, string-literal);
-        // 教学子集目前仅消费语法；常量表达式求值可在 TypeChecker 阶段扩展。
-        self.advance(); // _Static_assert
-        self.consume(TokenType::LParen, "_Static_assert 后预期 '('");
-        // 消费常量表达式直到顶层逗号（避免 parse_expression 将逗号后的字符串纳入逗号表达式）
-        let mut paren_depth = 1;
-        while !self.is_at_end() {
-            if self.check(TokenType::LParen) {
-                paren_depth += 1;
-                self.advance();
-            } else if self.check(TokenType::RParen) {
-                paren_depth -= 1;
-                if paren_depth == 0 {
+        self.advance(); // _Static_assert / static_assert
+        self.consume(TokenType::LParen, "static_assert 后预期 '('");
+        // parse_assign：不越过顶层逗号（逗号后是消息字符串，非逗号表达式）
+        let cond = self.parse_assign();
+        let mut message = String::new();
+        if self.match_token(TokenType::Comma) {
+            if self.match_token(TokenType::String) {
+                message = self.previous().text.clone();
+            } else {
+                // C23 允许逗号后无消息？标准要求字符串字面量——按缺失报错
+                self.errors.push(ParseError {
+                    message: "static_assert 的第二个参数预期字符串字面量".to_string(),
+                    line: self.previous().line,
+                    column: self.previous().column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+            }
+        }
+        self.consume(TokenType::RParen, "static_assert 预期 ')'");
+        self.consume(TokenType::Semicolon, "static_assert 预期 ';'");
+
+        match crate::decl::eval_enum_const(&cond) {
+            Some(v) if v != 0 => {} // 断言成立
+            Some(_) => {
+                let msg_tail = if message.is_empty() {
+                    String::new()
+                } else {
+                    format!("：{}", message)
+                };
+                self.errors.push(ParseError {
+                    message: format!("static_assert 断言失败{}", msg_tail),
+                    line: self.previous().line,
+                    column: self.previous().column,
+                    code: ErrorCode::E1020_StaticAssertFailed as i32,
+                });
+            }
+            None => {
+                self.errors.push(ParseError {
+                    message: "static_assert 的条件必须是编译期整数常量表达式".to_string(),
+                    line: self.previous().line,
+                    column: self.previous().column,
+                    code: ErrorCode::E1006_UnsupportedFeature as i32,
+                });
+            }
+        }
+    }
+    /// E3：跳过 `[[ ... ]]` 属性子句（解析+忽略，教学子集不实现任何属性语义；
+    /// 与 Clang 默认模式"未知属性警告后忽略"的可见行为一致）。
+    pub(crate) fn skip_attributes(&mut self) {
+        while self.check(TokenType::LBracket) && self.peek(1).ty == TokenType::LBracket {
+            self.advance(); // [
+            self.advance(); // [
+            // 属性体消费到 `]]`（教学子集不支持属性参数内嵌套方括号，spec 记录）
+            while !self.is_at_end() {
+                if self.check(TokenType::RBracket) && self.peek(1).ty == TokenType::RBracket {
+                    self.advance(); // ]
+                    self.advance(); // ]
                     break;
                 }
                 self.advance();
-            } else if self.check(TokenType::Comma) && paren_depth == 1 {
-                break;
-            } else {
-                self.advance();
             }
         }
-        self.consume(TokenType::Comma, "_Static_assert 预期 ','");
-        self.consume(TokenType::String, "_Static_assert 预期字符串消息");
-        self.consume(TokenType::RParen, "_Static_assert 预期 ')'");
-        self.consume(TokenType::Semicolon, "_Static_assert 预期 ';'");
     }
+
     pub(crate) fn parse_statement(&mut self) -> Stmt {
         // F-P0-1 深度防护：块/控制流语句互递归（6 万层 `{{{{` 曾直接栈溢出）
         if !self.enter_depth("语句") {
@@ -46,6 +89,10 @@ impl Parser {
         stmt
     }
     fn parse_statement_inner(&mut self) -> Stmt {
+        // E3：[[属性]] 前缀——解析并忽略（记录见 spec §2.12）
+        if self.check(TokenType::LBracket) && self.peek(1).ty == TokenType::LBracket {
+            self.skip_attributes();
+        }
         match self.current().ty {
             TokenType::Semicolon => {
                 let loc = SourceLoc {
@@ -67,7 +114,9 @@ impl Parser {
             TokenType::Goto => self.parse_goto_stmt(),
             TokenType::Switch => self.parse_switch_stmt(),
             TokenType::Case | TokenType::Default => self.parse_case_stmt(),
-            _ if self.check(TokenType::Identifier) && self.peek(0).text == "_Static_assert" => {
+            _ if self.check(TokenType::Identifier)
+                && (self.peek(0).text == "_Static_assert" || self.peek(0).text == "static_assert") =>
+            {
                 self.parse_static_assert();
                 let loc = SourceLoc {
                     line: self.previous().line,

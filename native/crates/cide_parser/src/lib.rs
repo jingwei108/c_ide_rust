@@ -328,8 +328,15 @@ impl Parser {
             while self.check(TokenType::Inline) {
                 self.advance();
             }
-            if self.check(TokenType::Identifier) && self.peek(0).text == "_Static_assert" {
+            if self.check(TokenType::Identifier)
+                && (self.peek(0).text == "_Static_assert" || self.peek(0).text == "static_assert")
+            {
                 self.parse_static_assert();
+                continue;
+            }
+            // E3：顶层 [[属性]] 前缀——解析并忽略
+            if self.check(TokenType::LBracket) && self.peek(1).ty == TokenType::LBracket {
+                self.skip_attributes();
                 continue;
             }
             if self.check(TokenType::Typedef) {

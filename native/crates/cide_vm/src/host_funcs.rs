@@ -141,6 +141,7 @@ pub fn execute_host_func(vm: &mut CideVM, session: &mut VmContext<'_>, id: u32) 
         host_func_id::VA_ARG => host_va_arg(vm, session),
         host_func_id::VA_END => host_va_end(vm, session),
         host_func_id::VA_COPY => host_va_copy(vm, session),
+        host_func_id::UNREACHABLE => host_unreachable(vm, session),
         _ => {}
     }
 }

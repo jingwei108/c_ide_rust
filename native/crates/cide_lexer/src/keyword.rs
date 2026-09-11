@@ -73,6 +73,10 @@ pub fn keyword_type(text: &str) -> Option<TokenType> {
         "_Alignof" => Some(TokenType::Alignof),
         "NULL" => Some(TokenType::Null),
         "null" => Some(TokenType::Null),
+        // C23（E3）：空指针常量，与 NULL 同路径（void* 空）
+        "nullptr" => Some(TokenType::Null),
+        // C23（E3）：constexpr 对象——教学子集按 const 语义处理（差异入 spec §2.12）
+        "constexpr" => Some(TokenType::Const),
         _ => None,
     }
 }
