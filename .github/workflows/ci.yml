@@ -122,7 +122,8 @@ jobs:
         run: |
           rustup target add wasm32-unknown-unknown
           cargo build --target wasm32-unknown-unknown --release
-          node scripts/wasm_smoke/wasm_smoke.js
+          node ../scripts/wasm_smoke/wasm_smoke.js
+        working-directory: native
         shell: bash
 
       # G11（R4）：工程健康度看板（生产 unwrap 计数/超长文件/失败记录口径），
