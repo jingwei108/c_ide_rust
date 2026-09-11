@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (capi 签名评审定稿：SharpTutor API 诉求逐条回应)
+- **新增评审回复文档** `docs/current/CIDE_CAPI_REVIEW_RESPONSE.md`：对 SharpTutor《后端 API 需求与签名评审》逐条回应（§1~§9 全覆盖）+ 六个开放问题的正式回答。核心结论：**整体接受，一处分歧修订为并行**。含三项实证核验——重复编译内存有界（10000 次交替编译 RSS 16.6→18.4MB 平台期，将固化为回归断言）、`MemoryRegionData.alloc_line/alloc_by` 已存在（零成本直通）、frameCache 越窗行为已查证（检查点恢复+正向重放）；SharpTutor 项目实地核验（三进程架构、EndLine/EndCharacter 消费点属实）。
+- **主计划修订（§3.2/§5.3/§6/§7）**：StepPayload schema v0.1 定稿从 Phase 3 **前置到 Phase 1**（第一批 `step_next_json` 输出即 StepPayload，协议不可能晚于消费它的 API）；`cide_set_deterministic` 最小形态（time 固定 + rand 种子固定）提前进 Phase 1，与 Phase 3 完整伪时钟分层（判分确定性 vs 重放确定性）；wasm 与 capi 第二批改为**并行**（Phase 2a/2b，各约一周互不抢资源——wasm 是社区前端生态冷启动开关，不因单一消费者无需求而后置）；capi 第一批扩容（engine_version/last_error/free_string 字符串所有权/set_max_steps/set_call_depth_limit/run_json 判分契约/断点三函数）；serve 增加 id 关联、错误帧同构、session.reset；JIT 断点完整性从 V-P1-2 提级为行为契约。
+
+### Changed (战略转型：后端独立化与 wasm32 白箱化)
+- **定位转型决策**：Cide 从"跨平台教学 IDE"转型为"教学 C/C++ 子集参考执行引擎（白箱）"。本仓库只做后端，MIT 许可；前端切割给社区（首个外部消费者 SharpTutor/WPF 已提出集成）；原生移动端放弃（"看"场景由 wasm32 + Web 前端的移动浏览器覆盖）。决策依据与完整路线见新增设计文档 `docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`（切割清单、capi 分批补全、交互资产两层重构、Phase 0~3 规划与验收标准）。
+- **wasm32 冒烟实证（零修改通过）**：全部 workspace crate（含 cide_native 主 crate）`cargo check --target wasm32-unknown-unknown` 零错误；release 构建产出 3.75MB `cide_native.wasm`；Node 实例化后经 C ABI 全链路验证（session → compile → run → get_output，输出正确）；E3070 栈缓冲区溢出等教学安全检测在 wasm 下正常触发。唯一阻碍点为 FRB 生成代码的 wasm-bindgen import 残留（C API 路径不触碰，stub 验证通过；正式修复为 `#[cfg(not(target_arch = "wasm32"))]` 门控 FRB 模块，随前端切割一并完成）。
+- **AGENTS.md 项目概览重写**为三出口一核心架构（capi / wasm32 / cli-serve）+ 架构纪律（新能力先落语言中立层、三出口一套语义、capi 版本化）；旧移动端计划文档头部标注已被新计划取代。
+- **记录外部 Issue（SharpTutor，已核实待修）**：A. scanf/sscanf/fscanf 格式串空白指令不跳白（`"%d %c %d"` 读 `3 + 4` 时 `%c` 捕获空格；根因 `parse_scanf_specs` 丢弃格式串空白字符，教学阻断优先级最高）；B. lambda 调用三缺陷（立即调用误报 E3045 且建议文本串行、任何实参位置调用 lambda 运行时 StoreLocal 越界——与临时槽位家族同构）；C. headless 机器可读边界提案（评估结论：capi 下沉为主 + cli serve JSON-lines，分三批补全，详见新计划 §5.3）。
+
 ### Added (教学安全检测强化：2026-09-06 审查报告"提前插入"项 V-P1-6/12/13 + 第四批 Flutter 首批)
 - **V-P1-6 栈缓冲区溢出检测（E3070）**：此前 `strcpy/strcat/scanf("%s")` 的容量检查只覆盖堆 region，栈上 `char buf[4]` 被静默覆写相邻局部变量——这是教学 IDE 最需要捕获的经典错误。现由编译期登记栈缓冲区表（`FuncMeta.local_buffers`，局部数组声明时填充，经 compile_pipeline 透传至 VM，随 Call 帧克隆），宿主函数经 `check_stack_buffer_capacity` 校验并给出含变量名/容量的教学 trap。strcpy/strcat 的用户侧分发从 Bytecode Libc 路径切回 Host（libc 索引表与预编译产物不变，仅调用分发；Bytecode 版逐字节 StoreMem 无法做整体容量校验）。
 - **V-P1-12 无效 free 分场景诊断**：`free(p+4)`（块内部）、`free(&栈变量)`（完全无效）此前静默"成功"——学生以为释放成功且泄漏报告不出现该块，双重误导。现按三种场景（活跃块内部/已释放块内部/无效地址）给出 E3027/E3061 教学 trap；`realloc(p, 0)` 的 free 分支同构处理。

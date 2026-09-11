@@ -4,12 +4,18 @@
 
 ## 项目概览
 
-Cide 是一个跨平台 C 语言 IDE，包含：
+> **定位转型（2026-09-11）**：Cide 从"跨平台 C 语言 IDE"转型为**教学 C/C++ 子集参考执行引擎（白箱）**——本仓库只做后端（MIT 许可），前端切割给社区，原生移动端放弃。完整决策依据与路线见 [`docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)。
 
-- **前端**：Flutter (Android + Desktop Windows) — 使用自研 `CideEditor` 编辑器 + `flutter_riverpod` 状态管理
-- **后端**：共享 Rust native 编译器/VM (`cide_native`)
-- **编译管线**：Lexer → Parser → TypeChecker → BytecodeGen → CideVM
-- **桥接**：flutter_rust_bridge v2 (`native/src/api/cide.rs` → `CideFlutter/lib/src/rust`)
+当前架构（三出口一核心）：
+
+- **核心**：Rust workspace 编译器/VM（`native/`，10 个子 crate），编译管线 Lexer → Parser → TypeChecker → BytecodeGen → CideVM
+- **出口 1**：C ABI（`native/src/capi/`）——`cide_cli` 与 shadow 防线（ctypes）的第一消费路径
+- **出口 2**：wasm32（已冒烟实证：零修改构建 3.75MB，C API 全链路 + 安全检测在 wasm 下工作）——浏览器/白箱形态
+- **出口 3**：`cide_cli serve` JSON-lines 会话模式（计划中）——headless 交互
+- **历史前端**：`CideFlutter/`（Flutter，处于切割迁出流程；FRB 桥接随前端走）
+
+**架构纪律**：新能力一律先落语言中立 Rust 层，三个出口只做薄包装且共用同一套入口语义；复杂结构过边界走 JSON 字符串；capi 是公共 API（`cide_abi_version()` 版本化）。
+
 - **必须中文输出思考以及回答问题**
 - **未经允许禁止git提交**
 - **诚实记录**：本项目作为教学c/cpp子集，以clang为标准，任何本项目与标准不符合的，都要进行记录
