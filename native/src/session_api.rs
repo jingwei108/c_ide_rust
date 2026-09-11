@@ -61,7 +61,12 @@ pub fn compile(session: &mut Session) -> Value {
             })
         })
         .collect();
-    json!({ "ok": ok, "diagnostics": diagnostics })
+    json!({
+        "ok": ok,
+        "diagnostics": diagnostics,
+        // E2 白箱教学层：宏展开链 + #if 分支选择原因（容量封顶，additive）
+        "preprocessor_trace": session.compile.preprocessor_trace,
+    })
 }
 
 /// 全速运行并返回结果 JSON。
@@ -369,5 +374,65 @@ pub fn config(session: &Session) -> Value {
         "compiled": session.compile.compiled,
         "max_steps": max_steps,
         "call_depth_limit": call_depth_limit,
+    })
+}
+
+/// E2：引擎能力清单（机器可读真实能力；"版本宏当能力探测"的三层配套之一）。
+///
+/// 口径（C23 锚定决议）：`__STDC_VERSION__=202311L` 是**名义锚点**，真实能力
+/// 以本清单为准；内存模型常量从 `cide_runtime` 单源引用，禁止在此复刻数值。
+pub fn capabilities() -> Value {
+    use cide_runtime::{GLOBAL_REGION_LIMIT, GLOBAL_START, HEAP_START, MEM_SIZE, NULL_TRAP_SIZE};
+    json!({
+        "engine": "cide",
+        "abi_version": crate::capi::CIDE_ABI_VERSION,
+        "languages": {
+            "c": {
+                "anchor": "ISO C23 (ISO/IEC 9899:2024) 教学子集",
+                "stdc_version_macro_nominal": "202311L",
+                "spec": "docs/current/C_SUBSET_SPEC.md",
+                "predefined_macros": {
+                    "__STDC_VERSION__": "202311L",
+                    "__CIDE_SUBSET__": "1",
+                },
+                "preprocessor": {
+                    "object_macros": true,
+                    "function_macros": true,
+                    "stringize": true,
+                    "token_paste": true,
+                    "paste_result_must_be_single_token": true,
+                    "conditionals": ["#if", "#ifdef", "#ifndef", "#elif", "#else", "#endif"],
+                    "defined": true,
+                    "has_include": true,
+                    "include_once": true,
+                    "include_cycle_detection": true,
+                    "expand_depth_fuse": 64,
+                    "teaching_layer": [
+                        "macro_shadowing_warning",
+                        "macro_arg_side_effect_warning",
+                        "expansion_trace",
+                        "branch_reason",
+                    ],
+                    "dropped": [
+                        "自引用宏 trick（展开栈查重直接停止）",
+                        "## 动态拼标识符的元编程（结果必须为单个合法 token）",
+                        "X-macro 高级用法",
+                        "宏拼接 include 路径",
+                    ],
+                },
+            },
+            "cpp": {
+                "anchor": "C++ 教学子集（Phase 31+，Stage 0~6）",
+                "spec": "docs/current/CPP_SUBSET_SPEC.md",
+            },
+        },
+        "memory_model": {
+            "mem_size": MEM_SIZE,
+            "null_trap_size": NULL_TRAP_SIZE,
+            "global_start": GLOBAL_START,
+            "global_region_limit": GLOBAL_REGION_LIMIT,
+            "heap_start_default": HEAP_START,
+            "heap_start": "动态：max(HEAP_START, align4(global_data_end))",
+        },
     })
 }

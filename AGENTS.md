@@ -234,13 +234,13 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 **头文件**：`#include <stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 加载存根声明
 
-**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
+**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、**模块化预处理器（E2：`#`/`##`、`#if`/`#elif`、`defined`、`__has_include`、`#undef`、include-once、环检测、遮蔽/副作用警告、展开链教学追踪，详见 `C_SUBSET_SPEC.md` §2.11）**、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
 
 **字符分类**：`isdigit`/`isalpha`/`islower`/`isupper`/`isalnum`/`isspace`/`isprint`/`iscntrl`/`isxdigit`/`tolower`/`toupper`（`ctype.h`，部分走 Bytecode Libc 路径）
 
 **C++ 类与模板（Phase 31+）**：`class`、成员访问控制、`this` 指针、虚函数、模板类单态化、栈对象 RAII（自动构造/析构）、构造函数初始化语法 `Type name(args);`、隐式默认构造/移动构造、`std::move`、简化版 `unique_ptr<T>` dogfooding（构造/`get`/`release`/`reset`/析构/所有权转移）
 
-**明确不支持**：bitfield、全局 VLA、完整预处理器（仅 `#define` 常量宏 + `#include` 标准库存根）。C23 锚定的完整支持清单与已知差异（浮点字面量 double 语义、IEEE 精确比较、struct packed 布局、指针 4 字节模型）见 `C_SUBSET_SPEC.md` §2.10
+**明确不支持**：bitfield、全局 VLA。预处理器为 E2 模块化内核（§2.11，覆盖宏全族/条件编译全族/include 解析图）；C23 锚定的完整支持清单与已知差异（浮点字面量 double 语义、IEEE 精确比较、struct packed 布局、指针 4 字节模型）见 `C_SUBSET_SPEC.md` §2.10~§2.11
 
 **C++ 子集边界（诚实记录）**：`cide_vec<T>` / `cide_list<T>` 已支持类类型模板实参；`const T&` 参数已支持绑定到字面量、变量与表达式右值；**默认参数**、**嵌套类 `Outer::Inner` 实例化**、**类模板非类型模板参数（NTTP，如 `Array<int, 5>`）**、**自定义拷贝构造函数（`Class(const Class&)`）** 已支持；函数模板显式 `<>` 调用等特性暂不支持（2026-06-26 记录）。这些限制在 Cide C++ 教学子集当前 Stage 0~6 范围内尚未覆盖，后续按教学需求逐步扩展。
 
@@ -250,7 +250,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 - ~~**参数化宏调用后带分号**~~ — **已修复（扩展支持，2026-06-25）**。`cide_lexer` 在参数化宏展开时，若宏体为大括号块且调用位置后紧跟分号，则动态将宏体包装为 `do { ... } while(0)`，使 `SWAP(int,x,y);` 在 `if/else` 等语句中可正确解析。新增 `end_to_end_extra_test::test_e2e_parametric_macro_swap_semicolon` 回归测试。
   - ⚠️ **与 Clang 的行为差异**：Clang 标准模式对 `if (...) { ... }; else ...` 会报"预期表达式"错误；Cide 通过自动包装支持该教学常见写法。若需严格兼容 Clang，仍应手动使用 `do { ... } while(0)` 宏体。
 - ~~**VLA 边界检查**~~ — **已修复（2026-06-25）**。`gen_index` 对 VLA 首维为变量维度的场景生成运行时边界检查：新增 `TrapBoundsVla` opcode，在索引前计算 VLA 维度表达式并压栈，VM 运行时将索引与运行时边界比较；新增 `baseline/vla_bounds.c` 回归用例。参数退化为指针的 VLA 形参（如 `void f(int n, int a[n])`）仍无法在编译期获知边界，保持跳过。
-- ~~**`#include` 非标准库路径**~~ — **已修复（2026-06-25）**。`#include "header.h"` 现在可基于源文件所在目录加载自定义头文件；标准库仍走存根路径。新增 `baseline/include_custom_header.c` / `include_custom_header.h` 回归用例。绝对路径、系统 include 搜索路径（`<>` 非标准库）及递归 include 仍待扩展。
+- ~~**`#include` 非标准库路径**~~ — **已修复（2026-06-25；E2 批次进一步增强）**。`#include "header.h"` 可基于源文件所在目录加载自定义头文件；标准库走存根路径。E2 后：嵌套 include 按"包含者目录优先"候选链解析、include-once 内置、依赖环静态检测（E1015）。新增 `baseline/include_custom_header.c` / `include_custom_header.h` 与 `baseline/e2_include_*.c` 系列回归用例。绝对路径与系统 include 搜索路径（`<>` 非标准库目录）仍待扩展。
 - ~~**`va_list` / `va_start` / `va_arg` / `va_end`**~~ — **已修复（2026-06-25）**。自定义变参函数现可全链路工作：`va_list` 使用 `char*` 模拟，`va_start`/`va_arg`/`va_end` 通过内部 Host 函数实现，`va_arg` 按目标类型直接解引用读取。支持 `int`、`double`、`long long` 等常见类型（遵循 C 默认实参提升：`float` → `double`，`char` → `int`）。新增 `baseline/variadic.c` 回归用例。
 - **全局 VLA** — 全局/静态作用域的变长数组按 C99 标准本身即不允许（Clang 报错 "variable length array declaration not allowed at file scope"），Cide 保持不支持。
 - **VFS 文本模式换行转换（已修复）** — 2026-06-15 已完整实现 Windows 文本模式换行转换：`"r"`/`"w"` 模式下写入时将 `\n` 展开为 `\r\n`，读取时将 `\r\n` 压缩为 `\n`；`fseek`/`ftell` 区分逻辑/物理光标以匹配 Windows CRT 行为。`vfs_io_extensions.c` 与 `file_fread.c` 已恢复匹配。

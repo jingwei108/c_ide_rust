@@ -18,6 +18,13 @@ pub enum ErrorCode {
     E1011_UnmatchedConditional = 1011,
     E1012_DuplicateElse = 1012,
     E1013_UnclosedConditional = 1013,
+    // E2（模块化预处理器）
+    E1014_CondExprError = 1014,
+    E1015_IncludeCycle = 1015,
+    E1016_TokenPasteInvalid = 1016,
+    E1017_ExpandDepthExceeded = 1017,
+    W1018_MacroShadowing = 1018,
+    W1019_MacroArgSideEffect = 1019,
     E2001_ExpectedType = 2001,
     E2002_ExpectedArraySize = 2002,
     E2003_ExpectedExpr = 2003,

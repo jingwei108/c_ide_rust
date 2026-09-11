@@ -53,7 +53,8 @@ REQUESTS = [
     {"id": 13, "method": "compile", "params": {"source": "int main(){ int x = ; }"}},
     {"id": 14, "method": "no.such.method"},
     {"id": 15, "method": "session.reset"},
-    {"id": 16, "method": "shutdown"},
+    {"id": 16, "method": "capabilities"},
+    {"id": 17, "method": "shutdown"},
 ]
 
 DEFAULT_QUARANTINE_BUDGET = 256 * 1024  # 1MB 堆上限的 1/4（堆决议 §1）
@@ -89,6 +90,7 @@ def main():
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
     print(f"responses={len(lines)} (requests={len(REQUESTS)})")
     check(proc.returncode == 0, "进程正常退出", proc.stderr[:300])
+    check(len(lines) == len(REQUESTS), "每个请求一行响应")
     check(len(lines) == len(REQUESTS), "每个请求一行响应")
 
     responses = []
@@ -164,7 +166,17 @@ def main():
         by_id[15]["result"]["config"]["quarantine_budget"] == 0,
         "reset 保留会话级配置（隔离预算）",
     )
-    check(by_id[16]["result"]["shutdown"] is True, "shutdown 回应")
+    check(by_id[16]["ok"] is True, "capabilities 可用")
+    caps = by_id[16]["result"]
+    check(
+        caps.get("languages", {}).get("c", {}).get("stdc_version_macro_nominal") == "202311L",
+        "capabilities 版本宏名义锚点",
+    )
+    check(
+        caps.get("memory_model", {}).get("global_region_limit") == 65536,
+        "capabilities 内存模型常量（单源 cide_runtime）",
+    )
+    check(by_id[17]["result"]["shutdown"] is True, "shutdown 回应")
 
     print()
     if failures:

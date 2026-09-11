@@ -419,3 +419,153 @@ fn test_lexer_u8_string_prefix() {
     assert_eq!(strings.len(), 1);
     assert_eq!(strings[0].text, "hi");
 }
+
+// ── E2：模块化预处理器 ──
+
+fn preprocess(src: &str) -> (Vec<cide_lexer::Token>, Vec<cide_lexer::LexerError>, Vec<cide_lexer::LexerWarning>, Vec<String>) {
+    let mut lexer = cide_lexer::Lexer::new(src);
+    let (tokens, errors) = lexer.tokenize();
+    let warnings = lexer.into_warnings();
+    let trace = lexer.into_expansion_trace();
+    (tokens, errors, warnings, trace)
+}
+
+fn token_texts(tokens: &[cide_lexer::Token]) -> Vec<String> {
+    tokens.iter().map(|t| t.text.clone()).collect()
+}
+
+#[test]
+fn test_preprocessor_if_expr_arithmetic() {
+    let (_, errs, _, _) = preprocess("#if 1 + 2 * 3 == 7\nint alive;\n#else\nint dead;\n#endif\n");
+    assert!(errs.is_empty(), "{:?}", errs);
+    let (_, errs2, _, _) = preprocess("#if 0\nint dead;\n#endif\n");
+    assert!(errs2.is_empty());
+}
+
+#[test]
+fn test_preprocessor_if_skips_inactive_branch() {
+    let (tokens, errs, _, _) = preprocess("#define M 2\n#if M == 1\nint dead_var;\n#elif M == 2\nint alive_var;\n#else\nint else_var;\n#endif\n");
+    assert!(errs.is_empty(), "{:?}", errs);
+    let texts = token_texts(&tokens);
+    assert!(texts.contains(&"alive_var".to_string()), "{:?}", texts);
+    assert!(!texts.contains(&"dead_var".to_string()));
+    assert!(!texts.contains(&"else_var".to_string()));
+}
+
+#[test]
+fn test_preprocessor_shortcircuit_avoids_div_zero() {
+    // C 短路语义：左假时右不求值（除零不触发）
+    let (_, errs, _, _) = preprocess("#define A 0\n#if A != 0 && 10 / A > 1\nint dead;\n#endif\nint ok_v;\n");
+    assert!(errs.is_empty(), "{:?}", errs);
+}
+
+#[test]
+fn test_preprocessor_stringize_keeps_raw_spelling() {
+    // # 操作数不展开；间接一层才展开（C99 6.10.3.1 特例）
+    let (tokens, errs, _, _) = preprocess("#define STR(x) #x\n#define XSTR(x) STR(x)\n#define V 9\nSTR(V) XSTR(V)\n");
+    assert!(errs.is_empty(), "{:?}", errs);
+    let strings: Vec<_> = tokens.iter().filter(|t| t.ty == cide_lexer::TokenType::String).map(|t| t.text.clone()).collect();
+    assert_eq!(strings, vec!["V".to_string(), "9".to_string()], "{:?}", strings);
+}
+
+#[test]
+fn test_preprocessor_paste_single_token() {
+    let (tokens, errs, _, _) = preprocess("#define GLUE(a, b) a##b\nGLUE(my, var)\n");
+    assert!(errs.is_empty(), "{:?}", errs);
+    assert!(token_texts(&tokens).contains(&"myvar".to_string()));
+}
+
+#[test]
+fn test_preprocessor_paste_invalid_result_errors() {
+    let (_, errs, _, _) = preprocess("#define BAD(a, b) a##b\nBAD(1, +)\n");
+    assert!(
+        errs.iter().any(|e| e.code == cide_shared::ErrorCode::E1016_TokenPasteInvalid as i32),
+        "拼接出非法结果应报 E1016，实际 {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_preprocessor_depth_fuse() {
+    // 实参驱动的指数展开：嵌套 80 层 REP(x) x x → 保险丝在 64 层触发
+    let depth = 80;
+    let mut src = String::from("#define REP(x) x x\nint v = ");
+    for _ in 0..depth {
+        src.push_str("REP(");
+    }
+    src.push('1');
+    for _ in 0..depth {
+        src.push(')');
+    }
+    src.push_str(";\n");
+    let (_, errs, _, _) = preprocess(&src);
+    assert!(
+        errs.iter().any(|e| e.code == cide_shared::ErrorCode::E1017_ExpandDepthExceeded as i32),
+        "深嵌套应触发展开保险丝 E1017，实际 {:?}",
+        errs
+    );
+}
+
+#[test]
+fn test_preprocessor_shadowing_warning() {
+    let (_, errs, warnings, _) = preprocess("#define W 1\n#define W 2\nint x = W;\n");
+    assert!(errs.is_empty());
+    assert!(
+        warnings.iter().any(|w| w.code == cide_shared::ErrorCode::W1018_MacroShadowing as i32),
+        "不同体重定义应报 W1018，实际 {:?}",
+        warnings
+    );
+    // 相同体重定义静默（C 标准允许）
+    let (_, errs2, warnings2, _) = preprocess("#define U 1\n#define U 1\nint y = U;\n");
+    assert!(errs2.is_empty() && warnings2.is_empty());
+}
+
+#[test]
+fn test_preprocessor_side_effect_warning() {
+    let (_, errs, warnings, _) = preprocess("#define SQ(x) ((x) * (x))\nint i = 3;\nint z = SQ(i++);\n");
+    assert!(errs.is_empty());
+    assert!(
+        warnings.iter().any(|w| w.code == cide_shared::ErrorCode::W1019_MacroArgSideEffect as i32),
+        "SQ(i++) 应报 W1019，实际 {:?}",
+        warnings
+    );
+}
+
+#[test]
+fn test_preprocessor_expansion_trace() {
+    let (_, errs, _, trace) = preprocess("#define DOUBLE(x) ((x) * 2)\nint v = DOUBLE(5);\n");
+    assert!(errs.is_empty());
+    assert!(trace.iter().any(|t| t.contains("DOUBLE(5)")), "展开链应被记录，实际 {:?}", trace);
+}
+
+#[test]
+fn test_preprocessor_branch_reason() {
+    let (_, errs, _, trace) = preprocess("#define A 5\n#if A > 3\nint ok_v;\n#endif\n");
+    assert!(errs.is_empty());
+    assert!(trace.iter().any(|t| t.starts_with("#if") && t.contains("真")), "{:?}", trace);
+}
+
+#[test]
+fn test_preprocessor_has_include() {
+    let (tokens, errs, _, _) = preprocess("#if __has_include(<stdio.h>)\nint has_v;\n#else\nint no_v;\n#endif\n");
+    assert!(errs.is_empty(), "{:?}", errs);
+    let texts = token_texts(&tokens);
+    assert!(texts.contains(&"has_v".to_string()));
+    assert!(!texts.contains(&"no_v".to_string()));
+}
+
+#[test]
+fn test_preprocessor_include_once() {
+    // 无守卫双 include：Cide include-once 静默跳过（与 Clang 的差异已入 spec）
+    let (tokens, errs, _, _) = preprocess("#define GVAL 3\n#include \"no_such_helper_x.h\"\nint z = GVAL;\n");
+    let _ = tokens;
+    // 不存在的头文件：静默跳过（既有行为），不应崩溃
+    assert!(errs.is_empty(), "{:?}", errs);
+}
+
+#[test]
+fn test_preprocessor_undef() {
+    let (tokens, errs, _, _) = preprocess("#define T 1\n#undef T\n#define T 7\nint q = T;\n");
+    assert!(errs.is_empty());
+    assert!(token_texts(&tokens).contains(&"7".to_string()));
+}

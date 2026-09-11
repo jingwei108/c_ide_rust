@@ -130,6 +130,22 @@ pub unsafe extern "C" fn cide_get_compile_errors(s: *mut Session) -> *const c_ch
 }
 
 #[no_mangle]
+/// E2：引擎能力清单 JSON（机器可读真实能力；无状态，返回常量指针）。
+///
+/// # Safety
+/// 返回指针为进程级静态缓存，线程安全；无需释放。
+pub unsafe extern "C" fn cide_get_capabilities_json() -> *const c_char {
+    static CAPS: std::sync::OnceLock<CString> = std::sync::OnceLock::new();
+    CAPS
+        .get_or_init(|| {
+            let v = crate::session_api::capabilities();
+            CString::new(serde_json::to_string(&v).unwrap_or_default())
+                .unwrap_or_else(|_| CString::new("{}").unwrap_or_default())
+        })
+        .as_ptr()
+}
+
+#[no_mangle]
 /// 设置命令行参数（供 `main(int argc, char *argv[])` 使用）。
 ///
 /// # Safety

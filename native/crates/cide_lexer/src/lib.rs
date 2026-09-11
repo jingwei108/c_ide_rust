@@ -4,11 +4,9 @@
 
 // TODO(#D08): Lexer 已承载 C/C++ 混合词法，未来应将 C++ 专属词法拆分到 lexer/cpp.rs。
 use cide_shared::ErrorCode;
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub mod comment;
-pub mod expand;
 pub mod keyword;
 pub mod macros;
 pub mod number;
@@ -16,20 +14,27 @@ pub mod preprocessor;
 pub mod string;
 pub mod token;
 
-pub use preprocessor::{ConditionalState, MacroDef};
-pub use token::{LexerError, Token, TokenType};
+pub use preprocessor::{ConditionalState, MacroDef, MacroTable};
+pub use token::{LexerError, LexerWarning, Token, TokenType};
 
 pub struct Lexer {
     pub(crate) chars: Vec<char>,
     pub(crate) errors: Vec<LexerError>,
+    /// E2 白箱教学层：预处理阶段非致命警告（宏遮蔽 W1018 / 宏参数副作用 W1019）。
+    pub(crate) warnings: Vec<LexerWarning>,
     pub(crate) pos: usize,
     pub(crate) line: i32,
     pub(crate) column: i32,
-    pub(crate) macros: HashMap<String, MacroDef>,
+    /// E2：宏定义表单源（内置预定义 + 用户 #define + 遮蔽诊断）。
+    pub(crate) macros: MacroTable,
     pub(crate) conditional_stack: Vec<ConditionalState>,
     pub(crate) is_cpp_mode: bool,
-    /// 源文件所在目录，用于解析 `#include "..."` / `#include <...>` 非标准库路径。
-    pub(crate) base_path: Option<PathBuf>,
+    /// E2：宏体内 `#`/`##` 是操作符（非预处理指令）。
+    pub(crate) macro_body_mode: bool,
+    /// E2：include 解析（include-once + 环检测 + 存根加载）。
+    pub(crate) include_resolver: preprocessor::IncludeResolver,
+    /// E2 白箱教学层：展开链与 #if 分支选择原因（容量封顶）。
+    pub(crate) preprocessor_trace: Vec<String>,
 }
 
 impl Lexer {
@@ -52,14 +57,17 @@ impl Lexer {
             pos: 0,
             line: 1,
             column: 1,
-            macros: macros::builtin_macros(),
+            macros: MacroTable::builtin(),
             conditional_stack: Vec::new(),
             is_cpp_mode,
-            base_path,
+            warnings: Vec::new(),
+            macro_body_mode: false,
+            include_resolver: preprocessor::IncludeResolver::new(base_path.clone()),
+            preprocessor_trace: Vec::new(),
         }
     }
 
-    pub fn tokenize(mut self) -> (Vec<Token>, Vec<LexerError>) {
+    pub fn tokenize(&mut self) -> (Vec<Token>, Vec<LexerError>) {
         let mut tokens = Vec::new();
         loop {
             let t = self.next_token();
@@ -78,7 +86,17 @@ impl Lexer {
             });
         }
         let expanded = self.expand_macros(tokens);
-        (expanded, self.errors)
+        (expanded, std::mem::take(&mut self.errors))
+    }
+
+    /// E2：取预处理警告（宏遮蔽/宏参数副作用等，非致命）。
+    pub fn into_warnings(&mut self) -> Vec<LexerWarning> {
+        std::mem::take(&mut self.warnings)
+    }
+
+    /// E2 白箱教学层：展开链与 `#if` 分支选择原因。
+    pub fn into_expansion_trace(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.preprocessor_trace)
     }
 
     pub fn into_errors(self) -> Vec<LexerError> {
@@ -134,6 +152,14 @@ impl Lexer {
             }
 
             if c == '#' {
+                if self.macro_body_mode {
+                    // E2：宏体内 `#`（字符串化）/ `##`（拼接）是操作符
+                    if self.match_char('#') {
+                        return self.make_token(TokenType::HashHash, "##");
+                    }
+                    self.advance();
+                    return self.make_token(TokenType::Hash, "#");
+                }
                 self.skip_preprocessor_directive();
                 continue;
             }

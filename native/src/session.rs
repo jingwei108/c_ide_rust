@@ -71,6 +71,9 @@ pub struct CompileState {
     /// 运行入口据此计算动态堆起点 `max(HEAP_START, align4(global_data_end))`。
     #[serde(default)]
     pub global_data_end: u32,
+    /// E2 白箱教学层：预处理追踪（宏展开链 + `#if` 分支选择原因，容量封顶）。
+    #[serde(default)]
+    pub preprocessor_trace: Vec<String>,
 }
 
 impl Session {

@@ -575,6 +575,8 @@ fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) 
             ),
             false,
         ),
+        // E2：机器可读能力清单（"版本宏当能力探测"三层配套之一）
+        "capabilities" => (serve_ok(id, session_api::capabilities()), false),
         "session.create" => {
             *session = Session::default();
             (

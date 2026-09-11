@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (重构批次 E2：模块化预处理器 + 预定义宏族 + capabilities 出口)
+
+执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 E2 批次
+（§3 设计定案全项落地；口径与诚实放弃清单见 `C_SUBSET_SPEC.md` §2.11）：
+
+- **`cide_lexer/preprocessor/` 子模块化**（皮肤与内核分离）：
+  `resolver`（include-once + 依赖环静态检测 + quote-include 候选链 + 存根加载）、
+  `macro_table`（宏表单源 + 遮蔽诊断 W1018 + 预定义宏族）、
+  `expander`（token 树转录展开 + 深度 64/产出 262144 双保险丝 + 展开链教学追踪 +
+  自引用停止展开栈查重 + 宏参数副作用检测 W1019）、
+  `cond`（`#if`/`#elif` 整数常量表达式求值，`&&`/`||` 短路、短路分支除零不触发、
+  `defined()` 宏展开前提取、分支选择原因记录）、
+  `splice`（`#` 字符串化 / `##` 拼接——操作数不预先展开、结果必须为单个合法 token）、
+  `directives`（指令消费骨架，保留行号补偿机制）。
+- **修复三个暴露的预存缺陷**：① 同宏嵌套 `MAX(MAX(1,5),3)` 失败（实参未先展开
+  又被自身名涂蓝；现按 C99 §6.10.3.1 实参先行展开，`#`/`##` 体例外用原始实参）；
+  ② include 拼接点在 include 行尾之前，行尾消费循环会吃掉内容首行（存量头文件
+  首行均为注释而未暴露；改为整行消费后再拼接）；③ 嵌套自定义头文件的相对路径
+  按源码目录解析（改为"包含者目录优先"候选链 + `#__cide_push_dir/pop_dir` 哨兵
+  精确维护目录栈）。
+- **新增指令/能力**：`#if`/`#elif`（含短路算术表达式求值 E1014）、`#undef`、
+  `__has_include`、include-once、环检测 E1015、拼接非法结果 E1016、双展开保险丝
+  E1017、遮蔽警告 W1018、副作用警告 W1019；预定义宏族 `__STDC_VERSION__=202311L`
+  （名义锚点）与 `__CIDE_SUBSET__`。
+- **capabilities 出口**（"版本宏当能力探测"三层配套之一）：capi
+  `cide_get_capabilities_json()` + serve `capabilities` 方法，机器可读真实能力
+  （语言锚点/预定义宏/预处理能力/内存模型常量，后者自 `cide_runtime` 单源引用）。
+- **教学追踪出口**：宏展开链 + `#if` 分支选择原因随 `compile.preprocessor_trace`
+  导出（serve compile 响应含该字段，容量封顶 64 条）。
+- **回归与验证**：9 个新 baseline 用例（含环用例的"双侧编译失败=match"形态）+
+  14 个词法单元测试；`cargo test --workspace --all-features` **870/0**；clippy 零
+  警告；C Shadow **657 用例 0 非预期差异**（648+9）；serve 冒烟扩展 capabilities
+  断言后全过。
+
 ### Changed (重构批次 R2：会话收口——flutter_bridge 整删，出口单轨化)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R2 批次：

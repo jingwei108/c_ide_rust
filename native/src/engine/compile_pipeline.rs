@@ -23,6 +23,22 @@ pub trait CompileError {
     fn message(&self) -> &str;
 }
 
+/// E2：预处理警告（宏遮蔽 W1018 / 宏参数副作用 W1019）进 diagnostics 管线。
+impl CompileError for cide_lexer::LexerWarning {
+    fn line(&self) -> i32 {
+        self.line
+    }
+    fn column(&self) -> i32 {
+        self.column
+    }
+    fn code(&self) -> i32 {
+        self.code
+    }
+    fn message(&self) -> &str {
+        &self.message
+    }
+}
+
 impl CompileError for crate::compiler::lexer::LexerError {
     fn line(&self) -> i32 {
         self.line
@@ -384,12 +400,20 @@ pub fn run_compile_pipeline(session: &mut Session, full_source: &str) -> Result<
     session.compile.errors.clear();
     session.compile.compiled = false;
     session.compile.global_data_end = 0;
+    session.compile.preprocessor_trace.clear();
 
     // 单文件管线：全局行号即文件内行号，清空多文件映射（collector 据此回退到直接行号查询）
     session.compile.file_ranges.clear();
 
-    // 1. Lexer
-    let (tokens, lex_errors) = Lexer::new(full_source).tokenize();
+    // 1. Lexer（E2：预处理警告与教学追踪随词法产出）
+    let mut lexer = Lexer::new(full_source);
+    let (tokens, lex_errors) = lexer.tokenize();
+    let lex_warnings = lexer.into_warnings();
+    let preproc_trace = lexer.into_expansion_trace();
+    session.compile.preprocessor_trace = preproc_trace;
+    if !lex_warnings.is_empty() {
+        push_warnings(session, &lex_warnings, full_source, None);
+    }
     if !lex_errors.is_empty() {
         push_diagnostics(session, &lex_errors, full_source, None);
         return Err("词法错误".to_string());
@@ -592,6 +616,7 @@ pub fn run_multi_file_pipeline(
     session.compile.errors.clear();
     session.compile.compiled = false;
     session.compile.global_data_end = 0;
+    session.compile.preprocessor_trace.clear();
 
     let (full_source, file_ranges) = merge_compile_units(&units);
     // P0-4：记录"全局行号 → 文件"映射，供 StepPayload 的语义标注按文件定位源码行
@@ -611,8 +636,15 @@ pub fn run_multi_file_pipeline(
         .find(|u| !u.filename.is_empty())
         .and_then(|u| std::path::Path::new(&u.filename).parent().map(|p| p.to_path_buf()));
 
-    // 1. Lexer
-    let (tokens, lex_errors) = Lexer::with_mode_and_path(&full_source, is_cpp_mode, base_path).tokenize();
+    // 1. Lexer（E2：预处理警告与教学追踪随词法产出）
+    let mut lexer = Lexer::with_mode_and_path(&full_source, is_cpp_mode, base_path);
+    let (tokens, lex_errors) = lexer.tokenize();
+    let lex_warnings = lexer.into_warnings();
+    let preproc_trace = lexer.into_expansion_trace();
+    session.compile.preprocessor_trace = preproc_trace;
+    if !lex_warnings.is_empty() {
+        push_warnings(session, &lex_warnings, &full_source, Some(&file_ranges));
+    }
     if !lex_errors.is_empty() {
         push_diagnostics(session, &lex_errors, &full_source, Some(&file_ranges));
         return Err("词法错误".to_string());

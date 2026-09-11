@@ -119,6 +119,10 @@ pub enum TokenType {
     Question,
     Eof,
     Unknown,
+    /// E2：`#`（仅宏体内作字符串化操作符；其余上下文仍按预处理指令消费）
+    Hash,
+    /// E2：`##`（宏体内 token 拼接操作符）
+    HashHash,
 }
 
 /// 词法单元。
@@ -133,6 +137,16 @@ pub struct Token {
 /// 词法错误。
 #[derive(Debug, Clone)]
 pub struct LexerError {
+    pub message: String,
+    pub line: i32,
+    pub column: i32,
+    pub code: i32,
+}
+
+/// E2 白箱教学层：预处理阶段**非致命**提示（宏遮蔽、宏参数副作用等）。
+/// 与 `LexerError`（致命，终止编译）分流——警告经管线进 diagnostics（severity=1）。
+#[derive(Debug, Clone)]
+pub struct LexerWarning {
     pub message: String,
     pub line: i32,
     pub column: i32,

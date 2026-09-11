@@ -211,6 +211,28 @@ known_issue 趋势向上——重新评估结构性重写（届时 R3 的病灶�
   移除；bench 改造。CLI 六子命令行为冒烟对照全过（含退出码契约、trap/stdin/
   argv/等待输入、step 首步事件语义）；cargo test 856/0、clippy 零警告、
   C Shadow 648 用例 0 非预期、serve 冒烟过。下一批：E2（模块化预处理器）。
+- **R2 已提交（`9d87b45`）**；CI 顺带修复三层积压：clippy 5 处系 `0790a8e`
+  已修未推送（远端落后），Shadow 驱动与 serve 冒烟的 Windows cp1252 编码崩溃
+  （Python subprocess/stdout 显式 UTF-8，`440c150`/`ff96147`）——均为 2026-09-11
+  随 E-P1-5/提速设施进库的预存缺陷，非引擎回归。
+- **E1 已提交（`5525475`）**
+- **E2 已完成（2026-09-12，未提交待确认）**：§3 设计全项落地——preprocessor/
+  子模块化（resolver/macro_table/expander/cond/splice/directives）、`#`/`##`
+  （操作数不预先展开、结果必须合法）、`#if`/`#elif` 短路求值 + defined +
+  `__has_include`、include-once + 环检测（E1015）、双展开保险丝（深度 64 +
+  产出 262144 token，E1017——深度限深不限宽，`REP(x) x x` 类指数展开由规模
+  预算熔断）、遮蔽 W1018/副作用 W1019 警告、展开链 + 分支原因教学追踪
+  （compile.preprocessor_trace，容量 64）、预定义宏族（`__STDC_VERSION__=
+  202311L` 名义锚点 + `__CIDE_SUBSET__`）、capabilities 出口（capi
+  `cide_get_capabilities_json()` + serve `capabilities`，内存常量单源）。
+  顺带修复三个暴露的预存缺陷：① 同宏嵌套 `MAX(MAX(1,5),3)` 失败（实参未先
+  展开，按 C99 实参先行展开、`#`/`##` 体例外）；② include 拼接点在行尾之前、
+  行尾消费循环吃掉内容首行（存量头文件首行均为注释而未暴露）；③ 嵌套自定义
+  头文件相对路径按源码目录解析（改"包含者目录优先"候选链 + 哨兵目录栈）。
+  `do{}while(0)` 包装契约保留于新展开器后处理。验收线：9 baseline 用例
+  （含环用例双侧失败=match 形态）+ 14 词法单测、cargo test 870/0、clippy 零
+  警告、C Shadow 657（648+9）0 非预期、serve 冒烟扩展 capabilities 断言全过；
+  放弃清单记入 spec §2.11。下一批：R3（语义单源审计）。
 - **C# 教学子集前端立项（2026-09-11，v3 定稿）**：SharpTutor 诉求锚定，计划落
   `CSHARP_EXTENSION_PLAN.md`——**本计划全批次交付后启动**（CS0 起独立批次，前置条件
   含 R2 完成；schema v0.1 预留位随 Phase 1 冻结写入）。定位扩展（"后端语言锁定
