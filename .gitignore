@@ -120,3 +120,6 @@ native/tests/shadow_verification/.shadow_tmp/
 # 审查复核与修复验证用的探针统一放这里，禁止入库（历史上有 56 个误入，已清除）
 /tmp/
 tmp_threaded*.exe
+# 探针临时目录（E 系列 batch 探针，勿提交）
+.e2_probe/
+.e3_probe/
