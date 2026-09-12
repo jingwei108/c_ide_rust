@@ -1,6 +1,11 @@
 # -*- coding: utf-8 -*-
 """交互切面探针：随机交互序列 + 恶意输入 fuzz（影子防线从未测过的切面）。
 
+**已被 Go 版取代（2026-09-12，D5 探针集）**：
+`go run scripts/core_asset_verdict/interaction_probe.go` 与本版双轨对账一致
+（RNG 整数 seeding 复刻 → 同 seed 同 op 序列；统计/8 条会话死亡记录/fuzz 结果
+逐字段一致，stderr 洗 PID 后相同）。本文件保留为**双轨对照基准**。
+
 影子防线只做「compile → run → 比 stdout」的批处理；本探针走 `cide_cli serve` 的
 JSON-lines 会话，做两件影子防线做不到的事：
 

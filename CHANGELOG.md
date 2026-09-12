@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (D5 语言迁移第四站：交互切面探针 Python→Go) — **⚠️ 附 P0 实证**
+
+`scripts/core_asset_verdict/interaction_probe.go`（随机交互序列 + 恶意输入 fuzz，U0 验收的
+主探测通道）：
+
+- **⚠️ P0 紧迫性实证（非回归，是新证据）**：seed=20260912 的随机交互下，**9 个会话中
+  8 个死于 `engine.rs:400` seek panic**（`split index should be <= len`），Part B 恶意输入
+  `payload.get end=-1` 死于 **`engine.rs:416` panic**——裁定 W0-2 止血批次（clamp + 参数域
+  防御 + serve catch_unwind）的两个 P0 在 master 上**仍然全部活着**，且 seek panic 的
+  触发密度远比"已知问题"高（任意会话期望几十次交互内必死）。**建议 W0-2 立即执行**。
+- 双轨对账 PASS：RNG **整数 seeding** 复刻（`Random(int)` 不走 sha512，直接 init_by_array——
+  与 random_diff 的字符串 seeding 是两条路径），同 seed 下 op 序列、请求序列一致；
+  统计 6 项（reqs 578 / dead 8 / badjson 0 / protocol 0 / state 0 / violations 0）、
+  8 条会话死亡记录（程序名 + 死亡点 + stderr 洗 PID 后逐字一致）、正常记录、
+  fuzz 响应序列（30 输入 / 9 响应 / #10 死于 end=-1）全部一致。
+- 采样口径移植：psapi `GetProcessMemoryInfo` 驱动侧采样（commit/peak commit），零依赖。
+- 门禁加牙（有意差异）：Python 版恒 `return 0`；本版在 会话死亡 / 非法响应 / 不变量违反 /
+  fuzz 杀死进程 任一发生时 exit 1——**当前 master 上本探针 exit 1**（8+1 处 panic），
+  修复 W0-2 后应转绿，转绿即是止血验收。
+- Python 版保留为双轨对照基准（头部已标注）。
+
 ### Changed (D5 语言迁移第三站：随机三路差分探针 Python→Go)
 
 裁定文档 §13.3 W3-1 探针集第一件（`random_diff`，三路差分是"核心不重写"裁定的证据通道；

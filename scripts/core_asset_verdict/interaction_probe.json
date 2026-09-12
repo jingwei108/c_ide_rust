@@ -1,9 +1,8 @@
 {
- "seed": 20260912,
- "ops": 120,
+ "ops": 200,
  "part_a": {
-  "ops_total": 506,
-  "reqs": 498,
+  "ops_total": 586,
+  "reqs": 578,
   "dead_sessions": 8,
   "badjson": 0,
   "protocol_errors": 0,
@@ -11,231 +10,145 @@
   "invariant_violations": [],
   "per_program": [
    {
-    "program": "doubly_linked_list",
     "died_after_ops": 4,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (39480) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 48001) should be <= len (is 171)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "doubly_linked_list",
-    "ops": 4,
-    "alive": false,
-    "max_step_seen": 2,
-    "max_collected_step": -1,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 0.4,
-    "commit_mb_peak_psapi": 6.8
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (17256) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 48001) should be \u003c= len (is 171)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "bst_insert_search",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": -1,
+    "max_step_seen": 2,
+    "ops": 4,
+    "program": "doubly_linked_list"
+   },
+   {
     "died_after_ops": 56,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (36364) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 2920) should be <= len (is 214)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "bst_insert_search",
-    "ops": 56,
-    "alive": false,
-    "max_step_seen": 294,
-    "max_collected_step": 78,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 6.5,
-    "commit_mb_peak_psapi": 10.7
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (4980) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 2920) should be \u003c= len (is 214)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "tree_level_order",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": 78,
+    "max_step_seen": 294,
+    "ops": 56,
+    "program": "bst_insert_search"
+   },
+   {
     "died_after_ops": 63,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (35124) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 2800) should be <= len (is 811)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "tree_level_order",
-    "ops": 63,
-    "alive": false,
-    "max_step_seen": 6,
-    "max_collected_step": 200,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 7.6,
-    "commit_mb_peak_psapi": 21.5
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (31632) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 2800) should be \u003c= len (is 811)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "linked_queue",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": 200,
+    "max_step_seen": 6,
+    "ops": 63,
+    "program": "tree_level_order"
+   },
+   {
     "died_after_ops": 2,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (7624) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 3000) should be <= len (is 420)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "linked_queue",
-    "ops": 2,
-    "alive": false,
-    "max_step_seen": 0,
-    "max_collected_step": -1,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 0.4,
-    "commit_mb_peak_psapi": 10.2
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (43896) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 3000) should be \u003c= len (is 420)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "linked_stack",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": -1,
+    "max_step_seen": 0,
+    "ops": 2,
+    "program": "linked_queue"
+   },
+   {
     "died_after_ops": 53,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (45164) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 47861) should be <= len (is 14)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "linked_stack",
-    "ops": 53,
-    "alive": false,
-    "max_step_seen": 154,
-    "max_collected_step": 155,
-    "commit_mb_start": 0.3,
-    "commit_mb_peak": 5.9,
-    "commit_mb_peak_psapi": 7.1
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (31528) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 47861) should be \u003c= len (is 14)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "switch_case",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": 155,
+    "max_step_seen": 154,
+    "ops": 53,
+    "program": "linked_stack"
+   },
+   {
     "died_after_ops": 102,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (11032) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 2980) should be <= len (is 9)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "switch_case",
-    "ops": 102,
-    "alive": false,
-    "max_step_seen": 29,
-    "max_collected_step": 35,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 4.5,
-    "commit_mb_peak_psapi": 5.6
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (37536) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 2980) should be \u003c= len (is 9)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "float_basic",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": 35,
+    "max_step_seen": 29,
+    "ops": 102,
+    "program": "switch_case"
+   },
+   {
     "died_after_ops": 50,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (23584) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 48001) should be <= len (is 16)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
-   },
-   {
     "program": "float_basic",
-    "ops": 50,
-    "alive": false,
-    "max_step_seen": 16,
-    "max_collected_step": 28,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 4.3,
-    "commit_mb_peak_psapi": 5.6
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (7256) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 48001) should be \u003c= len (is 16)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "for_empty_cond",
+    "alive": false,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
+    "max_collected_step": 28,
+    "max_step_seen": 16,
+    "ops": 50,
+    "program": "float_basic"
+   },
+   {
     "died_after_ops": 56,
     "died_at": "seek",
-    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (26772) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 47961) should be <= len (is 33)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
+    "program": "for_empty_cond",
+    "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (46128) panicked at src\\unified\\engine.rs:400:49:\n`at` split index (is 47961) should be \u003c= len (is 33)\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n"
    },
    {
-    "program": "for_empty_cond",
-    "ops": 56,
     "alive": false,
-    "max_step_seen": 8,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
     "max_collected_step": 8,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 4.7,
-    "commit_mb_peak_psapi": 5.8
+    "max_step_seen": 8,
+    "ops": 56,
+    "program": "for_empty_cond"
    },
    {
-    "program": "long_loop_5000",
-    "ops": 120,
     "alive": true,
-    "max_step_seen": 3,
+    "commit_mb_peak": -1,
+    "commit_mb_peak_psapi": -1,
+    "commit_mb_start": -1,
     "max_collected_step": 50000,
-    "commit_mb_start": 0.4,
-    "commit_mb_peak": 58.8,
-    "commit_mb_peak_psapi": 119.0
+    "max_step_seen": 3,
+    "ops": 200,
+    "program": "long_loop_5000"
    }
   ],
-  "rss_samples": [
-   {
-    "program": "bst_insert_search",
-    "op": 25,
-    "commit_mb": 5.8
-   },
-   {
-    "program": "bst_insert_search",
-    "op": 50,
-    "commit_mb": 6.5
-   },
-   {
-    "program": "tree_level_order",
-    "op": 25,
-    "commit_mb": 7.1
-   },
-   {
-    "program": "tree_level_order",
-    "op": 50,
-    "commit_mb": 7.6
-   },
-   {
-    "program": "linked_stack",
-    "op": 25,
-    "commit_mb": 5.8
-   },
-   {
-    "program": "linked_stack",
-    "op": 50,
-    "commit_mb": 5.9
-   },
-   {
-    "program": "switch_case",
-    "op": 25,
-    "commit_mb": 4.4
-   },
-   {
-    "program": "switch_case",
-    "op": 50,
-    "commit_mb": 4.5
-   },
-   {
-    "program": "switch_case",
-    "op": 75,
-    "commit_mb": 4.5
-   },
-   {
-    "program": "switch_case",
-    "op": 100,
-    "commit_mb": 4.5
-   },
-   {
-    "program": "float_basic",
-    "op": 25,
-    "commit_mb": 4.3
-   },
-   {
-    "program": "for_empty_cond",
-    "op": 25,
-    "commit_mb": 4.5
-   },
-   {
-    "program": "for_empty_cond",
-    "op": 50,
-    "commit_mb": 4.7
-   },
-   {
-    "program": "long_loop_5000",
-    "op": 25,
-    "commit_mb": 58.8
-   },
-   {
-    "program": "long_loop_5000",
-    "op": 50,
-    "commit_mb": 57.6
-   },
-   {
-    "program": "long_loop_5000",
-    "op": 75,
-    "commit_mb": 56.1
-   },
-   {
-    "program": "long_loop_5000",
-    "op": 100,
-    "commit_mb": 56.1
-   }
-  ],
+  "rss_samples": [],
   "status_hist": {}
  },
  "part_b": {
@@ -244,12 +157,11 @@
   "badjson_out": 0,
   "died": true,
   "died_at": "input #10 (no response): {\"id\":9,\"method\":\"payload.get\",\"params\":{\"start\":0,\"end\":-1}}",
-  "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (27068) panicked at src\\unified\\engine.rs:416:29:\nrange end index 18446744073709551615 out of range for slice of length 0\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
+  "stderr": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n\nthread 'main' (6972) panicked at src\\unified\\engine.rs:416:29:\nrange end index 18446744073709551615 out of range for slice of length 0\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n",
   "responses_detail": [
    {
     "i": 1,
-    "ok": true,
-    "kind": null
+    "ok": true
    },
    {
     "i": 2,
@@ -273,8 +185,7 @@
    },
    {
     "i": 6,
-    "ok": true,
-    "kind": null
+    "ok": true
    },
    {
     "i": 7,
@@ -293,5 +204,6 @@
    }
   ],
   "alive_at_end": true
- }
+ },
+ "seed": 20260912
 }
