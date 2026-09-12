@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (产物新鲜度：影子验证/回放在陈旧二进制上假绿)
+
+提交后复测时发现并修掉的一个**方法论级缺陷**（比功能 bug 更危险，因为它制造假绿）：
+
+- **症状**：`git commit` 不改变任何包内文件，`native/build.rs` 原先依赖"包内文件变更即
+  重跑"的默认启发，于是版本串停留在上一次**改源码**的时刻——实测 HEAD 已是 `622a859`
+  而 release dll 仍报 `0.1.0 (94c16d2)`（更早还观察到 `10591ad`）。此时回放/影子验证读的
+  都是 `native/target/release/` 里的**陈旧产物**，却会全绿；S5 A4b 的"版本锚定"只校验
+  "版本串含调用方传入的锚点"，传旧锚点 + 旧产物照样通过，防线形同虚设。
+- **修复 1（根因）**：`native/build.rs` 显式声明 `rerun-if-changed`（`src` / `Cargo.toml` +
+  `.git/HEAD` + 其指向的 ref + `packed-refs`）——提交/切分支也会刷新哈希。
+  注意声明 rerun-if-changed 会关闭默认启发，故包内路径必须一并列出。
+- **修复 2（防线）**：`ensure_abi()`（C/C++ 影子驱动共用）除 ABI 符号外，比对
+  `cide_engine_version()` 与 `git rev-parse --short HEAD`；`scripts/replay/replay_s1_s5.py`
+  前置门禁改为 **fail fast（exit 2）**，且 `--anchor` 缺省从 `capabilities.engine_version`
+  自动取（默认值再也无法过期；显式传入则必须命中版本串）。
+- **配套**：`session_api::capabilities()` 新增 `engine_version`（additive）——消费方据此
+  自检"手上的产物是不是当前提交构建的"；`capi::engine_version_string()` 成为 C 出口与
+  该字段的单源。实测门禁：`--anchor deadbeef` → exit 2 并给出可操作提示。
+
 ### Added (下游需求清单第二批：B2 / C1 / C2 / D2 / D3)
 
 响应对端 SharpTutor《Cide后端-C#扩展期需求清单》（锚定 `10591ad`）的非阻塞项。

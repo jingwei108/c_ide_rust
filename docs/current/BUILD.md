@@ -109,6 +109,14 @@ python native/tests/shadow_verification/shadow_verify.py --jobs 8
 
 **门禁语义（自 2026-09-06 起为 CI 硬门禁）**：Clang 预检缺失 → fail fast（exit 2）；存在非预期差异（compile_gap / runtime_gap / output_gap）→ exit 1；match / known_issue / cide_better 视为通过。
 
+**产物新鲜度门禁（2026-09-12 新增，两条驱动都生效）**：影子验证与回放读的都是 **release 产物**（`native/target/release/cide_native.dll` / `cide_cli.exe`），若产物没跟着源码/提交重建，断言会在"验证陈旧二进制"的情况下**全绿**——这比失败更坏。故：
+
+- `ensure_abi()`（`native/tests/shadow_verification/cide_output.py`，C/C++ 驱动共用）除校验 ABI 符号外，还比对 `cide_engine_version()` 与 `git rev-parse --short HEAD`，不一致即抛错；
+- `scripts/replay/replay_s1_s5.py` 前置门禁：`capabilities.engine_version` 必须含当前 HEAD，否则 **exit 2**；`--anchor` 缺省从版本串自动取（默认值再也无法过期）；
+- 提交只改 `.git` 而不动源码，因此 `native/build.rs` 显式声明了 `rerun-if-changed` 指向 `.git/HEAD` 与其指向的 ref —— 否则版本串会停留在上一次改源码的时刻（实测踩坑：HEAD 已 `622a859` 而 dll 仍报 `94c16d2`）。
+
+> 结论：**改完引擎先 `cd native && cargo build --release`**，再跑影子/回放。
+
 **提速设施**：Clang Golden 缓存（key = 源码 + stdin + clang 版本 + 参数 + 预设文件）+ 并行执行。632 用例实测 **103.6s → 1.1s（缓存命中）/ 20.4s（冷启动全量）**。缓存与 worker 目录为 `.clang_cache/` / `.shadow_tmp/`（已 gitignore）——**改动用例后无需手动清缓存**（源码哈希变化自动失效）。
 
 **标准输入**：用例可自带同名 `.in` 文件，Clang 与 Cide 喂**同一份字节**（缓存 key 纳入真实 stdin）。
@@ -127,7 +135,7 @@ python scripts/shadow_verify_cpp.py
 python scripts/serve_smoke.py
 ```
 
-覆盖 id 关联 / 帧同构 / 会话生命周期 / 配置一致性 / 三段式内存地图 / schema 轨道与词汇表的 39 项断言（CI 已纳入）。
+覆盖 id 关联 / 帧同构 / 会话生命周期 / 配置一致性 / 三段式内存地图 / schema 轨道与词汇表的 40 项断言（CI 已纳入）。
 
 ### 防线 5：CI 三层一致性检查
 
@@ -160,7 +168,7 @@ pwsh scripts/check-memory-safety.ps1
 | 脚本 | 功能 |
 |:---|:---|
 | [`shadow_verify_cpp.py`](../../scripts/shadow_verify_cpp.py) | C++ Shadow Verification 驱动（与 Clang++ 对照） |
-| [`serve_smoke.py`](../../scripts/serve_smoke.py) | `cide_cli serve` JSON-lines 协议冒烟（39 项断言） |
+| [`serve_smoke.py`](../../scripts/serve_smoke.py) | `cide_cli serve` JSON-lines 协议冒烟（40 项断言） |
 | [`ci_three_tier_check.py`](../../scripts/ci_three_tier_check.py) | CI 三层一致性检查（失败记录 ↔ 测试结果双向对账） |
 | [`engineering_health.py`](../../scripts/engineering_health.py) | 工程健康度看板 |
 | [`precompile_bytecode_libc.py`](../../scripts/precompile_bytecode_libc.py) | Bytecode Libc 构建期预编译（生成固定索引段数据） |

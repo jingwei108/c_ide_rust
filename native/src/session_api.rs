@@ -586,6 +586,8 @@ pub fn capabilities() -> Value {
     json!({
         "engine": "cide",
         "abi_version": crate::capi::CIDE_ABI_VERSION,
+        // 引擎版本串（含构建期 git 短哈希）：消费方据此自检"产物是否当前提交构建"
+        "engine_version": crate::capi::engine_version_string(),
         // 协议轨道（B2）：v0.1 冻结状态 + 预留位 + v0.2 台账，消费方据此做版本协商
         "schema": {
             "version": SCHEMA_VERSION,

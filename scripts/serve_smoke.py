@@ -213,6 +213,12 @@ def main():
         any(c.get("id") == "unwinding_step_granularity" for c in caps.get("behavior_contracts", [])),
         "capabilities 携带行为契约（B2：UNWINDING 不合并单步）",
     )
+    # 产物自检字段：版本串含构建期 git 短哈希（影子/回放驱动据此 fail fast）
+    check(
+        isinstance(caps.get("engine_version"), str) and caps["engine_version"].count("(") == 1,
+        "capabilities 携带 engine_version（产物自检用）",
+        str(caps.get("engine_version")),
+    )
 
     # B2：词汇表导出（词汇只增不改；异常域条目以 reserved 预登记）
     labels = by_id[17]["result"]

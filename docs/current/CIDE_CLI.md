@@ -202,7 +202,7 @@ cide_cli serve
 | `error_catalog` | — | 错误码表机器可读导出（`{catalog:[{code,code_str,lang,category,emoji,title,explanation,common_causes[]}]}`，按 code 升序） |
 | `semantic_labels` | — | `semantic_label` 受控词汇表导出（`{schema,discipline,labels:[{id,domain,template,example,status,since}]}`；词汇只增不改） |
 | `contracts` | — | schema 版本轨道与行为契约（预留位字段名、v0.2 激活清单与字段台账、行为契约表） |
-| `capabilities` | — | 机器可读能力清单（版本宏名义锚点、语言子集、内存模型常量、schema 轨道、行为契约） |
+| `capabilities` | — | 机器可读能力清单（`engine_version`（含构建期 git 短哈希，可用于产物自检）、版本宏名义锚点、语言子集、内存模型常量、schema 轨道、行为契约） |
 | `session.create` / `session.reset` / `session.destroy` | — | 会话生命周期（响应带 `session` 拓扑语义字段，见上表"会话拓扑"）|
 | `shutdown` | — | 结束 serve 进程（EOF 亦可） |
 
@@ -279,7 +279,7 @@ EOF
 > {"id":3,"method":"input.feed","params":{"text":"35\n"}}   // → finished，读入 a=7, b=35
 > ```
 >
-> 防线：`python scripts/serve_smoke.py` 覆盖 id 关联 / 帧同构 / 生命周期 / 配置一致性 / 三段式内存地图 / schema 轨道与词汇表的 39 项断言（CI 已纳入）。
+> 防线：`python scripts/serve_smoke.py` 覆盖 id 关联 / 帧同构 / 生命周期 / 配置一致性 / 三段式内存地图 / schema 轨道与词汇表的 40 项断言（CI 已纳入）。
 
 ## 快速测试片段
 

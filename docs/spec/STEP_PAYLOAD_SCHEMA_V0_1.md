@@ -339,7 +339,7 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 | C1 | 原生前端 frameCache 消费序列（**已切割的历史资产**；现由 `cide_cli serve` 同形口径复现，见 C4） | `compile` → `step_begin` → `step_next` ×N → `get_step_payloads_json(窗口)` → 断点暂停 → 继续 | 顶层 14 字段齐全；`call_stack` 自底向上；`cache_start_step` 单调不减；窗口裁剪后 `payloads` 非空且步号连续 | ✅ 已实测（§7.2，由 `step_payload_schema_v0_1_test` 冻结） |
 | C2 | 差分往返 | 同一步序列的 `StepPayload[]` → `encode_payloads` → `decode` | 解码结果与原始 payload 逐字段等价；`null` 与 `[]` 语义区分正确 | ✅ 已有回归测试（`stream.rs::test_accessed_vars_and_vis_events_delta` 等） |
 | C3 | 窗口滑动与越窗 seek | 连续执行 >2000 步 → 查询窗口 → seek 回退到窗口外 → 再查询 | 窗口 2000 帧、丢最早 20%；越窗 seek 触发检查点恢复 + 正向重放；seek 后窗口为 `[target-1999, target]` | ✅ 已实测（`step_payload_schema_v0_1_test` + `unified_engine_window_test`） |
-| C4 | serve 出口形状一致性（新增） | `cide_cli serve`：`compile` → `run` → `output.delta` → `step.begin` → `step.next` → `payload.get` → `seek` → `session.reset` | 与 capi 同形：`payloads` 字段、`cache_start_step`、`status` 枚举、iso 帧（`id`/`ok`） | ✅ 已实测（`scripts/serve_smoke.py`，39 项断言；2026-09-12 扩至三段式内存地图 / schema 轨道 / 词汇表） |
+| C4 | serve 出口形状一致性（新增） | `cide_cli serve`：`compile` → `run` → `output.delta` → `step.begin` → `step.next` → `payload.get` → `seek` → `session.reset` | 与 capi 同形：`payloads` 字段、`cache_start_step`、`status` 枚举、iso 帧（`id`/`ok`） | ✅ 已实测（`scripts/serve_smoke.py`，40 项断言；2026-09-12 扩至三段式内存地图 / schema 轨道 / 词汇表） |
 | S1 | 防抖编译流（对端） | 高频 `compile_unit` + `compile_json`，期间夹杂 `step_next` | 诊断 JSON 稳定；`payloads` 不因重编译而串步 | ⏳ 待对端执行（Cide 侧接口已就绪） |
 | S2 | fixtures 判分流（对端） | 固定输入程序批量判分：`compile` → `run_json` → `get_output_delta` | `status`/`return_value`/`steps_executed` 稳定可复现（配 `cide_set_deterministic`） | ⏳ 待对端执行 |
 | S3 | 单步 + seek + 内存查询交错流（对端） | `step_next` / `seek` / `memory.regions` 交错 | 三视图一致：指针四状态与内存区域状态不矛盾；`accessed_vars` 枚举值合法 | ⏳ 待对端执行（`memory.regions` 属 capi 第二批；serve 已有过渡形态可先回放） |
@@ -447,8 +447,15 @@ v0.1 **字段集合未变**（本次为值语义增强与出口扩容），按 �
 | Rust 全量 + 静态检查 | `cargo test --workspace` / `cargo clippy … -- -D warnings` | ✅ 全绿 / 零警告 |
 | C Shadow | `python native/tests/shadow_verification/shadow_verify.py` | ✅ 662 用例（`known_issue` 3，无非预期差异） |
 | C++ Shadow | `python scripts/shadow_verify_cpp.py` | ✅ 94 用例（92 一致 + 2 已记录 `CLANG_COMPILE_FAIL`） |
-| serve 出口一致性 | `python scripts/serve_smoke.py` | ✅ 39 项断言（新增三段式内存地图 / schema 轨道 / 词汇表 / 会话语义） |
-| 签字回放 S1–S5 | `python scripts/replay/replay_s1_s5.py --anchor 10591ad` | ✅ **61/61 PASS** |
+| serve 出口一致性 | `python scripts/serve_smoke.py` | ✅ 40 项断言（新增三段式内存地图 / schema 轨道 / 词汇表 / 会话语义） |
+| 签字回放 S1–S5 | `python scripts/replay/replay_s1_s5.py`（锚点自动取） | ✅ **61/61 PASS** |
+
+> **锚点与产物新鲜度（2026-09-12 补）**：驱动现在**前置门禁** —— `capabilities.engine_version`
+> 必须含当前 `git rev-parse --short HEAD`，否则 fail fast（exit 2）；`--anchor` 缺省从版本串
+> 自动取，默认值再也无法过期。动机是一次实测踩坑：release 产物没随提交重建时，回放会在
+> "验证陈旧二进制"的情况下 61/61 全绿（S5 A4b 的版本锚定只校验"版本串含传入锚点"，
+> 传旧锚点 + 旧产物照样通过）。`native/build.rs` 同时补齐 `.git/HEAD` 的 `rerun-if-changed`
+> ——提交本身不改变任何包内文件，原先不会触发构建脚本重跑，版本串会停留在上一次改源码的时刻。
 
 > 本次同时修正了 `semantic_label` 的判定顺序（具体语句模式优先于循环上下文），
 > 使词汇表里的 `释放内存` / `调用 printf` / `返回` 从"几乎不可达"恢复为可达——

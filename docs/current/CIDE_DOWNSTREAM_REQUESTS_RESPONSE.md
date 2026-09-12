@@ -191,8 +191,8 @@
 | 内存地图与跨帧 | `cargo test --test memory_map_segments_test` | ✅ 3 passed |
 | C 影子验证 | `python native/tests/shadow_verification/shadow_verify.py` | ✅ 662 用例（见 CHANGELOG 记录） |
 | C++ 影子验证 | `python scripts/shadow_verify_cpp.py` | ✅（见 CHANGELOG 记录） |
-| serve 出口一致性 | `python scripts/serve_smoke.py` | ✅ 39 项断言通过（新增三段式内存地图 / schema 轨道 / 词汇表 / 会话语义） |
-| 签字回放 S1–S5 | `python scripts/replay/replay_s1_s5.py --anchor 10591ad` | ✅ **61/61 PASS** |
+| serve 出口一致性 | `python scripts/serve_smoke.py` | ✅ 40 项断言通过（新增三段式内存地图 / schema 轨道 / 词汇表 / 会话语义） |
+| 签字回放 S1–S5 | `python scripts/replay/replay_s1_s5.py`（锚点自动取） | ✅ **61/61 PASS**（前置门禁要求产物含当前 HEAD） |
 
 ---
 

@@ -2,7 +2,11 @@
 """S1–S5 回放驱动 —— schema v0.1 签字材料采纳执行（SharpTutor docs/cide-replay）。
 
 用法:
-    python scripts/replay/replay_s1_s5.py [--cli PATH] [--sections S1,S2,S3,S5] [--anchor 7dbeaef]
+    python scripts/replay/replay_s1_s5.py [--cli PATH] [--sections S1,S2,S3,S5] [--anchor <短哈希>]
+
+锚点缺省 = 从引擎版本串自动取（`capabilities.engine_version`）；驱动**前置门禁**：
+产物版本串必须含当前 HEAD 短哈希，否则 fail fast（exit 2）——防止在陈旧 release
+产物上拿到假绿（先 `cd native && cargo build --release`）。
 
 断言编号与判定口径一一对应下游文档：
     S1-防抖编译流.md §3 (A1–A10)   S2-fixtures判分流.md §4 (A1–A6)
@@ -10,11 +14,12 @@
 S4 在 v0.1 阶段仅 A0-1（预留字段不存在），由 S5 A2 的 C 域载体覆盖。
 P3 A14/A15 需逐步推进 2000+ 步（驱动已支持，约 2000+ 请求）。
 
-退出码: 0 = 全部 PASS；1 = 存在 FAIL。
+退出码: 0 = 全部 PASS；1 = 存在 FAIL；2 = 前置门禁失败（产物陈旧/锚点不匹配）。
 """
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 import time
@@ -523,16 +528,74 @@ def run_s5(serve, rep, payloads, anchor):
     rep.check("S5", "A5", True, "serve 出口无差分批量编码；由引擎 stream 单测覆盖（记录性 PASS）")
 
 
+def git_short_head():
+    """当前提交短哈希（git 不可用返回 None，此时门禁降级为警告）。"""
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            cwd=str(PROJECT_ROOT),
+        )
+    except OSError:
+        return None
+    return out.stdout.strip() if out.returncode == 0 else None
+
+
+def preflight(serve, anchor_arg):
+    """产物新鲜度门禁（fail fast，exit 2）+ 锚点解析。返回 (engine_version, anchor)。
+
+    门禁动机（实测踩坑）：回放读取的是 **release 产物**，若它没跟着源码/提交重建，
+    断言会在"验证陈旧二进制"的情况下全绿——S5 A4b 的版本锚定恰是为了防这件事，
+    但它只校验"版本串含锚点"，锚点又由调用方传入，于是"传旧锚点 + 旧产物"照样 PASS。
+    现在改为**双向对齐**：产物版本串必须含当前 HEAD，锚点缺省时从版本串自取
+    （默认值再也无法过期）。与"Clang 预检缺失 fail fast"同一门禁口径。
+    """
+    caps = serve.request("capabilities").get("result") or {}
+    engine_version = caps.get("engine_version") or ""
+    head = git_short_head()
+
+    if not engine_version:
+        print("错误: capabilities 未携带 engine_version —— 产物过旧，请先 `cd native && cargo build --release`")
+        sys.exit(2)
+    if head and head not in engine_version:
+        print(f"错误: 产物不是当前提交构建的 —— engine_version={engine_version!r} 不含 HEAD {head}")
+        print("      回放/影子验证都读 release 产物，请先 `cd native && cargo build --release`")
+        sys.exit(2)
+
+    resolved = anchor_arg
+    if resolved is None:
+        m = re.search(r"\(([0-9a-f]{7,40})\)", engine_version)
+        resolved = m.group(1) if m else None
+    elif resolved not in engine_version:
+        print(f"错误: --anchor {resolved} 不在引擎版本串 {engine_version!r} 中")
+        sys.exit(2)
+    if resolved is None:
+        print("错误: 引擎版本串不含可识别的短哈希（构建时 git 不可用？），请显式传 --anchor")
+        sys.exit(2)
+
+    print(f"引擎版本: {engine_version}　锚点: {resolved}　HEAD: {head or '(git 不可用)'}")
+    return engine_version, resolved
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--cli", default=str(CLI_DEFAULT))
-    ap.add_argument("--anchor", default="7dbeaef")
+    ap.add_argument(
+        "--anchor",
+        default=None,
+        help="版本锚定短哈希；缺省 = 从引擎版本串自动取（避免默认值过期导致假失败/假通过）",
+    )
     ap.add_argument("--sections", default="S1,S2,S3,S5")
     args = ap.parse_args()
     sections = {s.strip().upper() for s in args.sections.split(",")}
 
     rep = Report()
     serve = Serve(args.cli)
+
+    # 产物新鲜度门禁 + 锚点对齐（见 preflight 文档）
+    _engine_version, anchor = preflight(serve, args.anchor)
+
     all_payloads = []
 
     if "S1" in sections:
@@ -548,7 +611,7 @@ def main():
     if "S5" in sections:
         # S5 的 A4 ping/ctypes 用当前 serve；A1–A3 用 S1–S3 全量 payload
         # （先补一轮 ping 不增加 payload）
-        run_s5(serve, rep, all_payloads, args.anchor)
+        run_s5(serve, rep, all_payloads, anchor)
 
     code = serve.shutdown()
     rep.check("S1", "A10", code == 0, f"serve 退出码 {code}")

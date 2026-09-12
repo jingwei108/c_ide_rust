@@ -70,11 +70,18 @@ pub extern "C" fn cide_abi_version() -> *mut c_char {
 #[no_mangle]
 /// 返回引擎版本串：crate 版本（+ 构建期注入的 git hash，若可用）。
 pub extern "C" fn cide_engine_version() -> *mut c_char {
-    let v = match option_env!("CIDE_GIT_HASH") {
+    owned_c_string(engine_version_string())
+}
+
+/// 引擎版本串的 Rust 侧单源（`cide_engine_version` 与 `capabilities.engine_version` 共用）。
+///
+/// 消费方可用它做**产物新鲜度自检**：串中的短哈希应等于构建所用提交；
+/// 回放/影子验证据此 fail fast，避免在陈旧二进制上拿到假绿。
+pub fn engine_version_string() -> String {
+    match option_env!("CIDE_GIT_HASH") {
         Some(hash) => format!("{} ({})", env!("CARGO_PKG_VERSION"), hash),
         None => env!("CARGO_PKG_VERSION").to_string(),
-    };
-    owned_c_string(v)
+    }
 }
 
 #[no_mangle]
