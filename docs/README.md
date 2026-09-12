@@ -75,7 +75,10 @@
 |------|------|
 | [`current/code_review_report_2026-09-06.md`](current/code_review_report_2026-09-06.md) | 全面代码审阅报告（137 条发现）与四批修复追踪（**修复进度权威追踪**） |
 | [`current/code_review_report_2026-09-11.md`](current/code_review_report_2026-09-11.md) | 外部 PR 清单 12 项复核与批次 A~H 修复记录 |
+| [`current/CIDE_TRILINGUAL_OVERHAUL_PLAN.md`](current/CIDE_TRILINGUAL_OVERHAUL_PLAN.md) | **三语化整备计划 v2（v1.1）**（CS0 前就绪度审计：渗出证据链 / 防线伪全绿机制解剖 / 10591ad 泄漏事故与复发裁定 / S0~S4 止血批次与 CS 时序交织） |
 | [`current/WORKLOG_2026-09-11_SHADOW_SPEEDUP_AND_PHASE1.md`](current/WORKLOG_2026-09-11_SHADOW_SPEEDUP_AND_PHASE1.md) | 工作日志：Shadow 提速 / 隔离预算 / schema v0.1 / serve |
+| [`current/CIDE_REFACTOR_ASSESSMENT_2026_09_12.md`](current/CIDE_REFACTOR_ASSESSMENT_2026_09_12.md) | **重构评估**（独立复核：泄漏复发洞实锤 / 7 项动态探针 / 分模块评估 / 风险清单——§5 计划已并入路线图） |
+| [`current/CIDE_OVERHAUL_ROADMAP.md`](current/CIDE_OVERHAUL_ROADMAP.md) | **统一整备路线图 U0~U7（排期权威）**：三语化计划 S 系列与重构评估 Phase 系列的合并执行方案（波次总览 / CS 硬门禁 / 防伪绿机制制度化） |
 
 ---
 
