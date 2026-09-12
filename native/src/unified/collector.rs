@@ -70,7 +70,13 @@ impl StepCollector {
         let heatmap_line = code_line;
         let heatmap_count = session.runtime.heatmap.line_counts.get(&code_line).copied().unwrap_or(0);
 
-        let semantic_label = infer_semantic_label(code_line, Some(&local_vars), &func_name, session);
+        let at_callee_entry = vm
+            .get_call_stack()
+            .last()
+            .map(|f| f.caller_line == code_line)
+            .unwrap_or(false);
+        let semantic_label =
+            infer_semantic_label(code_line, Some(&local_vars), &func_name, session, at_callee_entry);
         let algorithm_step = {
             let ctx: &dyn cide_algorithm_steps::AlgorithmContext = session;
             let algo_vars: Vec<cide_algorithm_steps::VariableSnapshot> = local_vars
@@ -279,6 +285,7 @@ pub(crate) fn infer_semantic_label(
     local_vars: Option<&[ApiVariableSnapshot]>,
     func_name: &str,
     session: &Session,
+    at_callee_entry: bool,
 ) -> String {
     if code_line <= 0 {
         return String::new();
@@ -329,9 +336,15 @@ pub(crate) fn infer_semantic_label(
         && (source_line.contains("arr[") || source_line.contains("a["))
         && source_line.contains("=");
 
+    // S3 观测 #3（schema §8 #10）修复：进入被调函数的第一步，code_line 归因于
+    // 调用点行（`swap(&x, &y);`）——func_name 已是 callee、行内含 `swap(`，
+    // 旧逻辑误判"递归调用 swap"。`at_callee_entry` 由调用方经
+    // `caller_line == code_line` 判定；调用点行只可能是普通调用（真递归的
+    // 调用行在函数体内部，彼时 caller_line != code_line）。
     // 检测递归调用（排除函数定义行 —— `int helper(int x) {` 含 `helper(` 但不是递归调用，
     // 此前会把定义行标成"递归调用 helper"，是直接呈现给学生的错误描述）
-    let is_recursive = !func_name.is_empty()
+    let is_recursive = !at_callee_entry
+        && !func_name.is_empty()
         && func_name != "main"
         && source_line.contains(&format!("{}(", func_name))
         && !is_function_definition_line(&source_line, func_name);

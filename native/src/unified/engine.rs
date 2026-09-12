@@ -125,11 +125,17 @@ impl UnifiedEngine {
                 .last()
                 .map(|f| f.func_name.clone())
                 .unwrap_or_default();
+            let at_callee_entry = vm
+                .get_call_stack()
+                .last()
+                .map(|f| f.caller_line == vm.get_current_line())
+                .unwrap_or(false);
             let semantic_label = collector::infer_semantic_label(
                 vm.get_current_line(),
                 None,
                 &func_name,
                 session,
+                at_callee_entry,
             );
             let meta = StepMeta {
                 code_line: vm.get_current_line(),
@@ -241,8 +247,25 @@ impl UnifiedEngine {
         // 恢复 VM 状态
         vm.restore(&snap, &mut session.as_vm_context());
 
-        // 正向重放到目标步
-        for step in checkpoint_step..target {
+        // 越窗重放前重置帧窗口到检查点步。否则 target < 旧窗口起点时
+        // `push_or_replace_in_replay` 的 `step - start_step` 为负，
+        // `as usize` 变成天文数字 → 占位填充循环无限 push（实测吃满 63.6GB 内存，
+        // schema 签字回放 S3 A15 暴露；检查点锚点固化使该路径首次可达）。
+        self.frame_cache.clear();
+        self.frame_cache_start_step = checkpoint_step;
+
+        if std::env::var("CIDE_SEEK_DEBUG").is_ok() {
+            eprintln!(
+                "[seek_debug] cp={checkpoint_step} target={target} cache_start={} len={}",
+                self.frame_cache_start_step,
+                self.frame_cache.len()
+            );
+        }
+
+        // 正向重放到目标步（含 target——重放区间排他会把目标步本身留在
+        // 窗口之外，随后 frame_cache_index(target) 落空（S3 A15 实测
+        // "无法获取目标步的 payload"；checkpoint=0 重放 len=5 只含 0..4））
+        for step in checkpoint_step..=target {
             if self.is_cancelled {
                 return SeekResult {
                     success: false,
@@ -293,6 +316,14 @@ impl UnifiedEngine {
 
         self.finish_replay_window(target);
 
+        if std::env::var("CIDE_SEEK_DEBUG").is_ok() {
+            eprintln!(
+                "[seek_debug] 重放完成 cache_start={} len={}",
+                self.frame_cache_start_step,
+                self.frame_cache.len()
+            );
+        }
+
         // 返回目标步的 payload
         match self
             .frame_cache_index(target)
@@ -327,7 +358,10 @@ impl UnifiedEngine {
 
     /// 重放过程中将 payload 放入临时缓存。
     fn push_or_replace_in_replay(&mut self, step: i32, payload: StepPayload) {
-        let idx = (step - self.frame_cache_start_step) as usize;
+        let Ok(idx) = usize::try_from(step - self.frame_cache_start_step) else {
+            // 目标步早于窗口起点：越窗重放路径已重置窗口，此为防御分支
+            return;
+        };
         if idx == self.frame_cache.len() {
             self.frame_cache.push(payload);
         } else if idx < self.frame_cache.len() {

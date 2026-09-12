@@ -57,6 +57,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **回归与验证**：`cargo test --workspace --all-features` 875/0；clippy 零警告；
   C Shadow 660 用例 0 非预期差异；serve 冒烟过；wasm 冒烟本地全通。
 
+### Fixed (schema v0.1 签字回放 S1–S5：61/61 PASS——五个引擎缺陷修复)
+
+采纳 SharpTutor 签字材料（`docs/cide-replay/` 五文档，锚定 `7dbeaef`），新增
+回放驱动 `scripts/replay/replay_s1_s5.py`（断言编号与对端文档一一对应），
+**61/61 断言 PASS**。回放暴露并修复五个引擎缺陷：
+
+- **越窗 seek 负下标无限分配（严重）**：`push_or_replace_in_replay` 的
+  `step - start_step` 为负时 `as usize` 成天文数字，占位填充循环无限 push
+  （实测吃满 63.6GB 物理内存 + 33.9GB 页面文件峰值）。修复：越窗重放前窗口
+  重置到检查点步 + `usize::try_from` 防御。
+- **step 0 锚点检查点被裁剪**：50 上限滚动删除最旧检查点，时间旅行起点丢失，
+  越窗 seek 永久失败。修复：锚点（step 0）永不裁剪。
+- **重放区间排他**：`checkpoint..target` 把目标步本身留在窗口外，恢复后
+  frame_cache_index 落空。修复：`..=target`。
+- **断点暂停双层**：断点命中同时置位 VM `paused` 与统一引擎 `is_paused`，
+  清断点只恢复 VM 层。修复：`set_breakpoints(空)` 同时 resume 两层
+  （serve 出口明示的恢复手段）。
+- **进入被调函数第一步误标"递归调用 X"**（schema §8 #10 实锤项）：入口步行号
+  归因于调用点行，旧启发把 `swap(&x, &y);` 判成递归。修复：
+  `infer_semantic_label` 增加 `at_callee_entry` 判定（caller_line == code_line）。
+
+**语义演进**：seek 在锚点固化后更新——step 0 检查点恒存在，任何 >=0 的 seek
+都可成功（已同步下游 S3 §6 观测 #5）。构建期新增 `build.rs` 注入
+`CIDE_GIT_HASH`（`cide_engine_version()` 含锚定 commit，S5 A4 / 回放纪律 #2
+的版本锚定依赖）。
+
 ### Changed (重构批次 R3：语义单源审计)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 R3 批次。

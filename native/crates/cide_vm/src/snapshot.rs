@@ -234,12 +234,22 @@ impl CheckpointManager {
 
         // 移除最旧检查点；如果移除的是全量基准，需要把下一个全量之前的增量全删掉，
         // 否则增量会 dangling。简化处理：一直删到第一个是全量为止。
+        // S3 A15（schema v0.1 签字回放）：step 0 锚点检查点**永不裁剪**——它是
+        // 时间旅行的起点，裁掉后越窗 seek（目标 < 窗口起点）将永久失败
+        //（实测 2050 步循环后 seek(5) 报"没有可用的检查点"）。
         while self.checkpoints.len() > self.max_checkpoints {
-            let removed_is_full = matches!(self.checkpoints[0].1.memory, MemoryImage::Full(_));
-            self.checkpoints.remove(0);
+            let pinned = self.checkpoints[0].0 == 0;
+            let remove_idx = if pinned { 1 } else { 0 };
+            if remove_idx >= self.checkpoints.len() {
+                break;
+            }
+            let removed_is_full = matches!(self.checkpoints[remove_idx].1.memory, MemoryImage::Full(_));
+            self.checkpoints.remove(remove_idx);
             if !removed_is_full {
                 // 如果删掉的是增量，继续删到下一个全量，保证链头是全量基准
-                while !self.checkpoints.is_empty() && !matches!(self.checkpoints[0].1.memory, MemoryImage::Full(_)) {
+                while self.checkpoints.len() > 1
+                    && !matches!(self.checkpoints[0].1.memory, MemoryImage::Full(_))
+                {
                     self.checkpoints.remove(0);
                 }
             }

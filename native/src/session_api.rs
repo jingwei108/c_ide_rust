@@ -334,6 +334,18 @@ pub fn set_breakpoints(session: &mut Session, lines: &[i32]) -> i32 {
                 vm.add_breakpoint(line);
             }
         }
+        // S3 A2/A3 口径（下游 cide-replay）：断点命中后的暂停态是粘性的，
+        // **清空断点即恢复推进**——serve 出口明示的恢复手段（无独立 resume 方法）。
+        // 注意暂停态有**两层**：VM 层 `vm.paused`（断点/step_event 置位）与
+        // 统一模式引擎层 `unified.is_paused`（run_batch 见 Paused 置位），
+        // 清断点必须同时恢复两层，否则引擎循环入口直接 break。
+        // resume 对非暂停态是无操作，不影响活跃断点的设置。
+        if lines.is_empty() {
+            vm.resume();
+            if let Some(engine) = session.unified.as_mut() {
+                engine.resume();
+            }
+        }
     }
     0
 }

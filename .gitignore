@@ -123,3 +123,6 @@ tmp_threaded*.exe
 # 探针临时目录（E 系列 batch 探针，勿提交）
 .e2_probe/
 .e3_probe/
+
+# 诊断临时文件
+diag_mem.ps1
