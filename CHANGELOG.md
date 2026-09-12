@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (D5 语言迁移第五站：资源域长跑探针 Python→Go)
+
+`resource_longrun.go` + `seek_accumulation.go`（U2 验收的测量通道，psapi 驱动侧采样）：
+
+- **两个 Go 版探针**：采样/看门狗机制对齐（commit_mb 驱动侧采样、cap 超限击杀、
+  seek 重放放大 3 规模 / malloc 登记表 3+4 规模 / putchar 1M / 同会话 6 次往返 seek
+  的 before-after-settled 时间线）。看门狗击杀改用进程句柄 Terminate（Python 经
+  taskkill 子进程），有意差异。
+- **对账（测量类探针采用结构口径）**：数值（wall_s / commit_mb）是测量值，双轨不
+  要求相等；对账比较结构 / case 序列 / exit 码 / seek 成功标志 / 耗时指数。实测
+  PASS——malloc 耗时指数 Python 1.024 vs Go 1.018（均近线性，**独立复核确认非
+  O(N²)**）；malloc 400k exit=1 撞步数上限，与裁定 §13.4 更正一致。
+- seek_accumulation 实测：峰值提交 513.6MB（watchdog 未触发，cap 1200MB），
+  settled 回落——瞬时窗口放大而非单调泄漏，与裁定既有结论一致。
+- mutation_facet_test 评估结论：它是**突变编排器**（打补丁 → cargo build → 影子 +
+  cargo test → 还原），深度耦合主驱动 shadow_verify.py——迁移与主驱动绑定做，
+  不单独迁移。
+- Python 版保留为双轨对照基准（头部已标注）。
+
 ### Changed (D5 语言迁移第四站：交互切面探针 Python→Go) — **⚠️ 附 P0 实证**
 
 `scripts/core_asset_verdict/interaction_probe.go`（随机交互序列 + 恶意输入 fuzz，U0 验收的

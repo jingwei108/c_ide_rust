@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """seek 内存累积判定：峰值 vs 常驻（区分"瞬时尖峰"与"真泄漏"）。
 
+**已被 Go 版取代（2026-09-12，D5 探针集）**：`go run scripts/core_asset_verdict/seek_accumulation.go`
+（结构/case 序列/exit 码/seek 成功标志/耗时指数对账一致）。本文件保留为**双轨对照基准**。
+
 resource_longrun.py 已实测 seek 重放的峰值提交内存斜率（~1.2-2.3MB/千步）。
 本探针回答更关键的问题：**同一会话内反复 seek 之后，内存是否回落？**
   * 若每次 seek 后 commit 单调抬升 → 累积泄漏（复现事故形态：磁盘被页面文件占满）；
