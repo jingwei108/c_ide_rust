@@ -603,7 +603,7 @@ pub fn capabilities() -> Value {
             "c": {
                 "anchor": "ISO C23 (ISO/IEC 9899:2024) 教学子集",
                 "stdc_version_macro_nominal": "202311L",
-                "spec": "docs/current/C_SUBSET_SPEC.md",
+                "spec": "C-语言子集/C语言子集规范.md",
                 "predefined_macros": {
                     "__STDC_VERSION__": "202311L",
                     "__CIDE_SUBSET__": "1",
@@ -636,7 +636,7 @@ pub fn capabilities() -> Value {
             },
             "cpp": {
                 "anchor": "C++ 教学子集（Phase 31+，Stage 0~6）",
-                "spec": "docs/current/CPP_SUBSET_SPEC.md",
+                "spec": "C-语言子集/C++子集规范.md",
             },
         },
         "memory_model": {

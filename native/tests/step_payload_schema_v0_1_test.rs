@@ -392,7 +392,7 @@ fn test_unwinding_granularity_contract_frozen() {
     let contract = contracts::BEHAVIOR_CONTRACTS
         .iter()
         .find(|c| c.id == "unwinding_step_granularity")
-        .expect("行为契约表必须登记 unwinding_step_granularity（CSHARP_EXTENSION_PLAN §6-B）");
+        .expect("行为契约表必须登记 unwinding_step_granularity（CSharp前端引入计划 §6-B）");
     assert!(
         contract.statement.contains("不得合并单步"),
         "契约文本丢失核心约束：{}",

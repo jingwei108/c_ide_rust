@@ -469,7 +469,7 @@ fn find_single_equals_in_condition(line: &str) -> Option<(usize, usize)> {
 
 /// 错误码的适用语言（由码段推断，单一真相来源见 `cide_shared::error_codes`）。
 ///
-/// 码段划分（`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md` §5.3 第二批 + C# 计划 D4 裁决）：
+/// 码段划分（`后端定位与白箱计划.md` §5.3 第二批 + C# 计划 D4 裁决）：
 /// - `E1xxx` 词法 / `E2xxx` 语法 / `E3xxx` 语义 → C（C++ 共用，C++ 专属码在 4xxx）
 /// - `E4xxx` → C++（`E4001~E4031` 已在 `error_codes.rs` 定义）
 /// - `E5xxx` → C#（CS 批次启用）

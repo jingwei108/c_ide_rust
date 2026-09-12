@@ -184,7 +184,7 @@ fn collect_pointer_snapshots(
 /// 判断某行是否是函数**定义**行（形如 `int helper(int x) {`）。
 ///
 /// 用于把"函数定义行"从递归调用判定里排除。仅识别单行形态（`{` 与签名同行）；
-/// 左花括号写在下一行时仍会误判 —— 已知限制，记录于 `code_review_report_2026-09-11.md`。
+/// 左花括号写在下一行时仍会误判 —— 已知限制，记录于 `ARCHIVE_代码审查复核20260911.md`。
 fn is_function_definition_line(line: &str, func_name: &str) -> bool {
     line.ends_with('{') && line.contains(&format!("{}(", func_name))
 }

@@ -9,7 +9,7 @@
 
 ## Project Overview
 
-> **Repositioning (2026-09-11)**: Cide has transitioned from a "cross-platform C IDE" into a **teaching C/C++ subset reference execution engine (white-box)** — this repository is backend-only (MIT license); the frontend is split out to the community and native mobile is dropped. See [`docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md).
+> **Repositioning (2026-09-11)**: Cide has transitioned from a "cross-platform C IDE" into a **teaching C/C++ subset reference execution engine (white-box)** — this repository is backend-only (MIT license); the frontend is split out to the community and native mobile is dropped. See [`A-定位与路线/后端定位与白箱计划.md`](A-定位与路线/后端定位与白箱计划.md).
 >
 > **Frontend split executed (2026-09-11)**: `CideFlutter/`, the FRB bridge (`native/src/api/` + `frb_generated`), the web deploy workflow and all Flutter build scripts have been removed. The last complete pre-split state is preserved by tag `before-frontend-split` (`git checkout before-frontend-split -- CideFlutter` to recover).
 
@@ -204,7 +204,7 @@ Use a **deterministic RNG** to generate random memory states and random standard
 
 ## C Teaching Subset Overview
 
-The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** capabilities (including comma operator, Designated Initializer, `offsetof`, VFS file I/O, etc.). Detailed spec: [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md). Core support includes:
+The C teaching subset supported by this project covers **Phase 1 ~ Phase 5+** capabilities (including comma operator, Designated Initializer, `offsetof`, VFS file I/O, etc.). Detailed spec: [`C-语言子集/C语言子集规范.md`](C-语言子集/C语言子集规范.md). Core support includes:
 
 **Data types**: `int`, `char`, `float`, `double`, `unsigned`, `_Bool`/`bool`, `int*`, `char*`, `float*`, `double*`, `int[]`, `char[]`, `double[]`, `struct` (including return by value), `union`, `enum`, `typedef`
 
@@ -267,7 +267,7 @@ The following inconsistencies between Cide and Clang were discovered during Leet
 - **Pointer compound assignment `+=` / `-=`** — **Supported (2026-06-28)**. `int* p; p += n;` and `p -= n;` are supported end-to-end with pointee-size scaling; `void* p; p += n;` uses 1-byte steps as a GCC/Clang extension. Function pointer arithmetic, pointer-pointer `+=` / `-=`, and other compound operators (`*=`, `/=`, etc.) remain errors. Regression cases added at `baseline/pointer_add_assign*.c`.
   - ⚠️ **Behavioral difference from Clang**: `void*` arithmetic is a GCC/Clang extension and is undefined in strict C; prefer concrete pointer types in teaching. The value returned by a compound assignment expression is an rvalue pointer in Cide, differing from the C standard lvalue semantics, though this is rarely relied upon in teaching code.
 
-> Historical feature details and bug-fix records are in [`CHANGELOG.md`](CHANGELOG.md) and [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md).
+> Historical feature details and bug-fix records are in [`CHANGELOG.md`](CHANGELOG.md) and [`C-语言子集/C语言子集规范.md`](C-语言子集/C语言子集规范.md).
 
 ## Build Commands
 
@@ -363,4 +363,4 @@ cide_cli unified long_sort.c --max-steps 500000
 cide_cli export main.c libc_helper.c -o bundle.json --builtin-libc
 ```
 
-Full documentation: [`docs/current/CIDE_CLI.md`](docs/current/CIDE_CLI.md).
+Full documentation: [`B-构建与上手/CLI使用手册.md`](B-构建与上手/CLI使用手册.md).

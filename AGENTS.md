@@ -4,7 +4,7 @@
 
 ## 项目概览
 
-> **定位转型（2026-09-11）**：Cide 从"跨平台 C 语言 IDE"转型为**教学 C/C++ 子集参考执行引擎（白箱）**——本仓库只做后端（MIT 许可），前端切割给社区，原生移动端放弃。完整决策依据与路线见 [`docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](docs/current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md)。
+> **定位转型（2026-09-11）**：Cide 从"跨平台 C 语言 IDE"转型为**教学 C/C++ 子集参考执行引擎（白箱）**——本仓库只做后端（MIT 许可），前端切割给社区，原生移动端放弃。完整决策依据与路线见 [`A-定位与路线/后端定位与白箱计划.md`](A-定位与路线/后端定位与白箱计划.md)。
 >
 > **前端切割已执行（2026-09-11）**：`CideFlutter/`、FRB 桥接（`native/src/api/` + `frb_generated`）、web 部署 workflow 与全部 Flutter 构建脚本已从仓库移除；切割前最后完整状态由标签 `before-frontend-split` 保留（`git checkout before-frontend-split -- CideFlutter` 可取回）。
 
@@ -20,7 +20,7 @@
 - **必须中文输出思考以及回答问题**
 - **未经允许禁止git提交**
 - **诚实记录**：本项目作为教学c/cpp子集，以clang为标准，任何本项目与标准不符合的，都要进行记录
-- **文档体系**：新文档进 `docs/current/`；被取代或对象已迁出的移入 `docs/archive/`（加 `ARCHIVE_` 前缀与归档横幅），并同步 `docs/README.md` 索引；英文文档只保留根目录 `AGENTS_EN.md`（其余已删除，翻译后续再议）
+- **文档体系**：新文档进 `docs/current/` 对应分类子目录（`01-定位与路线` / `02-构建与上手` / `03-语言子集` / `04-标准库与防线` / `05-教学体验` / `06-出口与协议` / `07-质量与裁定`，中文文件名）；被取代或对象已迁出的移入 `docs/archive/`（加 `ARCHIVE_` 前缀与归档横幅），并同步 `docs/README.md` 索引；英文文档只保留根目录 `AGENTS_EN.md`（其余已删除，翻译后续再议）
 ## 技术栈
 
 | 层级 | 技术 |
@@ -227,15 +227,15 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 既有 Python 脚本的处置：
 
-- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写。**D5 进度（2026-09-12）**：① 试点 `shadow_verify_cpp.py` 完成——`scripts/shadow_verify_cpp.go` 双轨对账一致（94 用例）后接管 CI，Clang 并发 16 路 **24.75s → 5.2s**；② 第二站 `replay_s1_s5.py` 完成——`scripts/replay/replay_s1_s5.go` 双轨对账一致（61 条断言状态与编号逐行一致），并带 `--selftest` 注入自检（J9）。两站 Go 版均含启动自检 fail loud + 产物新鲜度门禁；Python 版保留为**双轨对照基准**。剩余：探针集 → 主驱动（双轨对照）；
+- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写。**D5 进度（2026-09-12）**：① 试点 `shadow_verify_cpp.py` 完成——`scripts/shadow_verify_cpp.go` 双轨对账一致（94 用例）后接管 CI，Clang 并发 16 路 **24.75s → 5.2s**；② 第二站 `replay_s1_s5.py` 完成——`scripts/replay/replay_s1_s5.go` 双轨对账一致（61 条断言状态与编号逐行一致），并带 `--selftest` 注入自检（J9）；③ 第三站探针集 `random_diff.py` 完成——`scripts/core_asset_verdict/random_diff.go` 以 **MT19937 逐比特复刻**（同 seed 同用例集合）双轨对账一致（1000 例 verdict+expected 逐用例一致），首次建立可复现基线。三站 Go 版均含启动自检 fail loud + 产物新鲜度门禁；Python 版保留为**双轨对照基准**。**⚠️ 实证发现**：DLL 并发调用 → 堆损坏（引擎非线程安全），Cide 侧调用必须互斥。剩余：其余探针按"会否再跑"判据评估 → 主驱动（双轨对照）；
 - 迁移 `shadow_verify.py`（唯一硬门禁、105KB、承载 6 类隐性口径）**必须新旧双轨同跑**，`663 / match 644 / known_issue 3 / cide_better 16 / 0 非预期差异` 五项一致才允许切换；
 - 保留的 Python **判定型脚本**仍须满足 **J9**：有"注入必然违反 → 必须变红"的埋雷记录（这条是语言无关义务）。
 
-> 完整依据与迁移顺序见 [`docs/current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md`](docs/current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md) §13（D1 防线自身 / D5 工具链语言）。
+> 完整依据与迁移顺序见 [`G-质量与裁定/核心资产重构裁定.md`](G-质量与裁定/核心资产重构裁定.md) §13（D1 防线自身 / D5 工具链语言）。
 
 ## C 教学子集支持概览
 
-本项目支持的 C 语言教学子集覆盖 **Phase 1 ~ Phase 5+** 能力（含逗号运算符、Designated Initializer、`offsetof`、VFS 文件 I/O 等），详细规范见 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。核心支持包括：
+本项目支持的 C 语言教学子集覆盖 **Phase 1 ~ Phase 5+** 能力（含逗号运算符、Designated Initializer、`offsetof`、VFS 文件 I/O 等），详细规范见 [`C-语言子集/C语言子集规范.md`](C-语言子集/C语言子集规范.md)。核心支持包括：
 
 **数据类型**：`int`、`char`、`float`、`double`、`unsigned`、`_Bool`/`bool`、`int*`、`char*`、`float*`、`double*`、`int[]`、`char[]`、`double[]`、`struct`（含按值返回）、`union`、`enum`、`typedef`
 
@@ -261,13 +261,13 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 **头文件**：`#include <stdio.h>` / `<stdlib.h>` / `<ctype.h>` / `<math.h>` / `<string.h>` 加载存根声明
 
-**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、**模块化预处理器（E2：`#`/`##`、`#if`/`#elif`、`defined`、`__has_include`、`#undef`、include-once、环检测、遮蔽/副作用警告、展开链教学追踪，详见 `C_SUBSET_SPEC.md` §2.11）**、**C23 语义级（E3：`nullptr`、`static_assert`/`_Static_assert` 真求值、`constexpr`（按 const 口径）、`[[属性]]` 解析忽略、`unreachable()` 教学 trap，详见 §2.12）**、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
+**其他**：`rand`/`srand`、`memset`、`exit`、`qsort`、`calloc`、`bsearch`、`atof`/`atol`、`#define` 宏（对象宏/参数化宏/嵌套调用）、**模块化预处理器（E2：`#`/`##`、`#if`/`#elif`、`defined`、`__has_include`、`#undef`、include-once、环检测、遮蔽/副作用警告、展开链教学追踪，详见 `C语言子集规范.md` §2.11）**、**C23 语义级（E3：`nullptr`、`static_assert`/`_Static_assert` 真求值、`constexpr`（按 const 口径）、`[[属性]]` 解析忽略、`unreachable()` 教学 trap，详见 §2.12）**、`stdarg.h` 变参函数（`va_list`/`va_start`/`va_arg`/`va_end`/`va_copy`，支持 `int`/`double`/`long long` 等类型）、**`__func__` 预定义标识符（C99）**、**`limits.h` 全宏（含 `ULLONG_MAX`）与 `<float.h>`**
 
 **字符分类**：`isdigit`/`isalpha`/`islower`/`isupper`/`isalnum`/`isspace`/`isprint`/`iscntrl`/`isxdigit`/`tolower`/`toupper`（`ctype.h`，部分走 Bytecode Libc 路径）
 
 **C++ 类与模板（Phase 31+）**：`class`、成员访问控制、`this` 指针、虚函数、模板类单态化、栈对象 RAII（自动构造/析构）、构造函数初始化语法 `Type name(args);`、隐式默认构造/移动构造、`std::move`、简化版 `unique_ptr<T>` dogfooding（构造/`get`/`release`/`reset`/析构/所有权转移）
 
-**明确不支持**：bitfield、全局 VLA。预处理器为 E2 模块化内核（§2.11，覆盖宏全族/条件编译全族/include 解析图）；C23 锚定的完整支持清单与已知差异（浮点字面量 double 语义、IEEE 精确比较、struct packed 布局、指针 4 字节模型）见 `C_SUBSET_SPEC.md` §2.10~§2.11
+**明确不支持**：bitfield、全局 VLA。预处理器为 E2 模块化内核（§2.11，覆盖宏全族/条件编译全族/include 解析图）；C23 锚定的完整支持清单与已知差异（浮点字面量 double 语义、IEEE 精确比较、struct packed 布局、指针 4 字节模型）见 `C语言子集规范.md` §2.10~§2.11
 
 **C++ 子集边界（诚实记录）**：`cide_vec<T>` / `cide_list<T>` 已支持类类型模板实参；`const T&` 参数已支持绑定到字面量、变量与表达式右值；**默认参数**、**嵌套类 `Outer::Inner` 实例化**、**类模板非类型模板参数（NTTP，如 `Array<int, 5>`）**、**自定义拷贝构造函数（`Class(const Class&)`）** 已支持；函数模板显式 `<>` 调用等特性暂不支持（2026-06-26 记录）。这些限制在 Cide C++ 教学子集当前 Stage 0~6 范围内尚未覆盖，后续按教学需求逐步扩展。
 
@@ -301,7 +301,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 - ~~**全局/静态数据段与堆区共享线性内存（潜在静默损坏）**~~ — **已修复（2026-09-11，重构批次 R1：动态堆起点）**。全局变量、静态变量与字符串字面量仍自 `GLOBAL_START`（`0x1000`）向上分配，但堆起点不再写死 `HEAP_START`（`0x5000` = 20 KB）：运行入口按 `heap_base = max(HEAP_START, align4(global_data_end))` 动态计算（codegen 导出全局数据末端绝对地址）；程序带命令行参数时，argv 改自全局区上界 `GLOBAL_REGION_LIMIT`（`0x10000` = 64 KB，取代 `gen_string_literal` 的 `MEM_SIZE/16` 魔数）向下分配，堆起点相应上移至 64 KB。全局区所有 bump（全局变量 / extern 占位 / vtable / 字符串字面量 / 静态局部变量）统一走 codegen `bump_global_offset` 单一入口，越过 `GLOBAL_REGION_LIMIT` 编译期报错（fail loud，不再静默放行）；全局数据越过 `HEAP_START` 时产生编译 warning 提示堆起点上移与剩余堆空间。`lc_22` / `lc_977` 等"全局区越过 20 KB 但不用堆"的存量用例行为不变。回归：`native/tests/r1_memory_boundary_test.rs`（大全局+malloc 数据完好 / malloc 耗尽明确返回 NULL / 深递归明确 trap / argv 不与全局数据重叠 / 容量上限编译失败 / 大全局 warning）。
   - 历史背景：该风险与 2026-09-11 修复的 `BYTECODE_LIBC_GLOBALS_RESERVED` 自我递增漂移**同源**（都是"全局区边界无单源判据"的结构病）：漂移曾把用户全局区压缩到不足 1 KB，使 `lc_67` 的 `static char res[1000]` 直接溢出到堆区并打印出错乱内容（详见 `CHANGELOG.md [Unreleased] Fixed`）；本批修复后布局判据单源化到 `cide_runtime`（`GLOBAL_REGION_LIMIT` / `compute_heap_base`）。
 
-> 历史特性详情和 Bug 修复记录见 [`CHANGELOG.md`](CHANGELOG.md) 和 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。
+> 历史特性详情和 Bug 修复记录见 [`CHANGELOG.md`](CHANGELOG.md) 和 [`C-语言子集/C语言子集规范.md`](C-语言子集/C语言子集规范.md)。
 
 ## 构建命令
 
@@ -398,5 +398,5 @@ cide_cli unified long_sort.c --max-steps 500000
 cide_cli export main.c libc_helper.c -o bundle.json --builtin-libc
 ```
 
-完整文档见 [`docs/current/CIDE_CLI.md`](docs/current/CIDE_CLI.md)。
+完整文档见 [`B-构建与上手/CLI使用手册.md`](B-构建与上手/CLI使用手册.md)。
 

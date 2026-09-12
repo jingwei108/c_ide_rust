@@ -497,9 +497,9 @@ fn test_apply_fix_chinese_line_no_panic() {
 }
 
 // ============ 堆语义专项（2026-09-11 决议：bump 分配 + 有界隔离）============
-// 依据 CIDE_HEAP_QUARANTINE_DECISION.md §6 验收清单。
+// 依据 堆有界隔离决议.md §6 验收清单。
 // 期望值来源：本决议定义的引擎语义（非 Clang 对照——隔离区为 Cide 教学特性；
-// 与 Clang 的差异已在 C_SUBSET_SPEC.md §2.9 记录）。
+// 与 Clang 的差异已在 C语言子集规范.md §2.9 记录）。
 
 #[test]
 fn test_heap_churn_beyond_quarantine_budget_no_wall() {

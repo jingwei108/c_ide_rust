@@ -11,7 +11,7 @@
 //!   （`step_payload_schema_v0_1_test::test_semantic_label_vocabulary_closed`）断言
 //!   引擎实际产出的每个 label 都能归类——新增标签而不登记词汇表 = 测试失败；
 //! - **只增不改**：既有 `id` 与 `template` 不得改语义；扩充只能追加条目。
-//!   这与 CSHARP_EXTENSION_PLAN §6-B 的"消费端 UI 直读不做推断"是同一份契约。
+//!   这与 CSharp前端引入计划 §6-B 的"消费端 UI 直读不做推断"是同一份契约。
 //!
 //! 状态位 `status`：
 //! - `active`：当前引擎会产出（C 域，`collector.rs`）；

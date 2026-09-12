@@ -1,6 +1,6 @@
 //! capi 第一批（2026-09-11 SharpTutor API 评审定稿后的实现）。
 //!
-//! 契约（见 `docs/current/CIDE_CAPI_REVIEW_RESPONSE.md` §1）：
+//! 契约（见 `docs/current/06-出口与协议/CAPI评审回复与实现状态.md` §1）：
 //! - 复杂返回一律 **JSON 字符串 + rust-alloc 所有权**：调用方负责用
 //!   [`cide_free_string`] 释放，禁止 `free()` / `delete`；
 //! - 所有入口经 `catch_unwind`，panic 不跨 C 边界（V-P0-3 模式推广）；
@@ -298,7 +298,7 @@ pub unsafe extern "C" fn cide_get_deterministic(s: *mut Session) -> c_int {
 #[no_mangle]
 /// 设置堆**隔离区字节预算**（堆决议 §1「隔离预算可调，写进会话配置」）。
 ///
-/// 语义（配合 [`CIDE_HEAP_QUARANTINE_DECISION.md`] 的 bump + 有界隔离）：
+/// 语义（配合 [`堆有界隔离决议.md`] 的 bump + 有界隔离）：
 /// - 默认 `256KB`（堆上限 1/4）；`free` 的块进 FIFO 隔离区，地址在窗口内不复用；
 /// - 超预算时 FIFO 驱逐最老块归还 `free_list` 复用 —— 合法 churn 循环因此不撞内存墙；
 /// - `budget = 0` 表示**关闭隔离**：free 后地址立即可复用（教学对照用，代价是
@@ -307,7 +307,7 @@ pub unsafe extern "C" fn cide_get_deterministic(s: *mut Session) -> c_int {
 ///
 /// 返回 0 成功；-1 表示会话无效或 `budget_bytes` 为负。
 ///
-/// [`CIDE_HEAP_QUARANTINE_DECISION.md`]: ../../docs/current/CIDE_HEAP_QUARANTINE_DECISION.md
+/// [`堆有界隔离决议.md`]: ../../../docs/current/06-出口与协议/堆有界隔离决议.md
 ///
 /// # Safety
 /// - `s` 必须是 `cide_session_create` 返回且未销毁的有效句柄。

@@ -1382,7 +1382,7 @@ fn test_scanf_n_rejects_insufficient_args() {
 }
 
 // ─── 堆隔离区契约（2026-09-11 决议：bump 分配 + 有界隔离）──────────────────────
-// 依据 CIDE_HEAP_QUARANTINE_DECISION.md §1/§3/§6。原 3a 的 free 断言只覆盖
+// 依据 堆有界隔离决议.md §1/§3/§6。原 3a 的 free 断言只覆盖
 // "标记 is_freed"，未触及分配器复用行为；本节把新语义的行为契约显式化。
 
 #[test]

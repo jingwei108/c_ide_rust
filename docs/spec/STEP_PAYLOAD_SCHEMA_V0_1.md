@@ -4,7 +4,7 @@
 > 字段冻结测试、出口形状一致性、serve 冒烟与 clippy 零警告全部就位。
 > 冻结日期：2026-09-12　|　冻结锚点：`10591ad`
 > 后续演进走 **§9 v0.2 激活轨道**（预留位激活 / 新增字段），纪律不变：**字段只增不改语义**。
-> 归属：主计划 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](../current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §3.2 协议层
+> 归属：主计划 [`后端定位与白箱计划.md`](../current/01-定位与路线/后端定位与白箱计划.md) §3.2 协议层
 > 实现锚点：`native/src/unified/types.rs`（类型定义）、`collector.rs`（字段来源）、`engine.rs`（窗口与 seek）、`stream.rs`（差分编码）、`contracts.rs`（版本轨道与行为契约）、`vocabulary.rs`（受控词汇表）、`native/src/capi/first_batch.rs`（出口序列化）
 > 消费者：capi 第一批（`cide_step_next_json` / `cide_get_step_payloads_json`）、`cide_cli serve`、wasm 绑定、任何第三方语言
 > 最后核对日期：2026-09-12
@@ -193,7 +193,7 @@
 
 **指针变量的识别**：`ty_name` 含 `*` 或 `Pointer` 的变量进入指针快照；`value` 以 `0x…` 十六进制或十进制无符号解析失败者跳过（如函数指针的符号名）。
 
-> 说明：`Freed` 的判定依赖引擎的**有界隔离区**（free 后地址在隔离窗口内不复用，见 [`CIDE_HEAP_QUARANTINE_DECISION.md`](../current/CIDE_HEAP_QUARANTINE_DECISION.md)）。隔离窗口外的 UAF 可能退化为 `Valid`（读到复用块），属已知差异。
+> 说明：`Freed` 的判定依赖引擎的**有界隔离区**（free 后地址在隔离窗口内不复用，见 [`堆有界隔离决议.md`](../current/06-出口与协议/堆有界隔离决议.md)）。隔离窗口外的 UAF 可能退化为 `Valid`（读到复用块），属已知差异。
 
 ### 3.2 `accessed_vars[].access_type`
 
@@ -326,13 +326,13 @@ seek 到第 N 步后，`local_vars` / `call_stack` / `array_snapshots` / `pointe
 
 ### 6.3 `cide_cli serve` 帧
 
-NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同构**（`{"id":n,"ok":false,"error":{"code":…,"message":…}}`）。方法名与 capi 入口一一对应，见 [`CIDE_CLI.md`](../current/CIDE_CLI.md)。
+NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同构**（`{"id":n,"ok":false,"error":{"code":…,"message":…}}`）。方法名与 capi 入口一一对应，见 [`CLI使用手册.md`](../current/02-构建与上手/CLI使用手册.md)。
 
 ---
 
 ## 7. 回放场景校验记录
 
-> 校验输入分两类：**我方（Cide）现有消费序列**（原生前端 frameCache 消费序列（**已切割的历史资产**，同形口径现由 `cide_cli serve` 复现）/ StepStreamBatch 的真实调用序列）与**对端（SharpTutor）三组场景**（防抖编译流 / fixtures 判分流 / 单步+seek+内存查询交错流，见 `CIDE_CAPI_REVIEW_RESPONSE.md` §2 与 §8）。
+> 校验输入分两类：**我方（Cide）现有消费序列**（原生前端 frameCache 消费序列（**已切割的历史资产**，同形口径现由 `cide_cli serve` 复现）/ StepStreamBatch 的真实调用序列）与**对端（SharpTutor）三组场景**（防抖编译流 / fixtures 判分流 / 单步+seek+内存查询交错流，见 `CAPI评审回复与实现状态.md` §2 与 §8）。
 
 | # | 场景 | 输入序列 | 期望（schema 断言） | 状态 |
 |---|---|---|---|---|
@@ -375,7 +375,7 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 
 ---
 
-## 7.x 预留位：异常域字段（CSHARP_EXTENSION_PLAN.md §6-A，随 v0.1 冻结）
+## 7.x 预留位：异常域字段（CSharp前端引入计划.md §6-A，随 v0.1 冻结）
 
 以下四个字段为 **C# 前端异常教学**（CS3b 激活）预留，v0.1 消费方**必须容忍其
 不存在**（字段可选）；激活前不出现在任何 payload 中：
@@ -385,9 +385,9 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 | `handler_depth` | int | 当前受几层 try 保护 |
 | `unwinding` | bool | 展开态显式标记 |
 | `unwind_frames_left` | int | 剩余待展开帧数（展开动画驱动字段） |
-| `current_exception` | `{type_name, message, addr, origin_line} \| null` | 当前异常寄存器；`addr` 联动内存面板 region 高亮（ARC 教学闭环）；**`origin_line` 为原始抛点行号**——`throw;` 保留、`throw e;` 改写为当前点（CSHARP_EXTENSION_PLAN §4.4 轨迹考点：知识卡片"原始抛点在第 X 行"直读本字段，**不解析 trap message 文本**；评审补充 2026-09-12） |
+| `current_exception` | `{type_name, message, addr, origin_line} \| null` | 当前异常寄存器；`addr` 联动内存面板 region 高亮（ARC 教学闭环）；**`origin_line` 为原始抛点行号**——`throw;` 保留、`throw e;` 改写为当前点（CSharp前端引入计划 §4.4 轨迹考点：知识卡片"原始抛点在第 X 行"直读本字段，**不解析 trap message 文本**；评审补充 2026-09-12） |
 
-语义细则见 `CSHARP_EXTENSION_PLAN.md` §6-A；词汇契约（`semantic_label` 异常域
+语义细则见 `CSharp前端引入计划.md` §6-A；词汇契约（`semantic_label` 异常域
 条目）同批进附录。
 
 ---
@@ -475,7 +475,7 @@ v0.1 **字段集合未变**（本次为值语义增强与出口扩容），按 �
 | 6 | 窗口外的历史 payload 不可查询 | 消费方须自行落地持久化（或依赖 seek 重放）；`payload.get` 对越窗区间静默返回子集 | 设计如此（内存有界）；消费方契约已在 §4.1 写明 |
 | 7 | ~~`ty_name` 为 Rust `Debug` 表示~~ | 拼写随内部重构变化，且把内部枚举结构（`Int { is_unsigned: false, … }`）泄漏到教学输出 | **✅ 已修复（2026-09-11）**：改为 C 风格稳定可读名（单一来源 `cide_runtime::type_display_name`），消费方可直接显示。指针识别规则不变（含 `*`） |
 | 8 | `local_vars` 曾含**跨函数**变量与同名重复 | 消费方看到 `helper` 的局部变量出现在 `main` 的 payload（且用错 `locals_base` 读出垃圾值），两个 `for` 各声明一个 `i` 时无法区分 | **✅ 已修复（2026-09-11）**：按函数归属 + 声明行（新增 `Symbol::decl_line`）过滤，同名取"已进入作用域且最晚声明"者；无有效执行位置（`code_line == 0`）时不输出局部变量 |
-| 9 | `code_line` 是**合并源码的全局行号**，payload 未携带文件名 | 多文件会话中消费方无法自行把 `code_line` 映射回"哪个文件的第几行"（引擎内部已按 `file_ranges` 正确映射，语义标注不再串文件）。**消费方可见后果（前端期现场实测）**：若按"主文件行数"做比例计算，覆盖率会显示 **>100%**；`heatmap_line` 恒等于 `code_line`（§1）且 `heatmap_count` 按 `code_line` 索引（`unified/collector.rs`），故热力图在多文件 / 含头文件时按全局行号着色而错位。**这不是前端独有问题**：前端只是第一个把该协议缺口显示出来的消费方 | **已排入 v0.2（§9 台账：`code_file`）**：只增不改——`code_line` 保持全局行号语义，避免破坏既有断点/heatmap 口径。现场留痕：`docs/current/MAINTENANCE_PLAN.md`（2026-09-11 条目"`code_line` 是跨文件全局偏移行号"） |
+| 9 | `code_line` 是**合并源码的全局行号**，payload 未携带文件名 | 多文件会话中消费方无法自行把 `code_line` 映射回"哪个文件的第几行"（引擎内部已按 `file_ranges` 正确映射，语义标注不再串文件）。**消费方可见后果（前端期现场实测）**：若按"主文件行数"做比例计算，覆盖率会显示 **>100%**；`heatmap_line` 恒等于 `code_line`（§1）且 `heatmap_count` 按 `code_line` 索引（`unified/collector.rs`），故热力图在多文件 / 含头文件时按全局行号着色而错位。**这不是前端独有问题**：前端只是第一个把该协议缺口显示出来的消费方 | **已排入 v0.2（§9 台账：`code_file`）**：只增不改——`code_line` 保持全局行号语义，避免破坏既有断点/heatmap 口径。现场留痕：`docs/current/工程债务维护方案.md`（2026-09-11 条目"`code_line` 是跨文件全局偏移行号"） |
 | 10 | 函数定义行判定为递归调用 | 仅当左花括号与函数签名**同行**时被排除；`int f(...)` 换行写 `{` 时仍可能把定义行标成"递归调用 f" | 需要多行签名识别（教学子集内少见）；已知限制 |
 
 ---

@@ -7,7 +7,7 @@
   * 防线面：同一驱动对每个用例实际断言了什么（由驱动源码决定：只比 stdout）。
 
 输出：JSON（机器可读）+ 控制台摘要（人读）。
-用途：CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md 的 Q1/Q3 表，标注 [动态实测]。
+用途：核心资产重构裁定.md 的 Q1/Q3 表，标注 [动态实测]。
 
 用法：python scripts/core_asset_verdict/case_census.py
 """

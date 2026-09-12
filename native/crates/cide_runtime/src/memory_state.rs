@@ -22,11 +22,11 @@ pub const SNAPSHOT_INTERVAL: i32 = 100_000;
 pub const MAX_STACK_DEPTH: usize = 10_000;
 /// 隔离区默认字节预算：堆上限的 1/4 = 256KB。
 ///
-/// 依据 [`CIDE_HEAP_QUARANTINE_DECISION.md`] §1：采用 ASAN 原版的**有界隔离**
+/// 依据 [`堆有界隔离决议.md`] §1：采用 ASAN 原版的**有界隔离**
 /// —— 隔离窗口保证 UAF/Double-Free 必被检出，超预算时 FIFO 驱逐最老块复用，
 /// 保证合法 churn（分配-释放循环）不误伤。预算可按会话调整。
 ///
-/// [`CIDE_HEAP_QUARANTINE_DECISION.md`]: ../../../docs/current/CIDE_HEAP_QUARANTINE_DECISION.md
+/// [`堆有界隔离决议.md`]: ../../../../docs/current/06-出口与协议/堆有界隔离决议.md
 pub const DEFAULT_QUARANTINE_BUDGET: i32 = (MEM_SIZE / 4) as i32;
 
 /// 4 字节向上对齐。

@@ -10,7 +10,7 @@
 //!    `check_unwinding_granularity()`（"UNWINDING 不得合并单步"的可执行判据）。
 //!
 //! 文档锚点：`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md` §7.x（预留位）/ §9（v0.2 轨道）/
-//! 附录 B（词汇表）；契约出处：`CSHARP_EXTENSION_PLAN.md` §6-B、SharpTutor S4 §5。
+//! 附录 B（词汇表）；契约出处：`CSharp前端引入计划.md` §6-B、SharpTutor S4 §5。
 
 /// 当前已冻结的 schema 版本。
 pub const SCHEMA_VERSION: &str = "v0.1";
@@ -107,7 +107,7 @@ pub const V0_2_FIELD_LEDGER: &[SchemaFieldPlan] = &[
     },
 ];
 
-/// 行为契约：**不得被性能优化破坏**的可观测行为（`CSHARP_EXTENSION_PLAN.md` §6-B）。
+/// 行为契约：**不得被性能优化破坏**的可观测行为（`CSharp前端引入计划.md` §6-B）。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct BehaviorContract {
     pub id: &'static str,
@@ -119,7 +119,7 @@ pub struct BehaviorContract {
     pub enforced_by: &'static str,
 }
 
-/// 行为契约清单（与 `CIDE_RESTRUCTURE_PLAN` / C# 计划的"行为契约"同源）。
+/// 行为契约清单（与 `结构重构与C23锚定决议` / C# 计划的"行为契约"同源）。
 pub const BEHAVIOR_CONTRACTS: &[BehaviorContract] = &[
     BehaviorContract {
         id: "step_granularity",

@@ -1,4 +1,4 @@
-//! capi 第一批集成测试（对应 `CIDE_CAPI_REVIEW_RESPONSE.md` §8 review 基线第 3 条：
+//! capi 第一批集成测试（对应 `CAPI评审回复与实现状态.md` §8 review 基线第 3 条：
 //! 每个新函数带 capi 集成测试）。
 //!
 //! 契约验证点：JSON 字符串所有权（rust-alloc + `cide_free_string`）、状态码约定、
