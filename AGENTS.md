@@ -206,6 +206,33 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 > 前端切割后本仓库无 Dart/Flutter 代码；历史前端约定见标签 `before-frontend-split`。
 
+### 脚本（`scripts/`、`native/tests/`）
+
+**默认语言：Go**（2026-09-12 起）。唯一例外是**一次性脚本**——复现 bug 的最小样例、临时探针、用完即弃的数据提取。
+判据：**它会不会被别人再跑一次 / 是否进 CI / 是否成为防线的一部分**。是 → Go；否 → 随意；介于两者（探针后来转正）→ 转正时用 Go 重写。
+
+理由（每条都有本仓库事故依据，不是风格偏好）：
+
+1. **编码失败模式在 Go 里不存在**——Python 侧现有 **103 处** UTF-8 样板（`TextIOWrapper` / `encoding="utf-8"` / `errors="replace"`），且已付代价：Windows GBK 炸中文诊断、`\S+` 正则吞中文注释污染用例名、BOM 干扰 clang 对照。Go 字符串原生 UTF-8，`os/exec` 出 `[]byte`，**没有隐式编码转换**。
+2. **编译器是跨上下文的纪律执行者**——未使用变量/import、类型错误、漏处理 `err` 一律编译失败；动态语言的隐性标准是"能跑就算对"，而 AI 的上下文会丢失，纪律靠记忆维持必然腐坏。
+3. **表达空间窄**——只有一种循环、无继承、错误显式，AI 写不出"能跑但没人看得懂"的思路。此点**优于 C#**（后者 LINQ / async / record 等表达空间更大，反而更难审）。
+4. 性能**不是**理由——实测 Python 侧总开销 ≈**4.1s** / 门禁全流程 **49.92s** ≈ **8.2%**。
+
+形态约定：
+
+- **`go run <file>.go` 单文件可跑**，不需要 project/module 结构；只有多文件共享时才建 `go.mod`；
+- **零第三方依赖**（只用标准库：`encoding/json` / `os/exec` / `path/filepath` / `sync`），必须能在离线 CI 直接跑；
+- **规则、期望值等"资产"外置为 JSON**，代码只做解释器——人审数据，不审代码；
+- 自带自检的脚本（如 oracle 的事件类型清单 × 规则表 key 对账）必须 **fail loud**：自检不过直接拒绝给出判定，**禁止静默 default**。
+
+既有 Python 脚本的处置：
+
+- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写（试点从 `shadow_verify_cpp.py` 开始——它 18KB、无缓存机制、口径简单，且**当前纯串行 24.75s**，重写可同时拿到并发）；
+- 迁移 `shadow_verify.py`（唯一硬门禁、105KB、承载 6 类隐性口径）**必须新旧双轨同跑**，`663 / match 644 / known_issue 3 / cide_better 16 / 0 非预期差异` 五项一致才允许切换；
+- 保留的 Python **判定型脚本**仍须满足 **J9**：有"注入必然违反 → 必须变红"的埋雷记录（这条是语言无关义务）。
+
+> 完整依据与迁移顺序见 [`docs/current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md`](docs/current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md) §13（D1 防线自身 / D5 工具链语言）。
+
 ## C 教学子集支持概览
 
 本项目支持的 C 语言教学子集覆盖 **Phase 1 ~ Phase 5+** 能力（含逗号运算符、Designated Initializer、`offsetof`、VFS 文件 I/O 等），详细规范见 [`docs/current/C_SUBSET_SPEC.md`](docs/current/C_SUBSET_SPEC.md)。核心支持包括：

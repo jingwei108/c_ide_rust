@@ -1,0 +1,89 @@
+{
+ "seek": {
+  "iters": 50000,
+  "steps_est": 500000,
+  "timeline": [
+   {
+    "seek": 100000,
+    "before_mb": 3.4,
+    "after_mb": 57.0,
+    "settled_mb": 57.0,
+    "wall_s": 1.52,
+    "success": true
+   },
+   {
+    "seek": 300000,
+    "before_mb": 57.0,
+    "after_mb": 58.7,
+    "settled_mb": 58.7,
+    "wall_s": 3.08,
+    "success": true
+   },
+   {
+    "seek": 450000,
+    "before_mb": 58.7,
+    "after_mb": 57.9,
+    "settled_mb": 57.9,
+    "wall_s": 2.49,
+    "success": true
+   },
+   {
+    "seek": 200000,
+    "before_mb": 57.9,
+    "after_mb": 58.3,
+    "settled_mb": 58.3,
+    "wall_s": 2.8,
+    "success": true
+   },
+   {
+    "seek": 100000,
+    "before_mb": 58.3,
+    "after_mb": 57.6,
+    "settled_mb": 57.6,
+    "wall_s": 1.67,
+    "success": true
+   },
+   {
+    "seek": 450000,
+    "before_mb": 57.6,
+    "after_mb": 59.2,
+    "settled_mb": 59.2,
+    "wall_s": 4.98,
+    "success": true
+   }
+  ],
+  "killed_by_watchdog": false,
+  "peak_commit_mb": 513.7,
+  "stderr_tail": "cide_cli serve：JSON-lines 会话模式（EOF 或 shutdown 退出）\n"
+ },
+ "malloc_timing": [
+  {
+   "n": 50000,
+   "wall_s": 5.79,
+   "exit": 0,
+   "stdout_tail": "\n编译成功。\n\n=== 运行输出 ===\ndone\n程序运行完成，返回值：0\n\n"
+  },
+  {
+   "n": 100000,
+   "wall_s": 12.68,
+   "exit": 0,
+   "stdout_tail": "\n编译成功。\n\n=== 运行输出 ===\ndone\n程序运行完成，返回值：0\n\n"
+  },
+  {
+   "n": 200000,
+   "wall_s": 20.73,
+   "exit": 0,
+   "stdout_tail": "\n编译成功。\n\n=== 运行输出 ===\ndone\n程序运行完成，返回值：0\n\n"
+  },
+  {
+   "n": 400000,
+   "wall_s": 45.9,
+   "exit": 1,
+   "stdout_tail": "\n编译成功。\n\n=== 运行输出 ===\n\n"
+  },
+  {
+   "exponent_estimate": 0.996,
+   "basis": "50000->400000"
+  }
+ ]
+}

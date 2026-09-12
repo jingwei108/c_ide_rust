@@ -79,7 +79,9 @@
 | [`current/WORKLOG_2026-09-11_SHADOW_SPEEDUP_AND_PHASE1.md`](current/WORKLOG_2026-09-11_SHADOW_SPEEDUP_AND_PHASE1.md) | 工作日志：Shadow 提速 / 隔离预算 / schema v0.1 / serve |
 | [`current/CIDE_REFACTOR_ASSESSMENT_2026_09_12.md`](current/CIDE_REFACTOR_ASSESSMENT_2026_09_12.md) | **重构评估**（独立复核：泄漏复发洞实锤 / 7 项动态探针 / 分模块评估 / 风险清单——§5 计划已并入路线图） |
 | [`current/CIDE_OVERHAUL_ROADMAP.md`](current/CIDE_OVERHAUL_ROADMAP.md) | **统一整备路线图 U0~U7（排期权威）**：三语化计划 S 系列与重构评估 Phase 系列的合并执行方案（波次总览 / CS 硬门禁 / 防伪绿机制制度化） |
+| [`current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md`](current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md) | **核心资产重构裁定 v1（独立裁定）+ 重构执行方案**：分区裁定表 Q1 / 判据体系 v2（J1~J8，可机检）/ 行为债量化 Q3 / 候选 A~E 对比 / B+C 分阶段计划与中止条件 / 改判触发条件 R1~R5 / 证据缺口 G1~G8 / 红→绿清单 R-2026-09-01~11；**§13 多轮收敛执行方案**：新增第五域 **D1（防线自身空转，7 实例）**、J9 脚本可触发判据、五域 W0~W3 顺序、U 批次三处数字更正（U2 验收线不可执行等）、Python→Go 迁移边界与双轨纪律。实测脚本与证据 JSON 在 [`scripts/core_asset_verdict/`](../scripts/core_asset_verdict/) |
 | [`current/INCIDENTS/README.md`](current/INCIDENTS/README.md) | **事故归档制度与索引**（模板 + 归档规则：任何 GB 级资源事故必须归档，与 CHANGELOG 分工） |
+| [`current/WORKLOG_2026_09_12_MUTATION_TEST.md`](current/WORKLOG_2026_09_12_MUTATION_TEST.md) | 工作日志：影子防线突变测试首次实测（3/3 检出；M3 裕度=1 实证用例形状盲区——防线判定逻辑可信、覆盖形状依赖预想） |
 
 ---
 

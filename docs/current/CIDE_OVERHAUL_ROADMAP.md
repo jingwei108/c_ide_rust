@@ -94,7 +94,10 @@
 | 4 | **磁盘卫生**：清除已死 android 交叉 target（2.6GB，实测）+ `cargo clean` 策略制度化 + CI target 体积预算检查 | S2.5-③ |
 | 5 | **`as` 无防御转换收口（第一批）**：clippy 加 `checked_conversions` + `cast_possible_wrap` 转deny；命中清单化；**算术→索引/容量类清零**（含已实锤的 `capi/mod.rs:160` 负 argc、`engine.rs:351` 裸 as usize、`get_payloads` 负参 panic——负参三处在此一并修复）；其余登记豁免理由 | S2.5-① + 评估 R9 |
 | 6 | **红→绿纪律制度化**：CI 规约——每个缺陷修复必须先提交会失败的用例（CI 留痕 FAIL 记录），修复提交引用用例编号；杜绝"修完才写必然通过的测试" | 评估横切 |
-| 7 | **C ABI 契约止血**（自 U6 提前——下游正按书面契约消费，`CIDE_CAPI_REVIEW_RESPONSE.md:141` 承诺"全部 JSON 为 rust-alloc 所有权"，照做即 UAF）：① `cide_get_capabilities_json` 的 `OnceLock` 静态指针改独立分配（或改契约并三处文档同步）；② `capi/mod.rs` 其余 22 个入口统一补 `catch_unwind`（当前只有 first_batch 有，文档承诺全覆盖）；③ `cide_capi.h` 补齐 17 个缺失声明（含 `cide_free_string`——头文件只出现在注释里）与三种所有权的书面标注；④ `shared/` 三个孤儿文件（func_meta/symbol/type_utils，无 mod 声明从未编译）删除 | 出口层审查 P0-1/P0-2/P2-14/§三 |
+| 7 | **C ABI 契约止血**（自 U6 提前——下游正按书面契约消费，`CIDE_CAPI_REVIEW_RESPONSE.md:141` 承诺"全部 JSON 为 rust-alloc 所有权"，照做即 UAF）：① `cide_get_capabilities_json` 的 `OnceLock` 静态指针改独立分配（或改契约并三处文档同步）；② `capi/mod.rs` 其余 22 个入口统一补 `catch_unwind`（当前只有 first_batch 有，文档承诺全覆盖）；③ `cide_capi.h` 补齐 **19 个缺失声明**（实测更正，原记 17；含 `cide_free_string` 与整个 `*_json` 族——头文件只出现在注释里）与三种所有权的书面标注；④ `shared/` 三个孤儿文件（func_meta/symbol/type_utils，无 mod 声明从未编译）删除 | 出口层审查 P0-1/P0-2/P2-14 + 裁定 §13.1 实测 |
+| 8 | **脚本埋雷验证（防线自身的防线，裁定第五域 D1 / 判据 J9——先于一切批次）**：实测 7 个"表面正确"实例（`serve_smoke` 只测 happy path 与 2 个 P0 panic 并存、`engineering_health` 从未阻塞、`shadow_verify` 22 例无 oracle 计入通过等——共同结构：通过的语义是"脚本自己没崩"而非"被检查对象正确"）；每个**判定型**脚本必须留"注入必然违反 → 必须变红"的实证记录，顺序：`serve_smoke`（现成雷：seek 越界 / `payload.get` 负参 panic，本路线图已独立复现 exit 101）→ `ci_three_tier_check` → `shadow_verify`；**J9：埋雷记录 = 0 的判定型脚本，其"全绿"不得作为任何结论的依据** | 裁定 §13.2/§13.3 W0-1 |
+
+**验收标准（补充 D1/J9）**：三个判定型脚本各有一条"注入→必须红"的留痕记录合入 CI；`serve_smoke` 补边界/负值/极值样例后对已知 2 个 panic 必须红。
 
 **验收标准**：人为注入 100MB 级泄漏用例 → 护栏必须红（仪器自检）；防线报告新口径上线；SKIP 登记表归档；known_issue ≤ 真实待修数；负参三处的红→绿用例全绿（`{"start":0,"end":-1}` JSON 得到错误响应而非进程死亡；负 argc 得到错误码而非 abort）；C ABI 契约测试（对每个 `_json` 出口按契约 free 一遍——capabilities_json 修复前该测试必须红）。
 **完成判据**：上述全部合并 CI 全绿；第二次泄漏事故归档存在；target 体积回落并在 CI 可见。
@@ -141,7 +144,7 @@
 | 12 | **`step_next`/`seek` 的 take-后-panic 永久丢 VM**：补 `execute_run` 同款 catch_unwind + 归还（当前 panic 一次 → `session.vm == None` → 后续 step.next 一律"未初始化"的静默降级） | 出口层审查 P1-7 |
 | 13 | **libc/边界修复批**：fseek 负偏移 clamp（二进制模式当前 debug panic / release 回绕写任意地址）；bsearch key 边界检查（当前切片 panic）；`host_strerror` 补 region 登记（当前泄漏报告漏计 + free 误报 E3027）；`freed_logs` 部分重叠整条删除改精确裁剪（UAF 检测假阴性）；`register_function` resize 加上限；`call_user_function` 的 `assert!` 改教学诊断 | vm/runtime 审查 P1-2/3/4/5/13/8 |
 
-**验收标准**：**10 万步级长程序远距 seek 压力用例——宿主 RSS 有界（这是泄漏复发的回归用例）**；100 万次 malloc/free 压力用例——RSS 增量 <1MB 且耗时线性（对照实测基线 8.94s/10万次的 O(N²)）；>50 检查点 + 回退 seek 语义正确性用例（与不淘汰的参考实现对照）；隔离区 UAF 检测差分用例全绿（重构不破坏安全检测）；`printf("%999999999d")` 断言报错而非 GB 分配；非 unified 出口跑算法模板循环程序断言 RSS 有界；大数组 + unified 断言 payload 级截断生效；seek 回退到 EOF 前后 `getchar` 行为一致性用例。
+**验收标准**：**10 万步级长程序远距 seek 压力用例——宿主 RSS 有界（这是泄漏复发的回归用例；斜率预算 ≤64B/步，实测基线 1.2~2.3KB/步超标 19~36×，见裁定 §Q3-E6）**；malloc/free churn 压力——**规模以显式 `set_max_steps` 提高步数预算后的最大可行点为准（原"100 万次"经验证 400k 即撞默认 10M 步上限、判据不可执行，裁定 §13.4）**，判据 = `regions` 条目数直接采样（Q7-G6 实验先行：既有"14B/次无界 + O(N²)"与实测"峰值平坦、耗时近线性"矛盾，重构方案在 G6 复核前不得开工）+ 驱动侧 RSS 双口径；>50 检查点 + 回退 seek 语义正确性用例（与不淘汰的参考实现对照）；隔离区 UAF 检测差分用例全绿（重构不破坏安全检测）；`printf("%999999999d")` 断言报错而非 GB 分配；非 unified 出口跑算法模板循环程序断言 RSS 有界；大数组 + unified 断言 payload 级截断生效；seek 回退到 EOF 前后 `getchar` 行为一致性用例；**seek 越过程序末尾（如 10 步程序 `seek(50000)`）返回错误帧而非 panic（裁定 R-2026-09-01/02，本路线图独立复现实锤：exit 101、`engine.rs:400` split index > len）**。
 **完成判据**：压力用例全绿 + U0 护栏峰值回显在预算内；660 shadow + 全量 cargo test + 61 回放复跑零回归。
 
 ### U3 槽位系统手术 + C++ 寄生收口 + 模板子系统（Wave 2，与 U2 同窗——硬门禁）
@@ -200,7 +203,7 @@
 | 2 | **资源长跑**：统一模式 10 万步 + 随机 seek 序列 + 随机 malloc/free 序列 + U0 RSS 护栏，夜间轨道 | 评估 Phase 5 + S1-② 延伸 |
 | 3 | **恶意输入 fuzz 扩容**：模板深度/巨数组/深嵌套宏/负参类输入进 Fuzz A~E 随机矩阵（不只是固定用例） | 评估 Phase 4 验收延伸 |
 | 4 | **结构债**：编译管线双轨合并（~350 行×2 复制）；补全增量缓存（源码哈希 + 失效标记 + 只增不减修复）；compute_type_size 布局缓存；深递归迭代化评估（AST Drop/解析/typeck 深度保险丝 >10 万层报错不崩溃） | 评估 Phase 5（新增） |
-| 5 | **埋雷验证季度化**：在分支上故意重引入一个历史缺陷，确认某道防线会红；不会红的防线记入债务清单 | 评估横切（新增） |
+| 5 | **埋雷验证常规化**（2026-09-12 首次实测后升格）：每批次抽 3~5 个突变（VM 算术 / typeck 重载 / 字符串边界三层轮换）注入→防线必须红→还原，检出率入批次验收；季度全量清点。**裕度监控**：对关键 opcode 语义统计能拦截它的用例数，margin < 3 登记为防线债（首例：unsigned 取模裕度=1、UMod 除零裕度=0，见 WORKLOG_2026_09_12_MUTATION_TEST.md）。**性能前提**：实测单轮 280s（6 突变 ×（release build + 全量 shadow + cargo test）），须先内部并行（`--jobs 16`、只跑受影响套件）再常规化，否则每批次固定付 4.7 分钟（裁定 §13.4） | 评估横切 + 突变实测（3/3 检出，M3 裕度=1） |
 | 6 | **随机 token 汤常设化**：前端审查的 30 万次随机 token 输入纳入夜间轨道（历史上唯一命中的 panic 家族是常量折叠溢出——U1 #9 修复后作为回归存在） | 前端审查方法沉淀 |
 | 7 | **前端低危收口批**：`cide_algorithm_steps` 的 `math.rs` 取模改用执行前快照；`Type::PartialEq` 对 Typeof 非自反却 `impl Eq` 修复 + `Display` 补 unsigned/const（当前诊断里 `int` 与 `unsigned int` 逐字相同）；error_catalog ~36 个零引用变体清理 + E4105/E4106 接线裁定；`cide_cpp_frontend` JSON 解析改 fail-fast + size 与字段累加交叉校验 + 生成脚本路径修正（当前指向 crate 化前老路径，无 drift 门禁） | 前端审查 #9/#14/#15/#21/#22 |
 
@@ -238,6 +241,7 @@
 | 机器出口对接 | 能力断言走 capabilities/error_catalog，禁止文档级集成 | 三音化 §4-2 |
 | 口径分列 | match/cide_better/known_issue 分列展示，"约定通过"不得混入"完全匹配" | S0 |
 | **保险丝可触发性义务** | 每一道保险丝、上限、防护必须有能触发它的测试；新增保险丝先证会红再上线。依据：三形态失效实锤（死代码：EXPAND_DEPTH_FUSE；口径错：宏预算数 token 不数字节；只写不读：suffix_count、步数保险丝曾被硬编码抹掉） | v1.1 新增 |
+| **J9 脚本可触发性（防线自身的防线）** | 判定型脚本的埋雷记录 = 0 时，其"全绿"不得作为任何结论的依据；优先级 `shadow_verify` > `ci_three_tier_check` > `serve_smoke`（已证实空转——只测 happy path 与 2 个 P0 panic 并存）。依据：裁定 §13.2 实测 7 个"表面正确"实例，共同结构 = 通过的语义是"脚本自己没崩"而非"被检查对象正确" | v1.2 新增（第五域 D1） |
 
 ## 5. 与 CS 系列的硬门禁声明（需同步进 `CSHARP_EXTENSION_PLAN.md` §7）
 
@@ -288,6 +292,19 @@ U1 规模因此 2 周 → 2-3 周，完成判据 15 → ≥25 个红→绿用例
   时序改动两处：S2.5 观测设施提前至 U0（护栏先于它验证的重构 + 下游正在消费含洞二进制）；
   T1/T2 模板缺陷从"深水区"提前至 U3（CS2 复用单态化路径，属硬前置）。
   待办：① `CSHARP_EXTENSION_PLAN.md` §7 时序表同步本文 §5 硬门禁；② U0 的事故归档目录与模板落库。
+- 2026-09-12（v1.2）：吸收 [`CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md`](CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md)
+  （独立裁定 + §13 多轮收敛执行方案，与本文冲突处以裁定 §13 为准）。核心修订：
+  ① **执行顺序改为五域 D1~D5**——D1（防线自身埋雷，J9）先于一切（门禁空转则所有"全绿"失效），
+  D2 止血与 D3 oracle 建设并行，D4 生命周期重构在后，D5（Python→Go 工具链迁移）最后；
+  ② U0 新增 #8 脚本埋雷验证；③ 三处数字更正：U0#7 头文件缺口 17→**19**、U2 验收线
+  "100 万次 malloc/free"改为"显式提步数预算后的最大可行点 + regions 直接采样（Q7-G6 先行——
+  既有无界结论与裁定实测峰值平坦矛盾，重构方案 G6 复核前不得开工）"、U7#5 加 280s/轮性能前提；
+  ④ **边界重划**：重构区按"缺设计的域"而非目录划——「生命周期与参数域」含 unified/、serve/capi
+  参数域、cide_vm 累积状态、collector payload 路径四处（裁定 §3 边界重划）；
+  ⑤ 新 P0 独立复核：**seek 越过程序末尾 panic（10 步程序 seek(50000) → exit 101、
+  `engine.rs:400` split index 48001 > len 79，本路线图独立复现）**已入 U2 验收标准；
+  `payload.get` 负参 panic 与 serve 主循环 catch_unwind 缺失原已列 U0#5/#7，裁定补最小复现。
+  裁定文档自己的待办：③ CSHARP §7 补中止条件与 R5 判据（本版已做）。
 - 2026-09-12（同日 v1.1）：吸收三份外部审查（§7）。两处新 P0 独立抽验确认（RAII 假 E3061、
   trace 截断 `a[11]`/`a[12]` 双崩）；`emit_zero_init` 复合缺陷 P3→P0；C ABI 契约止血提前至 U0；
   防伪绿机制新增"保险丝可触发性义务"（三形态失效：死代码/口径错/只写不读）。
