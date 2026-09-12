@@ -124,5 +124,5 @@ tmp_threaded*.exe
 .e2_probe/
 .e3_probe/
 
-# 诊断临时文件
-diag_mem.ps1
+# 诊断临时文件（根目录散落的临时副本仍忽略；常设工具已转正 scripts/diag_mem.ps1）
+/diag_mem.ps1

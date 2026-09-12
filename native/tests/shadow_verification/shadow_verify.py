@@ -1468,6 +1468,18 @@ def main():
     if stale:
         warn_stale_dll(stale)
 
+    # 产物新鲜度门禁（fail fast，exit 2）：版本串必须含当前 HEAD。
+    # 与 mtime 陈旧检测**互补**：mtime 只能发现"改了源码没重建"，发现不了
+    # "提交推进了没重建"（提交不改源码 mtime，build.rs 原先也不重跑）。
+    # 必须在**父进程**校验：放进 worker_init 会退化成"worker 反复崩 + 驱动
+    # 静默降级串行"，既慢又可能照样输出"门禁通过"（实测：8 个 worker 崩了
+    # 77 万行 traceback、耗时 51 分钟，最终仍报绿）。
+    try:
+        _load_dll()
+    except RuntimeError as exc:
+        print(f"\n错误: {exc}")
+        sys.exit(2)
+
     jobs = resolve_jobs(args.jobs)
     print(
         f"配置: jobs={jobs}（{'串行' if jobs <= 1 else '并行'}），"
