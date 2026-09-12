@@ -126,7 +126,7 @@ python native/tests/shadow_verification/shadow_verify.py --jobs 8
 ### 防线 1'：Shadow Verification（C++）
 
 ```bash
-python scripts/shadow_verify_cpp.py
+go run scripts/shadow_verify_cpp.go
 ```
 
 ### 出口 3 冒烟：serve 协议
@@ -167,7 +167,7 @@ pwsh scripts/check-memory-safety.ps1
 
 | 脚本 | 功能 |
 |:---|:---|
-| [`shadow_verify_cpp.py`](../../scripts/shadow_verify_cpp.py) | C++ Shadow Verification 驱动（与 Clang++ 对照） |
+| [`shadow_verify_cpp.go`](../../scripts/shadow_verify_cpp.go) | C++ Shadow Verification 驱动（与 Clang++ 对照；D5 Go 迁移版，Clang 并发 16 路）。Python 版保留为双轨对照基准 |
 | [`serve_smoke.py`](../../scripts/serve_smoke.py) | `cide_cli serve` JSON-lines 协议冒烟（40 项断言） |
 | [`ci_three_tier_check.py`](../../scripts/ci_three_tier_check.py) | CI 三层一致性检查（失败记录 ↔ 测试结果双向对账） |
 | [`engineering_health.py`](../../scripts/engineering_health.py) | 工程健康度看板 |

@@ -142,7 +142,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 - **覆盖**：321 个 Baseline 用例 + 82 个模板生成用例 + 81 个 K&R 用例 + 138 个 LeetCode 题 + 14 个 gap 用例（C Shadow Verification 合计 636 个用例，完全匹配 617、cide_better 16、known_issue 3（`function_pointer_sizeof` / `sizeof_array_param` 存量 "bug" 分类 + `spfa_default` 模板已知偏差；`bTree_default` 已转为 match，见 `E2E_FAILURES.md`）；统计口径含 match + cide_better + known_issue；2026-09-11 复测）；100 个 C++ 用例（C++ Shadow Verification，98 个一致 + 2 个已记录的 `clang_compile_fail`：`cpp_cide_vec_class` / `cpp_cide_list_class` 使用 Cide 内置容器无法被 Clang++ 直接编译；2026-06-28 实测，2026-09-11 复测仍一致）
 - **标准输入（2026-09-11 新增能力）**：用例可自带同名 `.in` 文件，Clang 与 Cide 喂**同一份字节**（缓存 key 纳入真实 stdin）。此前防线一律批量运行且不喂 stdin —— K&R 目录里 29 个 `.in` 从未被使用，两侧"都无输入"造成的**虚假 match**；启用后立即暴露"输入注入丢换行"缺陷（`getchar()` 读不到 `'\n'`，19 例 `output_gap`），已随 `RuntimeState::split_stdin` 统一修复
 - **输出口径（E-P1-5，2026-09-11）**：比对读的是引擎的**纯程序 stdout 通道**（capi `cide_get_program_output*`，ABI 1.1.0）——引擎附注（"程序运行完成，返回值：N"、内存泄漏报告、教学警告）与 stderr 各有独立通道。**驱动侧不得再对输出做正则清洗**：此前十余处清洗规则语义互不一致，且在教学程序自己打印同类文本时会误删真实输出（假阳性 `output_gap`），现全部废除。读取入口统一在 `native/tests/shadow_verification/cide_output.py`；DLL 缺新符号时 fail fast，不退回旧清洗。回归用例 `baseline/engine_note_lookalike.c` 固化该口径
-- **驱动**：`python native/tests/shadow_verification/shadow_verify.py`（`--jobs N` 并行，0=自动/1=串行；`--refresh-clang` 强制全量重算，CI 夜间使用；`--rebuild` 在 release DLL 比引擎源码旧时自动重建）、`python scripts/shadow_verify_cpp.py`（工作目录为自管 `.shadow_cpp_tmp/`，已 gitignore —— `tempfile.TemporaryDirectory` 在受限环境下会因 WinError 5 崩溃）
+- **驱动**：`python native/tests/shadow_verification/shadow_verify.py`（`--jobs N` 并行，0=自动/1=串行；`--refresh-clang` 强制全量重算，CI 夜间使用；`--rebuild` 在 release DLL 比引擎源码旧时自动重建）、`go run scripts/shadow_verify_cpp.go`（C++ 侧驱动，2026-09-12 起 D5 语言迁移第一站：Clang 并发 16 路，**24.75s → 5.2s**，与 Python 版双轨对账一致后接管 CI；工作目录为自管 `.shadow_cpp_tmp/`，已 gitignore；Python 版 `shadow_verify_cpp.py` 保留为双轨对照基准）
 - **提速设施（2026-09-11）**：Clang Golden 结果缓存（key = 源码 + stdin + clang 版本 + 参数 + 预设文件）+ 并行执行；632 用例实测 **103.6s → 1.1s（缓存命中）/ 20.4s（冷启动全量重算）**，四次运行判定逐项一致。缓存与 worker 运行目录为 `.clang_cache/` / `.shadow_tmp/`（已 gitignore）——**改动用例后无需手动清缓存**（源码哈希变化自动失效）。**⚠️ 并行化对顺序敏感**：用例加载与分片分发必须确定性（`sorted(glob)` + 按 name 对账），否则会出现"结果错配但门禁仍绿"的静默失败
 - **报告**：`native/tests/shadow_verification/reports/`
 
@@ -227,7 +227,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 既有 Python 脚本的处置：
 
-- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写（试点从 `shadow_verify_cpp.py` 开始——它 18KB、无缓存机制、口径简单，且**当前纯串行 24.75s**，重写可同时拿到并发）；
+- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写（试点 `shadow_verify_cpp.py` **已于 2026-09-12 完成**：`scripts/shadow_verify_cpp.go` 与 Python 版双轨对账一致（94 用例判定与 stdout 内容逐项一致）后接管 CI，Clang 并发 16 路 **24.75s → 5.2s**；启动自检 fail loud + ABI/产物新鲜度门禁同口径移植）。下一站按裁定 §13.3 W3-1：`replay` → 探针集 → 主驱动（双轨对照）；
 - 迁移 `shadow_verify.py`（唯一硬门禁、105KB、承载 6 类隐性口径）**必须新旧双轨同跑**，`663 / match 644 / known_issue 3 / cide_better 16 / 0 非预期差异` 五项一致才允许切换；
 - 保留的 Python **判定型脚本**仍须满足 **J9**：有"注入必然违反 → 必须变红"的埋雷记录（这条是语言无关义务）。
 
@@ -322,7 +322,7 @@ cd native && cargo clippy --workspace --all-targets --all-features -- -D warning
 
 # Shadow 防线（C / C++）
 python native/tests/shadow_verification/shadow_verify.py --jobs 8
-python scripts/shadow_verify_cpp.py
+go run scripts/shadow_verify_cpp.go
 
 # serve 协议冒烟
 cargo build --bin cide_cli && python scripts/serve_smoke.py

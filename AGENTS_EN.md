@@ -141,7 +141,7 @@ The same C source is compiled and executed by both **Clang** and **Cide**, and s
 - **Coverage**: 321 Baseline cases + 82 template-generated cases + 81 K&R cases + 138 LeetCode problems + 14 gap cases (636 C Shadow Verification cases total, 617 exact match + 16 cide_better + 3 known_issue, counting match + cide_better + known_issue; re-measured 2026-09-11); 100 C++ cases (C++ Shadow Verification, 98 match + 2 recorded `clang_compile_fail`: `cpp_cide_vec_class` / `cpp_cide_list_class` cannot be compiled directly by Clang++ because they use Cide built-in containers; measured 2026-06-28, re-verified 2026-09-11)
 - **stdin (`.in`) injection (added 2026-09-11)**: a case may ship a sibling `.in` file; Clang and Cide are fed the **same bytes** (the cache key includes the real stdin). Previously the defense always ran in batch mode with no stdin — 29 `.in` files under `knr/` were never used, producing **false matches** where "no input on both sides" happened to agree. Enabling it immediately exposed a newline-dropping defect in input injection (`getchar()` could never read `'\n'`; 19 `output_gap` cases), fixed by unifying on `RuntimeState::split_stdin`
 - **Output channels (E-P1-5, 2026-09-11)**: comparison reads the engine's **program-stdout channel only** (capi `cide_get_program_output*`, ABI 1.1.0) — engine notes ("程序运行完成，返回值：N", leak reports, teaching warnings) and stderr each have their own channel. **Drivers must not regex-clean output any more**: the dozen or so scattered cleaning rules disagreed with each other and deleted real output when a teaching program printed look-alike text (false-positive `output_gap`); all of them were removed. The single read entry point is `native/tests/shadow_verification/cide_output.py`; a DLL missing the new symbols fails fast instead of falling back to cleaning. Regression case `baseline/engine_note_lookalike.c` pins this contract
-- **Drivers**: `python native/tests/shadow_verification/shadow_verify.py` (`--jobs N`, `--refresh-clang`, `--rebuild`), `python scripts/shadow_verify_cpp.py` (uses a self-managed `.shadow_cpp_tmp/` working directory — `tempfile.TemporaryDirectory` dies with WinError 5 under restricted environments)
+- **Drivers**: `python native/tests/shadow_verification/shadow_verify.py` (`--jobs N`, `--refresh-clang`, `--rebuild`), `go run scripts/shadow_verify_cpp.go` (C++ driver since 2026-09-12, D5 migration step 1: Clang 16-way concurrency, 24.75s → 5.2s, took over CI after dual-run parity with the Python version; self-managed `.shadow_cpp_tmp/` working directory; `shadow_verify_cpp.py` kept as the dual-run baseline)
 - **Reports**: `native/tests/shadow_verification/reports/`
 
 ### Defense 2: K&R Real-Program Regression (existing) + LeetCode (planned)
@@ -288,7 +288,7 @@ cd native && cargo clippy --workspace --all-targets --all-features -- -D warning
 
 # Shadow defenses (C / C++)
 python native/tests/shadow_verification/shadow_verify.py --jobs 8
-python scripts/shadow_verify_cpp.py
+go run scripts/shadow_verify_cpp.go
 
 # serve protocol smoke
 cargo build --bin cide_cli && python scripts/serve_smoke.py

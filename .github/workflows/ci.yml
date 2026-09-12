@@ -100,7 +100,9 @@ jobs:
             native/tests/shadow_verification/reports/kr_leetcode_report.json
 
       - name: C++ Shadow Verification
-        run: python scripts/shadow_verify_cpp.py
+        # D5 语言迁移第一站（2026-09-12）：Go 版与 Python 版双轨对账一致后切换。
+        # Python 版保留为对照基准；go vet 豁免口径见 scripts/shadow_verify_cpp.go 头注。
+        run: go run scripts/shadow_verify_cpp.go
         shell: bash
 
       - name: Upload C++ Shadow Report

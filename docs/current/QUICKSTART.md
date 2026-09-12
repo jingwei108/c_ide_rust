@@ -154,7 +154,7 @@ cd native && cargo clippy --workspace --all-targets --all-features -- -D warning
 
 # Shadow Verification（与 Clang / Clang++ 对照 stdout）
 python native/tests/shadow_verification/shadow_verify.py --jobs 8
-python scripts/shadow_verify_cpp.py
+go run scripts/shadow_verify_cpp.go
 
 # serve 协议冒烟
 python scripts/serve_smoke.py

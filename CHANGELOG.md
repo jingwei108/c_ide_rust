@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (D5 语言迁移第一站：C++ Shadow 驱动 Python→Go)
+
+裁定文档 [`CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md`](docs/current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md) §13.3 W3-1 的第一站落地：
+
+- **新增 `scripts/shadow_verify_cpp.go`**，接管 CI（`ci.yml` 改为 `go run scripts/shadow_verify_cpp.go`）。判定口径与 Python 版逐项对齐：用例来源（内嵌 + 目录、同名目录胜出）、`// category:` 解析、clang 失败重试 3 次、编译 30s / 运行 5s 超时、`.strip()` + CRLF 归一比对、`category=gap` 预期差异豁免、非预期差异 exit 1、报告 JSON 同路径同字段。
+- **性能**：Clang 侧并发 16 路（§13.1 实测 6.0x 依据），全量 **24.75s → 5.2s**（CI 门禁占比 50% → ~12%）。Cide DLL 调用保持串行——引擎会话级线程安全性未验证，试点不做此假设（clang 子进程并发才是耗时大头）。
+- **迁移纪律执行**：双轨同跑对账 **PASS**——94 用例集合一致、逐用例 `diff_type` 一致、Cide stdout 内容级一致（Go：92 match + 2 已知 `clang_compile_fail` / 0 非预期；Python：同）。Python 版 `shadow_verify_cpp.py` 保留为**双轨对照基准**（Go 版判定异常时用于归因复现），日常运行与 CI 均走 Go 版。
+- **纪律移植**：① 启动自检 fail loud（J9）——7 条 compare 口径断言含 3 条语义雷（尾部空白 / CRLF / 单侧运行失败），不过即 exit 2 拒绝运行；② E-P1-5 结构化输出通道同口径（缺符号 fail fast，不退回文本清洗）；③ 产物新鲜度门禁（`cide_engine_version()` 须含 HEAD 短哈希）；④ UTF-8 原生处理，消除 Python 侧编码样板。
+- **vet 豁免裁定沿用**：`go vet -unsafeptr=false`——DLL `Call` 返回值转 `unsafe.Pointer` 是 Win32 互操作必然形态（与 `scripts/gosmoke/cabi_smoke.go` 同裁定），uintptr→Pointer 转换集中在 `ptrToGoString` 一处。
+- 已知差异（有意，记录在案）：clang 编译错误文本从 stdout+stderr 混流改为仅 stderr（对齐 Python `capture_output` 语义）；超时路径的错误文本措辞不同（判定不受影响，超时均归入对应 gap）。
+
 ### Fixed (产物新鲜度：影子验证/回放在陈旧二进制上假绿)
 
 提交后复测时发现并修掉的一个**方法论级缺陷**（比功能 bug 更危险，因为它制造假绿）：
