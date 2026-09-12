@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed (下游需求清单第一批：A1 / A2 / B1 / D1)
+
+响应对端 SharpTutor《Cide后端-C#扩展期需求清单》（锚定 `10591ad`，逐项实测后修复）：
+
+- **A1 输入耗尽 EOF 语义**：`scanf` 族在输入流耗尽时此前**无条件**挂起
+  `waiting_input`，导致 `while (scanf("%d", &n) != EOF)` 这类 C 第一课习语在有限输入下
+  永久挂起。现：`InputMode::Batch`（`batch_input:true` / CLI `run` 路径）下返回 `EOF(-1)`，
+  程序正常 `finished`；默认 `Interactive` 保持"等待学生键入"挂起语义不变
+  （`crates/cide_vm/src/host/io.rs`，与既有 `getchar` 的 Batch 分支同口径）。
+  CLI `cmd_run` 作为 headless 批处理路径固定走 Batch。
+- **A2 增量输入喂入**：serve 新增 `input.feed { text }` 方法（语义单源
+  `session_api::input_feed`），`run` 返回 `waiting_input` 后追加 stdin 并续跑，
+  状态机 `waiting_input → input.feed → running → waiting_input | finished | trap`。
+  修复过程中同时发现并修正 **capi `cide_provide_input_line` 的既有缺陷**：此前在
+  `cide_run` 前清 `waiting_input`，使 `execute_run` 误判为新一次运行而从 `main`
+  重跑（首个 `scanf` 读到新喂入文本、已产生输出重复打印）。
+- **B1 error_catalog 机器可读导出**：新增 `error_catalog::export_json()`（含
+  `code/code_str/lang/category/emoji/title/explanation/common_causes`，按 code 升序稳定可差分）；
+  出口 `cide_get_error_catalog_json`（capi，rust-alloc）与 serve `error_catalog` 方法。
+  **码段澄清**：E4xxx 已被 C++ 占用（`error_codes.rs` 定义 `E4001~E4031`），
+  `lang_of_code` 按码段推断语言（1-3xxx=C / 4xxx=C++ / 5xxx=C#）。
+- **D1 成员函数类型重载**：此前同参数个数、仅类型不同的成员函数重载
+  （`show(int)` / `show(double)`）mangled 名只带 arity → 撞名 → 定义处后写覆盖、
+  调用点静默错派发 → 运行时"栈下溢"trap。现 mangled 名带**参数类型编码**
+  （`method_mangled_name` 单源，定义处 `check_class_methods` / `load_class` 与调用处
+  `resolve_method_overload` 共用），并新增"无匹配重载 → E4026 编译诊断"（
+  `expr/mod.rs`，此前返回 `None` 静默放行）。实测 `show(21)`/`show(3.5)` 正确派发。
+- **A1 遗留分支：EOF 粘滞语义**（补第一批 A1 的缺口）。首修只覆盖"判定 EOF 的
+  那一次调用"——判定后**未推进游标**、也**无粘滞标志**，于是 `scanf` 触发的 EOF
+  对 `getchar` 不可见：实测输入 `7\n`，Clang 给 `r1=1 r2=-1 c=-1`，Cide 给 `c=10`
+  （把 scanf 未消费的 `'\n'` 当普通字符读出）。现 `RuntimeState::stdin_eof` 为粘滞位
+  （对齐 C11 7.21.5.1 `feof`）：判定 EOF 时置位并**把游标推到底**；`scanf`（含
+  `%d/%u/%f/%c/%s` 各转换符的"跳白后耗尽"分支，经显式 `exhausted` 标志与"字面量/
+  格式不匹配"区分）与 `getchar` 统一查询；`set_stdin` / `push_stdin_text` 重新喂入
+  时清位。新增回归 `baseline/scanf_eof_loop.c` / `scanf_eof_after_exhaust.c`
+  （Golden 由 Clang 22.1.4 生成）。附带修正测试侧两处缺陷：
+  - Shadow 加载器的 `@category:\s*(\S+)` 会跨越中文标点吞掉整段 C 注释，污染
+    用例名（实测读到 "`，走"）→ 限定为 `[A-Za-z0-9_\-]+`；
+  - E2E `test_cide_e2e_baseline` 对全部用例硬编码 `InputMode::Interactive`，
+    导致"故意读到流末"的用例以 `run_ret=2` 假失败 → 带 `.in` 的用例改走 Batch
+    （"预设完整输入"的语义，与 Shadow 防线口径统一）。
+
+验证：`cargo test --workspace` 全绿（0 失败）；`cargo clippy --workspace --all-targets
+--all-features` 零警告；`shadow_verify.py` 662 用例（含新增 2 例）无 compile_gap /
+runtime_gap / output_gap；`shadow_verify_cpp.py` MATCH（2 例存量 `CLANG_COMPILE_FAIL`
+为 `cide_list`/`cide_vec` 已记录问题，与本次无关）。
+
 ### Added (重构批次 E3：C23 语义级——nullptr / static_assert 真求值 / constexpr / 属性 / unreachable)
 
 执行 [`docs/current/CIDE_RESTRUCTURE_PLAN.md`](docs/current/CIDE_RESTRUCTURE_PLAN.md) 的 E3 批次

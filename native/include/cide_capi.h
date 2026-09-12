@@ -104,6 +104,16 @@ typedef enum {
     CIDE_H3057_ImplicitConversionHint = 3057,
 } CideErrorCode;
 
+// ========== 错误码表导出（下游需求清单 B1）==========
+
+/// Export the full error catalog as a rust-alloc JSON string:
+///   {"catalog":[{code,code_str,lang,category,emoji,title,explanation,common_causes[]}]}
+/// Entries are sorted ascending by `code` (stable across builds). Static metadata
+/// only; the per-source-line `fix_suggestion` is delivered by the compile diagnostics.
+/// The caller owns the returned buffer and MUST release it with cide_free_string.
+/// Returns NULL on allocation failure.
+CIDE_API char* cide_get_error_catalog_json(void);
+
 // ========== 编译 ==========
 
 /// Compile C source code. Returns 0 on success, -1 on error.

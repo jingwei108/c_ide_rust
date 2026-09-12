@@ -308,11 +308,17 @@ impl TypeChecker {
                     ..
                 } => {
                     let overload_count = class_sym.methods.get(method_name).map(|v| v.len()).unwrap_or(1);
-                    let mangled = if overload_count <= 1 {
-                        format!("{}__{}", name, method_name)
-                    } else {
-                        format!("{}__{}__{}", name, method_name, params.len())
-                    };
+                    // D1：mangled 名单源。**必须用不含 this 的用户参数**（与
+                    // `resolve_method_overload` 返回的 `sig.param_types`、
+                    // `check_class_methods` 的 `user_param_types` 同口径）——
+                    // 含 this 会与调用点符号不一致，导致方法符号查找失败（实测编译失败且无诊断）。
+                    let user_param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
+                    let mangled = TypeChecker::method_mangled_name(
+                        name,
+                        method_name,
+                        &user_param_types,
+                        overload_count > 1,
+                    );
                     if self.funcs.contains_key(&mangled) || self.static_func_sigs.contains_key(&mangled) {
                         continue;
                     }

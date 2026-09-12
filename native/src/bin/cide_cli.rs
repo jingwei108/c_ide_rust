@@ -136,6 +136,10 @@ fn cmd_run(path: &str, input_lines: Vec<String>, argv: Vec<String>) {
         session.runtime.input_lines.push(line);
     }
     session.runtime.waiting_input = false;
+    // CLI run 是 headless 批处理路径（stdin 一次性由 -i 给足）：输入耗尽即 EOF，
+    // 不进入交互等待。否则 `while (scanf(...) != EOF)` 这类 C 第一课习语会永久挂起
+    // （见下游需求清单 A1）。
+    session.runtime.input_mode = InputMode::Batch;
 
     session.runtime.argc = argv.len() as i32;
     session.runtime.argv = argv;
@@ -563,6 +567,12 @@ fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) 
         ),
         // E2：机器可读能力清单（"版本宏当能力探测"三层配套之一）
         "capabilities" => (serve_ok(id, session_api::capabilities()), false),
+        // 错误码表机器可读导出（下游需求清单 B1）：静态元数据，无状态。
+        "error_catalog" => {
+            let raw = session_api::error_catalog_json();
+            let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::json!({ "catalog": [] }));
+            (serve_ok(id, parsed), false)
+        }
         "session.create" => {
             *session = Session::default();
             (
@@ -650,6 +660,12 @@ fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) 
             }
             serve_apply_config(session, &params);
             (serve_ok(id, session_api::run(session)), false)
+        }
+        // 交互式增量喂入（下游需求清单 A2）：run 返回 waiting_input 后追加 stdin 并续跑。
+        // 参数：{ text: string }；省略 text 等价于"续推进一步"。
+        "input.feed" => {
+            let text = params.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            (serve_ok(id, session_api::input_feed(session, text)), false)
         }
         "output.delta" => {
             let cursor = params.get("cursor").and_then(|v| v.as_i64()).unwrap_or(0) as i32;

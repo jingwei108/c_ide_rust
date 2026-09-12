@@ -92,6 +92,25 @@ pub unsafe extern "C" fn cide_free_string(p: *mut c_char) {
 // ─── 会话信息 ────────────────────────────────────────────────────────────────
 
 #[no_mangle]
+/// 错误码表机器可读导出（下游需求清单 B1）。
+///
+/// 返回 **rust-alloc** 的 JSON 字符串，调用方负责用 [`cide_free_string`] 释放。
+/// 形状：`{"catalog":[{code,code_str,lang,category,emoji,title,explanation,common_causes[]}]}`，
+/// 按 `code` 升序（跨构建可差分）。静态元数据；按具体源码行生成的 `fix_suggestion`
+/// 见 `compile_json` 诊断字段。
+///
+/// # Safety
+/// 无入参；返回指针必须经 `cide_free_string` 释放，禁止 `free()`。
+pub unsafe extern "C" fn cide_get_error_catalog_json() -> *mut c_char {
+    guard(ptr::null_mut(), || {
+        match CString::new(crate::session_api::error_catalog_json()) {
+            Ok(c) => c.into_raw(),
+            Err(_) => ptr::null_mut(),
+        }
+    })
+}
+
+#[no_mangle]
 /// 最近一次错误，JSON：`{"kind":"compile|runtime|none","message":"..."}`。
 ///
 /// # Safety

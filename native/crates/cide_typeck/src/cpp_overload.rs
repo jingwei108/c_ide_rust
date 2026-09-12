@@ -43,10 +43,18 @@ impl TypeChecker {
                             .collect()
                         };
                         let user_param_types: Vec<Type> = params.iter().map(|p| p.ty.clone()).collect();
-                        let mangled = self
-                            .resolve_method_overload(&c.name, method_name, &user_param_types)
-                            .map(|(_, m)| m)
-                            .unwrap_or_else(|| format!("{}__{}", c.name, method_name));
+                        // D1：mangled 名单源（**不含 this** 的用户参数，与 load_class /
+                        // resolve_method_overload 同口径）。
+                        let has_overloads = self
+                            .find_class_method_sigs(&c.name, method_name)
+                            .map(|v| v.len() > 1)
+                            .unwrap_or(false);
+                        let mangled = Self::method_mangled_name(
+                            &c.name,
+                            method_name,
+                            &user_param_types,
+                            has_overloads,
+                        );
                         let mut func_decl = FuncDecl {
                             loc: c.loc,
                             return_type: ret.clone(),

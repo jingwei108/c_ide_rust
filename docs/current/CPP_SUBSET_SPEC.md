@@ -64,9 +64,16 @@ int main() {
 - `class` / `struct`（`struct` 默认 public，`class` 默认 private）
 - `public:` / `private:` 访问说明符
 - 成员变量与成员函数
+- 成员函数重载（**按参数类型区分**，含同参数个数、仅类型不同的重载，如
+  `void show(int)` 与 `void show(double)` 并存；mangled 名带参数类型编码，
+  `2026-09-12` 修复——此前同形重载会静默错派发并运行时"栈下溢"trap）
 - `this` 指针
 - 单继承 + `public` 继承
 - 虚函数与多态（v-table 实现）
+
+**当前限制**：
+- 无匹配重载时报 `E4026 AmbiguousMethodCall` 编译诊断（不再静默放行）；
+- 自由函数（类外）**不支持**重载：同名不同签名报 `E3003`（签名不一致）。
 
 ### 2.2 构造函数与析构函数
 

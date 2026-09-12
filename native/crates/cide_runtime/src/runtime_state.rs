@@ -89,6 +89,17 @@ pub struct RuntimeState {
     pub rand_seed: u32,
     pub input_char_offset: usize,
     pub waiting_input: bool,
+    /// 标准输入已到达 EOF 的粘滞标志（C11 7.21.5.1：`feof` 一旦置位，后续读恒返回 EOF）。
+    ///
+    /// 修复下游需求 A1 的**遗留分支**：此前所有读取路径各自重算"流是否还有内容"，
+    /// 判定 EOF 后也**不推进游标**，于是 `scanf` 触发的 EOF 不被 `getchar` 感知
+    /// （`getchar` 会把 scanf 未消费的尾部 `'\n'` 当成普通字符返回 10），
+    /// 且尾部空白会在下一次读取时"复活"。真实 C 语义下 stdin 到 EOF 即永久 EOF。
+    ///
+    /// - 置位：任一路径判定"无更多输入且处于 Batch 模式"时，经 [`RuntimeState::set_stdin_eof`]；
+    /// - 清位：`set_stdin` / `push_stdin_text` 重新喂入内容时（交互续跑是合法的"新内容到达"）。
+    #[serde(default)]
+    pub stdin_eof: bool,
     pub heatmap: ExecutionHeatmap,
     pub input_mode: InputMode,
     pub ungetc_char: Option<i32>,
@@ -214,6 +225,28 @@ impl RuntimeState {
     pub fn set_stdin(&mut self, input: &str) {
         self.input_lines = Self::split_stdin(input);
         self.input_index = 0;
+        self.input_char_offset = 0;
+        // 重新喂入内容 = "新内容到达"，清除 EOF 粘滞位
+        self.stdin_eof = false;
+    }
+
+    /// 向标准输入**追加**文本，保留读取游标（交互续跑 `input.feed` 使用）。
+    ///
+    /// 与新内容到达同步清除 EOF 粘滞位：C 里管道关闭后不可复活，但教学场景下
+    /// 交互式续跑本质是"学生又键入了一行"，属预期语义。
+    pub fn push_stdin_text(&mut self, text: &str) {
+        self.input_lines.extend(Self::split_stdin(text));
+        self.stdin_eof = false;
+    }
+
+    /// 置位 EOF 并把读取游标**推到底**。
+    ///
+    /// 游标必须一并推到底，否则未消费的尾部空白会在下一次读取时"复活"
+    /// （实测：输入 `7\n`，`scanf("%d")` 消费 `7` 后判定 EOF，`getchar()`
+    /// 仍读到 `'\n'` = 10，而 Clang 返回 -1）。
+    pub fn set_stdin_eof(&mut self) {
+        self.stdin_eof = true;
+        self.input_index = self.input_lines.len();
         self.input_char_offset = 0;
     }
 }

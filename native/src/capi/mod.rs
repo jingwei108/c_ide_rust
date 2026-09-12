@@ -290,8 +290,13 @@ pub unsafe extern "C" fn cide_provide_input_line(s: *mut Session, line: *const c
         Some(v) => v,
         None => return -1,
     };
-    session.runtime.input_lines.push(line_str.to_string());
-    session.runtime.waiting_input = false;
+    session.runtime.push_stdin_text(&line_str);
+    // 关键顺序：**保留 `waiting_input=true`**，让后续 `cide_run` → `execute_run` 走
+    // resume 分支（`is_resume = session.runtime.waiting_input`）。此前在此清位会让
+    // execute_run 误判为新一次运行 → `reset_runtime` + `setup_vm` 从 main 重跑，
+    // 已产生的输出被重复打印、且首个 scanf 会读到本次新喂入的文本（而非上次遗留）。
+    // 仅恢复 VM 暂停位：WaitingInput 时 host call 执行前 `ip -= 1` 且 VM 处于 paused，
+    // 不 resume 则 vm.run 立即返回 paused、无法续跑。与 `session_api::input_feed` 同源。
     if let Some(ref mut vm) = session.vm {
         vm.resume();
     }

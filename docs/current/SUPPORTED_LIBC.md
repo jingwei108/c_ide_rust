@@ -233,6 +233,8 @@
 | `scanf` 返回值未实现（被视作 `void`） | 2026-09-11 | 按 C11 7.21.6.2 返回**成功匹配并赋值的项数**；`int r = scanf(...)`、`while (scanf(...) != EOF)` 恢复可用（`C_SUBSET_SPEC.md` §2.8、`CHANGELOG.md` [Unreleased]） |
 | `scanf` 格式串**普通字符指令**被忽略 | 2026-09-11 | 新增 `ScanfItem::Literal(u8)`：与输入流下一个字符**精确比较**，不匹配即停止解析；`%%` 展开为字面 `%` 同样参与匹配；`sscanf` 同族同修（回归 `baseline/scanf_literal_match.c` / `scanf_literal_mismatch.c`） |
 | `scanf` 格式串**空白指令**不跳白 | 2026-09-11 | 按 C11 7.21.6.2 匹配输入中任意数量（含零）空白字符；此前 `scanf("%d %c %d", …)` 读 `3 + 4` 时 `%c` 捕获空格而非 `+`（教学阻断） |
+| 输入耗尽的 **EOF 语义**（`InputMode::Batch` 之前缺失） | 2026-09-12 | 行 233 只接了"返回值语义"（成功项数），**耗尽→EOF 未接通**：`while (scanf(...) != EOF)` 在有限输入下永久挂起 `waiting_input`。现 `InputMode::Batch`（`batch_input:true` / CLI `run`）下流耗尽返回 `EOF(-1)`、程序正常结束；默认 `Interactive` 保留"等待键入"挂起语义（`crates/cide_vm/src/host/io.rs`，与 `getchar` 同口径）。对端需求清单 A1 |
+| **EOF 粘滞语义**（`stdin_eof`，同日补） | 2026-09-12 | A1 首修只覆盖"判定 EOF 的那一次调用"：判定后**未推进游标**、也**无粘滞标志**，于是 `scanf` 触发的 EOF 对 `getchar` 不可见。实测输入 `7\n`：Clang 给 `r1=1 r2=-1 c=-1`，Cide 给 `c=10`（把 scanf 未消费的 `'\n'` 当普通字符读出）。现 `RuntimeState::stdin_eof` 为粘滞位（对齐 C11 7.21.5.1 `feof`），判定 EOF 时置位并**把游标推到底**，三条读取路径（`scanf` / `getchar` / `ungetc` 前置检查）统一查询；`set_stdin` / `push_stdin_text` 重新喂入时清位。回归 `baseline/scanf_eof_loop.c` / `scanf_eof_after_exhaust.c` |
 
 ---
 

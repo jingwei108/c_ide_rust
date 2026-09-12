@@ -214,7 +214,16 @@ fn test_cide_e2e_baseline() {
         if known_compile_fail.contains(name.as_str()) {
             continue;
         }
-        if let Err(e) = run_case(name, source, input.as_deref(), "baseline", InputMode::Interactive) {
+        // 带 `.in` 的用例 = "预设完整输入"，按批量语义执行（与 Shadow 防线口径统一）。
+        // 交互模式下输入耗尽会挂起 `waiting_input`（学生等着键入），而 E2E 没有"再喂
+        // 一行"的通道：`scanf_eof_loop` 这类**故意读到流末**的用例会以 run_ret=2 假失败。
+        // 无 `.in` 的用例保持交互模式，覆盖交互路径。
+        let mode = if input.is_some() {
+            InputMode::Batch
+        } else {
+            InputMode::Interactive
+        };
+        if let Err(e) = run_case(name, source, input.as_deref(), "baseline", mode) {
             failures.push(format!("{}: {}", name, e));
         }
     }

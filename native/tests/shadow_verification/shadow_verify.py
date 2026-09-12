@@ -980,8 +980,10 @@ def load_case_files() -> List[ShadowCase]:
         # 并行 worker 若各自得到不同顺序，按索引取用例就会错配（2026-09-11 实测踩到）
         for path in sorted(root_path.glob("*.c")):
             source = path.read_text(encoding="utf-8")
-            # 提取 @category 注释
-            cat_match = re.search(r'@category:\s*(\S+)', source)
+            # 提取 @category 注释。占位符须限定为 ASCII 非空白串：此前用 `\S+`
+            # 会跨越 C 注释里的中文标点（Python `\S` 对中文标点同样匹配），
+            # 把整段注释吞进 category，用例名随之被污染（实测读到 "`，走"）。
+            cat_match = re.search(r'@category:\s*([A-Za-z0-9_\-]+)', source)
             category = cat_match.group(1) if cat_match else "baseline"
             # 移除注释标记，保留纯源码
             lines = source.splitlines()

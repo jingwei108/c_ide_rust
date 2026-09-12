@@ -462,3 +462,95 @@ fn find_single_equals_in_condition(line: &str) -> Option<(usize, usize)> {
     }
     None
 }
+
+// ============================================================================
+// 机器可读导出（下游需求清单 B1）
+// ============================================================================
+
+/// 错误码的适用语言（由码段推断，单一真相来源见 `cide_shared::error_codes`）。
+///
+/// 码段划分（`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md` §5.3 第二批 + C# 计划 D4 裁决）：
+/// - `E1xxx` 词法 / `E2xxx` 语法 / `E3xxx` 语义 → C（C++ 共用，C++ 专属码在 4xxx）
+/// - `E4xxx` → C++（`E4001~E4031` 已在 `error_codes.rs` 定义）
+/// - `E5xxx` → C#（CS 批次启用）
+pub fn lang_of_code(code: i32) -> &'static str {
+    match code {
+        1000..=3999 => "c",
+        4000..=4999 => "c++",
+        5000..=5999 => "csharp",
+        _ => "unknown",
+    }
+}
+
+/// 码段中文名（导出字段 `category`）。
+///
+/// `1xxx=词法` / `2xxx=语法` / `3xxx=语义` / `4xxx=C++` / `5xxx=C#`。
+pub fn category_of_code(code: i32) -> &'static str {
+    match code / 1000 {
+        1 => "词法",
+        2 => "语法",
+        3 => "语义",
+        4 => "C++",
+        5 => "C#",
+        _ => "其它",
+    }
+}
+
+/// JSON 字符串转义（最小实现；不引入 serde 依赖——本模块在 wasm 出口同样编译）。
+fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// 导出 error_catalog 为机器可读 JSON（下游按 vendor 更新同步知识卡片）。
+///
+/// 形状：`{"catalog":[{code,code_str,lang,category,emoji,title,explanation,common_causes[]}]}`。
+/// **只增不改**即可消费；排序按 code 升序，保证跨构建可差分。
+///
+/// 说明：`fix_suggestion` 属"按具体源码行生成"的数据（`generate_fix` 需要行文本），
+/// 无法在静态目录中给出确定值；需要它的消费方走 `compile_json` 诊断里的
+/// `fix_suggestion` 字段（每条诊断已带）。本导出提供**静态元数据**部分。
+pub fn export_json() -> String {
+    let mut codes: Vec<i32> = ERROR_INFO_MAP.keys().copied().collect();
+    codes.sort_unstable();
+    let mut out = String::with_capacity(codes.len() * 256 + 32);
+    out.push_str("{\"catalog\":[");
+    for (i, code) in codes.iter().enumerate() {
+        let Some(info) = ERROR_INFO_MAP.get(code) else { continue };
+        if i > 0 {
+            out.push(',');
+        }
+        let causes: Vec<String> = info.common_causes.iter().map(|c| format!("\"{}\"", json_escape(c))).collect();
+        out.push_str(&format!(
+            "{{\"code\":{},\"code_str\":\"E{}\",\"lang\":\"{}\",\"category\":\"{}\",\
+             \"emoji\":\"{}\",\"title\":\"{}\",\"explanation\":\"{}\",\"common_causes\":[{}]}}",
+            info.code,
+            info.code,
+            lang_of_code(info.code),
+            category_of_code(info.code),
+            json_escape(info.emoji),
+            json_escape(info.title),
+            json_escape(info.explanation),
+            causes.join(",")
+        ));
+    }
+    out.push_str("]}");
+    out
+}
+
+/// 目录条目总数（供出口做规模断言 / 回放校验）。
+pub fn catalog_len() -> usize {
+    ERROR_INFO_MAP.len()
+}
+

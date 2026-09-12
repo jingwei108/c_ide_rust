@@ -52,7 +52,28 @@ impl TypeChecker {
             return None;
         }
         let arg_types: Vec<Type> = args.iter_mut().map(|a| self.resolve_expr_type(a)).collect();
-        let (sig, mangled) = self.resolve_method_overload(&class_name, name, &arg_types)?;
+        // D1：解析不到匹配重载时**必须报编译诊断**，不能返回 None 静默放行——
+        // 否则调用点会退回"按名字找函数"的兜底路径，派发到同名的另一实现
+        // （同参数量仅类型不同的重载），最终运行时栈下溢 trap。
+        let (sig, mangled) = match self.resolve_method_overload(&class_name, name, &arg_types) {
+            Some(v) => v,
+            None => {
+                self.report_error(
+                    &format!(
+                        "方法 '{}' 没有匹配的重载：参数类型 ({}) 与已声明的重载签名均不兼容",
+                        name,
+                        arg_types
+                            .iter()
+                            .map(cide_runtime::type_display_name)
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ),
+                    loc,
+                    ErrorCode::E4026_AmbiguousMethodCall,
+                );
+                return None;
+            }
+        };
         let this_ty = Type::Pointer {
             pointee: Box::new(Type::Class {
                 name: class_name,

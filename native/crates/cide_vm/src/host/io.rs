@@ -62,8 +62,34 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
             }
         }
     }
-    // 首个转换符前流已无可用内容：等待输入（保持旧交互语义）
+    // 首个转换符前流已无可用内容：
+    // - Batch（判分/批量）模式：输入耗尽即 EOF，返回 -1（C11 7.21.6.2：读到输入
+    //   结束且未成功赋值任何项时返回 EOF）。此前无此分支，`while (scanf(...) != EOF)`
+    //   这类 C 第一课习语在批量输入下会永久挂起 `waiting_input`。
+    // - Interactive（默认）模式：保留"等待学生键入"的挂起语义。
+    //
+    // A1 遗留分支：置位 `stdin_eof` 粘滞标志并把游标推到底。否则未消费的尾部空白
+    // 会被后续 `getchar` 当普通字符读出（实测输入 `7\n`，Clang 给 -1、Cide 给 10）。
     if !stream.iter().any(|c| !c.is_ascii_whitespace()) {
+        if session.runtime.input_mode == cide_runtime::InputMode::Batch {
+            session.runtime.set_stdin_eof();
+            vm.push((-1i32) as i64 as u64);
+            return;
+        }
+        for &p in ptrs.iter().rev() {
+            vm.push(p as u64);
+        }
+        vm.push(fmt_addr as u64);
+        session.runtime.waiting_input = true;
+        return;
+    }
+    // 已粘滞 EOF：不再解析（C11 7.21.5.1 feof 语义）
+    if session.runtime.stdin_eof {
+        if session.runtime.input_mode == cide_runtime::InputMode::Batch {
+            session.runtime.set_stdin_eof();
+            vm.push((-1i32) as i64 as u64);
+            return;
+        }
         for &p in ptrs.iter().rev() {
             vm.push(p as u64);
         }
@@ -77,6 +103,8 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
     let mut arg_idx = 0usize;
     // C11 7.21.6.2：scanf 返回"成功匹配并赋值的项数"（条目 3，2026-09-11 补齐）
     let mut matched = 0usize;
+    // 因**输入流耗尽**（而非转换/字面量不匹配）而中止解析：用于判定 stdin EOF
+    let mut exhausted = false;
     for item in spec_types.iter() {
         let (spec, len_mod) = match item {
             ScanfItem::Whitespace => {
@@ -107,6 +135,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 if pos >= chars.len() {
+                    exhausted = true;
                     break;
                 }
                 let start = pos;
@@ -131,6 +160,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 if pos >= chars.len() {
+                    exhausted = true;
                     break;
                 }
                 let start = pos;
@@ -150,10 +180,19 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                 }
             }
             'f' => {
+                // 跳前导空白（%f 与 %d 同：转换前跳白）
+                while pos < chars.len() && chars[pos].is_ascii_whitespace() {
+                    pos += 1;
+                }
+                if pos >= chars.len() {
+                    exhausted = true;
+                    break;
+                }
                 let chars_view: Vec<char> = chars.iter().map(|&b| b as char).collect();
                 let (token, new_pos) = read_float_token(&chars_view, pos);
                 pos = new_pos;
                 if token.is_empty() {
+                    // 有非空白内容但解析不出浮点 token：格式不匹配（非 EOF）
                     break;
                 }
                 if len_mod >= 1 {
@@ -169,6 +208,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
             'c' => {
                 // 标准 C: %c 不跳过空白（流式化后行尾字符也可被读到）
                 if pos >= chars.len() {
+                    exhausted = true;
                     break;
                 }
                 let ch = chars[pos];
@@ -181,6 +221,7 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
                     pos += 1;
                 }
                 if pos >= chars.len() {
+                    exhausted = true;
                     break;
                 }
                 let start = pos;
@@ -219,6 +260,15 @@ pub fn host_scanf_n(vm: &mut CideVM, session: &mut VmContext<'_>) {
             }
         }
     }
+    // A1 遗留分支：解析走到流末端仍有转换符未成功赋值 → stdin 已到 EOF。
+    // 置位粘滞标志并推游标到底（否则未消费的尾部空白会被后续 getchar 读出）。
+    //
+    // 判据必须是"**因流耗尽**而 break"，不能只看 `matched < arg_count`：
+    // `scanf("a=%d", &x)` 输入 `b=1` 时字面量不匹配也会 break，但那是转换失败
+    // （输入流保持不动、非 EOF），误置 EOF 位会让后续读取全部失效。
+    if session.runtime.input_mode == cide_runtime::InputMode::Batch && exhausted {
+        session.runtime.set_stdin_eof();
+    }
     // 返回值：成功匹配并赋值的项数（与 sscanf 一致；此前 scanf 不返回值，
     // 教学代码 `int r = scanf(...)` 会被 typeck 判为 void→int 错误，见条目 3）
     vm.push(matched as u64);
@@ -235,6 +285,17 @@ pub fn host_getchar(vm: &mut CideVM, session: &mut VmContext<'_>) {
     // 先检查 ungetc 缓存
     if let Some(ch) = session.runtime.ungetc_char.take() {
         vm.push(ch as i64 as u64);
+        return;
+    }
+    // A1 遗留分支：stdin EOF 粘滞 —— 一旦置位，后续 getchar 恒 -1。
+    // 此前不检查该位，scanf 判定的 EOF 对 getchar 不可见（实测输入 `7\n`
+    // 时 getchar 会把 scanf 未消费的 '\n' 当普通字符返回 10，Clang 返回 -1）。
+    if session.runtime.stdin_eof {
+        if session.runtime.input_mode == cide_runtime::InputMode::Batch {
+            vm.push((-1i32) as i64 as u64);
+        } else {
+            session.runtime.waiting_input = true;
+        }
         return;
     }
     // 先检查是否有可用输入
@@ -254,7 +315,8 @@ pub fn host_getchar(vm: &mut CideVM, session: &mut VmContext<'_>) {
     };
     if !has_input {
         if session.runtime.input_mode == cide_runtime::InputMode::Batch {
-            // Batch 模式：输入耗尽后返回 EOF (-1)
+            // Batch 模式：输入耗尽后返回 EOF (-1)，并置位粘滞标志
+            session.runtime.set_stdin_eof();
             vm.push((-1i32) as u64);
         } else {
             session.runtime.waiting_input = true;

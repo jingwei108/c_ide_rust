@@ -189,6 +189,7 @@ cide_cli serve
 | `ping` | — | 存活探测，返回 ABI 版本 |
 | `compile` | `source`（或 `files:[{filename,source}]`） | 覆盖式编译当前单元集合，返回诊断 JSON |
 | `run` | `input` / `argv` / `batch_input` / `max_steps` / `deterministic` | 全速运行，返回 `status`/`return_value`/`steps_executed` |
+| `input.feed` | `text` | 增量喂入交互输入并续跑（`run` 返回 `waiting_input` 后调用；`text` 可多行，省略则仅续推进一步） |
 | `output.delta` | `cursor` | 增量取输出（字节游标，UTF-8 边界安全） |
 | `step.begin` | — | 初始化统一模式（时间旅行），需先编译成功 |
 | `step.next` | — | 单步推进，返回 `payloads`（StepPayload，见 [`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](../spec/STEP_PAYLOAD_SCHEMA_V0_1.md)） |
@@ -197,6 +198,8 @@ cide_cli serve
 | `breakpoints.set` | `lines:[int]` | 设置断点行集合（应在 `step.begin` 之后） |
 | `memory.regions` | — | 内存区域 + 隔离区统计（三色堆图数据源；第二批将定型 `kind` 三段式） |
 | `config.get` / `config.set` | 同上配置项 | 读写会话级配置 |
+| `error_catalog` | — | 错误码表机器可读导出（`{catalog:[{code,code_str,lang,category,emoji,title,explanation,common_causes[]}]}`，按 code 升序） |
+| `capabilities` | — | 机器可读能力清单（版本宏名义锚点、语言子集、内存模型常量） |
 | `session.create` / `session.reset` / `session.destroy` | — | 会话生命周期 |
 | `shutdown` | — | 结束 serve 进程（EOF 亦可） |
 
@@ -236,6 +239,30 @@ EOF
 > "程序运行完成"清洗规则已在 E-P1-5 中全部废除（程序自己打印同类文本时会被误删）。
 >
 > 与 `jq` 配合：`cide_cli serve < session.ndjson | jq -c 'select(.ok|not)'` 可只筛错误帧。
+>
+> **输入语义（`InputMode`）**：`run` 的 `batch_input`（默认 `false`）决定"输入耗尽"的含义：
+>
+> - `batch_input:false`（默认，交互）：`scanf`/`getchar` 在流耗尽时置 `waiting_input` 挂起，
+>   等待 `input.feed` 供给——适合"学生逐行键入"的教学交互；
+> - `batch_input:true`（批量/判分）：流耗尽即 **EOF**（`scanf` 返回 `-1`、`getchar` 返回 `-1`），
+>   程序正常 `finished`——`while (scanf("%d", &n) != EOF)` 这类 C 第一课习语依赖此语义。
+>   **判分 / 批量路径应以 `batch_input:true` 为准**（一次性给全 stdin 时语义等价于 EOF）。
+>
+> CLI 的 `cide_cli run <file> -i <input>`（headless 批处理）固定走 Batch，无需额外参数。
+>
+> **EOF 粘滞**（2026-09-12 补，对齐 C11 7.21.5.1 `feof`）：Batch 下**任一路径**首次判定
+> "流耗尽"即置位 `stdin_eof` 并把读取游标推到底——此后 `scanf`/`getchar` 一律返回 `-1`，
+> 未消费的尾部空白不会被"复活"重读。此前 `scanf` 触发的 EOF 对 `getchar` 不可见：
+> 输入 `7\n` 时 Clang 给 `r1=1 r2=-1 c=-1`，Cide 曾给 `c=10`。交互模式下调 `input.feed`
+> 属"新内容到达"，会清除该粘滞位（管道语义下本不可复活，教学交互例外）。
+>
+> **交互喂入状态机**：`run` → `waiting_input` → `input.feed {text}` → `running`
+> → `waiting_input | finished | trap`（`feed` 在非等待态亦可调用，文本追加到缓冲末尾后续跑）。
+>
+> ```json
+> {"id":2,"method":"run","params":{"input":"7\n"}}          // → waiting_input
+> {"id":3,"method":"input.feed","params":{"text":"35\n"}}   // → finished，读入 a=7, b=35
+> ```
 >
 > 防线：`python scripts/serve_smoke.py` 覆盖 id 关联 / 帧同构 / 生命周期 / 配置一致性的 26 项断言（CI 已纳入）。
 

@@ -83,6 +83,71 @@ impl TypeChecker {
         sym.methods.get(method_name).cloned()
     }
 
+    /// 类型 → mangled 名后缀片段（**单源**；D1 修复 2026-09-12）。
+    ///
+    /// 此前成员函数 mangled 名只带**参数个数**（`{Class}__{method}__{arity}`），
+    /// 同参数个数仅类型不同的重载（`show(int)` / `show(double)`）会撞名 —— 定义处
+    /// 后写覆盖先写、调用点静默派发到错误实现，最终运行时"栈下溢"trap。
+    /// 现在把每个参数类型编码进名字，保证不同签名 → 不同符号。
+    ///
+    /// 编码（ASCII、稳定、可读）：`v`空/`i`int/`u`unsigned int/`l`long long/`c`char/
+    /// `f`float/`d`double/`P`+pointee/`R`+base/`S`+类名/`A`+元素。const 不参与
+    /// （顶层 const 不影响重载决议，与 C++ 一致）。
+    pub(crate) fn type_mangle_suffix(ty: &Type) -> String {
+        match ty {
+            Type::Void { .. } => "v".to_string(),
+            Type::Int { is_unsigned, .. } => if *is_unsigned { "u" } else { "i" }.to_string(),
+            Type::Char { .. } => "c".to_string(),
+            Type::Float { .. } => "f".to_string(),
+            Type::Double { .. } => "d".to_string(),
+            Type::LongLong { .. } => "l".to_string(),
+            Type::Pointer { pointee, .. } => format!("P{}", Self::type_mangle_suffix(pointee)),
+            Type::Reference { base, .. } | Type::RValueRef { base } => {
+                format!("R{}", Self::type_mangle_suffix(base))
+            }
+            Type::Array { element, .. } => format!("A{}", Self::type_mangle_suffix(element)),
+            Type::Struct { name, .. } | Type::Union { name, .. } | Type::Class { name, .. } => {
+                format!("S{}", name)
+            }
+            Type::Function { return_type, param_types, .. } => {
+                let ps: String = param_types.iter().map(Self::type_mangle_suffix).collect();
+                format!("F{}{}", Self::type_mangle_suffix(return_type), ps)
+            }
+            Type::TemplateId { base, args, .. } => {
+                let as_: String = args
+                    .iter()
+                    .map(|a| match a {
+                        cide_ast::TemplateArg::Type(t) => Self::type_mangle_suffix(t),
+                        cide_ast::TemplateArg::Int(n) => format!("I{}", n),
+                        cide_ast::TemplateArg::Expr(_) => "E".to_string(),
+                    })
+                    .collect();
+                format!("T{}{}", base, as_)
+            }
+            Type::Auto => "a".to_string(),
+            Type::Typeof { .. } => "y".to_string(),
+        }
+    }
+
+    /// 成员函数 mangled 名单源（D1）：`{Class}__{method}` 单签名 / `{Class}__{method}__{类型编码}` 多签名。
+    ///
+    /// **定义处（`check_class_methods` / `load_class`）与调用处（`resolve_method_overload`）
+    /// 必须共用本函数**，否则符号名不一致会导致派发失败。
+    /// `has_overloads` 语义：该 `{method}` 名下是否有多于一个签名（决定是否带类型后缀，
+    /// 保持既有单签名场景的短名兼容——不破坏已落库的字节码/回放断言）。
+    pub(crate) fn method_mangled_name(
+        class_name: &str,
+        method_name: &str,
+        param_types: &[Type],
+        has_overloads: bool,
+    ) -> String {
+        if !has_overloads {
+            return format!("{}__{}", class_name, method_name);
+        }
+        let suffix: String = param_types.iter().map(Self::type_mangle_suffix).collect();
+        format!("{}__{}__{}", class_name, method_name, suffix)
+    }
+
     /// Resolve a non-constructor method overload from the given class.
     /// Returns the matching signature and the mangled function name to call.
     pub(crate) fn resolve_method_overload(
@@ -123,11 +188,10 @@ impl TypeChecker {
             }
         }
         best.map(|(sig, _)| {
-            let mangled = if sigs.len() <= 1 {
-                format!("{}__{}", class_name, method_name)
-            } else {
-                format!("{}__{}__{}", class_name, method_name, sig.param_types.len())
-            };
+            // D1：mangled 名带**完整参数类型编码**（含 this），与定义处
+            // （`check_class_methods` / `load_class`）共用 `method_mangled_name`。
+            // 此前只带 arity，同参数量仅类型不同的重载撞名 → 静默错派发 → 运行时栈下溢。
+            let mangled = Self::method_mangled_name(class_name, method_name, &sig.param_types, sigs.len() > 1);
             (sig, mangled)
         })
     }

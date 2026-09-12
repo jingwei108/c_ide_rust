@@ -111,6 +111,54 @@ pub fn run(session: &mut Session) -> Value {
     })
 }
 
+/// 增量喂入交互输入并继续运行，返回与 [`run`] 同构的结果 JSON。
+///
+/// **语义**（下游需求清单 A2）：`run` 返回 `waiting_input` 后，调用方可用本入口
+/// 追加 stdin 文本（可含多行，按 [`cide_runtime::RuntimeState::split_stdin`] 同口径切行）并让程序
+/// 继续执行到 `finished` / `trapped` / 下一次 `waiting_input`。
+///
+/// 状态机：`waiting_input` --input.feed--> `running` --> `waiting_input | finished | trap`
+/// （`feed` 在非等待态也可调用：文本追加到输入缓冲末尾，随后正常续跑。）
+///
+/// 与 capi `cide_provide_input_line` 同源语义（薄包装），三出口共用本实现。
+/// `text` 为空串时仅触发续跑（等价于"再推进一步"）。
+pub fn input_feed(session: &mut Session, text: &str) -> Value {
+    if !session.compile.compiled {
+        return json!({
+            "ok": false,
+            "status": "not_compiled",
+            "return_value": 0,
+            "trap": "程序尚未编译。请先编译代码。",
+            "waiting_input": false,
+            "steps_executed": 0,
+        });
+    }
+    if !text.is_empty() {
+        // 追加（非覆盖）：与 set_stdin 的切行口径一致；游标不重置，接在已消费位置之后。
+        // A1 遗留分支：`push_stdin_text` 同时清除 `stdin_eof` 粘滞位 —— 交互续跑本质是
+        // "学生又键入了一行"，属预期的新内容到达（与批量模式的不可复活语义不同）。
+        session.runtime.push_stdin_text(text);
+    }
+    // 关键顺序：**保留 `waiting_input=true`** 让 `execute_run` 走 resume 分支
+    // （`is_resume = session.runtime.waiting_input`）——若在此提前清位，execute_run 会
+    // 误判为新一次运行，`reset_runtime` + `setup_vm` 把程序从 main 重跑（实测产生
+    // "第一个 scanf 读到新喂入文本"的错派发）。
+    // 仅恢复 VM 暂停位：WaitingInput 时 host call 执行前 `ip -= 1` 且 VM 处于 paused，
+    // 不 resume 则 vm.run 立即返回 paused、无法续跑。
+    if let Some(ref mut vm) = session.vm {
+        vm.resume();
+    }
+    run(session)
+}
+
+/// 错误码表机器可读导出（下游需求清单 B1）。
+///
+/// 返回 [`crate::diagnostics::error_catalog::export_json`] 的原始 JSON 文本；
+/// 出口决定序列化时机与所有权（capi 为 rust-alloc 字符串，serve 为内联对象）。
+pub fn error_catalog_json() -> String {
+    crate::diagnostics::error_catalog::export_json()
+}
+
 /// 自 `cursor`（字节偏移）起的输出增量（**展示视图**：含引擎附注，兼容既有消费方）。
 ///
 /// `{"delta":"...","cursor":<新游标>,"total":<总字节>,"stream":"display"}`。
