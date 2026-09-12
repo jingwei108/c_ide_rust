@@ -10,7 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed (D5 语言迁移第三站：随机三路差分探针 Python→Go)
 
 裁定文档 §13.3 W3-1 探针集第一件（`random_diff`，三路差分是"核心不重写"裁定的证据通道；
-此前 Python 版从未跑出过产物，本次为**首次成功基线**）：
+库内旧产物（c3159ac）与当前脚本 + 当前 Python 3.14 的运行结果不一致——历史环境不可复现，
+本次为**首个可复现基线**）：
 
 - **新增 `scripts/core_asset_verdict/random_diff.go`**：10 族生成器 × 100 例 + 语义模型求值 +
   clang / Cide 三路对照，判定口径对齐（`model_clang_mismatch` / `clang_cide_mismatch` / `agree`，
