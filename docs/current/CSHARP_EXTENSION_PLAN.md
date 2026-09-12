@@ -191,7 +191,10 @@ ch13 WPF = 裁剪区；ch12_AlgoBank（153，多 fixture 算法库）= CS6 同�
 无 Main，入口合成是 CS1 硬需求）；`int.Parse/TryParse` 24%、`Console.ReadLine`
 23%、表达式体方法 17%、`var` 11%、try/catch 8%（这 7 个用例归 CS3a）、插值 6%、
 class 5%、foreach 3%、List 1%、继承 0%（ch05 起）。§5 草案据此修订：
-+顶层语句（入口合成）、+表达式体方法、+`var`；插值与 `Convert.` 待红线裁决。
++顶层语句（入口合成）、+表达式体方法、+`var`、**+字符串插值（基础形态：
+变量/表达式插值，随 CS1）**——6% 用量看似低，但它是 ch02 的教学主特性、C# 的
+签名级语法，教材自第 2 章起随手使用；格式化说明符（`:F2` 等文化感知格式化）
+后置 CS4 之后单独裁。`Convert.` 待红线裁决。
 
 **诊断管线 C# 数据表**（CS5）：误区模式首批 = 空 catch 吞异常、`catch (Exception)` 过宽、
 finally 里 return、`==` vs `Equals`、可变列表别名、循环边界 off-by-one 的 C# 表述
@@ -206,8 +209,11 @@ finally 里 return、`==` vs `Equals`、可变列表别名、循环边界 off-by
 1. `handler_depth: int`——"当前受几层 try 保护"直读；
 2. `unwinding: bool` + `unwind_frames_left: int`——展开态显式标记 + 剩余帧数，
    展开动画驱动字段；
-3. `current_exception: {type_name, message, addr} | null`——当前异常寄存器可见；
-   `addr`（u32 堆地址）联动内存面板 region 高亮（ARC 教学闭环）。
+3. `current_exception: {type_name, message, addr, origin_line} | null`——当前异常
+   寄存器可见；`addr`（u32 堆地址）联动内存面板 region 高亮（ARC 教学闭环）；
+   `origin_line`（原始抛点行号，2026-09-12 评审补充）——`throw;` 保留 /
+   `throw e;` 改写（§4.4），知识卡片"原始抛点在第 X 行"结构化直读本字段，
+   不解析 trap message 文本。
 
 **B 档：词汇契约**：
 - 行为契约：**"UNWINDING 每帧一 step，展开不可被合并成单步"**（与"JIT 断点完整性"
@@ -300,6 +306,10 @@ C# 白箱独有画面。
 - **语料调研完成（2026-09-12）**：CourseData 全量摸底（13 章 521 文件 / 76
   golden / 多 fixture 清单），章节→批次映射与 ch01–04 特性画像已录入 §5；
   **新增 CS1 硬需求**：顶层语句入口合成（语料 100% 无 Main，§5 草案未覆盖）。
+- **评审吸收（2026-09-12）**：① §6-A `current_exception` 补 `origin_line`
+  结构化字段位（原始抛点行号，`throw;`/`throw e;` 轨迹考点的知识卡片直读，
+  不解析 trap 文本）；② 字符串插值基础形态（变量/表达式）纳入 CS1，格式化
+  说明符后置 CS4 后裁。
 - **CS0~CS6 待启动**：CS0 不依赖外部（纯内部重构）；CS1 起语料经红线清单裁定
   后接入，`shadow_verify_csharp.py` 最小版随 CS1 落地（dotnet 版本钉死，
   缺失即 fail fast，与 clang 缺失同口径）。

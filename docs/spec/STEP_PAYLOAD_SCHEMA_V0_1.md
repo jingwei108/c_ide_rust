@@ -367,7 +367,7 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 | `handler_depth` | int | 当前受几层 try 保护 |
 | `unwinding` | bool | 展开态显式标记 |
 | `unwind_frames_left` | int | 剩余待展开帧数（展开动画驱动字段） |
-| `current_exception` | `{type_name, message, addr} \| null` | 当前异常寄存器；`addr` 联动内存面板 region 高亮（ARC 教学闭环） |
+| `current_exception` | `{type_name, message, addr, origin_line} \| null` | 当前异常寄存器；`addr` 联动内存面板 region 高亮（ARC 教学闭环）；**`origin_line` 为原始抛点行号**——`throw;` 保留、`throw e;` 改写为当前点（CSHARP_EXTENSION_PLAN §4.4 轨迹考点：知识卡片"原始抛点在第 X 行"直读本字段，**不解析 trap message 文本**；评审补充 2026-09-12） |
 
 语义细则见 `CSHARP_EXTENSION_PLAN.md` §6-A；词汇契约（`semantic_label` 异常域
 条目）同批进附录。
