@@ -180,6 +180,19 @@ C++ 多 Pass：类布局注册 → this 注入 → 方法降级 mangled C 函数
 LINQ、自定义泛型、`IDisposable`/using 模式、Finalizer、`WeakReference`、`GC.Collect`、
 `unsafe`、`decimal`、多文件工程、运算符重载。
 
+**语料画像（2026-09-12 实测，SharpTutor `CourseData`，贡献方确认全量贡献）**：
+13 章 521 个 `.cs`，每课自带 `solution.cs` / `exercise.cs` / `expected.txt`
+（dotnet golden 已存在）/ `fixtures.json`（**多 fixture**：同一程序多组
+stdin→expected，如 alg01 三组判分）。章节→批次映射：ch01–04（78 文件）= CS1
+验收面；ch05–06（63）= CS2；ch07（45）= CS4；ch08 LINQ / ch10 Assembly /
+ch13 WPF = 裁剪区；ch12_AlgoBank（153，多 fixture 算法库）= CS6 同族。
+
+**ch01–04 特性画像（红线清单的事实底座）**：顶层语句 **100%**（全语料亦然——
+无 Main，入口合成是 CS1 硬需求）；`int.Parse/TryParse` 24%、`Console.ReadLine`
+23%、表达式体方法 17%、`var` 11%、try/catch 8%（这 7 个用例归 CS3a）、插值 6%、
+class 5%、foreach 3%、List 1%、继承 0%（ch05 起）。§5 草案据此修订：
++顶层语句（入口合成）、+表达式体方法、+`var`；插值与 `Convert.` 待红线裁决。
+
 **诊断管线 C# 数据表**（CS5）：误区模式首批 = 空 catch 吞异常、`catch (Exception)` 过宽、
 finally 里 return、`==` vs `Equals`、可变列表别名、循环边界 off-by-one 的 C# 表述
 （`<=` 配 `arr.Length`）、`List<T>` 容量与 Count 混用、foreach 中修改集合、字符串不可变
@@ -239,8 +252,13 @@ clippy 零警告、serve 冒烟通过）；R2 已完成（CS0 的 `SourceLang` e
 **上游（本仓库）**：引擎、管线、协议、防线。
 
 **SharpTutor**：
-1. **C# shadow 防线**：dotnet golden 由其生成（`CompilerService` + Runner + fixtures
-   逐字节判分 = 现成 golden 管线，C 版 shadow 完整复刻），立项即接入防线体系；
+1. **C# 语料全量贡献**（2026-09-12 确认，本地镜像 `D:\code\SharpTutor`）：
+   CourseData 13 章 521 个 `.cs` + 76 个 `expected.txt` golden + `fixtures.json`
+   多 fixture 清单。**shadow 驱动与 golden 生成管线归本仓库**（2026-09-12 修订，
+   原"golden 由其生成"调整为"语料由其贡献、管线/门禁归引擎仓库"——防线自服务
+   与复现性要求 dotnet 版本钉死、用例改动自刷新 golden；跨仓库供货会复刻
+   G10/G12 类漂移。dotnet 之于 C# shadow = clang 之于 C shadow，都是外部参考
+   实现）；
 2. **转译器再定位**：Roslyn 转译器从"替代路线"降为 **CS1/CS2 期间参考实现**（转译
    产物 = 子集用法活文档）+ 原生前端未覆盖特性的快速通道；CS0 前作为需求验证工具
    产出透视模式使用数据；
@@ -275,5 +293,13 @@ C# 白箱独有画面。
   冻结写入（待办：编辑 `spec/STEP_PAYLOAD_SCHEMA_V0_1.md`）；B 档词汇表契约确认为
   R3 收口方案；第四组回放场景进签字材料；G9 排期确认（CS5）；ARC 裁决（替代早期
   "计数只做可视化"方案）；Roslyn 定位（防线 golden + 编辑器诊断，不进引擎）。
-- **前置待办**：① 定位主计划同步"后端语言锁定 C/C++ → C/C++ 主轴 + C# 教学子集
-  （SharpTutor 锚定）"；② schema v0.1 冻结时写入 §6-A 预留位；③ 重构计划全批次交付。
+- **前置待办（2026-09-12 全部清账）**：① ✅ 定位扩展已同步进
+  `CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md` §2；② ✅ schema v0.1 预留位已写入
+  `spec/STEP_PAYLOAD_SCHEMA_V0_1.md` §7.x（四字段 + 消费方容忍要求）；③ ✅
+  重构计划全批次交付完毕（R1→E1→R2→E2→R3→E3→R4，最终 CI 全绿 968a408）。
+- **语料调研完成（2026-09-12）**：CourseData 全量摸底（13 章 521 文件 / 76
+  golden / 多 fixture 清单），章节→批次映射与 ch01–04 特性画像已录入 §5；
+  **新增 CS1 硬需求**：顶层语句入口合成（语料 100% 无 Main，§5 草案未覆盖）。
+- **CS0~CS6 待启动**：CS0 不依赖外部（纯内部重构）；CS1 起语料经红线清单裁定
+  后接入，`shadow_verify_csharp.py` 最小版随 CS1 落地（dotnet 版本钉死，
+  缺失即 fail fast，与 clang 缺失同口径）。
