@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (D5 语言迁移第三站：随机三路差分探针 Python→Go)
+
+裁定文档 §13.3 W3-1 探针集第一件（`random_diff`，三路差分是"核心不重写"裁定的证据通道；
+此前 Python 版从未跑出过产物，本次为**首次成功基线**）：
+
+- **新增 `scripts/core_asset_verdict/random_diff.go`**：10 族生成器 × 100 例 + 语义模型求值 +
+  clang / Cide 三路对照，判定口径对齐（`model_clang_mismatch` / `clang_cide_mismatch` / `agree`，
+  mismatch 落 `.findings/` 最小复现，报告 `random_diff.json` 字段同名）。
+- **RNG 逐比特复刻**：MT19937 + CPython 字符串 seeding（sha512 → init_by_array）与
+  getrandbits/_randbelow/randint/choice/random 全链路——**同 seed 生成同一用例集合**，
+  双轨对账达逐用例精度。selftest 内置 CPython 3.14 实测金标（random()×3 / randint×5 /
+  choice / 大范围 randint），复刻破坏即 exit 2 拒绝运行（J9）。
+- **双轨对账 PASS**：1000 例用例集合一致、verdict + expected 逐用例一致、clang 动态输出
+  0 例不一致。耗时 47.0s（Python 50.7s，持平——cide 串行是共同瓶颈，探针不在 CI 热路径）。
+- **⚠️ 引擎侧实证发现：DLL 非线程安全**。Cide 调用与 clang 并发同池时进程以
+  `0xc0000374`（STATUS_HEAP_CORRUPTION）崩死（2.5s 即现）——引擎存在非线程安全的内部
+  状态。此前 Python 版未崩只是 6 线程下 cide 调用碰撞率低，**不是**线程安全的证据。
+  Go 版 Cide 调用已恢复互斥串行；主驱动 `shadow_verify.py --jobs` 的并发口径存在同源
+  风险，待专项评估（本条为风险记录，非回归）。
+- 语义口径修正：clang 子进程 stdout 显式做 CRLF→LF 归一（对齐 Python `text=True` 的
+  universal newlines；Windows CRT 文本模式会写 `\r\n`，不归一则全部假 mismatch）。
+- **门禁加牙**（有意差异）：Python 版 `main` 恒 `return 0`；Go 版非 agree 即 exit 1。
+- `.randomdiff/` / `.findings/` 进 gitignore；Python 版保留为双轨对照基准（头部已标注）。
+
 ### Changed (D5 语言迁移第二站：S1–S5 回放驱动 Python→Go)
 
 裁定文档 §13.3 W3-1 第二站落地（`replay` 不在 CI，为 schema v0.1 签字材料采纳驱动）：

@@ -126,3 +126,7 @@ tmp_threaded*.exe
 
 # 诊断临时文件（根目录散落的临时副本仍忽略；常设工具已转正 scripts/diag_mem.ps1）
 /diag_mem.ps1
+
+# 随机差分探针（random_diff）的编译工作目录与最小复现产物
+scripts/core_asset_verdict/.randomdiff/
+scripts/core_asset_verdict/.findings/
