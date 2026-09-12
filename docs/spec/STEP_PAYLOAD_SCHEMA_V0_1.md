@@ -357,6 +357,23 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 
 ---
 
+## 7.x 预留位：异常域字段（CSHARP_EXTENSION_PLAN.md §6-A，随 v0.1 冻结）
+
+以下四个字段为 **C# 前端异常教学**（CS3b 激活）预留，v0.1 消费方**必须容忍其
+不存在**（字段可选）；激活前不出现在任何 payload 中：
+
+| 字段 | 类型 | 语义 |
+|------|------|------|
+| `handler_depth` | int | 当前受几层 try 保护 |
+| `unwinding` | bool | 展开态显式标记 |
+| `unwind_frames_left` | int | 剩余待展开帧数（展开动画驱动字段） |
+| `current_exception` | `{type_name, message, addr} \| null` | 当前异常寄存器；`addr` 联动内存面板 region 高亮（ARC 教学闭环） |
+
+语义细则见 `CSHARP_EXTENSION_PLAN.md` §6-A；词汇契约（`semantic_label` 异常域
+条目）同批进附录。
+
+---
+
 ## 8. 已知限制与遗留（诚实记录）
 
 | # | 限制 | 影响 | 计划 |
