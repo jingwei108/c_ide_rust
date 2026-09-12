@@ -1,6 +1,11 @@
 #!/usr/bin/env python3
 """S1–S5 回放驱动 —— schema v0.1 签字材料采纳执行（SharpTutor docs/cide-replay）。
 
+**已被 Go 版取代（2026-09-12，D5 语言迁移第二站）**：
+`go run scripts/replay/replay_s1_s5.go` 与本版双轨对账一致（61 条断言状态与编号
+逐行一致）后成为日常入口。本文件保留为**双轨对照基准**——Go 版判定异常时用于
+归因复现。
+
 用法:
     python scripts/replay/replay_s1_s5.py [--cli PATH] [--sections S1,S2,S3,S5] [--anchor <短哈希>]
 

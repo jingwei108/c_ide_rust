@@ -227,7 +227,7 @@ Cide 采用**五条分层协作的测试防线**，核心哲学：*测试不是�
 
 既有 Python 脚本的处置：
 
-- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写（试点 `shadow_verify_cpp.py` **已于 2026-09-12 完成**：`scripts/shadow_verify_cpp.go` 与 Python 版双轨对账一致（94 用例判定与 stdout 内容逐项一致）后接管 CI，Clang 并发 16 路 **24.75s → 5.2s**；启动自检 fail loud + ABI/产物新鲜度门禁同口径移植）。下一站按裁定 §13.3 W3-1：`replay` → 探针集 → 主驱动（双轨对照）；
+- **不强制迁移、不冻结修改**；但触碰某脚本时若改动量已接近重写，优先用 Go 重写。**D5 进度（2026-09-12）**：① 试点 `shadow_verify_cpp.py` 完成——`scripts/shadow_verify_cpp.go` 双轨对账一致（94 用例）后接管 CI，Clang 并发 16 路 **24.75s → 5.2s**；② 第二站 `replay_s1_s5.py` 完成——`scripts/replay/replay_s1_s5.go` 双轨对账一致（61 条断言状态与编号逐行一致），并带 `--selftest` 注入自检（J9）。两站 Go 版均含启动自检 fail loud + 产物新鲜度门禁；Python 版保留为**双轨对照基准**。剩余：探针集 → 主驱动（双轨对照）；
 - 迁移 `shadow_verify.py`（唯一硬门禁、105KB、承载 6 类隐性口径）**必须新旧双轨同跑**，`663 / match 644 / known_issue 3 / cide_better 16 / 0 非预期差异` 五项一致才允许切换；
 - 保留的 Python **判定型脚本**仍须满足 **J9**：有"注入必然违反 → 必须变红"的埋雷记录（这条是语言无关义务）。
 

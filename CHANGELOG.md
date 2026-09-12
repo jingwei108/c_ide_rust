@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed (D5 语言迁移第二站：S1–S5 回放驱动 Python→Go)
+
+裁定文档 §13.3 W3-1 第二站落地（`replay` 不在 CI，为 schema v0.1 签字材料采纳驱动）：
+
+- **新增 `scripts/replay/replay_s1_s5.go`**：61 条断言（S1 防抖编译 A1–A10 / S2 fixtures 判分 A1–A6 /
+  S3 单步-seek-内存交错 A1–A16 / S5 预留位语义 A1–A5）与 Python 版逐项对齐，serve NDJSON
+  会话语义一致（id 关联、帧全量收集、shutdown 退出码门禁 S1 A10）。
+- **双轨对账 PASS**：61 条断言状态与编号逐行一致，exit 0（Python 0.39s / Go 0.47s 含 go run 编译）。
+  serve 会话是单进程时序协议流，不做会话内并发。
+- **实测更正**：裁定 §13.1 "replay ≥3 分钟未完成（已中止）" 已失效——W0-2 止血（`engine.rs`
+  panic 修复）后 Python 版实测 **0.39s 全绿**；W1-1 的 "replay 并发化" 目标自然达成，
+  已记入裁定 §13.7。
+- **J9 埋雷补强**：Go 版新增 `--selftest`（9 条注入断言：Report 透传、diagErrors 过滤、
+  锚点正则命中/拒绝、未知键/预留字段/哨兵值必被识别），不过即 exit 2 拒绝运行——
+  Python 版无此自检。
+- 前置门禁同口径：`capabilities.engine_version` 必须含当前 HEAD（exit 2 fail fast）；
+  `--anchor` 缺省从版本串自取，显式传入必须命中。A4b 的 `cide_engine_version` 读取走
+  规范指针 + `cide_free_string` 契约（Python 版 `c_char_p` 副本无法释放，属已记录差异）。
+- Python 版 `replay_s1_s5.py` 保留为**双轨对照基准**（头部已标注）。
+
 ### Changed (D5 语言迁移第一站：C++ Shadow 驱动 Python→Go)
 
 裁定文档 [`CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md`](docs/current/CIDE_CORE_ASSET_RECONSTRUCTION_VERDICT.md) §13.3 W3-1 的第一站落地：
