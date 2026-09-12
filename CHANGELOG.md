@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added (下游需求清单第二批：B2 / C1 / C2 / D2 / D3)
+
+响应对端 SharpTutor《Cide后端-C#扩展期需求清单》（锚定 `10591ad`）的非阻塞项。
+逐项回执见 [`docs/current/CIDE_DOWNSTREAM_REQUESTS_RESPONSE.md`](docs/current/CIDE_DOWNSTREAM_REQUESTS_RESPONSE.md)。
+
+- **B2 schema v0.2 激活轨道**（把"字段只增不改"从文档承诺变成机器防线）：
+  - **v0.1 正式冻结**（2026-09-12）：schema 状态由"定稿候选"改为"**v0.1 已冻结**"，
+    依据 S1–S5 签字回放 61/61 PASS；
+  - 新增 `native/src/unified/contracts.rs`：`RESERVED_FIELDS_V0_2`（四预留位字段名冻结）、
+    `V0_2_ACTIVATION_CHECKLIST`（五条激活清单）、`V0_2_FIELD_LEDGER`（v0.2 字段台账：
+    四预留位 + `code_file` + `call_stack[].return_line` + `func_display_name / func_mangled_name`）、
+    `BEHAVIOR_CONTRACTS`（行为契约表）；
+  - **激活 tripwire**：`test_v0_1_reserved_fields_absent` 递归扫描 payload 全量键集合，
+    发现任一预留位字段即失败并打印激活清单——"悄悄激活 v0.2 字段"在结构上不可能；
+  - **`UNWINDING 不得合并单步`可执行判据**：`contracts::check_unwinding_granularity`
+    （相邻展开步 `unwind_frames_left` 下降 ≤ 1；`finally` 步可持平；回增/未归零为违规），
+    CS3b 回放驱动将复用同一函数；
+  - schema 新增 **§9 v0.2 激活轨道**（清单 + 台账 + 行为契约）与**附录 B `semantic_label`
+    受控词汇表**；§8 #1/#2/#9 的计划列指向台账。
+- **B2 `semantic_label` 受控词汇表单源**：新增 `native/src/unified/vocabulary.rs`
+  （C 域 10 条 active + 异常域 4 条 reserved，取自 SharpTutor S4 §6），`classify()` 为
+  "产出 label → 词汇条目"的唯一映射；出口 serve `semantic_labels`。
+  防线 `test_semantic_label_vocabulary_closed` 断言引擎产出的每个非空 label 都能归类
+  （新增标签不登记词汇表即失败）。
+- **C2 `memory.regions` 三段式内存地图**：`regions` 统一为带 `kind`
+  （`global` / `stack` / `heap`）的数组并按地址升序，栈/全局区域补 `name` / `alloc_line`
+  （栈帧 = 进入该帧的调用行、全局 = 声明行）+ `alloc_by`（`call` / `static`），
+  响应新增 `region_counts`。栈/全局区域**只在导出层合成**，不写回内部堆清单
+  （堆统计口径零影响，有独立测试护栏）。C2 的 `kind` 字段同时落到
+  `MemoryRegionData`（`serde(default = "heap"`，向后兼容）。
+- **D3 `pointer_snapshots[].target_name` 跨帧解析**：新增
+  `CideVM::find_variable_name_at_addr`（当前帧 → 全局 → 其余活跃帧；命中判据为变量起始地址
+  或数组元素区间），collector 在当帧未命中时回退到它。实测 S3 的 swap 载体：
+  `a → x`、`b → y`（此前恒为空串，S3 §6 观测 #2）。schema §2.5 据此写明"空串语义收窄"。
+- **D2 serve 会话拓扑显式化**：`session.create/reset/destroy` 响应携带 `session` 字段
+  （`model: single-active-session` / `active_sessions` / `concurrent_sessions:false` /
+  各操作语义 / 并发建议），把"单 serve 进程 = 单活跃会话"从文档约定变成可直读字段。
+- 出口新增：serve `semantic_labels` / `contracts` 方法；
+  `capabilities` 增 `schema`（版本轨道）与 `behavior_contracts`（additive）。
+- 新增测试：`native/tests/memory_map_segments_test.rs`（三段式 + 跨帧解析 + 堆统计护栏 3 例）、
+  `step_payload_schema_v0_1_test` 增 5 例（预留位缺省 / 字段名冻结 / 词汇闭合 / 展开粒度 /
+  文档↔代码单源校验）。
+
+### Fixed (下游需求清单第二批：语义标签判定顺序)
+
+- **`semantic_label` 三条词汇在真实程序里不可达**（B2-3 词汇闭合防线首日抓到）：
+  `infer_semantic_label` 把"循环上下文"判定（`loop_depth >= 1`）排在具体语句模式之前，
+  而循环变量在循环结束后仍在作用域内，于是循环之后的 `printf(...)` / `free(p);` /
+  `return 0;` 全部被标成 `循环 i=3` —— `释放内存` / `调用 printf` / `返回` 三条词汇
+  形同虚设。现改为**具体语句模式优先，循环上下文降为行号兜底前的最后一档**：
+  循环体内无特征语句仍保留"循环 i=k"标注（教学价值最高的用法不变），
+  循环之后的具体语句恢复正确标签。`cargo test --workspace` 全绿，S1–S5 回放 61/61。
+
 ### Fixed (下游需求清单第一批：A1 / A2 / B1 / D1)
 
 响应对端 SharpTutor《Cide后端-C#扩展期需求清单》（锚定 `10591ad`，逐项实测后修复）：

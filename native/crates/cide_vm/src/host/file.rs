@@ -43,6 +43,7 @@ pub fn host_fopen(vm: &mut CideVM, session: &mut VmContext<'_>) {
                     is_freed: false,
                     alloc_line: vm.get_current_line(),
                     alloc_by: "fopen".to_string(),
+                    kind: "heap".to_string(),
                 });
             }
             // 写入 fd 到 FILE* 结构体

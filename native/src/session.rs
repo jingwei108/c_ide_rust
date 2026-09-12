@@ -239,6 +239,13 @@ pub struct MemoryRegion {
     pub alloc_line: i32,
     /// 分配方式，如 "malloc" / "realloc" / "fopen"
     pub alloc_by: String,
+    /// 段标识：`global` / `stack` / `heap`（C2 三段式内存地图；见 `MemoryRegionData::kind`）
+    #[serde(default = "default_memory_region_kind")]
+    pub kind: String,
+}
+
+fn default_memory_region_kind() -> String {
+    "heap".to_string()
 }
 
 impl From<cide_runtime::MemoryRegionData> for MemoryRegion {
@@ -252,6 +259,7 @@ impl From<cide_runtime::MemoryRegionData> for MemoryRegion {
             is_freed: value.is_freed,
             alloc_line: value.alloc_line,
             alloc_by: value.alloc_by,
+            kind: value.kind,
         }
     }
 }
@@ -267,6 +275,7 @@ impl From<MemoryRegion> for cide_runtime::MemoryRegionData {
             is_freed: value.is_freed,
             alloc_line: value.alloc_line,
             alloc_by: value.alloc_by,
+            kind: value.kind,
         }
     }
 }

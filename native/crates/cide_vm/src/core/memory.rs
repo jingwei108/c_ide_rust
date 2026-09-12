@@ -330,6 +330,46 @@ impl CideVM {
         result
     }
 
+    /// 跨帧解析：`addr` 归属的变量名（下游需求清单 D3 / SharpTutor S3 §6 观测 #2）。
+    ///
+    /// `get_variable_snapshot` 只回当前帧可见变量；作为**指针快照的 target_name 源**
+    /// 它不够用：`swap(int *a, int *b)` 体内 `a` 指向调用者的 `x`，当前帧里根本没有
+    /// `x` 这个符号，于是 `target_addr` 正确而 `target_name == ""`（实测现象）。
+    /// 本函数把搜索范围扩到**全局 + 全部活跃帧**（由内向外，调试器"最近定义优先"惯例）。
+    ///
+    /// 可见性判定与 `get_variable_snapshot` 同源（函数归属 + 声明行作用域）：
+    /// - 每个帧的"当前执行行"：顶层帧取 `current_line`，其余帧取**被调帧记录的
+    ///   `caller_line`**（`call_stack[i+1].caller_line` 正是帧 `i` 的当前行）；
+    /// - 命中规则：地址**等于变量起始地址**，或落在局部/全局**数组**的元素区间内
+    ///   （`&arr[2]` 这类取中间元素地址也能归属到 `arr`）。其他复合类型（struct 字段
+    ///   取址）无布局信息，不参与区间匹配——已知限制，记于 schema §2.5。
+    pub fn find_variable_name_at_addr(&self, addr: u32) -> Option<String> {
+        for sym in self.symbols.iter().filter(|s| !s.is_local) {
+            if slot_covers(sym, super::state::GLOBAL_START + sym.addr, addr) {
+                return Some(sym.name.clone());
+            }
+        }
+        for idx in (0..self.call_stack.len()).rev() {
+            let frame = &self.call_stack[idx];
+            let frame_line = match self.call_stack.get(idx + 1) {
+                Some(callee) => callee.caller_line,
+                None => self.current_line,
+            };
+            for sym in self.symbols.iter() {
+                if !sym.is_local || sym.func_name != frame.func_name {
+                    continue;
+                }
+                if sym.decl_line > 0 && frame_line > 0 && sym.decl_line > frame_line {
+                    continue;
+                }
+                if slot_covers(sym, frame.locals_base + sym.addr, addr) {
+                    return Some(sym.name.clone());
+                }
+            }
+        }
+        None
+    }
+
     /// 获取所有数组变量的元素快照（用于算法可视化条形图）。
     pub fn get_array_snapshots(&self) -> Vec<cide_runtime::ArraySnapshotData> {
         let mut result = Vec::new();
@@ -417,4 +457,30 @@ impl CideVM {
         }
         result
     }
+}
+
+/// 变量槽 `base` 是否覆盖地址 `addr`（D3 的归属判据）。
+///
+/// - 精确命中起始地址：恒真；
+/// - 数组类型额外接受**元素区间**内的地址（`&arr[2]` 归属到 `arr`）——元素宽度按
+///   `cide_runtime::base_kind` 判定（char 1 / double·long long 8 / 其余 4），
+///   与 `get_array_snapshots` 的取值口径同源；
+/// - 其余复合类型（struct/union/class）无布局信息，只做精确匹配。
+fn slot_covers(sym: &VMSymbol, base: u32, addr: u32) -> bool {
+    if base == addr {
+        return true;
+    }
+    if sym.ty.kind() != TypeKind::Array {
+        return false;
+    }
+    let count = sym.ty.array_size();
+    if count <= 0 {
+        return false;
+    }
+    let elem_size = match base_kind(&sym.ty) {
+        TypeKind::Char => 1u32,
+        TypeKind::Double | TypeKind::LongLong => 8,
+        _ => 4,
+    };
+    addr > base && addr < base + count as u32 * elem_size
 }

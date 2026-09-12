@@ -159,6 +159,22 @@ pub fn error_catalog_json() -> String {
     crate::diagnostics::error_catalog::export_json()
 }
 
+/// `semantic_label` 受控词汇表导出（下游需求清单 B2-3 / SharpTutor S4 §6）。
+///
+/// 语义单源：[`crate::unified::vocabulary::SEMANTIC_LABEL_VOCABULARY`]——与 schema
+/// 附录 B 同源，"词汇只增不改"。下游知识卡片按词汇驱动的缓存可随 vendor 更新同步。
+pub fn semantic_labels() -> Value {
+    crate::unified::vocabulary::vocabulary_json()
+}
+
+/// schema 版本轨道 + 行为契约导出（下游需求清单 B2-1/B2-2）。
+///
+/// 含预留位字段名集合、v0.2 激活清单与字段台账、行为契约表——把"文档共识"
+/// 变成消费方可直读的机器可读清单（与冻结测试同源）。
+pub fn contracts() -> Value {
+    crate::unified::contracts::contracts_json()
+}
+
 /// 自 `cursor`（字节偏移）起的输出增量（**展示视图**：含引擎附注，兼容既有消费方）。
 ///
 /// `{"delta":"...","cursor":<新游标>,"total":<总字节>,"stream":"display"}`。
@@ -398,13 +414,46 @@ pub fn set_breakpoints(session: &mut Session, lines: &[i32]) -> i32 {
     0
 }
 
-/// 内存视图（堆决议 §3 的三色语义：已分配 / 隔离中 / 可复用）。
+/// 内存视图（堆决议 §3 的三色语义 + 下游需求清单 C2 的**三段式 `kind`**）。
 ///
-/// ⚠️ 过渡形态：capi 第二批将把区域查询定型为 `kind: global|stack|heap` +
-/// `status` + `alloc_line` 的地道 schema；serve 先按现有字段暴露，第二批落地后对齐。
+/// `regions` 是统一的**内存地图**数组，每项带 `kind`：
+/// - `"heap"`：`session.memory.regions` 原样（malloc/calloc/realloc/strdup/fopen/vfs），
+///   携带 `alloc_line` / `alloc_by` / `is_freed`（三色堆图数据源）；
+/// - `"global"`：VM 全局/静态符号合成（`name` = 变量名、`alloc_line` = 声明行、
+///   `alloc_by` = `"static"`）；
+/// - `"stack"`：活跃调用帧合成（`name` = 函数名、`alloc_line` = **进入该帧的调用行**、
+///   `alloc_by` = `"call"`、`size` = 帧跨度 `original_stack_top - locals_base`）。
+///
+/// **为什么不把栈/全局写回 `session.memory.regions`**：该清单是堆统计的单源
+/// （`total_allocated` / 碎片率 / 隔离区驱逐都以它为准），混入栈帧会让
+/// "已分配堆内存"把栈算进去。故全局/栈区域**只在导出层合成**（C2 §"定型窗口内加最便宜"）。
+///
+/// ⚠️ 过渡形态：capi 第二批将把本查询定型为语言中立 schema（`kind` + `status` +
+/// `alloc_line`）；此处 serve 出口先按同一形状暴露，第二批落地后对齐字段命名。
 pub fn memory_regions(session: &Session) -> Value {
+    let mut regions: Vec<(u32, Value)> = Vec::new();
+    let heap_count = session.memory.regions.len();
+    for r in &session.memory.regions {
+        regions.push((r.addr, serde_json::to_value(r).unwrap_or(Value::Null)));
+    }
+    let (global_count, stack_count) = match session.vm.as_ref() {
+        Some(vm) => {
+            let globals = global_region_entries(vm);
+            let stacks = stack_region_entries(vm);
+            let n = (globals.len(), stacks.len());
+            regions.extend(globals);
+            regions.extend(stacks);
+            n
+        }
+        None => (0, 0),
+    };
+    // 内存地图的自然顺序：地址升序（全局 → 堆 → 栈自高地址向下）
+    regions.sort_by_key(|(addr, _)| *addr);
+
     json!({
-        "regions": session.memory.regions,
+        "regions": regions.into_iter().map(|(_, v)| v).collect::<Vec<_>>(),
+        // 分段计数（consumers 可用它判断三段式是否已生效，无需自行扫 kind）
+        "region_counts": { "global": global_count, "stack": stack_count, "heap": heap_count },
         "free_list": session.memory.free_list,
         "quarantine": {
             "bytes": session.memory.quarantine_bytes,
@@ -415,6 +464,80 @@ pub fn memory_regions(session: &Session) -> Value {
         "heap_offset": session.memory.heap_offset,
         "alloc_counter": session.memory.alloc_counter,
     })
+}
+
+/// 全局/静态区域的导出条目（C2）：从 VM 符号表合成，`kind == "global"`。
+///
+/// `size` 口径：优先取**符号表槽位跨度**（下一个全局符号偏移 − 本符号偏移）——
+/// 它与 codegen 的实际分配一致（含填充）；末位符号无后继可参照，退化为
+/// `compute_type_size`（标量/指针/数组精确；struct/union/class 因 VM 侧无布局表
+/// 返回 0，再退化为 1 个最小字节）。`alloc_line` 取声明行。
+fn global_region_entries(vm: &crate::vm::core::CideVM) -> Vec<(u32, Value)> {
+    use cide_runtime::GLOBAL_START;
+    let mut globals: Vec<&cide_runtime::Symbol> = vm.get_symbols().iter().filter(|s| !s.is_local).collect();
+    globals.sort_by_key(|s| s.addr);
+    // struct/union/class 布局表在 VM 侧不存在，空表即"只算标量与数组"的口径
+    let no_fields: std::collections::HashMap<String, Vec<cide_ast::StructField>> = std::collections::HashMap::new();
+    let no_class_sizes: std::collections::HashMap<String, i32> = std::collections::HashMap::new();
+
+    let mut out = Vec::with_capacity(globals.len());
+    for (i, sym) in globals.iter().enumerate() {
+        let addr = GLOBAL_START + sym.addr;
+        let span = globals
+            .get(i + 1)
+            .map(|next| (GLOBAL_START + next.addr).saturating_sub(addr))
+            .filter(|s| *s > 0);
+        let size = match span {
+            Some(s) => s as i32,
+            None => match cide_ast::compute_type_size(&sym.ty, &no_fields, &no_fields, &no_class_sizes) {
+                0 => 1,
+                n => n,
+            },
+        };
+        out.push((
+            addr,
+            json!({
+                "addr": addr,
+                "size": size,
+                "name": sym.name,
+                "ty": cide_runtime::type_display_name(&sym.ty),
+                "is_heap": false,
+                "is_freed": false,
+                "alloc_line": sym.decl_line,
+                "alloc_by": "static",
+                "kind": "global",
+            }),
+        ));
+    }
+    out
+}
+
+/// 栈帧区域的导出条目（C2）：从活跃调用帧合成，`kind == "stack"`。
+///
+/// `name` = 函数名；`alloc_line` = **进入该帧的调用行**（`caller_line`；
+/// `main` 的帧为 0 —— 它不是被调用出来的）；`size` = 帧跨度
+/// （`original_stack_top - locals_base`，与 VM 的 `mem_stack_top -= frame_size` 同源）。
+fn stack_region_entries(vm: &crate::vm::core::CideVM) -> Vec<(u32, Value)> {
+    vm.get_call_stack()
+        .iter()
+        .map(|f| {
+            let addr = f.locals_base;
+            (
+                addr,
+                json!({
+                    "addr": addr,
+                    "size": f.original_stack_top.saturating_sub(f.locals_base) as i32,
+                    "name": f.func_name,
+                    "ty": "frame",
+                    "is_heap": false,
+                    "is_freed": false,
+                    "alloc_line": f.caller_line,
+                    "alloc_by": "call",
+                    "kind": "stack",
+                }),
+            )
+        })
+        .collect()
 }
 
 /// 会话级配置读取（判分/回放场景需要确认两边配置一致）。
@@ -457,10 +580,23 @@ pub fn reset_session_preserving_config(session: &mut Session) {
 /// 口径（C23 锚定决议）：`__STDC_VERSION__=202311L` 是**名义锚点**，真实能力
 /// 以本清单为准；内存模型常量从 `cide_runtime` 单源引用，禁止在此复刻数值。
 pub fn capabilities() -> Value {
+    use crate::unified::contracts::{BEHAVIOR_CONTRACTS, RESERVED_FIELDS_V0_2, SCHEMA_V0_1_FROZEN_AT, SCHEMA_VERSION, V0_2_FIELD_LEDGER};
+    use crate::unified::vocabulary::SEMANTIC_LABEL_VOCABULARY;
     use cide_runtime::{GLOBAL_REGION_LIMIT, GLOBAL_START, HEAP_START, MEM_SIZE, NULL_TRAP_SIZE};
     json!({
         "engine": "cide",
         "abi_version": crate::capi::CIDE_ABI_VERSION,
+        // 协议轨道（B2）：v0.1 冻结状态 + 预留位 + v0.2 台账，消费方据此做版本协商
+        "schema": {
+            "version": SCHEMA_VERSION,
+            "frozen_at": SCHEMA_V0_1_FROZEN_AT,
+            "reserved_fields_v0_2": RESERVED_FIELDS_V0_2,
+            "v0_2_field_ledger": V0_2_FIELD_LEDGER,
+        },
+        // 行为契约（B2-2）：不得被性能优化破坏的可观测行为
+        "behavior_contracts": BEHAVIOR_CONTRACTS,
+        // 词汇表条数（完整表见 serve `semantic_labels`）——便于消费方探测词汇扩充
+        "semantic_label_kinds": SEMANTIC_LABEL_VOCABULARY.len(),
         "languages": {
             "c": {
                 "anchor": "ISO C23 (ISO/IEC 9899:2024) 教学子集",

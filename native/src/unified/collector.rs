@@ -130,8 +130,13 @@ impl StepCollector {
 }
 
 /// 从变量快照中提取指针变量，并判断其状态。
+///
+/// `target_name`（D3）：先在**当前帧快照**里找，未命中再向 VM 请求**跨帧解析**
+/// （全局 + 全部活跃帧）——`swap(&x, &y)` 体内 `a`/`b` 指向调用者的 `x`/`y`，
+/// 当前帧快照里没有这两个符号，只看当前帧就永远是空串。
+/// 两级顺序保留既有"当前帧优先"的可读性（同名变量时内层更贴近学生视角）。
 fn collect_pointer_snapshots(
-    _vm: &CideVM,
+    vm: &CideVM,
     session: &Session,
     local_vars: &[ApiVariableSnapshot],
 ) -> Vec<PointerSnapshot> {
@@ -155,7 +160,14 @@ fn collect_pointer_snapshots(
             PointerStatus::Valid
         };
 
-        let target_name = find_var_name_at_addr(local_vars, target_addr);
+        let target_name = {
+            let same_frame = find_var_name_at_addr(local_vars, target_addr);
+            if same_frame.is_empty() {
+                vm.find_variable_name_at_addr(target_addr).unwrap_or_default()
+            } else {
+                same_frame
+            }
+        };
 
         result.push(PointerSnapshot {
             name: v.name.clone(),
@@ -360,6 +372,15 @@ pub(crate) fn infer_semantic_label(
         && !source_line.starts_with("/*");
 
     // 生成语义标签
+    //
+    // 判定顺序（2026-09-12 修订，B2-3 词汇闭合防线首日抓到的缺陷）：
+    // **具体语句模式优先于"循环上下文"**。旧顺序把 `loop_depth >= 1` 放在
+    // 递归/printf/return/内存分配 之前，而 `loop_depth` 只要求"有循环变量在白名单里
+    // 且已进入作用域"——循环变量在循环结束后仍在作用域内，于是 `printf(...)`、
+    // `free(p);`、`return 0;` 这些**位于循环之后**的行全部被标成 `循环 i=3`
+    // （实测：`释放内存` 与 `调用 printf` 在真实程序里几乎不可达，词汇表条目形同虚设）。
+    // 修订后：具体模式先判；都判不出来时**才**回落到循环上下文（保留"循环体内
+    // 普通语句显示当前迭代变量"这一教学价值最高的用法），最后才是行号兜底。
     if is_loop_headline {
         return "循环".to_string();
     }
@@ -370,13 +391,6 @@ pub(crate) fn infer_semantic_label(
         // algorithm_step 说 `交换 arr[0]↔arr[1]`，消费方同时收到一对一错的描述。
         let idx_val = pick_inner_index(&loop_vars, &source_line);
         format!("交换 arr[{}]↔arr[{}]", idx_val, idx_val + 1)
-    } else if loop_depth >= 1 {
-        let iter_str = loop_vars
-            .iter()
-            .map(|(name, val)| format!("{}={}", name, val))
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("循环 {}", iter_str)
     } else if is_recursive {
         format!("递归调用 {}", func_name)
     } else if source_line.starts_with("printf") || source_line.starts_with("scanf") {
@@ -403,6 +417,13 @@ pub(crate) fn infer_semantic_label(
         } else {
             "函数调用".to_string()
         }
+    } else if loop_depth >= 1 {
+        let iter_str = loop_vars
+            .iter()
+            .map(|(name, val)| format!("{}={}", name, val))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("循环 {}", iter_str)
     } else {
         format!("第 {} 行", code_line)
     }

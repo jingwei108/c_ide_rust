@@ -49,6 +49,7 @@ pub fn host_malloc(vm: &mut CideVM, session: &mut VmContext<'_>) {
             is_freed: false,
             alloc_line: vm.get_current_line(),
             alloc_by: "malloc".to_string(),
+            kind: "heap".to_string(),
         });
     } else {
         // 复用已释放的 region 时更新分配信息
@@ -298,6 +299,7 @@ pub fn host_realloc(vm: &mut CideVM, session: &mut VmContext<'_>) {
         is_freed: false,
         alloc_line: vm.get_current_line(),
         alloc_by: "realloc".to_string(),
+        kind: "heap".to_string(),
     });
 
     vm.push(new_addr as u64);
@@ -340,6 +342,7 @@ pub fn host_calloc(vm: &mut CideVM, session: &mut VmContext<'_>) {
         is_freed: false,
         alloc_line: vm.get_current_line(),
         alloc_by: "calloc".to_string(),
+        kind: "heap".to_string(),
     });
     vm.push(addr as u64);
 }

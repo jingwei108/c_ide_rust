@@ -127,7 +127,7 @@ python scripts/shadow_verify_cpp.py
 python scripts/serve_smoke.py
 ```
 
-覆盖 id 关联 / 帧同构 / 会话生命周期 / 配置一致性的 26 项断言（CI 已纳入）。
+覆盖 id 关联 / 帧同构 / 会话生命周期 / 配置一致性 / 三段式内存地图 / schema 轨道与词汇表的 39 项断言（CI 已纳入）。
 
 ### 防线 5：CI 三层一致性检查
 
@@ -160,7 +160,7 @@ pwsh scripts/check-memory-safety.ps1
 | 脚本 | 功能 |
 |:---|:---|
 | [`shadow_verify_cpp.py`](../../scripts/shadow_verify_cpp.py) | C++ Shadow Verification 驱动（与 Clang++ 对照） |
-| [`serve_smoke.py`](../../scripts/serve_smoke.py) | `cide_cli serve` JSON-lines 协议冒烟（26 项断言） |
+| [`serve_smoke.py`](../../scripts/serve_smoke.py) | `cide_cli serve` JSON-lines 协议冒烟（39 项断言） |
 | [`ci_three_tier_check.py`](../../scripts/ci_three_tier_check.py) | CI 三层一致性检查（失败记录 ↔ 测试结果双向对账） |
 | [`engineering_health.py`](../../scripts/engineering_health.py) | 工程健康度看板 |
 | [`precompile_bytecode_libc.py`](../../scripts/precompile_bytecode_libc.py) | Bytecode Libc 构建期预编译（生成固定索引段数据） |

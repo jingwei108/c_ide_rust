@@ -64,6 +64,7 @@ pub fn host_strdup(vm: &mut CideVM, session: &mut VmContext<'_>) {
             is_freed: false,
             alloc_line: vm.get_current_line(),
             alloc_by: "strdup".to_string(),
+            kind: "heap".to_string(),
         });
     } else {
         for r in &mut session.memory.regions {

@@ -181,6 +181,7 @@ cide_cli serve
 | 入口语义 | 与 capi **共用 `session_api`**（运行结果/诊断/步 payload 形状完全一致），三出口不产生语义分叉 |
 | 会话配置 | `quarantine_budget` / `deterministic` / `max_steps` / `call_depth_limit` 与 capi 同名 setter 一致 |
 | 重置语义 | `session.reset` 清空编译/运行状态，**保留会话级配置**（隔离预算、判分确定性、argv） |
+| **会话拓扑** | **单 serve 进程 = 单活跃会话**：方法表无并发句柄参数，`session.create`/`destroy` 都是"清空重建同一实例"；需要并发逻辑会话（如"长寿命诊断进程 + 瞬态运行进程"）时**起多个 serve 进程**——这是当前唯一受支持的并发形态（下游需求清单 D2）|
 
 方法一览：
 
@@ -196,12 +197,26 @@ cide_cli serve
 | `payload.get` | `start` / `end` | 取窗口内步 payload（窗口 2000 帧，越窗静默裁剪） |
 | `seek` | `step` | 时间旅行定位（窗口外走检查点恢复 + 正向重放） |
 | `breakpoints.set` | `lines:[int]` | 设置断点行集合（应在 `step.begin` 之后） |
-| `memory.regions` | — | 内存区域 + 隔离区统计（三色堆图数据源；第二批将定型 `kind` 三段式） |
+| `memory.regions` | — | **三段式内存地图**（`kind` = `global`/`stack`/`heap`，见下方说明）+ 隔离区统计 |
 | `config.get` / `config.set` | 同上配置项 | 读写会话级配置 |
 | `error_catalog` | — | 错误码表机器可读导出（`{catalog:[{code,code_str,lang,category,emoji,title,explanation,common_causes[]}]}`，按 code 升序） |
-| `capabilities` | — | 机器可读能力清单（版本宏名义锚点、语言子集、内存模型常量） |
-| `session.create` / `session.reset` / `session.destroy` | — | 会话生命周期 |
+| `semantic_labels` | — | `semantic_label` 受控词汇表导出（`{schema,discipline,labels:[{id,domain,template,example,status,since}]}`；词汇只增不改） |
+| `contracts` | — | schema 版本轨道与行为契约（预留位字段名、v0.2 激活清单与字段台账、行为契约表） |
+| `capabilities` | — | 机器可读能力清单（版本宏名义锚点、语言子集、内存模型常量、schema 轨道、行为契约） |
+| `session.create` / `session.reset` / `session.destroy` | — | 会话生命周期（响应带 `session` 拓扑语义字段，见上表"会话拓扑"）|
 | `shutdown` | — | 结束 serve 进程（EOF 亦可） |
+
+**`memory.regions` 的三段式（2026-09-12，下游需求清单 C2）**：`regions` 是统一数组，
+每项带 `kind`，数组按地址升序；响应另带 `region_counts{global,stack,heap}`。
+
+| `kind` | `name` | `alloc_line` | `alloc_by` | 备注 |
+|---|---|---|---|---|
+| `heap` | `heap_N` / `FILE:<path>` | 分配点行号 | `malloc` / `calloc` / `realloc` / `strdup` / `fopen` / `vfs` | 保留 `is_freed`（三色堆图） |
+| `global` | 变量名 | 声明行 | `static` | 由 VM 全局符号合成 |
+| `stack` | 函数名 | **进入该帧的调用行**（`main` 为 0） | `call` | `size` = 帧跨度 |
+
+栈/全局区域**只在导出层合成**，不写回内部堆清单（堆统计口径不受影响）。
+`capi` 第二批将把该形状语言中立化。
 
 示例（一次会话跑完编译 → 运行 → 取输出 → 单步 → 收尾）：
 
@@ -264,7 +279,7 @@ EOF
 > {"id":3,"method":"input.feed","params":{"text":"35\n"}}   // → finished，读入 a=7, b=35
 > ```
 >
-> 防线：`python scripts/serve_smoke.py` 覆盖 id 关联 / 帧同构 / 生命周期 / 配置一致性的 26 项断言（CI 已纳入）。
+> 防线：`python scripts/serve_smoke.py` 覆盖 id 关联 / 帧同构 / 生命周期 / 配置一致性 / 三段式内存地图 / schema 轨道与词汇表的 39 项断言（CI 已纳入）。
 
 ## 快速测试片段
 

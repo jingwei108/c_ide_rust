@@ -217,13 +217,18 @@ finally 里 return、`==` vs `Equals`、可变列表别名、循环边界 off-by
 
 **B 档：词汇契约**：
 - 行为契约：**"UNWINDING 每帧一 step，展开不可被合并成单步"**（与"JIT 断点完整性"
-  同列行为契约清单，防未来性能优化毁掉展开动画）；
-- 行为契约：**含 `TryBegin` 的函数排除 JIT trace**；
+  同列行为契约清单，防未来性能优化毁掉展开动画）——**已落代码**：
+  `unified/contracts.rs::BEHAVIOR_CONTRACTS` 条目 `unwinding_step_granularity` +
+  可执行判据 `check_unwinding_granularity`（schema §9.3）；
+- 行为契约：**含 `TryBegin` 的函数排除 JIT trace**（同表条目 `try_excludes_jit`）；
 - `semantic_label` 词汇表补异常域条目（"抛出 IndexOutOfRangeException"/"展开弹出
   Main 帧"/"执行 finally 块"/"捕获 DivideByZeroException"）并进 schema 附录，
   **词汇即契约，消费端 UI 直读不做推断**。
   ——此项同时是重构计划 R3"教学标注双来源"的收口方案：`semantic_label` 从自由文本
   启发升级为受控词汇表枚举，`collector.rs` 的启发逻辑降为词汇表映射函数。
+  **2026-09-12 落地**：schema 附录 B + `unified/vocabulary.rs` 单源 + serve
+  `semantic_labels` 出口 + 词汇闭包防线（SharpTutor S4 §6 异常域首批 4 条以
+  `reserved` 状态预先登记，激活即"契约兑现"而非"新增契约"）。
 
 **C 档：schema 签字回放场景第四组**（前三组：防抖编译流/判分流/单步+seek+内存查询
 交错流）：**异常交错流**——throw → 逐帧展开 → catch → 再 throw → finally 内 return，
@@ -317,4 +322,20 @@ C# 白箱独有画面。
   以同序列回放 §5 断言）。**CS0 可以开工**。
 - **CS0~CS6 待启动**：CS0 不依赖外部（纯内部重构）；CS1 起语料经红线清单裁定
   后接入，`shadow_verify_csharp.py` 最小版随 CS1 落地（dotnet 版本钉死，
-  缺失即 fail fast，与 clang 缺失同口径）。
+  缺失即 fail-fast，与 clang 缺失同口径）。
+- **v0.2 激活轨道落地（2026-09-12，响应 SharpTutor 需求清单 B2）**：§6-A/B 的共识
+  已固化为**上游测试位**而非文档承诺：
+  - schema 新增 **§9「v0.2 激活轨道」**（激活清单五条 + 字段台账 + 行为契约表）与
+    **附录 B「`semantic_label` 受控词汇表」**（C 域 10 条 active + 异常域 4 条 reserved）；
+    **v0.1 正式冻结**（S1–S5 61/61）；
+  - 代码单源 `native/src/unified/contracts.rs`（预留位字段名 / 激活清单 / 字段台账 /
+    行为契约）与 `native/src/unified/vocabulary.rs`（词汇表 + `classify()`）；
+    出口 serve `contracts` / `semantic_labels`，`capabilities` 增 `schema` 与
+    `behavior_contracts`；
+  - **激活 tripwire**：预留位字段一出现在任何 payload（含嵌套）即让冻结测试失败并打印
+    激活清单——CS3b 落地时不可能"忘记重跑 C1–C3/S1–S5 或忘记更新 §7 校验表"；
+  - **`UNWINDING 不得合并单步`**（§6-B 行为契约）有了可执行判据
+    `contracts::check_unwinding_granularity`（下降幅度 ≤ 1；`finally` 步可持平），
+    S4 §5 A2/A5 回放将直接复用；
+  - **CS5 的 R3 收口项已提前半步**：`collector.rs` 的启发逻辑现已受词汇闭包测试约束
+    （产出未登记标签即失败），CS5 只需把启发降为"词汇表映射函数"。

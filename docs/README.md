@@ -64,8 +64,9 @@
 
 | 文档 | 说明 |
 |------|------|
-| [`spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](spec/STEP_PAYLOAD_SCHEMA_V0_1.md) | **StepPayload v0.1 语言中立协议 schema**（字段语义 / 窗口 / seek / 差分编码） |
+| [`spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](spec/STEP_PAYLOAD_SCHEMA_V0_1.md) | **StepPayload v0.1 语言中立协议 schema**（字段语义 / 窗口 / seek / 差分编码；§9 v0.2 激活轨道、附录 B 受控词汇表） |
 | [`current/CIDE_CAPI_REVIEW_RESPONSE.md`](current/CIDE_CAPI_REVIEW_RESPONSE.md) | capi 签名评审定稿（外部消费者诉求逐条回应 + 分批实现状态） |
+| [`current/CIDE_DOWNSTREAM_REQUESTS_RESPONSE.md`](current/CIDE_DOWNSTREAM_REQUESTS_RESPONSE.md) | 下游需求清单处置与窗口表态（A/B/C/D 逐项回执；第二批 capi 窗口、三段式内存地图、会话语义） |
 | [`current/CIDE_HEAP_QUARANTINE_DECISION.md`](current/CIDE_HEAP_QUARANTINE_DECISION.md) | 堆内存决议：bump 分配 + 有界隔离（三道墙） |
 
 #### 质量、审查与工作记录
@@ -84,7 +85,7 @@
 
 | 文档 | 说明 |
 |------|------|
-| [`spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](spec/STEP_PAYLOAD_SCHEMA_V0_1.md) | StepPayload v0.1（v0.1 定稿候选，待对端回放校验后冻结） |
+| [`spec/STEP_PAYLOAD_SCHEMA_V0_1.md`](spec/STEP_PAYLOAD_SCHEMA_V0_1.md) | StepPayload v0.1（**已冻结**，2026-09-12，S1–S5 签字回放 61/61）；§9 v0.2 激活轨道、附录 B 受控词汇表 |
 
 ---
 

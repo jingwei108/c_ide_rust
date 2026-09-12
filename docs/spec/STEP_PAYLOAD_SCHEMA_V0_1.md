@@ -1,11 +1,15 @@
 # StepPayload Schema v0.1（语言中立）
 
-> 状态：**v0.1 定稿候选**（Phase 1 验收项；待 SharpTutor 三组回放场景签字后冻结为 v0.1）
-> 日期：2026-09-11
+> 状态：**v0.1 已冻结**（2026-09-12）——S1–S5 五组签字回放 61/61 PASS（§7.x2），
+> 字段冻结测试、出口形状一致性、serve 冒烟与 clippy 零警告全部就位。
+> 冻结日期：2026-09-12　|　冻结锚点：`10591ad`
+> 后续演进走 **§9 v0.2 激活轨道**（预留位激活 / 新增字段），纪律不变：**字段只增不改语义**。
 > 归属：主计划 [`CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md`](../current/CIDE_BACKEND_SPLIT_WASM_WHITEBOX_PLAN.md) §3.2 协议层
-> 实现锚点：`native/src/unified/types.rs`（类型定义）、`native/src/unified/collector.rs`（字段来源）、`native/src/unified/engine.rs`（窗口与 seek）、`native/src/unified/stream.rs`（差分编码）、`native/src/capi/first_batch.rs`（出口序列化）
+> 实现锚点：`native/src/unified/types.rs`（类型定义）、`collector.rs`（字段来源）、`engine.rs`（窗口与 seek）、`stream.rs`（差分编码）、`contracts.rs`（版本轨道与行为契约）、`vocabulary.rs`（受控词汇表）、`native/src/capi/first_batch.rs`（出口序列化）
 > 消费者：capi 第一批（`cide_step_next_json` / `cide_get_step_payloads_json`）、`cide_cli serve`、wasm 绑定、任何第三方语言
-> 最后核对日期：2026-09-11
+> 最后核对日期：2026-09-12
+> 修订说明（2026-09-12）：v0.1 冻结；新增 §9 v0.2 激活轨道与附录 B 受控词汇表；
+> §2.5 `target_name` 补跨帧解析口径（下游 D3）；§8 #1/#9 计划列指向 §9。
 > 修订说明（2026-09-11）：去前端化——§0 明示"语言中立、不依赖任何前端实现"；§7 回放输入的"Flutter frameCache"改为"原生前端 frameCache 消费序列（已切割的历史资产）"并指向 `cide_cli serve` 复现口径。字段定义与校验记录保持原样。
 
 本文档是**协议层**定义：任何语言按此即可解析 Cide 的步数据，无需了解 Rust 内部表示。引擎内部优化（CoW 快照等）不得改变本文档的字段语义。
@@ -129,8 +133,19 @@
 | `addr` | uint32 | 指针变量自身的地址 |
 | `ty_name` | string | 指针类型名 |
 | `target_addr` | uint32 | 指向的地址（`0` = NULL） |
-| `target_name` | string | 被指对象的变量名（能在当前快照中匹配到地址时给出，否则空串） |
+| `target_name` | string | 被指对象的变量名；给定地址能被**任一活跃帧或全局**快照中的变量槽覆盖时给出，否则空串 |
 | `status` | string | 四状态枚举，见 §3.1 |
+
+**`target_name` 的匹配口径（2026-09-12 扩充，下游需求清单 D3）**：搜索范围从"当前帧
+快照"扩为"**当前帧 → 全局符号 → 其余活跃帧**"，命中判据为**地址等于变量起始地址**，
+或落在**数组**类型变量的元素区间内（`&arr[2]` 归属到 `arr`）。于是 `swap(int *a, int *b)`
+体内 `a`/`b` 能解析出调用者的 `x`/`y`（此前恒为空串，见 SharpTutor S3 §6 观测 #2）。
+
+- **空串的语义收窄**：只表示"地址不属于任何可见变量槽"（如指向堆块内部、指向 struct
+  字段中间、或指向已出作用域的变量），**不再等同于"跨帧解不出来"**；消费方不得把
+  空串当作"悬空指针"信号 —— 悬空与否由 `status` 表达。
+- **已知限制**：非数组复合类型（struct/union/class）不参与区间匹配（VM 侧无布局表），
+  只做起始地址精确匹配。
 
 ### 2.6 `AlgorithmStepSnapshot` — 算法步骤
 
@@ -324,7 +339,7 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 | C1 | 原生前端 frameCache 消费序列（**已切割的历史资产**；现由 `cide_cli serve` 同形口径复现，见 C4） | `compile` → `step_begin` → `step_next` ×N → `get_step_payloads_json(窗口)` → 断点暂停 → 继续 | 顶层 14 字段齐全；`call_stack` 自底向上；`cache_start_step` 单调不减；窗口裁剪后 `payloads` 非空且步号连续 | ✅ 已实测（§7.2，由 `step_payload_schema_v0_1_test` 冻结） |
 | C2 | 差分往返 | 同一步序列的 `StepPayload[]` → `encode_payloads` → `decode` | 解码结果与原始 payload 逐字段等价；`null` 与 `[]` 语义区分正确 | ✅ 已有回归测试（`stream.rs::test_accessed_vars_and_vis_events_delta` 等） |
 | C3 | 窗口滑动与越窗 seek | 连续执行 >2000 步 → 查询窗口 → seek 回退到窗口外 → 再查询 | 窗口 2000 帧、丢最早 20%；越窗 seek 触发检查点恢复 + 正向重放；seek 后窗口为 `[target-1999, target]` | ✅ 已实测（`step_payload_schema_v0_1_test` + `unified_engine_window_test`） |
-| C4 | serve 出口形状一致性（新增） | `cide_cli serve`：`compile` → `run` → `output.delta` → `step.begin` → `step.next` → `payload.get` → `seek` → `session.reset` | 与 capi 同形：`payloads` 字段、`cache_start_step`、`status` 枚举、iso 帧（`id`/`ok`） | ✅ 已实测（`scripts/serve_smoke.py`，26 项断言） |
+| C4 | serve 出口形状一致性（新增） | `cide_cli serve`：`compile` → `run` → `output.delta` → `step.begin` → `step.next` → `payload.get` → `seek` → `session.reset` | 与 capi 同形：`payloads` 字段、`cache_start_step`、`status` 枚举、iso 帧（`id`/`ok`） | ✅ 已实测（`scripts/serve_smoke.py`，39 项断言；2026-09-12 扩至三段式内存地图 / schema 轨道 / 词汇表） |
 | S1 | 防抖编译流（对端） | 高频 `compile_unit` + `compile_json`，期间夹杂 `step_next` | 诊断 JSON 稳定；`payloads` 不因重编译而串步 | ⏳ 待对端执行（Cide 侧接口已就绪） |
 | S2 | fixtures 判分流（对端） | 固定输入程序批量判分：`compile` → `run_json` → `get_output_delta` | `status`/`return_value`/`steps_executed` 稳定可复现（配 `cide_set_deterministic`） | ⏳ 待对端执行 |
 | S3 | 单步 + seek + 内存查询交错流（对端） | `step_next` / `seek` / `memory.regions` 交错 | 三视图一致：指针四状态与内存区域状态不矛盾；`accessed_vars` 枚举值合法 | ⏳ 待对端执行（`memory.regions` 属 capi 第二批；serve 已有过渡形态可先回放） |
@@ -353,6 +368,9 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 
 - 协议层字段已全部 `serde::Serialize` 落链（`cide_step_next_json` 直接输出），不存在"文档有、出口无"的字段；
 - 三组对端场景所需的入口中，**`memory.regions` 属 capi 第二批**（尚未落地）——S3 场景需在第二批完成后才能完整回放，这是**已知的前置依赖**，不是 schema 缺口；
+  - 2026-09-12 更新（下游需求清单 C2）：serve 出口的 `memory.regions` 已先行落地**三段式
+    `kind`（`global` / `stack` / `heap`）**并为栈/全局区域补上 `name` / `alloc_line`
+    （§7.x3），第二批把这套形状语言中立化即可，不再需要"定型后再回头看"；
 - S1/S2 所需入口（`compile_json` / `run_json` / `get_output_delta` / `set_deterministic`）均已就绪。
 
 ---
@@ -399,20 +417,108 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 
 ---
 
+## 7.x3 内存区域三段式（`memory.regions` 过渡形态，2026-09-12，下游需求清单 C2）
+
+`memory.regions` 的 `regions` 数组是统一的**内存地图**，每项带 `kind`：
+
+| `kind` | 来源 | `name` | `alloc_line` | `alloc_by` | 其他 |
+|---|---|---|---|---|---|
+| `heap` | `session.memory.regions`（malloc/calloc/realloc/strdup/fopen/vfs） | `heap_N` / `FILE:<path>` | 分配点行号 | `malloc` 等 | `is_freed` / `size`（三色堆图数据源） |
+| `global` | VM 全局/静态符号合成 | **变量名** | **声明行** | `static` | `ty` 为 C 风格类型名 |
+| `stack` | 活跃调用帧合成 | **函数名** | **进入该帧的调用行**（`main` 为 0） | `call` | `size` = 帧跨度 `original_stack_top - locals_base` |
+
+- 数组按**地址升序**排列（全局 → 堆 → 栈自高地址向下）；
+- 响应新增 `region_counts{global,stack,heap}`（消费方据此判断三段式是否生效，无需自行扫 `kind`）；
+- `free_list` / `quarantine` / `heap_base` / `heap_offset` / `alloc_counter` 字段不变；
+- **堆统计口径不受影响**：栈/全局区域**只在导出层合成**，不写回 `session.memory.regions`
+  ——否则 `total_allocated` / 碎片率会把栈帧算成"已分配堆内存"；
+- capi 第二批把这套形状语言中立化（`kind` + `status` + `alloc_line`），serve 出口先行对齐。
+
+---
+
+## 7.x4 复测记录（2026-09-12，B2 / C2 / D2 / D3 落地后）
+
+v0.1 **字段集合未变**（本次为值语义增强与出口扩容），按 §7.1 纪律复跑全部防线：
+
+| 项 | 载体（可复现命令） | 结果 |
+|---|---|---|
+| 字段冻结（含新增断言） | `cargo test --test step_payload_schema_v0_1_test` | ✅ 10 passed：预留位缺省（tripwire）/ 预留位字段名冻结 / 词汇闭合 / 展开粒度契约 / 文档↔代码单源 |
+| 内存地图与跨帧解析 | `cargo test --test memory_map_segments_test` | ✅ 3 passed：三段式 `kind` / 跨帧 `target_name` / 堆统计护栏 |
+| Rust 全量 + 静态检查 | `cargo test --workspace` / `cargo clippy … -- -D warnings` | ✅ 全绿 / 零警告 |
+| C Shadow | `python native/tests/shadow_verification/shadow_verify.py` | ✅ 662 用例（`known_issue` 3，无非预期差异） |
+| C++ Shadow | `python scripts/shadow_verify_cpp.py` | ✅ 94 用例（92 一致 + 2 已记录 `CLANG_COMPILE_FAIL`） |
+| serve 出口一致性 | `python scripts/serve_smoke.py` | ✅ 39 项断言（新增三段式内存地图 / schema 轨道 / 词汇表 / 会话语义） |
+| 签字回放 S1–S5 | `python scripts/replay/replay_s1_s5.py --anchor 10591ad` | ✅ **61/61 PASS** |
+
+> 本次同时修正了 `semantic_label` 的判定顺序（具体语句模式优先于循环上下文），
+> 使词汇表里的 `释放内存` / `调用 printf` / `返回` 从"几乎不可达"恢复为可达——
+> 这是词汇闭合防线（§7.x4 第一行）上线当天抓到的实缺陷，细节见 `CHANGELOG.md`。
+
+---
+
 ## 8. 已知限制与遗留（诚实记录）
 
 | # | 限制 | 影响 | 计划 |
 |---|---|---|---|
-| 1 | `ApiFrameInfo.return_line` 恒为 0 | 调用栈视图无法显示返回行 | MVP 简化遗留；补全需在 VM 帧结构记录返回行 |
-| 2 | 无 **mangled 名**字段 | 计划 §3.2 要求"函数 display_name 与 mangled 双字段"；当前只有单一 `func_name`（教学可读名）。C++ 场景下 `__ctor__Vec` 之类的内部名与源码名不同，消费方无法同时拿到两者 | v0.2 增加 `func_display_name` + `func_mangled_name`（**只增不改**：保留 `func_name` 作为 display 语义） |
+| 1 | `ApiFrameInfo.return_line` 恒为 0 | 调用栈视图无法显示返回行 | MVP 简化遗留；**已排入 v0.2（§9 台账：`call_stack[].return_line`）**——属补值不改字段 |
+| 2 | 无 **mangled 名**字段 | 计划 §3.2 要求"函数 display_name 与 mangled 双字段"；当前只有单一 `func_name`（教学可读名）。C++ 场景下 `__ctor__Vec` 之类的内部名与源码名不同，消费方无法同时拿到两者 | **已排入 v0.2（§9 台账：`func_display_name / func_mangled_name`）**：只增不改，保留 `func_name` 作为 display 语义 |
 | 3 | `vis_events[].ty` 仅 `1`（compare） | 交换/移动等事件无类型码 | 与算法步骤模板一起扩充 |
 | 4 | `root_cause_hint` 仅陷阱路径填充 | 常规步恒为 `null` | 按认知推理层需要扩展 |
 | 5 | 精确 `end_line`/`end_column` | 属诊断 schema（`compile_json`），不在本 schema 内；当前为"起点 + 1"退化值 | 按诊断类别分批补（高价值跨度优先） |
 | 6 | 窗口外的历史 payload 不可查询 | 消费方须自行落地持久化（或依赖 seek 重放）；`payload.get` 对越窗区间静默返回子集 | 设计如此（内存有界）；消费方契约已在 §4.1 写明 |
 | 7 | ~~`ty_name` 为 Rust `Debug` 表示~~ | 拼写随内部重构变化，且把内部枚举结构（`Int { is_unsigned: false, … }`）泄漏到教学输出 | **✅ 已修复（2026-09-11）**：改为 C 风格稳定可读名（单一来源 `cide_runtime::type_display_name`），消费方可直接显示。指针识别规则不变（含 `*`） |
 | 8 | `local_vars` 曾含**跨函数**变量与同名重复 | 消费方看到 `helper` 的局部变量出现在 `main` 的 payload（且用错 `locals_base` 读出垃圾值），两个 `for` 各声明一个 `i` 时无法区分 | **✅ 已修复（2026-09-11）**：按函数归属 + 声明行（新增 `Symbol::decl_line`）过滤，同名取"已进入作用域且最晚声明"者；无有效执行位置（`code_line == 0`）时不输出局部变量 |
-| 9 | `code_line` 是**合并源码的全局行号**，payload 未携带文件名 | 多文件会话中消费方无法自行把 `code_line` 映射回"哪个文件的第几行"（引擎内部已按 `file_ranges` 正确映射，语义标注不再串文件） | v0.2 增加 `code_file` 字段（**只增不改**：`code_line` 保持全局行号语义，避免破坏既有断点/heatmap 口径） |
+| 9 | `code_line` 是**合并源码的全局行号**，payload 未携带文件名 | 多文件会话中消费方无法自行把 `code_line` 映射回"哪个文件的第几行"（引擎内部已按 `file_ranges` 正确映射，语义标注不再串文件） | **已排入 v0.2（§9 台账：`code_file`）**：只增不改——`code_line` 保持全局行号语义，避免破坏既有断点/heatmap 口径 |
 | 10 | 函数定义行判定为递归调用 | 仅当左花括号与函数签名**同行**时被排除；`int f(...)` 换行写 `{` 时仍可能把定义行标成"递归调用 f" | 需要多行签名识别（教学子集内少见）；已知限制 |
+
+---
+
+## 9. v0.2 激活轨道（预留位 → 激活的既定轨道，2026-09-12）
+
+> 下游需求清单 B2 的落地：把"字段只增不改 + 消费方容忍缺省"从文字共识固化成
+> **有机器防线的轨道**。机器可读单源：`native/src/unified/contracts.rs`
+> （`RESERVED_FIELDS_V0_2` / `V0_2_ACTIVATION_CHECKLIST` / `V0_2_FIELD_LEDGER` /
+> `BEHAVIOR_CONTRACTS`），出口：serve `contracts` 方法 + `capabilities.schema`。
+
+### 9.1 激活清单（**激活提交必须逐条走完**）
+
+| # | 要求 |
+|---|---|
+| ① | **只增事件**：不得改动 v0.1 既有 14 字段的名称/类型/语义；预留位激活一律以新增字段形态落地 |
+| ② | 同步更新**本文档**：§9 台账状态 `pending → active`，并在 **§7 校验表追加 v0.2 历史行** |
+| ③ | 重跑引擎侧 **C1–C3**：`step_payload_schema_v0_1_test` + `unified_engine_window_test` + `scripts/serve_smoke.py` |
+| ④ | 重跑签字回放 **S1–S5**：`scripts/replay/replay_s1_s5.py --anchor <新短哈希>`；异常域另需 S4 §5 激活契约 A1–A8（第四组回放场景） |
+| ⑤ | 解除冻结测试中的预留位断言（v0.1 → v0.2），并知会下游按容忍矩阵回归 T4 投影 |
+
+**tripwire（不是建议，是防线）**：`step_payload_schema_v0_1_test::test_v0_1_reserved_fields_absent`
+一旦在任何 payload（含嵌套子结构）中发现预留位字段即失败，并把本清单原样打印——
+激活者必须先让测试失败、再显式改写测试，从而不可能"悄悄激活"。
+
+### 9.2 字段台账
+
+| 字段 | 类型 | 状态 | 批次 | 说明 |
+|---|---|---|---|---|
+| `handler_depth` | reserve | pending | CS3b | 当前受几层 try 保护；与 `unwinding` 正交（finally 步 `handler_depth==0` 但仍展开） |
+| `unwinding` | reserve | pending | CS3b | 展开态显式标记；**每帧一 step，不得合并**（见 §9.3） |
+| `unwind_frames_left` | reserve | pending | CS3b | 剩余待展开帧数（展开动画驱动字段） |
+| `current_exception` | reserve | pending | CS3b | `{type_name, message, addr, origin_line} \| null`；`origin_line` 为原始抛点（`throw;` 保留 / `throw e;` 改写） |
+| `code_file` | add | pending | v0.2 | 多文件行号归位（§8 #9） |
+| `call_stack[].return_line` | add | pending | v0.2 | 补值不改字段（§8 #1）：字段已在 v0.1，激活 = 记录 VM 帧返回行 |
+| `func_display_name / func_mangled_name` | add | pending | v0.2 | §8 #2：内部名与源码可读名双字段，保留 `func_name` 作 display 语义 |
+
+### 9.3 行为契约（不得被性能优化破坏）
+
+| id | 契约 | 状态 | 防线载体 |
+|---|---|---|---|
+| `step_granularity` | 一步 = 一条字节码指令（含透明 `StepEvent`），同一步不被合并 | active | `step_payload_schema_v0_1_test` |
+| `payload_additive_only` | 字段只增不改；v0.1 不得携带未发布字段 | active | 键集合冻结 + 预留位缺省断言 |
+| `jit_breakpoint_integrity` | 含断点的循环排除出 JIT trace | active | `jit_unit_test` / e2e 断点用例 |
+| `unwinding_step_granularity` | **UNWINDING 每弹一帧 / 执行一个 finally 块 = 一个 VM step；展开不得被合并成单步**（展开动画的根基） | reserved（CS3b） | `contracts::check_unwinding_granularity`（合成序列单测）+ S4 §5 A2/A5 回放 |
+| `try_excludes_jit` | 含 `TryBegin` 的函数排除出 JIT trace | reserved（CS3a） | CS3a 批次用例 |
+
+`check_unwinding_granularity` 的判据（对相邻两步）：展开区间内 `unwind_frames_left`
+**下降幅度 ≤ 1**（一次弹多帧 = 合并单步 = 违规）；允许为 0（`finally` 步不弹帧）；
+回增为违规；进入展开时 ≥ 1，离开展开时必须为 0。
 
 ---
 
@@ -424,3 +530,48 @@ NDJSON；请求带 `id`，响应回填同一 `id`；错误帧与成功帧**同�
 - `pointer_snapshots` 只包含**指针类型**变量；`status` 判定优先级见 §3.1。
 - 一个 `StepPayload` 对应**一条字节码指令**，不是"一行源码"；同一源码行可产生多步。
 - `vis_events` 是取走式的：同一步不会重复投递（重放时会重新生成）。
+
+---
+
+## 附录 B：`semantic_label` 受控词汇表（词汇只增不改）
+
+> **词汇即契约**：消费端（知识卡片 / 变量面板 / 步骤条）按 `id` 驱动 UI，**不解析
+> `template` 文本、不对 label 做模式匹配**。`label` 文本可能带值槽（`i=0, j=1`），
+> 但**形态由词汇表固定**。
+>
+> 机器可读单源：`native/src/unified/vocabulary.rs::SEMANTIC_LABEL_VOCABULARY`；
+> 出口：serve `semantic_labels`（完整表）/ `capabilities.semantic_label_kinds`（条数）；
+> 防线：`step_payload_schema_v0_1_test::test_semantic_label_vocabulary_closed`
+> （引擎产出的每个非空 label 都必须能归类）+ `test_schema_doc_v0_2_track_matches_code`（本附录与代码同源）。
+>
+> **只增不改**：`id` 与 `template` 一经发布不得改语义，扩充只能追加条目。
+> 首批发自 SharpTutor S4 §6（异常域）+ 引擎既有 C 域产出。
+
+### B.1 C 域（active）
+
+| id | 模板 | 样例 |
+|---|---|---|
+| `swap` | `交换 arr[{i}]↔arr[{j}]` | 交换 arr[3]↔arr[4] |
+| `recursive_call` | `递归调用 {func}` | 递归调用 fib |
+| `call` | `调用 {func}` | 调用 printf / 调用 qsort / 调用 swap |
+| `generic_call` | `函数调用` | 函数调用（函数名提取失败时的兜底） |
+| `loop` | `循环 {iter=v, …}` | 循环 i=0, j=1；无值形态为裸 `循环` |
+| `return` | `返回` | 返回 |
+| `heap_alloc` | `内存分配` | 内存分配 |
+| `heap_free` | `释放内存` | 释放内存 |
+| `io` | `IO 操作` | IO 操作（`getchar` / `putchar`） |
+| `line_fallback` | `第 {line} 行` | 第 12 行（无语义特征的兜底） |
+
+空串（`""`）表示"本步无标签"（`code_line == 0`），**不是**词汇条目。
+
+### B.2 异常域（reserved，CS3b 激活；首批由 SharpTutor S4 §6 提交）
+
+| id | 模板 | 触发步 |
+|---|---|---|
+| `throw` | `抛出异常` | throw 执行步（含 S4 A1/A4/A8） |
+| `unwind` | `栈展开` | 展开步（S4 A2/A5） |
+| `catch_enter` | `进入 catch` | catch 块入口步（S4 A3） |
+| `finally` | `finally 执行` | finally 块步（S4 A5/A6） |
+
+`reserved` = **已登记、激活前不会产出**：下游可提前把 UI 分支写好，激活是"契约兑现"
+而非"新增契约"。CS3b 激活时本表条目状态改为 active，并按 §9.1 清单重跑回放。

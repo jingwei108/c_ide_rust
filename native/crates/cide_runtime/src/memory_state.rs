@@ -63,6 +63,11 @@ pub fn compute_heap_base(global_data_end: u32, argc: i32, argv: &[String]) -> u3
 }
 
 /// 内存区域基础数据：VM 内部使用；`cide_native` 会定义带 `#[frb]` 的同名包装。
+///
+/// `kind` 为**三段式内存地图**的段标识（`global` / `stack` / `heap`）。
+/// 本结构只承载堆区域（`kind == "heap"`）；栈/全局区域由导出层
+/// （`session_api::memory_regions`）从 VM 符号表与调用帧**合成**，不写回本清单
+/// ——否则 `total_allocated` 之类的堆统计会把栈帧算成"已分配堆内存"。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MemoryRegionData {
     pub addr: u32,
@@ -73,8 +78,17 @@ pub struct MemoryRegionData {
     pub is_freed: bool,
     /// 分配时的源码行号（教学用途）
     pub alloc_line: i32,
-    /// 分配方式，如 "malloc" / "realloc" / "fopen"
+    /// 分配方式，如 "malloc" / "realloc" / "fopen" / "static" / "call"
     pub alloc_by: String,
+    /// 段标识：`global` / `stack` / `heap`（下游需求清单 C2 三段式定型字段）。
+    /// `serde(default)` = `heap`：旧快照/旧调用方不带该字段时按堆区域解析，向后兼容。
+    #[serde(default = "default_region_kind")]
+    pub kind: String,
+}
+
+/// `kind` 缺省值：本结构只装堆区域，故缺省即 `heap`。
+fn default_region_kind() -> String {
+    "heap".to_string()
 }
 
 /// 内存碎片基础数据。

@@ -12,7 +12,9 @@ use std::ffi::{c_char, CStr, CString};
 
 use cide_native::capi;
 use cide_native::session::Session;
+use cide_native::unified::contracts;
 use cide_native::unified::types::{PointerStatus, StepPayload};
+use cide_native::unified::vocabulary;
 
 /// schema v0.1 顶层 14 字段（`docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md` §1）。
 const TOP_LEVEL_FIELDS: [&str; 14] = [
@@ -279,3 +281,213 @@ fn test_step_payload_serializes_every_field() {
     let v = serde_json::to_value(&payload).unwrap();
     assert_eq!(keys_of(&v).len(), TOP_LEVEL_FIELDS.len());
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v0.2 轨道与词汇表防线（下游需求清单 B2）
+//
+// 这三组断言把 SharpTutor S4 §5 / S5 §1 的"文档共识"变成上游可执行测试位：
+//   ① 预留位在 v0.1 阶段必须**缺省**（激活即触发 tripwire，强制走激活清单）；
+//   ② `semantic_label` 词汇**闭合**（引擎产出的每个标签都必须登记在案）；
+//   ③ "UNWINDING 不得合并单步"有可执行判据（CS3b 激活后由回放驱动复用）。
+
+/// 递归收集 JSON 中所有对象（含嵌套）出现的键名。
+fn all_keys_recursive(value: &serde_json::Value, out: &mut BTreeSet<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (k, v) in map {
+                out.insert(k.clone());
+                all_keys_recursive(v, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for item in items {
+                all_keys_recursive(item, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// B2-1：v0.1 阶段预留位字段**不得出现**在任何 payload（含嵌套子结构）中。
+///
+/// 这是 SharpTutor S5 §1 A2（"预留位缺省"）的上游机器化版本。断言失败 = 有人
+/// 激活了 v0.2 字段却没走激活清单 —— 失败信息会把清单原样打印出来。
+#[test]
+fn test_v0_1_reserved_fields_absent() {
+    let session = compile_session(SAMPLE);
+    let payloads = step_until(session, 200);
+    unsafe { capi::cide_session_destroy(session) };
+    assert!(!payloads.is_empty(), "应至少收集到一个 payload");
+
+    let reserved: BTreeSet<&str> = contracts::RESERVED_FIELDS_V0_2.into_iter().collect();
+    for p in &payloads {
+        let mut keys = BTreeSet::new();
+        all_keys_recursive(p, &mut keys);
+        let hit: Vec<&String> = keys.iter().filter(|k| reserved.contains(k.as_str())).collect();
+        assert!(
+            hit.is_empty(),
+            "v0.1 阶段出现了 v0.2 预留位字段 {:?}（payload step_index={}）。\n\
+             若这是**有意激活**，请逐条走完 v0.2 激活清单后再改本测试：\n  {}",
+            hit,
+            p["step_index"],
+            contracts::V0_2_ACTIVATION_CHECKLIST.join("\n  ")
+        );
+    }
+}
+
+/// B2-1（反向）：预留位字段名集合本身也是契约 —— 改一名 = 改协议，必须走版本化。
+#[test]
+fn test_reserved_field_names_frozen() {
+    assert_eq!(
+        contracts::RESERVED_FIELDS_V0_2.to_vec(),
+        vec!["handler_depth", "unwinding", "unwind_frames_left", "current_exception"],
+        "预留位字段名集合被改动 —— 这是协议变更，须同步 schema §7.x / S4 契约并重跑回放"
+    );
+    assert_eq!(contracts::SCHEMA_VERSION, "v0.1");
+}
+
+/// B2-3：`semantic_label` **词汇闭合** —— 引擎产出的每个非空 label 都必须能归类。
+///
+/// 新增标签而不登记词汇表 = 本测试失败（消费端 UI 直读词汇，未登记即静默失效）。
+#[test]
+fn test_semantic_label_vocabulary_closed() {
+    let session = compile_session(VOCABULARY_SAMPLE);
+    let payloads = step_until(session, 5_000);
+    unsafe { capi::cide_session_destroy(session) };
+    assert!(!payloads.is_empty(), "词汇闭包样本应产生步数据");
+
+    let mut seen: BTreeSet<&'static str> = BTreeSet::new();
+    for p in &payloads {
+        let label = p["semantic_label"].as_str().unwrap_or("");
+        if label.is_empty() {
+            continue; // 空串 = 本步无标签（code_line == 0），不是词汇缺失
+        }
+        match vocabulary::classify(label) {
+            Some(id) => {
+                seen.insert(id);
+            }
+            None => panic!(
+                "引擎产出了未登记的 semantic_label `{}`（step_index={}）。\n\
+                 受控词汇表 = `crate::unified::vocabulary::SEMANTIC_LABEL_VOCABULARY`，\
+                 新增词汇须同步 schema 附录 B 与 serve `semantic_labels`（词汇只增不改）。",
+                label, p["step_index"]
+            ),
+        }
+    }
+
+    // 样本应覆盖 C 域主干词汇（否则"闭合"可能是空转而过的假绿）
+    for required in ["loop", "swap", "call", "return", "heap_alloc", "heap_free", "recursive_call"] {
+        assert!(
+            seen.contains(required),
+            "词汇闭包样本未覆盖 `{}`（实际覆盖 {:?}）—— 样本需要调整，否则防线有盲区",
+            required,
+            seen
+        );
+    }
+}
+
+/// B2-2：行为契约"UNWINDING 不得合并单步"的**可执行判据**（CS3b 激活后由回放复用）。
+#[test]
+fn test_unwinding_granularity_contract_frozen() {
+    let contract = contracts::BEHAVIOR_CONTRACTS
+        .iter()
+        .find(|c| c.id == "unwinding_step_granularity")
+        .expect("行为契约表必须登记 unwinding_step_granularity（CSHARP_EXTENSION_PLAN §6-B）");
+    assert!(
+        contract.statement.contains("不得合并单步"),
+        "契约文本丢失核心约束：{}",
+        contract.statement
+    );
+    assert_eq!(contract.status, "reserved", "CS3b 前该契约应为 reserved");
+    assert_eq!(contract.batch, "CS3b");
+
+    // 判据自检：S4 §5 A2 形态（栈深 3 → 逐帧 3/2/1）通过；一次弹两帧被拒。
+    let ok = [
+        contracts::UnwindSample { step_index: 10, unwinding: true, unwind_frames_left: 3 },
+        contracts::UnwindSample { step_index: 11, unwinding: true, unwind_frames_left: 2 },
+        contracts::UnwindSample { step_index: 12, unwinding: true, unwind_frames_left: 1 },
+        contracts::UnwindSample { step_index: 13, unwinding: false, unwind_frames_left: 0 },
+    ];
+    assert!(contracts::check_unwinding_granularity(&ok).is_ok());
+
+    let merged = [
+        contracts::UnwindSample { step_index: 10, unwinding: true, unwind_frames_left: 3 },
+        contracts::UnwindSample { step_index: 11, unwinding: true, unwind_frames_left: 1 },
+    ];
+    let err = contracts::check_unwinding_granularity(&merged).expect_err("合并单步必须被拒");
+    assert!(err.contains("不得合并单步"), "错误信息须指向契约，实际：{}", err);
+}
+
+/// B2-1/B2-3：**文档↔代码单源校验** —— schema 文档必须登记代码里的预留位、台账与词汇。
+///
+/// 防止"文档写一套、代码另一套"（本仓库最贵的历史教训是 ty_name 的 Debug 泄漏）。
+#[test]
+fn test_schema_doc_v0_2_track_matches_code() {
+    let doc = std::fs::read_to_string("../docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md")
+        .or_else(|_| std::fs::read_to_string("docs/spec/STEP_PAYLOAD_SCHEMA_V0_1.md"))
+        .expect("schema 文档缺失");
+
+    for field in contracts::RESERVED_FIELDS_V0_2 {
+        assert!(doc.contains(field), "schema 文档未登记预留位字段 `{}`", field);
+    }
+    for plan in contracts::V0_2_FIELD_LEDGER {
+        assert!(
+            doc.contains(plan.field),
+            "schema §9 台账未登记 v0.2 字段 `{}`",
+            plan.field
+        );
+    }
+    for kind in vocabulary::SEMANTIC_LABEL_VOCABULARY {
+        assert!(
+            doc.contains(kind.id),
+            "schema 附录 B 未登记词汇 `{}`（模板 {}）",
+            kind.id,
+            kind.template
+        );
+    }
+    assert!(
+        doc.contains("v0.1 已冻结"),
+        "schema 文档须显式声明 v0.1 冻结状态（S1–S5 签字回放通过）"
+    );
+    assert!(
+        doc.contains(contracts::SCHEMA_V0_1_FROZEN_AT),
+        "schema 文档须记录冻结日期 {}",
+        contracts::SCHEMA_V0_1_FROZEN_AT
+    );
+}
+
+/// 词汇闭包样本：覆盖 C 域主干标签（循环/交换/调用/返回/堆/递归/兜底）。
+///
+/// 两个刻意的形态选择（否则防线有盲区）：
+/// - 交换语句用 `temp` 命名**且函数内有循环变量 `i`**（`is_swap` 要求行内含 `temp`，
+///   且既有口径下"交换"只在循环上下文成立）；
+/// - 递归函数参数用 `x` —— 形参名若落在循环变量白名单（`i/j/k/m/n/…`）内，
+///   该行会被判为"循环 {iter=…}"而不是"递归调用"。
+const VOCABULARY_SAMPLE: &str = r#"
+#include <stdio.h>
+#include <stdlib.h>
+
+int helper(int x) {
+    int arr[3] = {1, 2, 3};
+    int i = 0;
+    int temp = arr[i];
+    arr[i] = arr[i + 1];
+    arr[i + 1] = temp;
+    return x;
+}
+
+int fib(int x) {
+    if (x < 2) return x;
+    return fib(x - 1) + fib(x - 2);
+}
+
+int main() {
+    int *p = (int *)malloc(16);
+    int s = 0;
+    for (int i = 0; i < 3; i = i + 1) { s = s + i; }
+    p[0] = helper(1) + fib(4);
+    printf("%d", s);
+    free(p);
+    return 0;
+}
+"#;

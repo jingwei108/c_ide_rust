@@ -35,8 +35,10 @@ fn print_usage() {
     eprintln!("serve 会话模式（每行一个 JSON 请求，响应与请求 id 关联）：");
     eprintln!("  {{\"id\":1,\"method\":\"compile\",\"params\":{{\"source\":\"int main(){{return 0;}}\"}}}}");
     eprintln!("  {{\"id\":2,\"method\":\"run\"}} / output.delta / step.begin / step.next / payload.get");
-    eprintln!("  {{\"id\":3,\"method\":\"seek\",\"params\":{{\"step\":10}}}} / breakpoints.set / memory.regions");
+    eprintln!("  {{\"id\":3,\"method\":\"seek\",\"params\":{{\"step\":10}}}} / breakpoints.set / memory.regions / input.feed");
     eprintln!("  {{\"id\":4,\"method\":\"session.reset\"}} / config.get / config.set / shutdown");
+    eprintln!("  {{\"id\":5,\"method\":\"capabilities\"}} / error_catalog / semantic_labels / contracts");
+    eprintln!("  会话拓扑：单 serve 进程 = 单活跃会话（session.create 为清空重建，无并发句柄）");
 }
 
 fn read_source(path: &str) -> String {
@@ -521,6 +523,26 @@ fn serve_err(id: serde_json::Value, kind: &str, message: impl Into<String>) -> s
     })
 }
 
+/// 会话拓扑语义（下游需求清单 D2）：**单 serve 进程 = 单活跃会话**。
+///
+/// 方法表里的 `session.create` / `session.reset` / `session.destroy` 都不带会话句柄
+/// 参数，因为进程内只有一个 `Session`；三者都是"清空同一个实例后重建"，
+/// `reset` 额外保留会话级配置（隔离预算/判分确定性/argv）。
+/// 需要并发逻辑会话（如"长寿命诊断进程 + 瞬态运行进程"）时，请起多个 serve 进程
+/// ——这是当前唯一受支持的并发形态。
+fn serve_session_semantics() -> serde_json::Value {
+    serde_json::json!({
+        "model": "single-active-session",
+        "active_sessions": 1,
+        "concurrent_sessions": false,
+        "handle_parameter": false,
+        "create_semantics": "clear-and-rebuild（清空重建同一实例）",
+        "reset_semantics": "清空编译/运行状态，保留会话级配置（隔离预算/deterministic/argv）",
+        "destroy_semantics": "清空重建（进程存活；如需回收进程请用 shutdown）",
+        "concurrency_recommendation": "并发场景起多个 serve 进程",
+    })
+}
+
 /// 会话级配置写入（与 capi 的 `cide_set_max_steps` / `cide_set_deterministic` /
 /// `cide_set_quarantine_budget` 同一批 Session 字段，语义一致）。
 fn serve_apply_config(session: &mut Session, params: &serde_json::Value) -> serde_json::Value {
@@ -573,12 +595,24 @@ fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) 
             let parsed: serde_json::Value = serde_json::from_str(&raw).unwrap_or(serde_json::json!({ "catalog": [] }));
             (serve_ok(id, parsed), false)
         }
+        // `semantic_label` 受控词汇表（下游需求清单 B2-3）：静态元数据，无状态。
+        "semantic_labels" => (serve_ok(id, session_api::semantic_labels()), false),
+        // schema 轨道 + 行为契约（下游需求清单 B2-1/B2-2）：静态元数据，无状态。
+        "contracts" => (serve_ok(id, session_api::contracts()), false),
+        // ── 会话生命周期（下游需求清单 D2：**单 serve 进程 = 单活跃会话**）──────
+        // 本进程内仅有一个 `Session` 实例，`create`/`destroy` 都是"清空重建同一实例"，
+        // 不携带并发句柄参数、也不支持并发逻辑会话；响应显式回带 session 语义字段，
+        // 消费方不必靠文档猜。并发拓扑（长寿命诊断进程 + 瞬态运行进程）请起两个 serve 进程。
         "session.create" => {
             *session = Session::default();
             (
                 serve_ok(
                     id,
-                    serde_json::json!({ "created": true, "config": session_api::config(session) }),
+                    serde_json::json!({
+                        "created": true,
+                        "session": serve_session_semantics(),
+                        "config": session_api::config(session),
+                    }),
                 ),
                 false,
             )
@@ -589,14 +623,27 @@ fn serve_handle(session: &mut Session, line: &str) -> (serde_json::Value, bool) 
             (
                 serve_ok(
                     id,
-                    serde_json::json!({ "reset": true, "config": session_api::config(session) }),
+                    serde_json::json!({
+                        "reset": true,
+                        "session": serve_session_semantics(),
+                        "config": session_api::config(session),
+                    }),
                 ),
                 false,
             )
         }
         "session.destroy" => {
             *session = Session::default();
-            (serve_ok(id, serde_json::json!({ "destroyed": true })), false)
+            (
+                serve_ok(
+                    id,
+                    serde_json::json!({
+                        "destroyed": true,
+                        "session": serve_session_semantics(),
+                    }),
+                ),
+                false,
+            )
         }
         "shutdown" => (serve_ok(id, serde_json::json!({ "shutdown": true })), true),
         "config.get" => (serve_ok(id, session_api::config(session)), false),

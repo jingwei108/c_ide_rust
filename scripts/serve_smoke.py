@@ -54,7 +54,10 @@ REQUESTS = [
     {"id": 14, "method": "no.such.method"},
     {"id": 15, "method": "session.reset"},
     {"id": 16, "method": "capabilities"},
-    {"id": 17, "method": "shutdown"},
+    {"id": 17, "method": "semantic_labels"},
+    {"id": 18, "method": "contracts"},
+    {"id": 19, "method": "session.create"},
+    {"id": 20, "method": "shutdown"},
 ]
 
 DEFAULT_QUARANTINE_BUDGET = 256 * 1024  # 1MB 堆上限的 1/4（堆决议 §1）
@@ -90,7 +93,6 @@ def main():
     lines = [l for l in proc.stdout.splitlines() if l.strip()]
     print(f"responses={len(lines)} (requests={len(REQUESTS)})")
     check(proc.returncode == 0, "进程正常退出", proc.stderr[:300])
-    check(len(lines) == len(REQUESTS), "每个请求一行响应")
     check(len(lines) == len(REQUESTS), "每个请求一行响应")
 
     responses = []
@@ -151,6 +153,29 @@ def main():
         "默认隔离预算 256KB（与 capi 一致）",
         str(regions["quarantine"]),
     )
+    # C2：三段式内存地图（kind + region_counts + 栈/全局的 name/alloc_line）
+    counts = regions.get("region_counts") or {}
+    check(
+        {"global", "stack", "heap"} <= set(counts.keys()),
+        "memory.regions 三段式计数（C2）",
+        str(counts),
+    )
+    check(
+        all(isinstance(r.get("kind"), str) for r in regions["regions"]),
+        "每个 region 都带 kind 段标识（C2）",
+        str([r.get("kind") for r in regions["regions"]]),
+    )
+    stack_regions = [r for r in regions["regions"] if r.get("kind") == "stack"]
+    check(
+        counts.get("stack", 0) >= 1 and any(r.get("name") == "main" for r in stack_regions),
+        "栈帧区域带函数名（C2）",
+        str(stack_regions[:2]),
+    )
+    check(
+        all(r.get("alloc_by") == "call" and r.get("alloc_line") is not None for r in stack_regions),
+        "栈帧区域带 alloc_by=call / alloc_line（C2）",
+        str(stack_regions[:2]),
+    )
 
     check(by_id[12]["result"]["quarantine_budget"] == 0, "config.set 生效（预算可调）")
 
@@ -176,7 +201,53 @@ def main():
         caps.get("memory_model", {}).get("global_region_limit") == 65536,
         "capabilities 内存模型常量（单源 cide_runtime）",
     )
-    check(by_id[17]["result"]["shutdown"] is True, "shutdown 回应")
+    # B2：schema 轨道与行为契约进能力清单（消费方可直读版本协商信息）
+    check(
+        caps.get("schema", {}).get("version") == "v0.1"
+        and caps.get("schema", {}).get("reserved_fields_v0_2")
+        == ["handler_depth", "unwinding", "unwind_frames_left", "current_exception"],
+        "capabilities 携带 schema 轨道与预留位（B2）",
+        str(caps.get("schema")),
+    )
+    check(
+        any(c.get("id") == "unwinding_step_granularity" for c in caps.get("behavior_contracts", [])),
+        "capabilities 携带行为契约（B2：UNWINDING 不合并单步）",
+    )
+
+    # B2：词汇表导出（词汇只增不改；异常域条目以 reserved 预登记）
+    labels = by_id[17]["result"]
+    label_ids = [l.get("id") for l in labels.get("labels", [])]
+    check(
+        "swap" in label_ids and "loop" in label_ids,
+        "semantic_labels 导出 C 域词汇（B2）",
+        str(label_ids),
+    )
+    check(
+        {"throw", "unwind", "catch_enter", "finally"}
+        <= {l.get("id") for l in labels.get("labels", []) if l.get("status") == "reserved"},
+        "semantic_labels 预登记异常域词汇（reserved，B2）",
+    )
+
+    # B2：契约导出（预留位 + v0.2 台账 + 激活清单）
+    contracts = by_id[18]["result"]
+    check(
+        len(contracts.get("v0_2_activation_checklist", [])) >= 4
+        and any(f.get("field") == "code_file" for f in contracts.get("v0_2_field_ledger", [])),
+        "contracts 导出激活清单与 v0.2 台账（B2）",
+    )
+
+    # D2：单 serve 进程 = 单活跃会话，响应显式回带拓扑字段
+    created = by_id[19]["result"]
+    sess = created.get("session") or {}
+    check(
+        created.get("created") is True
+        and sess.get("model") == "single-active-session"
+        and sess.get("active_sessions") == 1
+        and sess.get("concurrent_sessions") is False,
+        "session.create 显式回带单会话语义（D2）",
+        str(sess),
+    )
+    check(by_id[20]["result"]["shutdown"] is True, "shutdown 回应")
 
     print()
     if failures:
